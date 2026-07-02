@@ -36,7 +36,6 @@ const VAREJO_BRANCHES = [
   { code: 94, name: 'CROSBY SHOPPING PATOS', short: 'Patos', uf: 'PB', type: 'shopping' },
   { code: 95, name: 'CROSBY SHOPPING MIDWAY', short: 'Midway', uf: 'RN', type: 'shopping' },
   { code: 97, name: 'CROSBY SHOPPING TERESINA', short: 'Teresina', uf: 'PI', type: 'shopping' },
-  { code: 98, name: 'CROSBY SHOPPING RECIFE', short: 'Shopping Recife', uf: 'PE', type: 'shopping' },
 ];
 
 // Cores cíclicas dos cantos do ring (mesma do CompeticaoRing)

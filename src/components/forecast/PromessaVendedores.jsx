@@ -2,7 +2,8 @@
 // Cada card mostra: vendedor | Promessa | Realizado | Percentual
 // Promessa = meta_canal_semana / N vendedores titulares
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Users, Trophy, UserCircle, WhatsappLogo } from '@phosphor-icons/react';
+import { Users, Trophy, UserCircle, DownloadSimple } from '@phosphor-icons/react';
+import { toPng } from 'html-to-image';
 import { API_BASE_URL } from '../../config/constants';
 import EnviarWhatsappModal from './EnviarWhatsappModal';
 import useDownloadAsImage from '../../hooks/useDownloadAsImage';
@@ -26,9 +27,9 @@ function isoWeek(date) {
 }
 
 // Card de UM canal (B2R ou B2M) com lista de vendedores
-// `cardRef` é a ref pra captura via html2canvas (passada do parent).
-// `onSendWhats` ativa o modal de envio só desse card (opcional).
-function CardVendedores({ card, loading, cardRef, onSendWhats, ano, semana, rangeLabel }) {
+// `cardRef` é a ref pra captura via html-to-image (passada do parent).
+// `onDownload` gera PNG só desse card (opcional).
+function CardVendedores({ card, loading, cardRef, onDownload, ano, semana, rangeLabel }) {
   const [drilldown, setDrilldown] = useState(null);
   const { vendedores = [], extras = [], total = {}, label, code } = card;
   // Identifica líder do card (maior valor)
@@ -89,14 +90,14 @@ function CardVendedores({ card, loading, cardRef, onSendWhats, ano, semana, rang
               atualizando
             </span>
           )}
-          {onSendWhats && !loading && (
+          {onDownload && !loading && (
             <button
               data-h2c-ignore="true"
-              onClick={onSendWhats}
-              className="text-[11px] px-2.5 py-1.5 rounded bg-emerald-500 hover:bg-emerald-400 text-white inline-flex items-center gap-1.5 font-semibold shadow-sm transition"
-              title={`Enviar apenas ${label} via WhatsApp`}
+              onClick={onDownload}
+              className="text-[11px] px-2.5 py-1.5 rounded bg-white/15 hover:bg-white/25 text-white inline-flex items-center gap-1.5 font-semibold shadow-sm transition"
+              title={`Baixar ${label} como PNG`}
             >
-              <WhatsappLogo size={14} weight="fill" /> Enviar
+              <DownloadSimple size={14} weight="bold" /> PNG
             </button>
           )}
         </div>
@@ -502,7 +503,27 @@ export default function PromessaVendedores() {
             cardRef={(el) => {
               if (el) cardRefsByCode.current[card.code] = el;
             }}
-            onSendWhats={() => setWhatsTarget(card.code)}
+            onDownload={async () => {
+              const node = cardRefsByCode.current[card.code];
+              if (!node) return;
+              try {
+                const dataUrl = await toPng(node, {
+                  backgroundColor: '#ffffff',
+                  pixelRatio: 3,
+                  cacheBust: true,
+                  quality: 1,
+                  style: { boxShadow: 'none', transform: 'none' },
+                });
+                const link = document.createElement('a');
+                const wKey = `${data.ano || ano}-W${String(data.semana_iso || semana).padStart(2, '0')}`;
+                link.download = `prometido-${card.code.toLowerCase()}-${wKey}.png`;
+                link.href = dataUrl;
+                link.click();
+              } catch (e) {
+                console.error('Erro download:', e);
+                alert('Erro ao baixar imagem: ' + e.message);
+              }
+            }}
           />
         ))}
       </div>

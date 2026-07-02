@@ -18,6 +18,7 @@ const FaturamentoCanal = lazy(() => import('./FaturamentoCanal'));
 const FaturamentoHistorico = lazy(() => import('./FaturamentoHistorico'));
 const DashboardVendas = lazy(() => import('./DashboardVendas'));
 const OrcamentoTrimestral = lazy(() => import('./OrcamentoTrimestral'));
+const AjustesCredev = lazy(() => import('./AjustesCredev'));
 
 const ABAS = [
   {
@@ -67,6 +68,18 @@ const ABAS = [
     activeRing: 'ring-blue-200',
     activeText: 'text-blue-700',
     Component: OrcamentoTrimestral,
+  },
+  {
+    id: 'credev',
+    label: 'Ajustes Credev',
+    descricao: 'Marcar NFs de credev que são adiantamento',
+    icon: ChartBar,
+    iconColor: 'text-rose-600',
+    iconBg: 'bg-rose-100',
+    activeBar: 'bg-gradient-to-r from-rose-500 to-red-500',
+    activeRing: 'ring-rose-200',
+    activeText: 'text-rose-700',
+    Component: AjustesCredev,
   },
 ];
 const STORAGE_KEY = 'forecast.aba-ativa';

@@ -36,7 +36,7 @@ const VAREJO_OPS_ARR = [
   545, 546, 9001, 9009, 510, 521, 511, 522, 9017, 9027, 1,
 ];
 const VAREJO_OPS = new Set(VAREJO_OPS_ARR);
-const VAREJO_EMPRESAS = [2, 5, 55, 65, 87, 88, 90, 93, 94, 95, 97, 98];
+const VAREJO_EMPRESAS = [2, 5, 55, 65, 87, 88, 90, 93, 94, 95, 97];
 const VAREJO_EMPRESAS_SET = new Set(VAREJO_EMPRESAS);
 
 const MULTIMARCAS_OPS_EXCLUSIVAS = new Set([200, 300]);
@@ -975,7 +975,7 @@ const AtividadeClientes = () => {
                   {porCanal.Varejo.length !== 1 ? 's' : ''}
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  Empresas: 2, 5, 55, 65, 87, 88, 90, 93, 94, 95, 97, 98
+                  Empresas: 2, 5, 55, 65, 87, 88, 90, 93, 94, 95, 97
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-0">

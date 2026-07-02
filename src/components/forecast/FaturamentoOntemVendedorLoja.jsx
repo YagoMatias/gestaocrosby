@@ -17,7 +17,7 @@ const fmtDataBr = (iso) => {
 // Cache localStorage — exibe instantâneo no mount, atualiza em background.
 // TTL 30min (intra-dia muda pouco; cron canal_totals_cache também não é
 // mais frequente que isso).
-const LS_PREFIX = 'ovl-cache-v27:'; // v27 = filtro opsAllow B2M/B2R (sem vazamento Vend. NNN)
+const LS_PREFIX = 'ovl-cache-v30:'; // v30 = fix revenda vendedores tiny values (recalc bruto − credev)
 const LS_TTL_MS = 30 * 60 * 1000;
 const lsKey = (periodo, datemin, datemax) =>
   `${LS_PREFIX}${periodo || 'ontem'}|${datemin || ''}|${datemax || ''}`;
@@ -545,15 +545,24 @@ function SeletorPeriodo({ periodo, effDatemin, effDatemax, offset, setOffset }) 
   if (periodo === 'mes') {
     const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
     const anoAtual = hoje.getFullYear();
-    const mesAtual = hoje.getMonth();
-    const [aEf, mEf] = effDatemin ? effDatemin.split('-').map(Number) : [anoAtual, mesAtual + 1];
+    const mesAtual = hoje.getMonth() + 1; // 1-indexed
+    const [aEf, mEf] = effDatemin ? effDatemin.split('-').map(Number) : [anoAtual, mesAtual];
     const onChangeMesAno = (novoAno, novoMes) => {
-      // offset = (anoAtual - novoAno) * 12 + (mesAtual - novoMes)
-      const diff = (novoAno - anoAtual) * 12 + ((novoMes - 1) - mesAtual);
-      setOffset(Math.min(0, diff));
+      // Bloqueia futuros: se seleção > hoje, clampa pra hoje.
+      let ay = novoAno, am = novoMes;
+      if (ay > anoAtual || (ay === anoAtual && am > mesAtual)) {
+        ay = anoAtual;
+        am = mesAtual;
+      }
+      // offset relativo ao props.datemin (aEf/mEf reflete o que a UI mostra
+      // agora = props.datemin + offset). Novo offset = diff relativo à UI
+      // atual + offset atual → resulta em offset relativo ao props.
+      const diff = (ay - aEf) * 12 + (am - mEf);
+      setOffset(offset + diff);
     };
+    // Só anos com dados no Supabase notas_fiscais (2025+ atualmente).
     const anos = [];
-    for (let a = anoAtual; a >= 2023; a--) anos.push(a);
+    for (let a = anoAtual; a >= 2025; a--) anos.push(a);
     return (
       <div className="px-5 py-2 bg-white border-b border-gray-200 flex items-center gap-2 text-xs">
         <span className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Escolher mês:</span>

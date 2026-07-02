@@ -71,6 +71,19 @@ function currentMonthKey() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
+// Mês de referência default — igual `currentWeekKey` usa a última completa.
+// Nos primeiros 3 dias do mês há pouquíssimo dado no mês corrente (dia 1 =
+// só o de hoje), o que faz a Performance por Loja parecer "vazia" quando na
+// verdade o mês passado ainda é a foto que interessa. Do dia 4 em diante
+// já vale a pena mostrar o mês corrente com acumulado parcial.
+function referenceMonthKey() {
+  const d = new Date();
+  if (d.getDate() <= 3) {
+    const prev = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+    return `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
+  }
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
 function currentMonthRange() {
   const d = new Date();
   const first = new Date(d.getFullYear(), d.getMonth(), 1);
@@ -1614,12 +1627,19 @@ const CanalCard = React.memo(function CanalCard({
 });
 
 // ─── Componente: card BlueCred (clientes classificados como BLUE CRED no TOTVS) ──
-const BlueCredCard = React.memo(function BlueCredCard({ stats }) {
+// Clicável — abre modal com as transações desses clientes filtráveis por
+// forma de pagamento (Fatura / A Vista / Todas).
+const BlueCredCard = React.memo(function BlueCredCard({ stats, onClick }) {
   const total = stats?.total ?? null;
   const noPeriodo = stats?.no_periodo ?? null;
 
   return (
-    <div className="rounded-xl border border-cyan-200 bg-gradient-to-br from-cyan-50 to-sky-50 p-4 flex flex-col gap-2 hover:shadow-md transition-shadow relative overflow-hidden">
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-left w-full rounded-xl border border-cyan-200 bg-gradient-to-br from-cyan-50 to-sky-50 p-4 flex flex-col gap-2 hover:shadow-md hover:border-cyan-300 hover:-translate-y-0.5 transition-all relative overflow-hidden focus:outline-none focus:ring-2 focus:ring-cyan-400"
+      title="Clique para ver as transações"
+    >
       <div className="absolute -top-6 -right-6 w-20 h-20 bg-cyan-500/10 rounded-full blur-2xl pointer-events-none" />
       <div className="flex items-center justify-between relative">
         <div className="flex items-center gap-2 text-cyan-700 font-semibold text-sm">
@@ -1647,11 +1667,191 @@ const BlueCredCard = React.memo(function BlueCredCard({ stats }) {
               +{noPeriodo} no período
             </div>
           )}
+          <div className="text-[10px] text-cyan-600/70 font-medium mt-1">
+            ver transações →
+          </div>
         </>
       )}
-    </div>
+    </button>
   );
 });
+
+// ─── Modal: transações dos clientes BlueCred ──────────────────────────────
+// Lista NFs no período dos clientes classificados como BlueCred, com filtro
+// por forma de pagamento (Todas / Fatura / A Vista). Fecha com ESC ou click
+// fora. Fonte: /api/forecast/bluecred-transacoes (backend consulta pessoas_
+// bluecred + notas_fiscais).
+function BlueCredTransacoesModal({ isOpen, onClose, datemin, datemax }) {
+  const [pagamento, setPagamento] = React.useState('todas');
+  const [dados, setDados] = React.useState(null);
+  const [loading, setLoading] = React.useState(false);
+  const [erro, setErro] = React.useState('');
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    setLoading(true);
+    setErro('');
+    const params = new URLSearchParams();
+    if (datemin) params.set('datemin', datemin);
+    if (datemax) params.set('datemax', datemax);
+    if (pagamento !== 'todas') params.set('pagamento', pagamento);
+    fetch(`${API_BASE_URL}/api/forecast/bluecred-transacoes?${params.toString()}`, {
+      headers: { 'x-api-key': API_KEY },
+    })
+      .then((r) => r.json())
+      .then((r) => {
+        if (r?.success === false) throw new Error(r.message || 'erro');
+        const data = r?.data || r;
+        setDados(data);
+      })
+      .catch((e) => setErro(e.message))
+      .finally(() => setLoading(false));
+  }, [isOpen, datemin, datemax, pagamento]);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const onEsc = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onEsc);
+    return () => document.removeEventListener('keydown', onEsc);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  const transacoes = dados?.transacoes || [];
+  const total = dados?.total_valor || 0;
+  const totalNfs = dados?.total_nfs || 0;
+  const totalClientes = dados?.total_clientes || 0;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[85vh] flex flex-col overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-cyan-50 to-sky-50 flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-cyan-700 font-bold">
+              <CreditCard size={20} weight="duotone" />
+              Transações BlueCred
+            </div>
+            <div className="text-xs text-gray-500 mt-0.5">
+              {datemin && datemax ? `${datemin} → ${datemax}` : 'período completo'}
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-500"
+            aria-label="Fechar"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* Filtro pagamento */}
+        <div className="px-6 py-3 border-b border-gray-100 flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-semibold text-gray-500 mr-1">Pagamento:</span>
+          {[
+            { key: 'todas', label: 'Todas' },
+            { key: 'faturado', label: 'Fatura' },
+            { key: 'a_vista', label: 'À Vista' },
+          ].map((opt) => (
+            <button
+              key={opt.key}
+              onClick={() => setPagamento(opt.key)}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
+                pagamento === opt.key
+                  ? 'bg-cyan-600 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+          {!loading && dados && (
+            <div className="ml-auto flex items-center gap-4 text-xs">
+              <span className="text-gray-500">
+                {totalNfs} NFs · {totalClientes} clientes
+              </span>
+              <span className="font-bold text-cyan-700">
+                R$ {formatBRL(total)}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Lista */}
+        <div className="flex-1 overflow-auto">
+          {loading && (
+            <div className="py-16 text-center text-gray-400">
+              <Spinner size={28} className="animate-spin inline-block mr-2" />
+              Carregando…
+            </div>
+          )}
+          {!loading && erro && (
+            <div className="py-16 text-center text-red-500 text-sm">
+              Erro: {erro}
+            </div>
+          )}
+          {!loading && !erro && transacoes.length === 0 && (
+            <div className="py-16 text-center text-gray-400 text-sm">
+              Nenhuma transação encontrada
+              {pagamento === 'faturado' && ' com forma "Fatura"'}
+              {pagamento === 'a_vista' && ' com forma "À Vista"'}
+              {' '}no período.
+            </div>
+          )}
+          {!loading && !erro && transacoes.length > 0 && (
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-gray-50 text-xs text-gray-500 uppercase">
+                <tr>
+                  <th className="text-left px-4 py-2">Data</th>
+                  <th className="text-left px-4 py-2">Cliente</th>
+                  <th className="text-left px-4 py-2">NF</th>
+                  <th className="text-left px-4 py-2">Filial</th>
+                  <th className="text-left px-4 py-2">Pagamento</th>
+                  <th className="text-right px-4 py-2">Valor</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {transacoes.map((t, i) => (
+                  <tr key={`${t.invoice_code}-${t.branch_code}-${i}`} className="hover:bg-gray-50">
+                    <td className="px-4 py-2 text-gray-600">{t.issue_date}</td>
+                    <td className="px-4 py-2 font-medium text-gray-800">
+                      {t.person_name}
+                      {t.cpf && <div className="text-[10px] text-gray-400">{t.cpf}</div>}
+                    </td>
+                    <td className="px-4 py-2 text-gray-500 font-mono text-xs">
+                      {t.invoice_code}
+                    </td>
+                    <td className="px-4 py-2 text-gray-600 text-xs">{t.branch_code}</td>
+                    <td className="px-4 py-2">
+                      <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
+                        /FATURA/i.test(t.payment_condition_name || '')
+                          ? 'bg-cyan-100 text-cyan-700'
+                          : 'bg-gray-100 text-gray-600'
+                      }`}>
+                        {t.payment_condition_name || '?'}
+                      </span>
+                    </td>
+                    <td className={`px-4 py-2 text-right font-semibold ${
+                      t.operation_type === 'Output' ? 'text-gray-800' : 'text-red-600'
+                    }`}>
+                      {t.operation_type === 'Input' && '−'}R$ {formatBRL(t.total_value)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── Componente: card BlueCard (envios via ClickUp) ─────────────────────────
 const BlueCardCard = React.memo(function BlueCardCard({ count }) {
@@ -2186,6 +2386,7 @@ export default function FaturamentoCanal() {
   const [custoAds, setCustoAds] = useState(null); // { spend (USD) }
   const [erroMeta, setErroMeta] = useState(null); // erros das APIs de custo (WhatsApp/Ads)
   const [bluecredStats, setBluecredStats] = useState(null); // BlueCred (Autentique): { total, por_status }
+  const [bluecredModal, setBluecredModal] = useState(false); // modal transações BlueCred
   const [bluecardCount, setBluecardCount] = useState(null); // BlueCard (ClickUp): número de enviados
   const [modalWppDetail, setModalWppDetail] = useState(false); // modal gasto WhatsApp por número
   const [clientesCanal, setClientesCanal] = useState(null); // { varejo: {ativos, novos}, ... }
@@ -2245,7 +2446,7 @@ export default function FaturamentoCanal() {
   const loadMetaTokenRef = useRef(0);
   // Período selecionado pra exibir/editar metas (default = última semana completa / mês corrente)
   const [selectedWeekKey, setSelectedWeekKey] = useState(() => currentWeekKey());
-  const [selectedMonthKey, setSelectedMonthKey] = useState(() => currentMonthKey());
+  const [selectedMonthKey, setSelectedMonthKey] = useState(() => referenceMonthKey());
 
   const anoAtual = dataInicio
     ? new Date(dataInicio + 'T00:00:00').getFullYear()
@@ -2328,7 +2529,7 @@ export default function FaturamentoCanal() {
     // Stale-while-revalidate: mostra cache local imediatamente, busca fresco em background
     // v9: bumped pra invalidar caches stale que estavam mostrando só 6 canais
     //     (faltava franquia/showroom/bazar/novidades — backend já retorna todos).
-    const cacheKey = `fatseg:v10:${dataInicio}:${dataFim}`;
+    const cacheKey = `fatseg:v11:${dataInicio}:${dataFim}`;
     let hasStale = false;
     try {
       const raw = localStorage.getItem(cacheKey);
@@ -2367,10 +2568,10 @@ export default function FaturamentoCanal() {
         // Limpa entradas antigas — mantém no máximo 8 chaves fatseg:
         // Limpa caches de versões antigas — mantém só v8
         Object.keys(localStorage)
-          .filter((k) => k.startsWith('fatseg:') && !k.startsWith('fatseg:v10:'))
+          .filter((k) => k.startsWith('fatseg:') && !k.startsWith('fatseg:v11:'))
           .forEach((k) => localStorage.removeItem(k));
         const allKeys = Object.keys(localStorage).filter((k) =>
-          k.startsWith('fatseg:v10:'),
+          k.startsWith('fatseg:v11:'),
         );
         if (allKeys.length > 8) {
           allKeys.slice(0, allKeys.length - 8).forEach((k) => localStorage.removeItem(k));
@@ -2971,22 +3172,7 @@ export default function FaturamentoCanal() {
             }
           } catch {}
         }
-        // payments-mode atribui credev ao dealer correto (vendedor real),
-        // diferente do returns-mode que bucketa tudo em GERAL=50. Confirmado
-        // com relatório TOTVS 0326 (Vl. Faturado por vendedor).
-        for (const [k, s] of mergedSeller.entries()) {
-          const cr = credevByDealer[String(s.seller_code)] || 0;
-          s.credev_value = cr;
-          s.invoice_value_gross = s.invoice_value;
-          s.invoice_value = Math.max(0, s.invoice_value - cr);
-        }
-
         let per_seller = [...mergedSeller.values()]
-          .map((s) => ({
-            ...s,
-            tm: s.invoice_qty > 0 ? s.invoice_value / s.invoice_qty : 0,
-            pa: s.invoice_qty > 0 ? s.itens_qty / s.invoice_qty : 0,
-          }))
           .sort((a, b) => b.invoice_value - a.invoice_value);
         // ── Fallback: se TOTVS retornou per_seller/per_branch vazio (timeout/erro),
         // usa o fallback Supabase que já foi disparado em paralelo no início.
@@ -3000,21 +3186,13 @@ export default function FaturamentoCanal() {
             if (isVarejo) {
               const fbBranches = fb?.per_branch || [];
               if (fbBranches.length > 0) {
-                per_branch_final = fbBranches.map((b) => ({
-                  ...b,
-                  tm: b.invoice_qty > 0 ? b.invoice_value / b.invoice_qty : 0,
-                  pa: 0,
-                }));
+                per_branch_final = fbBranches.map((b) => ({ ...b }));
                 console.log(`[canal-breakdown] varejo: fallback notas_fiscais (${fbBranches.length} lojas)`);
               }
             } else {
               const fbList = fb?.per_seller || [];
               if (fbList.length > 0) {
-                per_seller = fbList.map((s) => ({
-                  ...s,
-                  tm: s.invoice_qty > 0 ? s.invoice_value / s.invoice_qty : 0,
-                  pa: 0,
-                }));
+                per_seller = fbList.map((s) => ({ ...s }));
                 console.log(`[canal-breakdown] ${canal}: fallback notas_fiscais (${fbList.length} vendedores)`);
               }
             }
@@ -3022,6 +3200,32 @@ export default function FaturamentoCanal() {
             console.warn(`[canal-breakdown] ${canal}: fallback falhou: ${e.message}`);
           }
         }
+        // ── Subtrai credev por vendedor (aplica DEPOIS do fallback pra
+        // valer tanto pro caminho TOTVS quanto pro caminho Supabase, já que
+        // /canal-per-seller-fallback também retorna BRUTO — antes o ajuste
+        // rodava antes e era perdido quando caía no fallback). payments-mode
+        // atribui credev ao dealer correto (vendedor real), diferente do
+        // returns-mode que bucketa tudo em GERAL=50. Confirmado com relatório
+        // TOTVS 0326 (Vl. Faturado por vendedor).
+        per_seller = per_seller.map((s) => {
+          const cr = credevByDealer[String(s.seller_code)] || 0;
+          const gross = Number(s.invoice_value || 0);
+          const liquido = Math.max(0, gross - cr);
+          return {
+            ...s,
+            credev_value: cr,
+            invoice_value_gross: gross,
+            invoice_value: liquido,
+            tm: s.invoice_qty > 0 ? liquido / s.invoice_qty : 0,
+            pa: s.invoice_qty > 0 ? (s.itens_qty || 0) / s.invoice_qty : 0,
+          };
+        }).sort((a, b) => b.invoice_value - a.invoice_value);
+        // per_branch: recalcula tm/pa após fallback
+        per_branch_final = per_branch_final.map((b) => ({
+          ...b,
+          tm: b.invoice_qty > 0 ? b.invoice_value / b.invoice_qty : 0,
+          pa: b.invoice_qty > 0 ? (b.itens_qty || 0) / b.invoice_qty : 0,
+        }));
         setBreakdownCache((s) => {
           const next = { ...s, [cacheKey]: { loading: false, per_branch: per_branch_final, per_seller } };
           // Se ficou vazio mesmo após fallback, NÃO cache — permite retry no próximo click
@@ -3123,7 +3327,7 @@ export default function FaturamentoCanal() {
     // antigos INSTANTANEAMENTE enquanto busca fresco em background.
     //   - TTL stale: 24h pra datas passadas, 1h pra mês corrente
     //   - Mostra indicador "atualizando..." quando exibe stale
-    const cacheKey = `canais-totals-all:v3-rev:${dataInicio}:${dataFim}`;
+    const cacheKey = `canais-totals-all:v4-norecife:${dataInicio}:${dataFim}`;
     const todayIso = toLocalIso(new Date());
     const isRealtime = dataFim >= todayIso;
     const staleTtlMs = isRealtime ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
@@ -3170,7 +3374,7 @@ export default function FaturamentoCanal() {
         );
         // Limpeza: mantém máx 6 entradas
         const keys = Object.keys(localStorage).filter((k) =>
-          k.startsWith('canais-totals-all:v3-rev:'),
+          k.startsWith('canais-totals-all:v4-norecife:'),
         );
         if (keys.length > 6) {
           keys.slice(0, keys.length - 6).forEach((k) => localStorage.removeItem(k));
@@ -3827,43 +4031,60 @@ export default function FaturamentoCanal() {
 
                   {/* Coluna 3: ROI Marketing + Clientes empilhados (metade da altura cada) */}
                   <div className="flex flex-col gap-3">
-                  {/* Card: ROI / ROAS (Marketing) — clicável → abre modal */}
+                  {/* Card: ROAS separado por função — Ads=aquisição, Wpp=recompra */}
                   {(custoWpp || custoAds) && resultado && (() => {
                     const wppBRL = Number(custoWpp?.costBRL ?? ((custoWpp?.cost ?? 0) * 5.8)) || 0;
                     const adsBRL = Number(custoAds?.spend || 0);
-                    const totMkt = wppBRL + adsBRL;
-                    // ROAS = receita atribuída ao marketing / gasto. Usar
-                    // resultado.total_liquido (R$ 919k inclui loja física,
-                    // franquia, etc.) inflava o ROAS pra ~115x. O modal por
-                    // canal usa "receita de clientes NOVOS" como métrica de
-                    // aquisição — replicamos aqui pra consistência.
+                    // Meta Ads = aquisição de novos clientes.
+                    // WhatsApp API = retenção/recompra de clientes existentes.
                     const CANAIS_MKT = ['varejo', 'revenda', 'multimarcas', 'inbound_david', 'inbound_rafael'];
                     const receitaNovos = CANAIS_MKT.reduce(
-                      (s, c) => s + Number(clientesCanal?.[c]?.receita_novos || 0),
-                      0,
+                      (s, c) => s + Number(clientesCanal?.[c]?.receita_novos || 0), 0,
                     );
-                    const roas = totMkt > 0 ? receitaNovos / totMkt : 0;
+                    const receitaRecompra = CANAIS_MKT.reduce(
+                      (s, c) => s + Number(clientesCanal?.[c]?.receita_recompra || 0), 0,
+                    );
+                    const roasAds = adsBRL > 0 ? receitaNovos / adsBRL : 0;
+                    const roasWpp = wppBRL > 0 ? receitaRecompra / wppBRL : 0;
                     return (
                       <div
                         role="button"
                         tabIndex={0}
                         onClick={() => setModalROI(true)}
                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setModalROI(true); } }}
-                        className="bg-cyan-500/10 hover:bg-cyan-500/20 backdrop-blur-sm border border-cyan-400/30 hover:border-cyan-400/50 rounded-lg px-3 py-2 min-w-0 cursor-pointer transition-colors group flex-1 flex flex-col justify-center"
-                        title="ROAS = receita de clientes NOVOS (canais com marketing digital) ÷ gasto Meta + WhatsApp. Clique para ver por canal."
+                        className="bg-cyan-500/10 hover:bg-cyan-500/20 backdrop-blur-sm border border-cyan-400/30 hover:border-cyan-400/50 rounded-lg px-3 py-2 min-w-0 cursor-pointer transition-colors group flex-1 flex flex-col justify-center gap-1"
+                        title="Ads (aquisição): receita de novos ÷ gasto Meta. Wpp (recompra): receita de recorrentes ÷ gasto WhatsApp."
                       >
                         <p className="text-[10px] text-cyan-200/80 uppercase tracking-wider font-medium flex items-center justify-between gap-2">
-                          <span>ROAS Marketing (Novos)</span>
+                          <span>ROAS Marketing</span>
                           <span className="text-[9px] text-cyan-300/60 group-hover:text-cyan-200 normal-case tracking-normal font-normal">
                             ver por canal →
                           </span>
                         </p>
-                        <p className="text-base font-bold text-cyan-200 mt-1 tabular-nums leading-tight">
-                          {roas.toFixed(2)}x
-                        </p>
-                        <p className="text-[10px] text-cyan-300/80 mt-0.5">
-                          R$ {formatBRL(receitaNovos)} / invest. R$ {formatBRL(totMkt)}
-                        </p>
+                        <div className="grid grid-cols-2 gap-2 mt-0.5">
+                          <div>
+                            <p className="text-[9px] text-purple-300/80 uppercase tracking-wider font-medium">
+                              Ads · Aquisição
+                            </p>
+                            <p className="text-sm font-bold text-purple-200 tabular-nums leading-tight">
+                              {adsBRL > 0 ? `${roasAds.toFixed(2)}x` : '—'}
+                            </p>
+                            <p className="text-[9px] text-purple-300/60">
+                              R$ {formatBRL(receitaNovos)} / R$ {formatBRL(adsBRL)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-[9px] text-emerald-300/80 uppercase tracking-wider font-medium">
+                              Wpp · Recompra
+                            </p>
+                            <p className="text-sm font-bold text-emerald-200 tabular-nums leading-tight">
+                              {wppBRL > 0 ? `${roasWpp.toFixed(2)}x` : '—'}
+                            </p>
+                            <p className="text-[9px] text-emerald-300/60">
+                              R$ {formatBRL(receitaRecompra)} / R$ {formatBRL(wppBRL)}
+                            </p>
+                          </div>
+                        </div>
                       </div>
                     );
                   })()}
@@ -3978,7 +4199,7 @@ export default function FaturamentoCanal() {
                   {/* Card BlueCard — cartões enviados via ClickUp no período */}
                   <BlueCardCard count={bluecardCount} />
                   {/* Card BlueCred — créditos enviados via Autentique no período */}
-                  <BlueCredCard stats={bluecredStats} />
+                  <BlueCredCard stats={bluecredStats} onClick={() => setBluecredModal(true)} />
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -4710,15 +4931,19 @@ export default function FaturamentoCanal() {
                         >
                           Mês passado
                         </button>
-                        {(selectedWeekKey !== currentWeekKey() || selectedMonthKey !== currentMonthKey()) && (
+                        {(selectedWeekKey !== currentWeekKey() || selectedMonthKey !== referenceMonthKey()) && (
                           <button
                             onClick={() => {
                               setSelectedWeekKey(currentWeekKey());
-                              setSelectedMonthKey(currentMonthKey());
-                              // Reseta o range geral (top card) pra mês corrente
-                              const h = new Date();
-                              setDataInicio(toLocalIso(new Date(h.getFullYear(), h.getMonth(), 1)));
-                              setDataFim(toLocalIso(h));
+                              setSelectedMonthKey(referenceMonthKey());
+                              // Reseta o range geral pro mês de referência
+                              const [y, m] = referenceMonthKey().split('-').map(Number);
+                              const inicio = new Date(y, m - 1, 1);
+                              const fim = m - 1 === new Date().getMonth() && y === new Date().getFullYear()
+                                ? new Date()
+                                : new Date(y, m, 0);
+                              setDataInicio(toLocalIso(inicio));
+                              setDataFim(toLocalIso(fim));
                             }}
                             className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50 text-gray-600"
                             title="Voltar para o período padrão (última semana completa / mês corrente)"
@@ -5449,13 +5674,32 @@ export default function FaturamentoCanal() {
                 segunda.setDate(segunda.getDate() - 7);
               }
               const iniSemana = toLocalIso(segunda);
-              const iniMes = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}-01`;
+              // "Mês Atual" — se estamos nos primeiros dias do mês (fimOntem
+              // ainda no mês anterior), o range mês corrente ficaria invertido
+              // (ex: 01/07 → 30/06). Nesse caso mostra o MÊS PASSADO INTEIRO
+              // pra Diretoria ter dado útil.
+              const anoM = hoje.getFullYear();
+              const mesM = hoje.getMonth() + 1;
+              let iniMes = `${anoM}-${String(mesM).padStart(2, '0')}-01`;
+              let fimMes = fimOntem;
+              let tituloMes = 'Faturamento Detalhado por Canal — Mês Atual';
+              if (fimOntem < iniMes) {
+                // fimOntem no mês anterior → usa mês anterior inteiro
+                const prev = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);
+                const prevAno = prev.getFullYear();
+                const prevMes = prev.getMonth() + 1;
+                const ultimoDia = new Date(prevAno, prevMes, 0).getDate();
+                iniMes = `${prevAno}-${String(prevMes).padStart(2, '0')}-01`;
+                fimMes = `${prevAno}-${String(prevMes).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
+                const NOMES_MES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+                tituloMes = `Faturamento Detalhado por Canal — ${NOMES_MES[prevMes - 1]}/${prevAno} (mês fechado)`;
+              }
               return (
                 <>
                   <FaturamentoOntemVendedorLoja
-                    titulo="Faturamento Detalhado por Canal — Mês Atual"
+                    titulo={tituloMes}
                     datemin={iniMes}
-                    datemax={fimOntem}
+                    datemax={fimMes}
                     periodo="mes"
                     corHeader="amber"
                     cacheOnly
@@ -5502,6 +5746,14 @@ export default function FaturamentoCanal() {
           custoWpp={custoWpp}
         />
       )}
+
+      {/* Modal: transações BlueCred (clientes classificados) */}
+      <BlueCredTransacoesModal
+        isOpen={bluecredModal}
+        onClose={() => setBluecredModal(false)}
+        datemin={dataInicio}
+        datemax={dataFim}
+      />
 
       {/* Modal: gasto WhatsApp por número/conta */}
       {modalWppDetail && custoWpp && (
@@ -5791,22 +6043,23 @@ export default function FaturamentoCanal() {
         const novosPorCanal = clientesCanal || {};
         const linhas = CANAIS_EXIBIR.map((c) => {
           const receita = Number(receitaPorCanal[c] || 0);
-          // Receita só de clientes novos no período
           const receitaNovos = Number(novosPorCanal[c]?.receita_novos || 0);
+          const receitaRecompra = Number(novosPorCanal[c]?.receita_recompra || 0);
           const wpp = Number(wppByCanal[c]?.costBRL ?? ((wppByCanal[c]?.cost ?? 0) * 5.8)) || 0;
           const ads = Number(adsByCanal[c]?.spend || 0);
-          // ROAS por fonte × público (4 métricas):
-          //   Wpp Novos = receita_novos / custo_wpp
-          //   Wpp Total = receita_total / custo_wpp
-          //   Ads Novos = receita_novos / custo_ads
-          //   Ads Total = receita_total / custo_ads
+          // ROAS por função semântica:
+          //   Ads → aquisição (receita_novos / custo_ads)
+          //   Wpp → recompra (receita_recompra / custo_wpp)
+          // Legado (Total) mantido pra retrocompat em quem ainda usa.
+          const roasAdsNovos = ads > 0 ? receitaNovos / ads : null;
+          const roasWppRecompra = wpp > 0 ? receitaRecompra / wpp : null;
           const roasWppNovos = wpp > 0 ? receitaNovos / wpp : null;
           const roasWppTotal = wpp > 0 ? receita / wpp : null;
-          const roasAdsNovos = ads > 0 ? receitaNovos / ads : null;
           const roasAdsTotal = ads > 0 ? receita / ads : null;
           return {
-            canal: c, receita, receitaNovos, wpp, ads,
-            roasWppNovos, roasWppTotal, roasAdsNovos, roasAdsTotal,
+            canal: c, receita, receitaNovos, receitaRecompra, wpp, ads,
+            roasAdsNovos, roasWppRecompra,
+            roasWppNovos, roasWppTotal, roasAdsTotal,
           };
           // Critério único de ordenação: maior (wpp+ads)/receita combinado.
           // Antes misturava wpp vs ads dependendo de qual existia, gerando
@@ -5817,9 +6070,12 @@ export default function FaturamentoCanal() {
         });
         const totReceita = linhas.reduce((s, l) => s + l.receita, 0);
         const totReceitaNovos = linhas.reduce((s, l) => s + l.receitaNovos, 0);
+        const totReceitaRecompra = linhas.reduce((s, l) => s + l.receitaRecompra, 0);
         const totWpp = linhas.reduce((s, l) => s + l.wpp, 0);
         const totAds = linhas.reduce((s, l) => s + l.ads, 0);
-        // ROAS consolidados
+        // ROAS consolidados — por função semântica
+        const roasAdsAquisicaoGeral = totAds > 0 ? totReceitaNovos / totAds : 0;
+        const roasWppRecompraGeral = totWpp > 0 ? totReceitaRecompra / totWpp : 0;
         const roasWppNovosGeral = totWpp > 0 ? totReceitaNovos / totWpp : 0;
         const roasWppTotalGeral = totWpp > 0 ? totReceita / totWpp : 0;
         const roasAdsNovosGeral = totAds > 0 ? totReceitaNovos / totAds : 0;

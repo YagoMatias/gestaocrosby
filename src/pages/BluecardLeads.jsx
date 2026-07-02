@@ -28,6 +28,7 @@ import {
   LinkSimple,
   Copy,
   Check,
+  Upload,
 } from '@phosphor-icons/react';
 import { API_BASE_URL } from '../config/constants';
 
@@ -72,6 +73,7 @@ export default function BluecardLeads() {
   const [filtros, setFiltros] = useState({ status: '', busca: '' });
   const [editLead, setEditLead] = useState(null);
   const [gerarLinkAberto, setGerarLinkAberto] = useState(false);
+  const [importarAberto, setImportarAberto] = useState(false);
   // Multi-select: Set<leadId>
   const [selecionados, setSelecionados] = useState(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -365,6 +367,14 @@ export default function BluecardLeads() {
             </span>
           )}
           <button
+            onClick={() => setImportarAberto(true)}
+            className="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-sm transition-colors"
+            title="Importar lista (CSV/planilha)"
+          >
+            <Upload size={14} weight="bold" />
+            <span className="hidden sm:inline">Importar</span>
+          </button>
+          <button
             onClick={() => setGerarLinkAberto(true)}
             className="inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-sm transition-colors"
             title="Gerar link de indicação"
@@ -448,6 +458,12 @@ export default function BluecardLeads() {
       {/* Modal: gerador de link de indicação */}
       {gerarLinkAberto && (
         <GerarLinkIndicacaoModal onClose={() => setGerarLinkAberto(false)} />
+      )}
+      {importarAberto && (
+        <ImportarLeadsModal
+          onClose={() => setImportarAberto(false)}
+          onImportado={() => { setImportarAberto(false); carregar(); }}
+        />
       )}
 
       {/* Modal de detalhes */}
@@ -1296,6 +1312,184 @@ function InfoCard({ icon: Icon, label, value, color = 'blue', mono = false, link
     );
   }
   return <div className={className}>{content}</div>;
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// Modal: importa lista de contatos (CSV/paste) com status "1ª Mensagem"
+// ────────────────────────────────────────────────────────────────────────
+function ImportarLeadsModal({ onClose, onImportado }) {
+  const [texto, setTexto] = useState('');
+  const [preview, setPreview] = useState([]);
+  const [enviando, setEnviando] = useState(false);
+  const [resultado, setResultado] = useState(null);
+
+  // Parser simples: aceita CSV ou colado do Excel (separador vírgula ou tab).
+  // Cabeçalho obrigatório na 1ª linha: nome,whatsapp[,email,cpf,empresa,instagram,data_nasc,cep,endereco,numero,complemento,indicado_por]
+  const parseTexto = (raw) => {
+    const linhas = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (linhas.length === 0) return [];
+    // Detecta separador: se a 1ª linha tem tab, usa tab; senão vírgula ou ponto-e-vírgula.
+    const primeira = linhas[0];
+    const sep = primeira.includes('\t') ? '\t' : primeira.includes(';') ? ';' : ',';
+    const header = primeira.split(sep).map((h) => h.trim().toLowerCase());
+    const rows = [];
+    for (let i = 1; i < linhas.length; i++) {
+      const cols = linhas[i].split(sep).map((c) => c.trim());
+      const obj = {};
+      header.forEach((h, idx) => {
+        obj[h] = cols[idx] || '';
+      });
+      rows.push(obj);
+    }
+    return rows;
+  };
+
+  React.useEffect(() => {
+    if (!texto.trim()) { setPreview([]); return; }
+    try {
+      const rows = parseTexto(texto);
+      setPreview(rows);
+    } catch {
+      setPreview([]);
+    }
+  }, [texto]);
+
+  const importar = async () => {
+    if (preview.length === 0) return;
+    setEnviando(true);
+    setResultado(null);
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/bluecard/leads/importar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows: preview, status: '1_msg_enviada' }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setResultado(j);
+    } catch (e) {
+      setResultado({ error: e.message });
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full max-h-[85vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-emerald-50 to-teal-50 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Upload size={18} weight="duotone" className="text-emerald-600" />
+            <h2 className="font-bold text-gray-800">Importar Lista de Leads</h2>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-lg hover:bg-white/60 flex items-center justify-center text-gray-500">✕</button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-auto px-6 py-4">
+          {!resultado && (
+            <>
+              <p className="text-xs text-gray-600 mb-3">
+                Cole abaixo a lista (formato CSV, TSV ou copiado do Excel). A 1ª linha
+                deve ter os cabeçalhos: <code className="bg-gray-100 px-1 rounded">nome,whatsapp,email,cpf,empresa,instagram</code>.
+                Todos serão criados no status <b>1ª Mensagem Enviada</b>.
+              </p>
+              <textarea
+                value={texto}
+                onChange={(e) => setTexto(e.target.value)}
+                placeholder={`nome,whatsapp,email\nJoão Silva,83999999999,joao@ex.com\nMaria Souza,84988888888,maria@ex.com`}
+                className="w-full h-40 border border-gray-300 rounded-lg p-3 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-emerald-400"
+              />
+              {preview.length > 0 && (
+                <div className="mt-3">
+                  <p className="text-xs font-semibold text-gray-700 mb-2">
+                    Preview: {preview.length} linhas detectadas
+                  </p>
+                  <div className="max-h-40 overflow-auto border border-gray-200 rounded-lg text-xs">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          {Object.keys(preview[0]).map((h) => (
+                            <th key={h} className="px-2 py-1.5 text-left text-[10px] uppercase tracking-wider text-gray-500">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {preview.slice(0, 10).map((r, i) => (
+                          <tr key={i} className="border-t border-gray-100">
+                            {Object.keys(preview[0]).map((h) => (
+                              <td key={h} className="px-2 py-1 text-gray-600">{r[h] || '—'}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {preview.length > 10 && (
+                    <p className="text-[10px] text-gray-400 mt-1">…e mais {preview.length - 10} linhas</p>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+          {resultado && !resultado.error && (
+            <div className="space-y-2 text-sm">
+              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-800">
+                <div className="font-bold">✓ Importação concluída</div>
+                <ul className="text-xs mt-2 space-y-1">
+                  <li>Recebidos: {resultado.recebidos}</li>
+                  <li>Inseridos: <b>{resultado.inseridos}</b></li>
+                  <li>Ignorados (duplicados): {resultado.ignorados_duplicados}</li>
+                  <li>Status aplicado: {resultado.status_aplicado}</li>
+                </ul>
+              </div>
+              {resultado.erros?.length > 0 && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs">
+                  <div className="font-bold">Avisos ({resultado.erros.length})</div>
+                  <ul className="mt-1 space-y-0.5 max-h-32 overflow-auto">
+                    {resultado.erros.slice(0, 20).map((e, i) => (
+                      <li key={i}>Linha {e.linha}: {e.motivo}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+          {resultado?.error && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-800 text-sm">
+              Erro: {resultado.error}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-3 border-t border-gray-200 bg-gray-50 flex items-center justify-end gap-2">
+          {resultado ? (
+            <button
+              onClick={onImportado}
+              className="text-xs px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+            >
+              Fechar e atualizar
+            </button>
+          ) : (
+            <>
+              <button onClick={onClose} className="text-xs px-4 py-2 rounded-lg border border-gray-300 hover:bg-gray-100 text-gray-600">
+                Cancelar
+              </button>
+              <button
+                onClick={importar}
+                disabled={preview.length === 0 || enviando}
+                className="text-xs px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold disabled:opacity-50"
+              >
+                {enviando ? 'Importando…' : `Importar ${preview.length} lead${preview.length !== 1 ? 's' : ''}`}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ────────────────────────────────────────────────────────────────────────

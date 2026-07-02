@@ -20,6 +20,7 @@ import {
   LoadingValue,
   formatBRL,
 } from './MetricasDiariasUI';
+import useDownloadAsImage from '../../hooks/useDownloadAsImage';
 
 const CANAL_CFG = {
   varejo:         { label: 'Varejo',             icon: Storefront, text: 'text-blue-600',    bg: 'bg-blue-50',    bar: 'bg-blue-500' },
@@ -41,21 +42,38 @@ const fmtDataBr = (iso) => {
   return `${d}/${m}/${y}`;
 };
 
+// "Ontem útil" — D-1, pulando domingo (bate com default do backend).
+const ontemUtilIso = () => {
+  const hoje = new Date();
+  const d = new Date(hoje);
+  d.setDate(d.getDate() - 1);
+  while (d.getDay() === 0) d.setDate(d.getDate() - 1);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+};
+
 export default function FaturamentoOntemCanal() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
+  const [dataEscolhida, setDataEscolhida] = useState(ontemUtilIso);
   // Token anti-race: protege contra StrictMode remount e cliques rápidos.
   const reqIdRef = useRef(0);
+  const { ref: downloadRef, baixar: baixarImagem } = useDownloadAsImage(
+    () => `faturamento-ontem-canal-${dataEscolhida}`,
+  );
 
   const carregar = useCallback(async () => {
     const myId = ++reqIdRef.current;
     setLoading(true);
     setErro('');
     try {
-      // Usa o endpoint dedicado /ontem-canal que puxa DIRETO do TOTVS
-      // (sale-panel, sem Supabase). Sem cache: dado sempre fresh.
-      const r = await fetch(`${API_BASE_URL}/api/forecast/ontem-canal`);
+      // /ontem-canal aceita ?data= pra escolher um dia específico. Fonte:
+      // Supabase notas_fiscais via fat-seg (rápido, ~5s).
+      const qs = dataEscolhida ? `?data=${dataEscolhida}` : '';
+      const r = await fetch(`${API_BASE_URL}/api/forecast/ontem-canal${qs}`);
       const j = await r.json().catch(() => ({}));
       if (myId !== reqIdRef.current) return;
       if (!r.ok || !j?.success) throw new Error(j?.message || `HTTP ${r.status}`);
@@ -66,7 +84,7 @@ export default function FaturamentoOntemCanal() {
     } finally {
       if (myId === reqIdRef.current) setLoading(false);
     }
-  }, []);
+  }, [dataEscolhida]);
 
   useEffect(() => { carregar(); }, [carregar]);
 
@@ -86,7 +104,10 @@ export default function FaturamentoOntemCanal() {
   const diaRef = data?.dia_anterior;
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    <div
+      ref={downloadRef}
+      className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden"
+    >
       <MetricaHeader
         title="Faturamento de Ontem por Canal"
         subtitle={diaRef ? `Dia ${fmtDataBr(diaRef)} · líquido por canal` : 'Faturamento do dia anterior'}
@@ -94,7 +115,29 @@ export default function FaturamentoOntemCanal() {
         color="emerald"
         onRefresh={carregar}
         loading={loading}
+        onDownload={baixarImagem}
       />
+
+      {/* Seletor de data */}
+      <div className="px-5 py-2 bg-gray-50 border-b border-gray-200 flex items-center gap-2 flex-wrap">
+        <span className="text-[11px] uppercase tracking-wider font-bold text-gray-500">
+          Dia:
+        </span>
+        <input
+          type="date"
+          value={dataEscolhida}
+          max={new Date().toISOString().slice(0, 10)}
+          onChange={(e) => setDataEscolhida(e.target.value)}
+          className="text-xs border border-gray-300 rounded px-2 py-1 bg-white hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+        />
+        <button
+          onClick={() => setDataEscolhida(ontemUtilIso())}
+          disabled={dataEscolhida === ontemUtilIso()}
+          className="text-[11px] px-2 py-1 rounded border border-emerald-300 bg-emerald-50 text-emerald-700 font-semibold hover:bg-emerald-100 disabled:opacity-40 disabled:cursor-not-allowed transition"
+        >
+          Ontem
+        </button>
+      </div>
 
       {/* Total do dia */}
       <div className="px-5 py-3 bg-gradient-to-b from-gray-50 to-white border-b border-gray-200 flex items-center justify-between">
