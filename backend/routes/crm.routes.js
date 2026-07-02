@@ -2964,11 +2964,11 @@ router.post(
       console.warn(`[canais-all override varejo] ${e.message}`);
     }
 
-    // ─── Override Revenda: alinha com TOTVS 0326 (Vl. Faturado por vendedor)
-    // Bruto = notas_fiscais dos sellers B2R em ops [7236,9122,...,7279] filiais
-    // [2,5,75,99,200]. Líquido = bruto − credev payments (Cleiton, Michel, Yago).
-    // Junho/2026 Cleiton: bruto 681,94 + frete 30 = 711,94 = TOTVS. Michel
-    // 394,92 − credev 71,67 = 323,25 = TOTVS. Total bate exato.
+    // ─── Override Revenda: 100% Supabase, faturamento líquido puro
+    // Bruto = NFs Output (venda). Credev = NFs Input (devolução) NO PERÍODO.
+    // Não subtrai vale-troca aplicada como pagamento (essa é a definição do
+    // TOTVS 0326 e cria divergência com Promessa Vendedores, que usa Supabase).
+    // Alinhado com buildVendedoresLiquido (forecast) — os dois cards batem.
     try {
       const sbf = createClient(process.env.SUPABASE_FISCAL_URL, process.env.SUPABASE_FISCAL_KEY);
       const REV_OPS = [7236, 9122, 5102, 7242, 9061, 9001, 9121, 512, 7279];
@@ -2981,34 +2981,20 @@ router.post(
         .in('operation_code', REV_OPS)
         .in('branch_code', REV_BRANCHS)
         .in('dealer_code', REV_SELLERS);
-      let bruto = 0;
+      let bruto = 0, credev = 0;
       for (const n of nfs || []) {
         if (n.invoice_status === 'Canceled' || n.invoice_status === 'Deleted') continue;
-        const s = n.operation_type === 'Output' ? 1 : -1;
-        bruto += s * Number(n.total_value || 0);
-      }
-      // Credev payments — usa endpoint interno /credev-por-vendedor
-      const internalBase = `http://localhost:${process.env.PORT || 4100}`;
-      let credev = 0;
-      try {
-        const cr = await axios.post(
-          `${internalBase}/api/crm/credev-por-vendedor`,
-          { datemin, datemax, modulo: 'revenda', tipo: 'payments' },
-          { timeout: 60000 },
-        );
-        const credevMap = (cr.data?.data || cr.data)?.credev || {};
-        for (const [code, val] of Object.entries(credevMap)) {
-          if (REV_SELLERS.includes(Number(code))) credev += Number(val || 0);
-        }
-      } catch (e) {
-        console.warn(`[canais-all] credev-por-vendedor revenda falhou: ${e.message}`);
+        const val = Number(n.total_value || 0);
+        if (n.operation_type === 'Input') credev += val;
+        else bruto += val;
       }
       const liquido = Math.max(0, bruto - credev);
       if (bruto > 0) {
         const old = segmentos.revenda || 0;
         total += liquido - old;
         segmentos.revenda = Math.round(liquido * 100) / 100;
-        console.log(`[canais-all] override revenda: cache=R$${old.toFixed(2)} → bruto=R$${bruto.toFixed(2)} − credev=R$${credev.toFixed(2)} = R$${liquido.toFixed(2)}`);
+        credevPorCanal.revenda = Math.round(credev * 100) / 100;
+        console.log(`[canais-all] override revenda: cache=R$${old.toFixed(2)} → bruto=R$${bruto.toFixed(2)} − devolucao=R$${credev.toFixed(2)} = R$${liquido.toFixed(2)}`);
       }
     } catch (e) {
       console.warn(`[canais-all override revenda] ${e.message}`);
