@@ -1392,13 +1392,13 @@ function ImportarLeadsModal({ onClose, onImportado }) {
             <>
               <p className="text-xs text-gray-600 mb-3">
                 Cole abaixo a lista (formato CSV, TSV ou copiado do Excel). A 1ª linha
-                deve ter os cabeçalhos: <code className="bg-gray-100 px-1 rounded">nome,whatsapp,email,cpf,empresa,instagram</code>.
+                deve ter os cabeçalhos: <code className="bg-gray-100 px-1 rounded">nome,whatsapp,cidade,email,cpf,empresa,instagram</code>.
                 Todos serão criados no status <b>1ª Mensagem Enviada</b>.
               </p>
               <textarea
                 value={texto}
                 onChange={(e) => setTexto(e.target.value)}
-                placeholder={`nome,whatsapp,email\nJoão Silva,83999999999,joao@ex.com\nMaria Souza,84988888888,maria@ex.com`}
+                placeholder={`nome,whatsapp,cidade,email\nJoão Silva,83999999999,João Pessoa,joao@ex.com\nMaria Souza,84988888888,Natal,maria@ex.com`}
                 className="w-full h-40 border border-gray-300 rounded-lg p-3 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-emerald-400"
               />
               {preview.length > 0 && (
