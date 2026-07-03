@@ -996,6 +996,7 @@ async function perSellerViaTransacoes(dmin, dmax, modulo) {
       .select('branch_code, operation_code, operation_type, invoice_status, total_value, items, person_code')
       .gte('issue_date', dmin)
       .lte('issue_date', dmax)
+      .order('invoice_code', { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) {
       console.warn(`[perSellerViaTransacoes] supabaseFiscal: ${error.message}`);
@@ -1063,6 +1064,7 @@ async function totalsPorCanalViaTransacoes(dmin, dmax) {
       .select('branch_code, operation_code, operation_type, invoice_status, total_value, items, person_code')
       .gte('issue_date', dmin)
       .lte('issue_date', dmax)
+      .order('invoice_code', { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) {
       console.warn(`[totalsPorCanalViaTransacoes] erro: ${error.message}`);
@@ -1439,6 +1441,7 @@ router.get(
               .gte('issue_date', dmin).lte('issue_date', dmax)
               .in('branch_code', cfg.branchs)
               .in('operation_code', cfg.ops)
+              .order('invoice_code', { ascending: true })
               .range(from, from + 999);
             if (cfg.sellers) q = q.in('dealer_code', cfg.sellers);
             if (cfg.excludeSellers) {
@@ -1517,6 +1520,7 @@ router.get(
                 .gte('issue_date', dmin).lte('issue_date', dmax)
                 .in('branch_code', branchCodes)
                 .in('operation_code', [545, 546, 548, 510, 511, 521, 522, 9001, 9009, 9017, 9027, 1, 5919])
+                .order('invoice_code', { ascending: true })
                 .range(from, from + 999);
               if (error || !data?.length) break;
               allRows.push(...data);
@@ -1570,16 +1574,20 @@ router.get(
           console.warn(`[ovl cache-only] per_seller falhou: ${e.message}`);
         }
         // ── Snapshot mensal (forecast_canal_snapshot) — override final ──
-        // Quando range é mês INTEIRO e existe snapshot pra aquele canal+mês,
-        // usa o valor oficial. Mantém consistência entre Métricas Diretoria,
-        // Por Canal e Métricas por Canal.
+        // Quando range é mês INTEIRO E o mês já FECHOU (< mês corrente),
+        // usa o valor oficial cadastrado. NUNCA sobrescreve mês corrente —
+        // snapshot pode ter valor de plano/preview e ignoraria o real do dia.
         try {
           const [yMin, mMin, dMin_] = dmin.split('-');
           const [yMax, mMax, dMax_] = dmax.split('-');
           const sameYM = yMin === yMax && mMin === mMax;
           const lastDay = new Date(Number(yMin), Number(mMin), 0).getDate();
           const isMonthRange = sameYM && dMin_ === '01' && Number(dMax_) === lastDay;
-          if (isMonthRange) {
+          const nowUtc = new Date();
+          const mesCorrente = nowUtc.getUTCFullYear() * 100 + (nowUtc.getUTCMonth() + 1);
+          const mesConsultado = Number(yMin) * 100 + Number(mMin);
+          const isMonthClosed = mesConsultado < mesCorrente;
+          if (isMonthRange && isMonthClosed) {
             const period_key = `${yMin}-${mMin}`;
             const { data: snaps } = await supabase
               .from('forecast_canal_snapshot')
@@ -2586,10 +2594,10 @@ router.get(
     try {
       const grupoB2R = VEND_MENSAL_GROUPS.find((g) => g.code === 'B2R');
       const grupoB2M = VEND_MENSAL_GROUPS.find((g) => g.code === 'B2M');
-      // Override SEMPRE até HOJE (não importa o flag until_today) — garante
-      // que o número bate com o "Faturado por Vendedor" do TOTVS ao vivo.
-      // Se o domingo da semana ainda não chegou, pega até hoje; senão até dom.
-      const overrideMax = hojeIso < data_fim ? hojeIso : data_fim;
+      // Override usa a MESMA janela do fatSemana (refIso quando until_today=false).
+      // Antes ia sempre até hojeIso, misturando janelas: revenda/multimarcas até
+      // hoje, varejo/franquia/inbound até ontem — total incoerente.
+      const overrideMax = refIso < data_fim ? refIso : data_fim;
       const overrides = [];
       if (grupoB2R) overrides.push(aplicarOverride(grupoB2R, 'revenda', datemin, overrideMax, fatSemana));
       if (grupoB2M) overrides.push(aplicarOverride(grupoB2M, 'multimarcas', datemin, overrideMax, fatSemana));
@@ -2840,6 +2848,7 @@ router.get(
           .from('notas_fiscais')
           .select('branch_code, operation_code, operation_type, invoice_status, total_value, items, person_code')
           .gte('issue_date', dmin).lte('issue_date', dmax)
+          .order('invoice_code', { ascending: true })
           .range(from, from + PAGE - 1);
         if (error) throw new Error(`Supabase: ${error.message}`);
         if (!data?.length) break;
@@ -3391,6 +3400,7 @@ async function buildVendedoresLiquido(g, datemin, datemax) {
         .gte('issue_date', dmin).lte('issue_date', dmax)
         .in('branch_code', g.branchs)
         .in('operation_code', g.operations)
+        .order('invoice_code', { ascending: true })
         .range(from, from + PAGE - 1);
       if (g.sellers?.length) q = q.in('dealer_code', g.sellers);
       const { data, error } = await q;
@@ -3820,6 +3830,7 @@ async function getSegSupabaseRange(dmin, dmax) {
         .from('notas_fiscais')
         .select('branch_code, operation_code, operation_type, invoice_status, total_value, items, person_code')
         .gte('issue_date', dmin).lte('issue_date', dmax)
+        .order('invoice_code', { ascending: true })
         .range(from, from + PAGE - 1);
       if (error) throw new Error(`Supabase: ${error.message}`);
       if (!data?.length) break;
@@ -4167,7 +4178,9 @@ router.get(
       } else {
         fat2025Real = Number((segAtualReal || {})[c.key] || 0);
       }
-      const diferenca = fat2024Acum - fat2025Real;
+      // Sinal: positivo = ano ATUAL ganhou (mais faturamento que ano anterior).
+      // Consistente com comparativo_pct (positivo = crescimento).
+      const diferenca = fat2025Real - fat2024Acum;
       const comparativo =
         fat2024Acum > 0
           ? (fat2025Real / fat2024Acum - 1) * 100
@@ -4201,7 +4214,7 @@ router.get(
       },
     );
     total.diferenca = Number(
-      (total.fat_ano_anterior_acumulado - total.fat_ano_atual_real).toFixed(2),
+      (total.fat_ano_atual_real - total.fat_ano_anterior_acumulado).toFixed(2),
     );
     total.comparativo_pct =
       total.fat_ano_anterior_acumulado > 0
@@ -4346,10 +4359,10 @@ router.get(
     try {
       const grupoB2R = VEND_MENSAL_GROUPS.find((g) => g.code === 'B2R');
       const grupoB2M = VEND_MENSAL_GROUPS.find((g) => g.code === 'B2M');
-      // Override SEMPRE até HOJE (não importa o flag until_today) — garante
-      // que bate com o "Faturado por Vendedor" ao vivo.
-      const hojeIsoMes = hoje.toISOString().slice(0, 10);
-      const overrideMaxMes = hojeIsoMes < data_fim ? hojeIsoMes : data_fim;
+      // Override usa a MESMA janela do fatMes (refIso quando until_today=false).
+      // Antes ia sempre até hojeIso, misturando janelas: revenda/multimarcas
+      // até hoje, varejo/franquia/inbound até ontem — total incoerente.
+      const overrideMaxMes = refIso < data_fim ? refIso : data_fim;
       const overrides = [];
       if (grupoB2R && fatMes) overrides.push(aplicarOverrideMes(grupoB2R, 'revenda', data_inicio, overrideMaxMes, fatMes));
       if (grupoB2M && fatMes) overrides.push(aplicarOverrideMes(grupoB2M, 'multimarcas', data_inicio, overrideMaxMes, fatMes));
@@ -4362,11 +4375,16 @@ router.get(
       console.warn('[promessa-mensal] override revenda/multimarcas falhou:', err.message);
     }
 
-    // ─── Snapshot oficial: vence tudo ──────────────────────────────────────
+    // ─── Snapshot oficial: vence tudo — SÓ pra mês FECHADO ─────────────────
     // fatMes já traz snapshot aplicado pelo fat-seg (linha ~15010), mas o
     // override painel-vend acima SOBRESCREVE. Reaplica snapshot como palavra
     // final pra garantir consistência com Por Canal / Métricas por Canal.
-    if (fatMes) {
+    // GUARD: NUNCA sobrescreve mês corrente — snapshot pode ter plano/preview
+    // e ignoraria o REAL do dia. Só aplica quando mesConsultado < mesCorrente.
+    const nowUtcSnap = new Date();
+    const mesCorrenteSnap = nowUtcSnap.getUTCFullYear() * 100 + (nowUtcSnap.getUTCMonth() + 1);
+    const mesConsultadoSnap = ano * 100 + mes;
+    if (fatMes && mesConsultadoSnap < mesCorrenteSnap) {
       try {
         const { data: snaps } = await supabase
           .from('forecast_canal_snapshot')
@@ -5329,13 +5347,25 @@ router.get(
     if (!dmin || !dmax) return errorResponse(res, 'datemin e datemax obrigatórios', 400);
     const { createClient } = await import('@supabase/supabase-js');
     const sbf = createClient(process.env.SUPABASE_FISCAL_URL, process.env.SUPABASE_FISCAL_KEY);
-    const { data: nfs, error } = await sbf
-      .from('notas_fiscais')
-      .select('invoice_code, branch_code, dealer_code, person_code, total_value, invoice_status, operation_code, issue_date')
-      .gte('issue_date', dmin).lte('issue_date', dmax)
-      .in('operation_code', CREDEV_OPS);
-    if (error) return errorResponse(res, error.message, 500);
-    const validas = (nfs || []).filter(
+    // Paginacao obrigatoria — Supabase corta em 1000. Mes inteiro em varejo
+    // passa facil de 1000 → ajustes de adiantamento nao aparecem, faturamento
+    // continua descontando errado.
+    const PAGE_CRED = 1000;
+    const nfs = [];
+    for (let from = 0; ; from += PAGE_CRED) {
+      const { data, error } = await sbf
+        .from('notas_fiscais')
+        .select('invoice_code, branch_code, dealer_code, person_code, total_value, invoice_status, operation_code, issue_date')
+        .gte('issue_date', dmin).lte('issue_date', dmax)
+        .in('operation_code', CREDEV_OPS)
+        .order('invoice_code', { ascending: true })
+        .range(from, from + PAGE_CRED - 1);
+      if (error) return errorResponse(res, error.message, 500);
+      if (!data?.length) break;
+      nfs.push(...data);
+      if (data.length < PAGE_CRED) break;
+    }
+    const validas = nfs.filter(
       (n) => n.invoice_status !== 'Canceled' && n.invoice_status !== 'Deleted',
     );
     // Marcações existentes (ajustes)

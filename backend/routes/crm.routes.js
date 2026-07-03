@@ -1282,6 +1282,7 @@ router.post(
           .not('invoice_status', 'eq', 'Canceled')
           .not('invoice_status', 'eq', 'Deleted')
           .in('person_code', chunk)
+          .order('invoice_code', { ascending: true })
           .range(offset, offset + PAGE - 1);
         if (error) {
           return errorResponse(res, error.message, 500, 'FISCAL_ERROR');
@@ -2727,6 +2728,7 @@ router.post(
           .from('notas_fiscais')
           .select('dealer_code, branch_code, total_value, invoice_status, operation_type')
           .gte('issue_date', datemin).lte('issue_date', datemax)
+          .order('invoice_code', { ascending: true })
           .range(from, from + 999);
         if (cfg.branchs?.length) q = q.in('branch_code', cfg.branchs);
         if (cfg.operations?.length) q = q.in('operation_code', cfg.operations);
@@ -2974,19 +2976,29 @@ router.post(
       const REV_OPS = [7236, 9122, 5102, 7242, 9061, 9001, 9121, 512, 7279];
       const REV_BRANCHS = [2, 5, 75, 99, 200];
       const REV_SELLERS = [25, 15, 161, 165, 241, 779, 288, 251, 131, 94, 1924, 7044];
-      const { data: nfs } = await sbf
-        .from('notas_fiscais')
-        .select('dealer_code, total_value, invoice_status, operation_type')
-        .gte('issue_date', datemin).lte('issue_date', datemax)
-        .in('operation_code', REV_OPS)
-        .in('branch_code', REV_BRANCHS)
-        .in('dealer_code', REV_SELLERS);
+      // Paginacao obrigatoria — Supabase corta em 1000 rows sem .range().
+      // .order(invoice_code) garante ordem estavel entre paginas.
+      const PAGE_REV = 1000;
       let bruto = 0, credev = 0;
-      for (const n of nfs || []) {
-        if (n.invoice_status === 'Canceled' || n.invoice_status === 'Deleted') continue;
-        const val = Number(n.total_value || 0);
-        if (n.operation_type === 'Input') credev += val;
-        else bruto += val;
+      for (let from = 0; ; from += PAGE_REV) {
+        const { data, error } = await sbf
+          .from('notas_fiscais')
+          .select('dealer_code, total_value, invoice_status, operation_type')
+          .gte('issue_date', datemin).lte('issue_date', datemax)
+          .in('operation_code', REV_OPS)
+          .in('branch_code', REV_BRANCHS)
+          .in('dealer_code', REV_SELLERS)
+          .order('invoice_code', { ascending: true })
+          .range(from, from + PAGE_REV - 1);
+        if (error) { console.warn(`[canais-all revenda] pagina ${from}: ${error.message}`); break; }
+        if (!data?.length) break;
+        for (const n of data) {
+          if (n.invoice_status === 'Canceled' || n.invoice_status === 'Deleted') continue;
+          const val = Number(n.total_value || 0);
+          if (n.operation_type === 'Input') credev += val;
+          else bruto += val;
+        }
+        if (data.length < PAGE_REV) break;
       }
       const liquido = Math.max(0, bruto - credev);
       if (bruto > 0) {
@@ -3013,7 +3025,13 @@ router.post(
       const sameYM = dminParts[0] === dmaxParts[0] && dminParts[1] === dmaxParts[1];
       const lastDay = new Date(Number(dminParts[0]), Number(dminParts[1]), 0).getDate();
       const isMonthRange = sameYM && dminParts[2] === '01' && Number(dmaxParts[2]) === lastDay;
-      if (isMonthRange) {
+      // GUARD: NUNCA aplica snapshot em mês corrente — pode ter valor de plano
+      // e ignoraria o REAL do mês em andamento.
+      const nowUtc = new Date();
+      const mesCorrente = nowUtc.getUTCFullYear() * 100 + (nowUtc.getUTCMonth() + 1);
+      const mesConsultado = Number(dminParts[0]) * 100 + Number(dminParts[1]);
+      const isMonthClosed = mesConsultado < mesCorrente;
+      if (isMonthRange && isMonthClosed) {
         const period_key = `${dminParts[0]}-${dminParts[1]}`;
         const { data: snaps } = await supabase
           .from('forecast_canal_snapshot')
@@ -3169,6 +3187,7 @@ router.post(
             .eq('operation_type', 'Input')
             .in('operation_code', DEVOL_OPS)
             .neq('invoice_status', 'Canceled').neq('invoice_status', 'Deleted')
+            .order('invoice_code', { ascending: true })
             .range(from, from + 999);
           if (error || !data?.length) break;
           totDev += data.reduce((s, r) => s + Number(r.total_value || 0), 0);
@@ -3279,6 +3298,7 @@ router.post(
           .in('operation_code', cfg.ops)
           .neq('invoice_status', 'Canceled')
           .neq('invoice_status', 'Deleted')
+          .order('invoice_code', { ascending: true })
           .range(from, from + PAGE - 1);
         if (cfg.branchs) q = q.in('branch_code', cfg.branchs);
         if (cfg.sellers) q = q.in('dealer_code', cfg.sellers);
@@ -3305,6 +3325,7 @@ router.post(
           .in('operation_code', cfg.devolucaoOps)
           .neq('invoice_status', 'Canceled')
           .neq('invoice_status', 'Deleted')
+          .order('invoice_code', { ascending: true })
           .range(from, from + PAGE - 1);
         if (cfg.branchs) q = q.in('branch_code', cfg.branchs);
         if (cfg.sellers) q = q.in('dealer_code', cfg.sellers);
@@ -3493,6 +3514,7 @@ router.post(
           .in('operation_code', cfg.ops)
           .neq('invoice_status', 'Canceled')
           .neq('invoice_status', 'Deleted')
+          .order('invoice_code', { ascending: true })
           .range(from, from + PAGE - 1);
         if (cfg.branchs?.length) q = q.in('branch_code', cfg.branchs);
         if (cfg.sellers?.length) q = q.in('dealer_code', cfg.sellers);
@@ -3670,6 +3692,7 @@ router.post(
           .in('operation_code', cfg.ops)
           .neq('invoice_status', 'Canceled')
           .neq('invoice_status', 'Deleted')
+          .order('invoice_code', { ascending: true })
           .range(from, from + PAGE - 1);
         if (cfg.branchs?.length) q = q.in('branch_code', cfg.branchs);
         if (cfg.sellers?.length) q = q.in('dealer_code', cfg.sellers);
@@ -3898,6 +3921,7 @@ router.post(
           .in('operation_code', cfg.ops)
           .neq('invoice_status', 'Canceled')
           .neq('invoice_status', 'Deleted')
+          .order('invoice_code', { ascending: true })
           .range(from, from + PAGE - 1);
         if (cfg.branchs?.length) q = q.in('branch_code', cfg.branchs);
         if (cfg.sellers?.length) q = q.in('dealer_code', cfg.sellers);
@@ -4775,6 +4799,7 @@ router.post(
           .not('invoice_status', 'eq', 'Deleted')
           .in('dealer_code', dealerIds)
           .lt('person_code', 100000000)
+          .order('invoice_code', { ascending: true })
           .range(offset, offset + PAGE - 1);
         if (error)
           return errorResponse(res, error.message, 500, 'FISCAL_ERROR');
@@ -14425,6 +14450,7 @@ router.post(
               .gte('issue_date', datemin).lte('issue_date', datemax)
               .in('operation_code', allOpCodes)
               .eq('operation_type', 'Output')
+              .order('invoice_code', { ascending: true })
               .range(from, from + 999);
             if (error) throw new Error(`Supabase notas_fiscais: ${error.message}`);
             const chunk = data || [];
@@ -14445,6 +14471,7 @@ router.post(
               .gte('issue_date', datemin).lte('issue_date', datemax)
               .in('branch_code', [11, 111])
               .eq('operation_type', 'Output')
+              .order('invoice_code', { ascending: true })
               .range(from, from + 999);
             if (error) throw new Error(`Supabase RE: ${error.message}`);
             const chunk = data || [];
@@ -16613,6 +16640,7 @@ router.post(
         .gte('issue_date', datemin)
         .lte('issue_date', datemax)
         .lt('person_code', 100000000)
+        .order('invoice_code', { ascending: true })
         .range(offset, offset + PAGE - 1);
       if (error)
         return errorResponse(res, error.message, 500, 'SUPABASE_ERROR');
