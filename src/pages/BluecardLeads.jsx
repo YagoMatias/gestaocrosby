@@ -1317,11 +1317,52 @@ function InfoCard({ icon: Icon, label, value, color = 'blue', mono = false, link
 // ────────────────────────────────────────────────────────────────────────
 // Modal: importa lista de contatos (CSV/paste) com status "1ª Mensagem"
 // ────────────────────────────────────────────────────────────────────────
+// Normaliza cabeçalho: minúsculo, sem acento, sem pontuação extra.
+// Mapeia os títulos usados nas planilhas reais (ex: "Data de Nascimento",
+// "Nome da empresa/négocio", "Nº", "E-mail") pros campos do backend.
+function mapHeaderLead(h) {
+  const k = String(h || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '') // remove acentos
+    .replace(/[^a-z0-9_/ ]/g, '')
+    .trim();
+  if (!k) return null;
+  if (k === 'nome') return 'nome';
+  if (k.includes('whatsapp') || k === 'telefone' || k === 'celular' || k === 'fone') return 'whatsapp';
+  if (k === 'cpf') return 'cpf';
+  if (k.includes('indicado')) return 'indicado_por';
+  if (k.includes('nascimento') || k === 'data_nasc' || k === 'nasc') return 'data_nasc';
+  if (k.includes('mail')) return 'email';
+  if (k === 'instagram' || k === 'insta') return 'instagram';
+  if (k.includes('empresa') || k.includes('negocio')) return 'empresa';
+  if (k === 'cep') return 'cep';
+  if (k.includes('endereco')) return 'endereco';
+  if (k === 'n' || k === 'no' || k === 'num' || k === 'numero') return 'numero';
+  if (k.includes('complemento')) return 'complemento';
+  if (k === 'cidade') return 'cidade';
+  if (k === 'estado' || k === 'uf') return 'estado';
+  return k.replace(/[/ ]+/g, '_'); // fallback: mantém como veio (normalizado)
+}
+
+// Converte valor de célula pra string. Date do Excel vira dd/mm/aaaa.
+function cellToStr(v) {
+  if (v == null) return '';
+  if (v instanceof Date) {
+    const d = String(v.getDate()).padStart(2, '0');
+    const m = String(v.getMonth() + 1).padStart(2, '0');
+    return `${d}/${m}/${v.getFullYear()}`;
+  }
+  return String(v).trim();
+}
+
 function ImportarLeadsModal({ onClose, onImportado }) {
   const [texto, setTexto] = useState('');
   const [preview, setPreview] = useState([]);
   const [enviando, setEnviando] = useState(false);
   const [resultado, setResultado] = useState(null);
+  const [arquivoNome, setArquivoNome] = useState('');
+  const [erroArquivo, setErroArquivo] = useState('');
 
   // Parser simples: aceita CSV ou colado do Excel (separador vírgula ou tab).
   // Cabeçalho obrigatório na 1ª linha: nome,whatsapp[,email,cpf,empresa,instagram,data_nasc,cep,endereco,numero,complemento,indicado_por]
@@ -1331,7 +1372,7 @@ function ImportarLeadsModal({ onClose, onImportado }) {
     // Detecta separador: se a 1ª linha tem tab, usa tab; senão vírgula ou ponto-e-vírgula.
     const primeira = linhas[0];
     const sep = primeira.includes('\t') ? '\t' : primeira.includes(';') ? ';' : ',';
-    const header = primeira.split(sep).map((h) => h.trim().toLowerCase());
+    const header = primeira.split(sep).map((h) => mapHeaderLead(h) || h.trim().toLowerCase());
     const rows = [];
     for (let i = 1; i < linhas.length; i++) {
       const cols = linhas[i].split(sep).map((c) => c.trim());
@@ -1344,14 +1385,60 @@ function ImportarLeadsModal({ onClose, onImportado }) {
     return rows;
   };
 
+  // Upload de arquivo Excel (.xlsx/.xls) ou CSV — lê a 1ª aba e mapeia os
+  // cabeçalhos automaticamente (aceita "Data de Nascimento", "Nº", "E-mail" etc).
+  const onArquivo = async (file) => {
+    if (!file) return;
+    setErroArquivo('');
+    setTexto('');
+    try {
+      const XLSX = await import('xlsx');
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { cellDates: true });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      if (!sheet) throw new Error('Planilha vazia');
+      // header:1 → matriz crua; 1ª linha = cabeçalhos
+      const matriz = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      if (matriz.length < 2) throw new Error('Planilha sem linhas de dados');
+      const headers = matriz[0].map((h) => mapHeaderLead(h));
+      const rows = [];
+      for (let i = 1; i < matriz.length; i++) {
+        const linha = matriz[i];
+        if (!linha || linha.every((c) => cellToStr(c) === '')) continue;
+        const obj = {};
+        headers.forEach((h, idx) => {
+          if (!h) return;
+          obj[h] = cellToStr(linha[idx]);
+        });
+        rows.push(obj);
+      }
+      if (rows.length === 0) throw new Error('Nenhuma linha com dados');
+      if (!headers.includes('nome') || !headers.includes('whatsapp')) {
+        throw new Error('Planilha precisa ter as colunas Nome e Whatsapp');
+      }
+      setArquivoNome(file.name);
+      setPreview(rows);
+    } catch (e) {
+      setArquivoNome('');
+      setPreview([]);
+      setErroArquivo(e.message);
+    }
+  };
+
   React.useEffect(() => {
-    if (!texto.trim()) { setPreview([]); return; }
+    if (!texto.trim()) {
+      // Sem texto: mantém preview do arquivo (se houver)
+      if (!arquivoNome) setPreview([]);
+      return;
+    }
     try {
       const rows = parseTexto(texto);
+      setArquivoNome('');
       setPreview(rows);
     } catch {
       setPreview([]);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [texto]);
 
   const importar = async () => {
@@ -1390,8 +1477,33 @@ function ImportarLeadsModal({ onClose, onImportado }) {
         <div className="flex-1 overflow-auto px-6 py-4">
           {!resultado && (
             <>
-              <p className="text-xs text-gray-600 mb-3">
-                Cole abaixo a lista (formato CSV, TSV ou copiado do Excel). A 1ª linha
+              {/* Upload de arquivo Excel/CSV */}
+              <label
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => { e.preventDefault(); onArquivo(e.dataTransfer.files?.[0]); }}
+                className="flex flex-col items-center justify-center gap-1 border-2 border-dashed border-emerald-300 bg-emerald-50/50 hover:bg-emerald-50 rounded-xl px-4 py-6 cursor-pointer transition-colors mb-3"
+              >
+                <Upload size={22} weight="duotone" className="text-emerald-500" />
+                <span className="text-sm font-semibold text-emerald-700">
+                  {arquivoNome ? arquivoNome : 'Clique ou arraste o arquivo Excel aqui'}
+                </span>
+                <span className="text-[11px] text-gray-500">
+                  .xlsx, .xls ou .csv — 1ª aba, cabeçalhos na 1ª linha
+                  (Nome, Whatsapp, CPF, Cidade, Estado…)
+                </span>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  className="hidden"
+                  onChange={(e) => { onArquivo(e.target.files?.[0]); e.target.value = ''; }}
+                />
+              </label>
+              {erroArquivo && (
+                <p className="text-xs text-rose-600 mb-2">Erro no arquivo: {erroArquivo}</p>
+              )}
+
+              <p className="text-xs text-gray-600 mb-2">
+                Ou cole abaixo a lista (CSV, TSV ou copiado do Excel). A 1ª linha
                 deve ter os cabeçalhos: <code className="bg-gray-100 px-1 rounded">nome,whatsapp,cidade,email,cpf,empresa,instagram</code>.
                 Todos serão criados no status <b>1ª Mensagem Enviada</b>.
               </p>
@@ -1399,7 +1511,7 @@ function ImportarLeadsModal({ onClose, onImportado }) {
                 value={texto}
                 onChange={(e) => setTexto(e.target.value)}
                 placeholder={`nome,whatsapp,cidade,email\nJoão Silva,83999999999,João Pessoa,joao@ex.com\nMaria Souza,84988888888,Natal,maria@ex.com`}
-                className="w-full h-40 border border-gray-300 rounded-lg p-3 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                className="w-full h-28 border border-gray-300 rounded-lg p-3 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-emerald-400"
               />
               {preview.length > 0 && (
                 <div className="mt-3">
