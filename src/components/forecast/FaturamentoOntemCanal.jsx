@@ -99,7 +99,10 @@ export default function FaturamentoOntemCanal() {
     }))
     .sort((a, b) => b.valor - a.valor);
 
-  const totalOntem = Number(data?.total?.fat_dia_anterior || 0);
+  // Total recalculado a partir dos canais filtrados (exclui BlueCard). Antes
+  // usava data.total.fat_dia_anterior que inclui todos os canais, entao os
+  // percentuais das barras nao somavam 100% e confundia o usuario.
+  const totalOntem = canais.reduce((s, c) => s + c.valor, 0);
   const maxValor = canais.reduce((m, c) => Math.max(m, c.valor), 0);
   const diaRef = data?.dia_anterior;
 

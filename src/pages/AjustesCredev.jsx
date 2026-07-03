@@ -35,11 +35,18 @@ export default function AjustesCredev() {
   const [salvando, setSalvando] = useState(null); // "invoice|branch" em salvamento
 
   const carregar = useCallback(async () => {
+    // Guard: datas invertidas retornam vazio silencioso no backend — UX ruim.
+    if (datemin && datemax && datemin > datemax) {
+      setRows([]);
+      setErro('Periodo invalido: data inicial maior que data final.');
+      return;
+    }
     setLoading(true);
     setErro('');
     try {
       const url = `${API_BASE_URL}/api/forecast/credev-ajustes/candidatos?datemin=${datemin}&datemax=${datemax}`;
       const r = await fetch(url);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const j = await r.json();
       if (!j?.success) throw new Error(j?.message || 'Erro');
       setRows(j.data?.rows || []);
@@ -56,9 +63,10 @@ export default function AjustesCredev() {
     const key = `${row.invoice_code}|${row.branch_code}`;
     setSalvando(key);
     try {
+      let r;
       if (novoValor) {
         // marcar como adiantamento
-        await fetch(`${API_BASE_URL}/api/forecast/credev-ajustes`, {
+        r = await fetch(`${API_BASE_URL}/api/forecast/credev-ajustes`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -69,10 +77,17 @@ export default function AjustesCredev() {
         });
       } else {
         // desmarcar (remove)
-        await fetch(
+        r = await fetch(
           `${API_BASE_URL}/api/forecast/credev-ajustes/${row.invoice_code}/${row.branch_code}`,
           { method: 'DELETE' },
         );
+      }
+      // Antes ignorava r.ok — 500 do backend passava despercebido, UI mostrava
+      // marcado localmente mas persistencia falhou. Proximo carregar() desmarcava
+      // silenciosamente. Agora falha explicita.
+      if (!r.ok) {
+        const txt = await r.text().catch(() => '');
+        throw new Error(`HTTP ${r.status}${txt ? ': ' + txt.slice(0, 200) : ''}`);
       }
       // Atualiza local
       setRows((prev) =>

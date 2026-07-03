@@ -99,6 +99,15 @@ export default function PromessaSemanal() {
   const cur = isoWeek(new Date(nowKey));
   const [ano, setAno] = useState(cur.ano);
   const [semana, setSemana] = useState(cur.semana);
+  // Wall-display: reage a virada de semana ISO automaticamente. Antes ficava
+  // preso na semana antiga porque ano/semana eram fixados no mount inicial.
+  useEffect(() => {
+    if (cur.ano !== ano || cur.semana !== semana) {
+      setAno(cur.ano);
+      setSemana(cur.semana);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nowKey]);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');

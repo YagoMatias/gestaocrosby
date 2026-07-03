@@ -969,8 +969,10 @@ function classificarNfCanal(nf) {
     } else if (bc === 2 && B2R_REVENDA_DEALERS_EMP2.has(dealer)) {
       // mantém revenda
     } else if (bc === 2) {
-      canal = 'varejo';
-      if (!VAREJO_BRANCH_CODES_TR.has(bc)) return { canal: null, dealer };
+      // Antes reclassificava como 'varejo' — bug: NF de op-revenda (7236) na
+      // emp 2 com dealer NAO-B2R virava faturamento varejo, inflando B2C.
+      // Descarta em vez de reclassificar (op nao pertence a varejo).
+      return { canal: null, dealer };
     } else if (!REVENDA_BRANCH_CODES_TR.has(bc)) {
       return { canal: null, dealer };
     }
@@ -2862,10 +2864,12 @@ router.get(
         }
         if (data.length < PAGE) break;
       }
-      // Só valores positivos
+      // Inclui todos os canais (mesmo negativos) — antes filtrava v>0 e canais
+      // com so devolucao no periodo sumiam do payload, confundindo com "sem
+      // dado sincronizado" no dashboard.
       const out = {};
       for (const [k, v] of Object.entries(segs)) {
-        if (v > 0) out[k] = Math.round(v * 100) / 100;
+        out[k] = Math.round(v * 100) / 100;
       }
       return out;
     };
@@ -3846,7 +3850,9 @@ async function getSegSupabaseRange(dmin, dmax) {
     }
     const out = {};
     for (const [k, v] of Object.entries(segs)) {
-      out[k] = v > 0 ? Math.round(v * 100) / 100 : 0;
+      // Mantem valor real (positivo ou negativo). Antes forcava >0 e canais
+      // com so devolucao no periodo sumiam do payload.
+      out[k] = Math.round(v * 100) / 100;
     }
     // Canais virtuais
     out.fabrica = Number((out.showroom || 0) + (out.novidadesfranquia || 0));

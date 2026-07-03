@@ -77,6 +77,17 @@ export default function PromessaMensal() {
   const now = new Date(nowKey);
   const [ano, setAno] = useState(() => new Date().getFullYear());
   const [mes, setMes] = useState(() => new Date().getMonth() + 1);
+  // Wall-display: reage a virada de mes/ano automaticamente. Antes ficava
+  // preso no mes antigo indefinidamente porque ano/mes eram fixados no mount.
+  useEffect(() => {
+    const anoNow = now.getFullYear();
+    const mesNow = now.getMonth() + 1;
+    if (anoNow !== ano || mesNow !== mes) {
+      setAno(anoNow);
+      setMes(mesNow);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nowKey]);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState('');
