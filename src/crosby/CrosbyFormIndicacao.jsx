@@ -32,7 +32,7 @@ const FIELDS = [
   { name: "cep", label: "CEP*", type: "text", placeholder: "Digite seu CEP*", required: true },
   { name: "endereco", label: "Endereço*", type: "text", placeholder: "Digite nome da rua (Rua exemplo)*", required: true },
   { name: "numero", label: "Nº*", type: "text", placeholder: "Digite APENAS números*", required: true },
-  { name: "complemento", label: "Complemento*", type: "text", placeholder: "Apto, Bloco, Bairro", required: false },
+  { name: "complemento", label: "Complemento*", type: "text", placeholder: "Apto, Bloco, Bairro*", required: true },
 ];
 
 export default function CrosbyFormIndicacao() {
@@ -172,7 +172,7 @@ export default function CrosbyFormIndicacao() {
           </h1>
           <p>
             A Crosby criou a ação Grandes Nomes do Brasil para reconhecer
-            empreendedores que inspiram e movimentam nossa região.
+            pessoas que inspiram e movimentam nossa região.
           </p>
           <p>
             Este convite é um gesto de reconhecimento pelo seu trabalho e pela
@@ -184,7 +184,7 @@ export default function CrosbyFormIndicacao() {
         </section>
 
         <section className="cb-form-card">
-          <form onSubmit={handleSubmit} noValidate>
+          <form onSubmit={handleSubmit}>
             {FIELDS.map((f) => (
               <div className="cb-field" key={f.name}>
                 <label htmlFor={f.name}>{f.label}</label>
