@@ -6,6 +6,7 @@ import {
   ShoppingCart, Plus, PencilSimple, Trash, MagnifyingGlass, Spinner,
   CheckCircle, X, Package, Buildings, Link as LinkIcon, MapPin,
   Paperclip, DownloadSimple, Crown, ArrowRight, Calendar, Truck, Receipt,
+  Robot, Lightning, Check, Warning,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
@@ -378,6 +379,203 @@ function FornecedorModal({ cotacaoId, fornecedor, onClose, onSaved }) {
 }
 
 // ────────────────────────────────────────────────────────────────
+// MODAL: Busca com IA — SerpAPI + Claude
+// ────────────────────────────────────────────────────────────────
+function BuscaIAModal({ cotacaoId, onClose, onAdded }) {
+  const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState('');
+  const [resultados, setResultados] = useState([]);
+  const [selecionados, setSelecionados] = useState(new Set());
+  const [adicionando, setAdicionando] = useState(false);
+  const [info, setInfo] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true); setErro('');
+      try {
+        const r = await fetch(`${API_BASE_URL}/api/tech/cotacoes/${cotacaoId}/buscar-ia`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+        });
+        const j = await r.json();
+        if (!cancelled) {
+          if (!r.ok || !j?.success) throw new Error(j?.message || 'Erro na busca');
+          setResultados(j.data?.fornecedores || []);
+          setInfo({ busca: j.data?.busca, shopping: j.data?.shopping_count, organic: j.data?.organic_count });
+        }
+      } catch (e) { if (!cancelled) setErro(e.message); }
+      finally { if (!cancelled) setLoading(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [cotacaoId]);
+
+  const toggleSel = (i) => setSelecionados((prev) => {
+    const next = new Set(prev);
+    next.has(i) ? next.delete(i) : next.add(i);
+    return next;
+  });
+
+  const toggleAll = () => {
+    if (selecionados.size === resultados.length) setSelecionados(new Set());
+    else setSelecionados(new Set(resultados.map((_, i) => i)));
+  };
+
+  const adicionarSelecionados = async () => {
+    if (selecionados.size === 0) return;
+    setAdicionando(true); setErro('');
+    let ok = 0;
+    for (const i of selecionados) {
+      const f = resultados[i];
+      if (!f) continue;
+      try {
+        const r = await fetch(`${API_BASE_URL}/api/tech/cotacoes/${cotacaoId}/fornecedores`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fornecedor_nome: f.fornecedor_nome,
+            tipo_compra: f.tipo_compra || 'online',
+            link: f.link,
+            valor_unitario: f.valor_unitario,
+            frete: f.frete,
+            prazo_entrega: f.prazo_entrega,
+            condicao_pagamento: f.condicao_pagamento,
+            garantia: f.garantia,
+            observacao: f.observacao ? `[IA] ${f.observacao}` : '[IA] Encontrado via busca automática',
+          }),
+        });
+        const j = await r.json();
+        if (r.ok && j?.success) ok++;
+      } catch {}
+    }
+    setAdicionando(false);
+    if (ok > 0) onAdded?.();
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl max-w-3xl w-full shadow-2xl max-h-[92vh] overflow-hidden flex flex-col">
+        <div className="bg-gradient-to-r from-purple-700 to-indigo-800 px-5 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center">
+              <Robot size={20} weight="fill" className="text-cyan-300" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-white">Busca com IA</h3>
+              <p className="text-[11px] text-white/70">Google Shopping + IA · melhores preços e fretes</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-white/70 hover:text-white hover:bg-white/10 rounded-lg p-1.5">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5">
+          {loading && (
+            <div className="text-center py-16">
+              <div className="relative inline-flex items-center justify-center mb-4">
+                <div className="w-16 h-16 rounded-full border-4 border-purple-100 border-t-purple-600 animate-spin" />
+                <Robot size={24} weight="fill" className="absolute text-purple-600" />
+              </div>
+              <p className="text-gray-700 font-semibold">Buscando melhores preços…</p>
+              <p className="text-sm text-gray-500 mt-1">Pesquisando no Google Shopping e analisando com IA</p>
+            </div>
+          )}
+
+          {erro && !loading && (
+            <div className="text-center py-12">
+              <Warning size={36} className="mx-auto text-rose-400 mb-3" />
+              <p className="text-rose-700 font-medium">{erro}</p>
+              <button onClick={onClose} className={`${btnGhost} mt-4`}>Fechar</button>
+            </div>
+          )}
+
+          {!loading && !erro && resultados.length === 0 && (
+            <div className="text-center py-12">
+              <MagnifyingGlass size={36} className="mx-auto text-gray-300 mb-3" />
+              <p className="text-gray-500 font-medium">Nenhum fornecedor encontrado</p>
+              <p className="text-sm text-gray-400 mt-1">Tente editar o título da cotação com mais detalhes</p>
+            </div>
+          )}
+
+          {!loading && !erro && resultados.length > 0 && (
+            <>
+              {info && (
+                <div className="mb-4 px-3 py-2 bg-purple-50 rounded-lg text-xs text-purple-700 flex items-center gap-2">
+                  <Lightning size={14} weight="fill" />
+                  <span>Busca: "{info.busca}" · {info.shopping} resultados Shopping · {info.organic} orgânicos</span>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between mb-3">
+                <button onClick={toggleAll} className="text-xs font-medium text-purple-700 hover:text-purple-900 flex items-center gap-1">
+                  <Check size={12} weight="bold" />
+                  {selecionados.size === resultados.length ? 'Desmarcar todos' : 'Selecionar todos'}
+                </button>
+                <span className="text-xs text-gray-500">{selecionados.size} de {resultados.length} selecionados</span>
+              </div>
+
+              <div className="space-y-2">
+                {resultados.map((f, i) => {
+                  const total = (Number(f.valor_unitario) || 0) + (Number(f.frete) || 0);
+                  const sel = selecionados.has(i);
+                  return (
+                    <button key={i} type="button" onClick={() => toggleSel(i)}
+                      className={`w-full text-left rounded-xl border-2 p-3 transition ${sel ? 'border-purple-400 bg-purple-50 ring-2 ring-purple-200' : 'border-gray-200 bg-white hover:border-purple-200'}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition ${sel ? 'bg-purple-600 border-purple-600' : 'border-gray-300'}`}>
+                              {sel && <Check size={12} weight="bold" className="text-white" />}
+                            </div>
+                            <h4 className="text-sm font-bold text-gray-900 truncate">{f.fornecedor_nome}</h4>
+                            {i === 0 && total > 0 && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700 uppercase">Melhor preço</span>}
+                            {total === 0 && <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-gray-100 text-gray-500 uppercase">Consultar preço</span>}
+                          </div>
+                          <div className="ml-7 flex items-center gap-3 text-xs text-gray-500 flex-wrap">
+                            {f.prazo_entrega && <span className="flex items-center gap-1"><Truck size={11} />{f.prazo_entrega}</span>}
+                            {f.condicao_pagamento && <span>💳 {f.condicao_pagamento}</span>}
+                            {f.garantia && <span>🛡️ {f.garantia}</span>}
+                          </div>
+                          {f.observacao && <p className="ml-7 text-[11px] text-gray-500 mt-1 italic">{f.observacao}</p>}
+                          {f.link && (
+                            <a href={f.link} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
+                              className="ml-7 text-[11px] text-blue-600 hover:underline mt-1 flex items-center gap-1 truncate">
+                              <LinkIcon size={10} /> {f.link}
+                            </a>
+                          )}
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <div className="text-lg font-black text-gray-900 tabular-nums">{fmtBRL(f.valor_unitario)}</div>
+                          {Number(f.frete) > 0 && <div className="text-[10px] text-gray-500">+ frete {fmtBRL(f.frete)}</div>}
+                          <div className={`text-xs font-bold mt-0.5 ${i === 0 ? 'text-emerald-600' : 'text-gray-600'}`}>
+                            Total: {fmtBRL(total)}
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+
+        {!loading && resultados.length > 0 && (
+          <div className="border-t px-5 py-3 flex items-center justify-between bg-gray-50">
+            <button onClick={onClose} className={btnGhost}>Cancelar</button>
+            <button onClick={adicionarSelecionados} disabled={selecionados.size === 0 || adicionando} className={btnPrimary}>
+              {adicionando ? <Spinner size={14} className="animate-spin" /> : <Plus size={14} weight="bold" />}
+              {adicionando ? 'Adicionando…' : `Adicionar ${selecionados.size} fornecedor${selecionados.size !== 1 ? 'es' : ''}`}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
 // DETALHE: drawer lateral com fornecedores e comparação
 // ────────────────────────────────────────────────────────────────
 function CotacaoDetalhe({ cotacaoId, onClose, onChanged }) {
@@ -386,6 +584,7 @@ function CotacaoDetalhe({ cotacaoId, onClose, onChanged }) {
   const [editarCot, setEditarCot] = useState(false);
   const [editarForn, setEditarForn] = useState(null); // { id?: } ou {} pra novo
   const [novoForn, setNovoForn] = useState(false);
+  const [buscaIA, setBuscaIA] = useState(false);
 
   const fetchDetalhe = useCallback(async () => {
     setLoading(true);
@@ -491,6 +690,11 @@ function CotacaoDetalhe({ cotacaoId, onClose, onChanged }) {
             <button onClick={() => setEditarCot(true)} className="px-3 py-1.5 rounded-lg bg-white/15 text-white text-xs font-medium hover:bg-white/25 flex items-center gap-1.5">
               <PencilSimple size={12} /> Editar dados
             </button>
+            {cot.status !== 'comprado' && cot.status !== 'cancelado' && (
+              <button onClick={() => setBuscaIA(true)} className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-500 text-white text-xs font-bold hover:from-purple-600 hover:to-indigo-600 flex items-center gap-1.5 shadow-lg shadow-purple-500/30">
+                <Robot size={14} weight="fill" /> Buscar com IA
+              </button>
+            )}
             {cot.status !== 'comprado' && cot.status !== 'cancelado' && (
               <>
                 {cot.status === 'escolhido' && (
@@ -634,6 +838,13 @@ function CotacaoDetalhe({ cotacaoId, onClose, onChanged }) {
           fornecedor={editarForn}
           onClose={() => { setNovoForn(false); setEditarForn(null); }}
           onSaved={() => { setNovoForn(false); setEditarForn(null); fetchDetalhe(); onChanged?.(); }}
+        />
+      )}
+      {buscaIA && (
+        <BuscaIAModal
+          cotacaoId={cotacaoId}
+          onClose={() => setBuscaIA(false)}
+          onAdded={() => { fetchDetalhe(); onChanged?.(); }}
         />
       )}
     </>

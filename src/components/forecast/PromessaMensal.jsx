@@ -77,14 +77,16 @@ export default function PromessaMensal() {
   const now = new Date(nowKey);
   const [ano, setAno] = useState(() => new Date().getFullYear());
   const [mes, setMes] = useState(() => new Date().getMonth() + 1);
-  // Wall-display: reage a virada de mes/ano automaticamente. Antes ficava
-  // preso no mes antigo indefinidamente porque ano/mes eram fixados no mount.
+  // Wall-display: reage a virada de mes/ano automaticamente. Compara o mês
+  // REAL entre ticks (ref) — não o mês visualizado — senão qualquer navegação
+  // manual pra mês passado seria desfeita no próximo tick do interval.
+  const mesRealRef = useRef(`${now.getFullYear()}-${now.getMonth() + 1}`);
   useEffect(() => {
-    const anoNow = now.getFullYear();
-    const mesNow = now.getMonth() + 1;
-    if (anoNow !== ano || mesNow !== mes) {
-      setAno(anoNow);
-      setMes(mesNow);
+    const mesRealNow = `${now.getFullYear()}-${now.getMonth() + 1}`;
+    if (mesRealNow !== mesRealRef.current) {
+      mesRealRef.current = mesRealNow;
+      setAno(now.getFullYear());
+      setMes(now.getMonth() + 1);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nowKey]);

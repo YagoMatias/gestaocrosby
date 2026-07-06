@@ -99,10 +99,14 @@ export default function PromessaSemanal() {
   const cur = isoWeek(new Date(nowKey));
   const [ano, setAno] = useState(cur.ano);
   const [semana, setSemana] = useState(cur.semana);
-  // Wall-display: reage a virada de semana ISO automaticamente. Antes ficava
-  // preso na semana antiga porque ano/semana eram fixados no mount inicial.
+  // Wall-display: reage a virada de semana ISO automaticamente. Compara a
+  // semana REAL entre ticks (ref) — não a visualizada — senão navegação
+  // manual pra semana passada seria desfeita no próximo tick do interval.
+  const semanaRealRef = useRef(`${cur.ano}-W${cur.semana}`);
   useEffect(() => {
-    if (cur.ano !== ano || cur.semana !== semana) {
+    const semanaRealNow = `${cur.ano}-W${cur.semana}`;
+    if (semanaRealNow !== semanaRealRef.current) {
+      semanaRealRef.current = semanaRealNow;
       setAno(cur.ano);
       setSemana(cur.semana);
     }

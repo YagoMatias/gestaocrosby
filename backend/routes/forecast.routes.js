@@ -16,6 +16,14 @@ import { getPool } from '../services/uazapiSync.js';
 
 const router = express.Router();
 
+// Data YYYY-MM-DD no fuso America/Sao_Paulo (BRT). new Date().toISOString()
+// vira o dia SEGUINTE entre 21h e 0h local — todo cálculo de hoje/ontem
+// do forecast precisa passar por aqui.
+function hojeBrt(offsetDias = 0) {
+  const d = new Date(Date.now() + offsetDias * 86400000);
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(d);
+}
+
 // ──────────────────────────────────────────────────────────────
 // Envio de mensagem via instância "crosbybot" (UAzapi)
 // ──────────────────────────────────────────────────────────────
@@ -521,7 +529,7 @@ async function getFaturamentoPorSegmento(datemin, datemax) {
     // de manhã. Isso afeta o card "Faturamento de Ontem por Canal".
     const di = toYmd(datemin);
     const df = toYmd(datemax);
-    const hojeIso = new Date().toISOString().slice(0, 10);
+    const hojeIso = hojeBrt();
     const eumDiaSo = di === df;
     const diasAtras = Math.round(
       (new Date(hojeIso) - new Date(df)) / (1000 * 60 * 60 * 24),
@@ -720,7 +728,8 @@ router.get(
     if (dataValida) {
       diaIso = dataValida;
     } else {
-      const hoje = new Date();
+      // Ancora no dia BRT (meio-dia UTC evita edge de DST) e pula domingo
+      const hoje = new Date(`${hojeBrt()}T12:00:00Z`);
       const ontem = new Date(hoje);
       ontem.setUTCDate(ontem.getUTCDate() - 1);
       while (ontem.getUTCDay() === 0) {
@@ -1146,7 +1155,8 @@ router.get(
   '/ontem-vendedor-loja',
   asyncHandler(async (req, res) => {
     console.log('🆕 [ovl] NOVA VERSÃO COM PROMESSA-VENDEDORES iniciada');
-    const hoje = new Date();
+    // Hoje ancorado no dia BRT (meio-dia UTC evita edge de DST)
+    const hoje = new Date(`${hojeBrt()}T12:00:00Z`);
     // Datas: usa ?datemin/?datemax se vier (mês/semana), senão ontem (D-1 útil).
     let dmin, dmax, periodoLabel;
     if (req.query.datemin && req.query.datemax) {
@@ -1175,8 +1185,11 @@ router.get(
     // Alias antigo do código: diaIso. Mantém comportamento.
     const diaIso = dmax; // pra single-seller usa o dia final do range
 
-    // Cache hit (TTL 30min). v11 = força refetch (per_seller veio vazio antes)
-    const cacheKey = `v13|${dmin}|${dmax}`;
+    // Cache hit (TTL 30min). v14 = chave inclui cacheOnly (caminhos cache-only
+    // e full usam fontes diferentes — não podem compartilhar cache/inflight).
+    const cacheOnly =
+      req.query.cacheOnly === '1' || req.query.cacheOnly === 'true';
+    const cacheKey = `v14|${cacheOnly ? 1 : 0}|${dmin}|${dmax}`;
     const noCache = req.query.nocache === '1' || req.query.nocache === 'true';
     if (!noCache) {
       const cached = OVL_CACHE.get(cacheKey);
@@ -1220,8 +1233,6 @@ router.get(
     //
     // Sem per-seller detalhe (1 linha agregada por canal). Resposta em ~1s.
     // Usuário pode forçar TOTVS via botão "Atualizar" (sem cacheOnly).
-    const cacheOnly =
-      req.query.cacheOnly === '1' || req.query.cacheOnly === 'true';
     if (cacheOnly) {
       try {
         const { default: supabase } = await import('../config/supabase.js');
@@ -1807,6 +1818,9 @@ router.get(
         const fetchPerSellerCanal = async (modulo) =>
           (await fetchCanalDireto(modulo)).per_seller;
         // PARALELIZA TUDO. Singles têm DUPLA fonte (segs + canal direto).
+        // Se canais-totals-all falhar, segs={} zera os totais — flag impede
+        // que o payload zerado seja cacheado por 30min.
+        let fontesFalharam = false;
         const [
           vendedoresB2M_oficial, vendedoresB2R_oficial, segs, varejoFat,
           psFranquia, psDavid, psRafael, psShowroom, psNovid,
@@ -1818,7 +1832,10 @@ router.get(
             `${INTERNAL_API_BASE}/api/crm/canais-totals-all?lite=true${noCache ? '&nocache=true' : ''}`,
             { datemin: dmin, datemax: dmax, lite: true, nocache: noCache },
             { timeout: 240000 },
-          ).then((r) => (r.data?.data || r.data || {}).segmentos || {}).catch(() => ({})),
+          ).then((r) => (r.data?.data || r.data || {}).segmentos || {}).catch(() => {
+            fontesFalharam = true;
+            return {};
+          }),
           fetchVarejoRanking(),
           fetchPerSellerCanal('franquia'),
           fetchPerSellerCanal('inbound_david'),
@@ -1915,7 +1932,13 @@ router.get(
             total: Math.round(vendedoresSingles.reduce((s, v) => s + v.valor, 0) * 100) / 100,
           },
         };
-        OVL_CACHE.set(cacheKey, { ts: Date.now(), data: responseData });
+        if (fontesFalharam) {
+          console.warn(
+            `[ontem-vendedor-loja] canais-totals-all falhou — NÃO cacheando ${cacheKey}`,
+          );
+        } else {
+          OVL_CACHE.set(cacheKey, { ts: Date.now(), data: responseData });
+        }
         try { _resolveInflight(responseData); } catch {}
         return successResponse(res, responseData);
       }
@@ -2351,17 +2374,27 @@ router.get(
     // 2) Busca NFs no fiscal
     const { createClient } = await import('@supabase/supabase-js');
     const sbf = createClient(process.env.SUPABASE_FISCAL_URL, process.env.SUPABASE_FISCAL_KEY);
-    let q = sbf
-      .from('notas_fiscais')
-      .select(
-        'invoice_code, issue_date, total_value, operation_type, invoice_status, dealer_code, branch_code, payment_condition_code, payment_condition_name, person_code',
-      )
-      .in('person_code', codes)
-      .order('issue_date', { ascending: false });
-    if (datemin) q = q.gte('issue_date', datemin);
-    if (datemax) q = q.lte('issue_date', datemax);
-    const { data: nfs, error: e2 } = await q.limit(2000);
-    if (e2) return errorResponse(res, e2.message, 500);
+    // Loop paginado (como os demais) — .limit(2000) truncava ranges grandes.
+    const nfs = [];
+    const PAGE = 1000;
+    for (let from = 0; ; from += PAGE) {
+      let q = sbf
+        .from('notas_fiscais')
+        .select(
+          'invoice_code, issue_date, total_value, operation_type, invoice_status, dealer_code, branch_code, payment_condition_code, payment_condition_name, person_code',
+        )
+        .in('person_code', codes)
+        .order('invoice_code', { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (datemin) q = q.gte('issue_date', datemin);
+      if (datemax) q = q.lte('issue_date', datemax);
+      const { data: page, error: e2 } = await q;
+      if (e2) return errorResponse(res, e2.message, 500);
+      nfs.push(...(page || []));
+      if (!page || page.length < PAGE) break;
+    }
+    // Mantém ordenação original da resposta (mais recentes primeiro)
+    nfs.sort((a, b) => String(b.issue_date).localeCompare(String(a.issue_date)));
     // 3) Filtra canceladas/deletadas e aplica filtro de pagamento
     const valid = (nfs || []).filter(
       (n) => n.invoice_status !== 'Canceled' && n.invoice_status !== 'Deleted',
@@ -2439,7 +2472,9 @@ router.get(
 router.get(
   '/promessa-semanal',
   asyncHandler(async (req, res) => {
-    const hoje = new Date();
+    // Hoje ancorado no dia BRT (meio-dia UTC evita edge de DST)
+    const hojeIso = hojeBrt();
+    const hoje = new Date(`${hojeIso}T12:00:00Z`);
     // Default: semana corrente (ISO em curso) — visão operacional do dia a dia
     const cur = getIsoWeek(hoje);
     const ano = parseInt(req.query.ano, 10) || cur.ano;
@@ -2503,7 +2538,6 @@ router.get(
     // Para o REAL acumulado:
     //  - default (untilToday=false): até ONTEM (D-1) — dados fechados
     //  - untilToday=true: até HOJE — visão ao vivo (TOTVS)
-    const hojeIso = hoje.toISOString().slice(0, 10);
     const refDate = untilToday ? hoje : ontemDiaAnterior;
     const refIso = untilToday ? hojeIso : diaAnteriorIso;
     const realDateMax = refDate < endDate ? refIso : data_fim;
@@ -2825,14 +2859,18 @@ function findSellerFat(perSeller, nome) {
 router.get(
   '/crescimento-anual',
   asyncHandler(async (req, res) => {
-    const hoje = new Date();
-    const anoAtual = parseInt(req.query.ano, 10) || hoje.getFullYear();
+    // Hoje ancorado no dia BRT (meio-dia UTC evita edge de DST)
+    const hojeStr = hojeBrt();
+    const hoje = new Date(`${hojeStr}T12:00:00Z`);
+    const anoAtual = parseInt(req.query.ano, 10) || hoje.getUTCFullYear();
     const anoAnterior = anoAtual - 1;
 
     const iniAtual = `${anoAtual}-01-01`;
-    const fimAtual = hoje.toISOString().slice(0, 10);
+    const fimAtual = hojeStr;
     const iniAnterior = `${anoAnterior}-01-01`;
-    const diaMesAnt = new Date(anoAnterior, hoje.getMonth(), hoje.getDate());
+    const diaMesAnt = new Date(
+      Date.UTC(anoAnterior, hoje.getUTCMonth(), hoje.getUTCDate(), 12),
+    );
     const fimAnterior = diaMesAnt.toISOString().slice(0, 10);
 
     // Query direta em notas_fiscais Supabase, classificando canal por OP+dealer.
@@ -3092,7 +3130,11 @@ export async function getFaturadoOficialReplica(branchs, dmin, dmax, opsAllow = 
     if (!token) return new Map();
     const BASE = process.env.TOTVS_BASE_URL || 'https://apitotvsmoda.bhan.com.br/api/totvsmoda';
 
-    // 1) Busca duplicatas com filtros do SQL — paginado
+    // Flag de truncamento: se algum cap de páginas for atingido o resultado é
+    // parcial — loga e NÃO persiste no FAT_OFICIAL_CACHE (30min de dado menor).
+    let truncado = false;
+
+    // 1) Busca duplicatas com filtros do SQL — paginado (cap 50 págs = 5000 docs)
     async function fetchDuplicatas() {
       const all = [];
       let p = 1, hasNext = true;
@@ -3112,6 +3154,12 @@ export async function getFaturadoOficialReplica(branchs, dmin, dmax, opsAllow = 
         all.push(...(r.data?.items || []));
         hasNext = r.data?.hasNext;
         p++;
+      }
+      if (hasNext) {
+        truncado = true;
+        console.warn(
+          `[getFaturadoOficialReplica] cap de 50 páginas de duplicatas atingido (${key}) — resultado TRUNCADO`,
+        );
       }
       return all;
     }
@@ -3133,7 +3181,7 @@ export async function getFaturadoOficialReplica(branchs, dmin, dmax, opsAllow = 
       }
     }
     if (invCodes.size === 0) {
-      FAT_OFICIAL_CACHE.set(key, { ts: Date.now(), mapa: new Map() });
+      if (!truncado) FAT_OFICIAL_CACHE.set(key, { ts: Date.now(), mapa: new Map() });
       return new Map();
     }
 
@@ -3174,6 +3222,12 @@ export async function getFaturadoOficialReplica(branchs, dmin, dmax, opsAllow = 
         }
         hasNext = r.data?.hasNext;
         p++;
+      }
+      if (hasNext) {
+        truncado = true;
+        console.warn(
+          `[getFaturadoOficialReplica] cap de 100 páginas de NFs atingido (${key}) — resultado TRUNCADO`,
+        );
       }
     }
     await fetchNFs();
@@ -3239,7 +3293,7 @@ export async function getFaturadoOficialReplica(branchs, dmin, dmax, opsAllow = 
         clientes: v.clientes.size,
       });
     }
-    FAT_OFICIAL_CACHE.set(key, { ts: Date.now(), mapa });
+    if (!truncado) FAT_OFICIAL_CACHE.set(key, { ts: Date.now(), mapa });
     return mapa;
   } catch (e) {
     console.warn(`[getFaturadoOficialReplica] falhou: ${e.message}`);
@@ -3607,7 +3661,6 @@ router.get(
 
     const mKey = monthKey(ano, mes);
     const cacheKey = `${mKey}|${untilToday}`;
-    const todayIso = hoje.toISOString().slice(0, 10);
 
     // Range efetivo do mês [01, min(fim do mês, ontem|hoje)]
     const monthStart = new Date(Date.UTC(ano, mes - 1, 1));
@@ -3638,7 +3691,11 @@ router.get(
       });
     }
 
-    const isPast = ymd(effEnd) < todayIso;
+    // Mês PASSADO → TTL 24h; mês corrente → TTL 1h. Comparar effEnd com hoje
+    // errava: no default (until_today=false) effEnd=ontem é sempre < hoje,
+    // então o mês corrente pegava TTL 24h e o card ficava velho após a virada.
+    const [nowY, nowM] = hojeBrt().split('-').map(Number);
+    const isPast = ano * 100 + mes < nowY * 100 + nowM;
     const ttl = isPast ? VEND_MENSAL_TTL_PAST : VEND_MENSAL_TTL_REALTIME;
     const cached = VEND_MENSAL_CACHE.get(cacheKey);
     if (cached && Date.now() - cached.ts < ttl) {
@@ -3905,7 +3962,11 @@ async function getRefValues(ano, mes, diaAcum = null) {
       for (const k of allKeys) {
         m.set(k, {
           full: Number((segFull?.[k] || 0).toFixed(2)),
-          acumulado: Number((segAcum?.[k] ?? segFull?.[k] ?? 0).toFixed(2)),
+          // segAcum existir mas não ter o canal = sem venda no acumulado (0);
+          // só herda o full quando NÃO houve consulta acumulada (dAcum null).
+          acumulado: Number(
+            (segAcum ? (segAcum[k] ?? 0) : (segFull?.[k] ?? 0)).toFixed(2),
+          ),
           dia: diaAcum || null,
         });
       }
@@ -4254,7 +4315,9 @@ router.get(
 router.get(
   '/promessa-mensal',
   asyncHandler(async (req, res) => {
-    const hoje = new Date();
+    // Hoje ancorado no dia BRT (meio-dia UTC evita edge de DST)
+    const hojeIso = hojeBrt();
+    const hoje = new Date(`${hojeIso}T12:00:00Z`);
     const ano = parseInt(req.query.ano, 10) || hoje.getUTCFullYear();
     const mes = parseInt(req.query.mes, 10) || hoje.getUTCMonth() + 1;
     // until_today=true → REAL acumulado vai até HOJE; senão até ONTEM (D-1, default)
@@ -4273,7 +4336,6 @@ router.get(
       ontem.setUTCDate(ontem.getUTCDate() - 1);
     }
     const ontemIso = ontem.toISOString().slice(0, 10);
-    const hojeIso = hoje.toISOString().slice(0, 10);
     // Data de referência: ontem (default) ou hoje (untilToday)
     const refIso = untilToday ? hojeIso : ontemIso;
 
