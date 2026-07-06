@@ -724,7 +724,12 @@ function ListaAgrupada({ leads, atualizarStatus, sincronizarTotvs, setEditLead, 
       setSortDir('asc');
     }
   }, [sortBy, sortDir]);
-  const [colapsados, setColapsados] = useState(() => new Set());
+  // Todos os grupos começam RECOLHIDOS (agrupados) ao abrir a página —
+  // usuário expande só o que quiser ver. Inicializa o Set com todos os
+  // status keys do pipeline (pula o '' de "Todos").
+  const [colapsados, setColapsados] = useState(
+    () => new Set(STATUS_OPTIONS.slice(1).map((s) => s.v)),
+  );
   const toggle = (s) =>
     setColapsados((prev) => {
       const n = new Set(prev);
