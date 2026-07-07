@@ -36,6 +36,9 @@ const RenegociacaoDividas = lazy(() => import('./pages/RenegociacaoDividas'));
 const AnaliseRenegociacao = lazy(() => import('./pages/AnaliseRenegociacao'));
 const NotasFiscais = lazy(() => import('./pages/NotasFiscais'));
 const ExtratoCredito = lazy(() => import('./pages/ExtratoCredito'));
+const AniversariantesFranquia = lazy(
+  () => import('./pages/AniversariantesFranquia'),
+);
 
 const MetasVarejo = lazy(() => import('./pages/MetasVarejo'));
 
@@ -210,6 +213,7 @@ const protectedRoutes = [
   { path: '/atividade-clientes', component: AtividadeClientes },
   { path: '/extratos-bancos', component: ExtratosBancos },
   { path: '/extrato-credito', component: ExtratoCredito },
+  { path: '/aniversariantes-franquia', component: AniversariantesFranquia },
   { path: '/metas-varejo', component: MetasVarejo },
   { path: '/ranking-faturamento', component: RankingFaturamento },
   { path: '/ranking-compras-franquias', component: RankingComprasFranquias },

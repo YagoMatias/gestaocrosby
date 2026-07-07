@@ -44,6 +44,7 @@ import {
   DeviceMobile,
   Cpu,
   ChartPieSlice,
+  Cake,
 } from '@phosphor-icons/react';
 
 // Componentes de ícones modernos
@@ -679,6 +680,12 @@ const minhaFranquiaItem = {
       href: '/consulta-nfs',
       icon: Article,
       color: 'text-indigo-600',
+    },
+    {
+      name: 'Aniversariantes',
+      href: '/aniversariantes-franquia',
+      icon: Cake,
+      color: 'text-pink-600',
     },
   ],
 };

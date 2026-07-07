@@ -290,6 +290,11 @@ const AVAILABLE_PAGES = [
     name: 'Extrato de Crédito',
     category: 'Minha Franquia',
   },
+  {
+    path: '/aniversariantes-franquia',
+    name: 'Aniversariantes',
+    category: 'Minha Franquia',
+  },
 
   // Antecipações
   {
