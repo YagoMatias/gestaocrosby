@@ -461,6 +461,27 @@ const FormularioSolicitacoes = () => {
   const [recomendacaoFornecedores, setRecomendacaoFornecedores] = useState('');
 
   const [uploading, setUploading] = useState(false);
+  const [origemCotacao, setOrigemCotacao] = useState(null);
+
+  // Pré-preenchimento vindo da Cotação de Compras (botão "Solicitar Pagamento").
+  // Lê query params da URL e monta a solicitação de pagamento já com os dados.
+  useEffect(() => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      if (p.get('origem') !== 'cotacao') return;
+      if (p.get('tipo')) setTipo(p.get('tipo'));
+      if (p.get('fornecedor')) setFornecedorNome(p.get('fornecedor'));
+      if (p.get('valor')) setValorUnico(p.get('valor'));
+      if (p.get('descricao')) setDescricao(p.get('descricao'));
+      const obsPartes = [];
+      if (p.get('link')) obsPartes.push(`Link: ${p.get('link')}`);
+      if (p.get('cotacao_id')) obsPartes.push(`Cotação #${p.get('cotacao_id')}`);
+      if (obsPartes.length) setObservacao(obsPartes.join(' · '));
+      if (p.get('link')) setLinkExemplo(p.get('link'));
+      setOrigemCotacao({ id: p.get('cotacao_id'), produto: p.get('descricao') });
+    } catch { /* ignora */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Corrige o body que globalmente tem h-screen e overflow-x:hidden (index.css)
   useEffect(() => {
@@ -1149,6 +1170,16 @@ const FormularioSolicitacoes = () => {
           onSubmit={handleEnviar}
           className="bg-white rounded-2xl shadow-lg border p-6 md:p-8 space-y-7"
         >
+          {origemCotacao && (
+            <div className="flex items-start gap-2 bg-indigo-50 border border-indigo-200 text-indigo-800 rounded-lg p-3 text-sm">
+              <span className="mt-0.5">🧾</span>
+              <div>
+                <b>Solicitação gerada da Cotação de Compras{origemCotacao.id ? ` #${origemCotacao.id}` : ''}.</b>
+                {origemCotacao.produto ? ` Produto: ${origemCotacao.produto}.` : ''} Fornecedor e valor já preenchidos —
+                confira o CNPJ, a data de vencimento e a despesa antes de enviar.
+              </div>
+            </div>
+          )}
           {erro && (
             <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">
               <Warning

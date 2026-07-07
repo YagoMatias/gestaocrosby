@@ -757,6 +757,29 @@ function CotacaoDetalhe({ cotacaoId, onClose, onChanged }) {
                     <CheckCircle size={12} weight="fill" /> Marcar como comprado
                   </button>
                 )}
+                {cot.status === 'escolhido' && cot.fornecedor_escolhido_id && (() => {
+                  const fe = (cot.fornecedores || []).find((f) => f.id === cot.fornecedor_escolhido_id);
+                  if (!fe) return null;
+                  const qtd = Number(cot.quantidade) || 1;
+                  const valorTotal = (Number(fe.valor_unitario) || 0) * qtd + (Number(fe.frete) || 0);
+                  const params = new URLSearchParams({
+                    origem: 'cotacao',
+                    tipo: 'pagamento',
+                    fornecedor: fe.fornecedor_nome || '',
+                    valor: valorTotal ? valorTotal.toFixed(2) : '',
+                    descricao: `${cot.titulo}${qtd > 1 ? ` (qtd ${qtd})` : ''}`,
+                    link: fe.link || '',
+                    cotacao_id: String(cot.id),
+                  });
+                  return (
+                    <a
+                      href={`/formulario-solicitacoes?${params.toString()}`}
+                      className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold hover:bg-indigo-700 flex items-center gap-1.5"
+                    >
+                      <Receipt size={12} weight="fill" /> Solicitar Pagamento
+                    </a>
+                  );
+                })()}
                 <button onClick={() => mudarStatus('cancelado')} className="px-3 py-1.5 rounded-lg bg-rose-500/20 text-white text-xs font-medium hover:bg-rose-500/40 flex items-center gap-1.5">
                   <X size={12} /> Cancelar
                 </button>
