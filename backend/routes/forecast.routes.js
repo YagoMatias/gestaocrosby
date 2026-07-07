@@ -3436,15 +3436,94 @@ router.get(
   }),
 );
 
+// Cache em memória do Painel de Vendas por vendedor (5min) — reduz hits no
+// Supabase quando vários canais pedem o mesmo range.
+const PAINEL_VEND_CACHE = new Map();
+const PAINEL_VEND_TTL = 5 * 60 * 1000;
+
+// Lê os valores do Painel de Vendas (sale-panel) já sincronizados no Supabase
+// pela tabela forecast_painel_vendas (populada pelo cron painel-vendas-sync).
+// Soma os valores por seller_code no range [dmin,dmax]. Rápido (1 query).
+async function lerPainelVendasSupabase(sellers, dmin, dmax) {
+  try {
+    const { data, error } = await supabase
+      .from('forecast_painel_vendas')
+      .select('seller_code, seller_name, valor')
+      .gte('data', toYmd(dmin))
+      .lte('data', toYmd(dmax))
+      .in('seller_code', sellers.map(Number));
+    if (error) { console.warn(`[painel-vendas supabase] ${error.message}`); return null; }
+    if (!data || data.length === 0) return [];
+    const acc = new Map();
+    for (const r of data) {
+      const code = Number(r.seller_code);
+      const cur = acc.get(code) || { valor: 0, nome: r.seller_name };
+      cur.valor += Number(r.valor || 0);
+      if (r.seller_name) cur.nome = r.seller_name;
+      acc.set(code, cur);
+    }
+    return [...acc.entries()].map(([code, v]) => ({
+      seller_code: String(code),
+      seller_name: v.nome || `Vend. ${code}`,
+      value: Math.round(v.valor * 100) / 100,
+    }));
+  } catch (e) {
+    console.warn(`[painel-vendas supabase] ${e.message}`);
+    return null;
+  }
+}
+
 async function buildVendedoresLiquido(g, datemin, datemax) {
-  // FONTE PRIMÁRIA (2026-07): Supabase notas_fiscais direto — dealer,
-  // total_value, operation_type, person_code, invoice_code. Rápido (<2s)
-  // e bate com relatório oficial TOTVS. Substitui o replica accounts-
-  // receivable TOTVS que era lento (30-60s) e ficava travando quando
-  // o TOTVS ficava fora do ar.
-  //
-  // TOTVS live (getFaturadoOficialReplica + getSellersOficial + getCredevVendedor)
-  // usados APENAS como fallback se Supabase retornar vazio pro grupo.
+  // ─── FONTE OFICIAL (2026-07): Painel de Vendas do TOTVS via Supabase ───
+  // Decisão do gestor: o Forecast espelha o "Painel de Vendas" (sale-panel/
+  // sellers, campo seller_sale_value) — a MESMA tela que o TOTVS mostra por
+  // vendedor. É a régua oficial. Ex: David R$2.872,94 · Rafael R$1.558,18.
+  // Lê da tabela forecast_painel_vendas (sincronizada pelo cron) → rápido.
+  // Se o Supabase não tiver o range, cai no painel AO VIVO; e por último NF.
+  try {
+    const cacheKey = `${g.code}|${toYmd(datemin)}|${toYmd(datemax)}`;
+    const cached = PAINEL_VEND_CACHE.get(cacheKey);
+    if (cached && Date.now() - cached.ts < PAINEL_VEND_TTL) return cached.list;
+
+    // 1) Supabase (sincronizado) — rápido
+    let painel = await lerPainelVendasSupabase(g.sellers || [], datemin, datemax);
+    // 2) Fallback: painel ao vivo (TOTVS) se Supabase vazio pro range
+    if (!painel || painel.length === 0) {
+      const live = await getSellersOficial(g.branchs, g.operations, datemin, datemax);
+      painel = Array.isArray(live) ? live : [];
+    }
+    if (painel.length > 0) {
+      const allow = new Set((g.sellers || []).map(Number));
+      const list = [];
+      for (const s of painel) {
+        const code = Number(s.seller_code);
+        if (allow.size > 0 && !allow.has(code)) continue;
+        const valor = Number(s.value || 0);
+        if (valor <= 0) continue;
+        list.push({
+          seller_code: String(code),
+          nome: s.seller_name || `Vend. ${code}`,
+          bruto: Math.round(valor * 100) / 100,
+          credev: 0,
+          real: Math.round(valor * 100) / 100,
+          clientes: 0,
+          nfs: 0,
+        });
+      }
+      if (list.length > 0) {
+        list.sort((a, b) => b.real - a.real);
+        PAINEL_VEND_CACHE.set(cacheKey, { ts: Date.now(), list });
+        return list;
+      }
+    }
+    console.warn(`[buildVendedoresLiquido ${g.code}] painel vazio (${toYmd(datemin)}~${toYmd(datemax)}) — fallback Supabase NF`);
+  } catch (e) {
+    console.warn(`[buildVendedoresLiquido ${g.code}] painel falhou (${e.message}) — fallback Supabase NF`);
+  }
+
+  // ─── FALLBACK: Supabase notas_fiscais direto ───────────────────────────
+  // Usado só se o Painel de Vendas falhar/vier vazio. Dealer, total_value,
+  // operation_type, person_code. Aproxima o painel mas por classificação NF.
   const { createClient } = await import('@supabase/supabase-js');
   const supabaseFiscal = createClient(
     process.env.SUPABASE_FISCAL_URL,
