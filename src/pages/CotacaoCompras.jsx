@@ -6,7 +6,7 @@ import {
   ShoppingCart, Plus, PencilSimple, Trash, MagnifyingGlass, Spinner,
   CheckCircle, X, Package, Buildings, Link as LinkIcon, MapPin,
   Paperclip, DownloadSimple, Crown, ArrowRight, Calendar, Truck, Receipt,
-  Robot, Lightning, Check, Warning,
+  Robot, Lightning, Check, Warning, Camera,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
@@ -388,25 +388,48 @@ function BuscaIAModal({ cotacaoId, onClose, onAdded }) {
   const [selecionados, setSelecionados] = useState(new Set());
   const [adicionando, setAdicionando] = useState(false);
   const [info, setInfo] = useState(null);
+  const [identificado, setIdentificado] = useState(null);
+  const [fotoNome, setFotoNome] = useState('');
+
+  // Executa a busca. Se `img` (base64) for passado, busca POR FOTO.
+  const buscar = async (img = null, mime = null) => {
+    setLoading(true); setErro(''); setResultados([]); setSelecionados(new Set());
+    setIdentificado(null);
+    try {
+      const body = img ? { imageBase64: img, imageMime: mime || 'image/jpeg' } : {};
+      const r = await fetch(`${API_BASE_URL}/api/tech/cotacoes/${cotacaoId}/buscar-ia`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const j = await r.json();
+      if (!r.ok || !j?.success) throw new Error(j?.message || 'Erro na busca');
+      setResultados(j.data?.fornecedores || []);
+      setIdentificado(j.data?.identificado_por_foto || null);
+      setInfo({ busca: j.data?.busca, shopping: j.data?.shopping_count, organic: j.data?.organic_count });
+    } catch (e) { setErro(e.message); }
+    finally { setLoading(false); }
+  };
+
+  // Upload de foto → base64 → busca por foto
+  const onFoto = (file) => {
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) { setErro('Imagem muito grande (máx 8MB)'); return; }
+    setFotoNome(file.name);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      const base64 = dataUrl.split(',')[1];
+      buscar(base64, file.type || 'image/jpeg');
+    };
+    reader.readAsDataURL(file);
+  };
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      setLoading(true); setErro('');
-      try {
-        const r = await fetch(`${API_BASE_URL}/api/tech/cotacoes/${cotacaoId}/buscar-ia`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-        });
-        const j = await r.json();
-        if (!cancelled) {
-          if (!r.ok || !j?.success) throw new Error(j?.message || 'Erro na busca');
-          setResultados(j.data?.fornecedores || []);
-          setInfo({ busca: j.data?.busca, shopping: j.data?.shopping_count, organic: j.data?.organic_count });
-        }
-      } catch (e) { if (!cancelled) setErro(e.message); }
-      finally { if (!cancelled) setLoading(false); }
-    })();
+    (async () => { if (!cancelled) await buscar(); })();
     return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cotacaoId]);
 
   const toggleSel = (i) => setSelecionados((prev) => {
@@ -471,6 +494,38 @@ function BuscaIAModal({ cotacaoId, onClose, onAdded }) {
         </div>
 
         <div className="flex-1 overflow-y-auto p-5">
+          {/* Barra: buscar por foto ou refazer busca por texto */}
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <label className={`${btnGhost} cursor-pointer inline-flex items-center gap-1.5 ${loading ? 'opacity-50 pointer-events-none' : ''}`}>
+              <Camera size={15} weight="duotone" />
+              Buscar por foto
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => { onFoto(e.target.files?.[0]); e.target.value = ''; }}
+              />
+            </label>
+            <button
+              onClick={() => buscar()}
+              disabled={loading}
+              className={`${btnGhost} inline-flex items-center gap-1.5 disabled:opacity-50`}
+            >
+              <MagnifyingGlass size={15} />
+              Buscar por texto
+            </button>
+            {fotoNome && (
+              <span className="text-[11px] text-gray-500 truncate max-w-[180px]">📷 {fotoNome}</span>
+            )}
+          </div>
+
+          {identificado && !loading && (
+            <div className="mb-3 px-3 py-2 bg-cyan-50 border border-cyan-200 rounded-lg text-xs text-cyan-800 flex items-center gap-2">
+              <Camera size={14} weight="fill" />
+              <span>Produto identificado na foto: <b>{identificado}</b></span>
+            </div>
+          )}
+
           {loading && (
             <div className="text-center py-16">
               <div className="relative inline-flex items-center justify-center mb-4">
@@ -478,7 +533,7 @@ function BuscaIAModal({ cotacaoId, onClose, onAdded }) {
                 <Robot size={24} weight="fill" className="absolute text-purple-600" />
               </div>
               <p className="text-gray-700 font-semibold">Buscando melhores preços…</p>
-              <p className="text-sm text-gray-500 mt-1">Pesquisando no Google Shopping e analisando com IA</p>
+              <p className="text-sm text-gray-500 mt-1">Analisando a foto e pesquisando no Google Shopping</p>
             </div>
           )}
 

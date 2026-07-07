@@ -952,7 +952,58 @@ router.post(
     if (e1) return errorResponse(res, e1.message, 500);
     if (!cot) return errorResponse(res, 'Cotação não encontrada', 404);
 
-    const searchQuery = `comprar ${cot.titulo}${cot.descricao ? ' ' + cot.descricao : ''}`;
+    const axiosIA = (await import('axios')).default;
+
+    // ─── Busca por FOTO (opcional) ─────────────────────────────────────
+    // Se veio uma imagem (base64) no body, o Gemini Vision identifica o
+    // produto e o texto vira a query de busca (junto do título da cotação).
+    let identificadoPorFoto = null;
+    const imgBase64 = req.body?.imageBase64 || req.body?.image_base64 || null;
+    const imgMime = req.body?.imageMime || req.body?.image_mime || 'image/jpeg';
+    // Modelos de visão (mesma cadeia com fallback da busca de texto) — o free
+    // tier de um modelo pode estourar cota; tenta os próximos.
+    const MODELOS_VISION = ['gemini-2.0-flash', 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-1.5-flash'];
+    const sleepV = (ms) => new Promise((r) => setTimeout(r, ms));
+    if (imgBase64 && typeof imgBase64 === 'string') {
+      const b64limpo = imgBase64.replace(/^data:[^;]+;base64,/, '');
+      const visionBody = {
+        contents: [{
+          parts: [
+            { text: 'Identifique o produto nesta foto para uma cotação de compras B2B. Responda SÓ com nome/marca/modelo/especificação em uma linha (ex: "Cadeira de escritório presidente giratória com apoio de braço"), sem explicação. Se houver texto/etiqueta legível na embalagem, use.' },
+            { inline_data: { mime_type: imgMime, data: b64limpo } },
+          ],
+        }],
+        generationConfig: { temperature: 0.1, maxOutputTokens: 200, thinkingConfig: { thinkingBudget: 0 } },
+      };
+      visionLoop: for (const modelo of MODELOS_VISION) {
+        for (let tentativa = 1; tentativa <= 2; tentativa++) {
+          try {
+            const visionRes = await axiosIA.post(
+              `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${GEMINI_KEY}`,
+              visionBody,
+              { timeout: 45000 },
+            );
+            const vparts = visionRes.data?.candidates?.[0]?.content?.parts || [];
+            identificadoPorFoto = vparts.map((p) => p.text || '').join('').trim().slice(0, 200) || null;
+            if (identificadoPorFoto) break visionLoop;
+            break; // sem texto → tenta próximo modelo
+          } catch (e) {
+            const status = e.response?.status;
+            const msg = e.response?.data?.error?.message || e.message;
+            const transitorio = status === 503 || status === 429 || /quota|high demand|overloaded|try again/i.test(msg || '');
+            console.warn(`[cotacao-ia] Vision ${modelo} tentativa ${tentativa} (${status}): ${msg}`);
+            if (transitorio && tentativa === 1) { await sleepV(1500); continue; }
+            break; // próximo modelo
+          }
+        }
+      }
+    }
+
+    // Query: se identificou por foto, prioriza o produto identificado.
+    const baseTermo = identificadoPorFoto
+      ? `${identificadoPorFoto}${cot.titulo ? ' ' + cot.titulo : ''}`
+      : `${cot.titulo}${cot.descricao ? ' ' + cot.descricao : ''}`;
+    const searchQuery = `comprar ${baseTermo}`.trim();
 
     // 1) Busca no Google Shopping via SerpAPI
     const axios = (await import('axios')).default;
@@ -1222,6 +1273,7 @@ REGRAS:
       fornecedores,
       total: fornecedores.length,
       busca: searchQuery,
+      identificado_por_foto: identificadoPorFoto,
       shopping_count: shoppingResults.length,
       organic_count: organicResults.length,
     }, `${fornecedores.length} fornecedores encontrados via IA`);
