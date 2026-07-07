@@ -3443,22 +3443,54 @@ const PAINEL_VEND_TTL = 5 * 60 * 1000;
 
 // Lê os valores do Painel de Vendas (sale-panel) já sincronizados no Supabase
 // pela tabela forecast_painel_vendas (populada pelo cron painel-vendas-sync).
-// Soma os valores por seller_code no range [dmin,dmax]. Rápido (1 query).
-async function lerPainelVendasSupabase(sellers, dmin, dmax) {
+// Retorna LÍQUIDO por vendedor: o valor cheio de cada vendedor menos a sua
+// parte proporcional das DEVOLUÇÕES da filial (linha GERAL, dealer 50/500 etc,
+// que o TOTVS não atribui a vendedor). Distribui a devolução de cada filial
+// entre os vendedores positivos daquela filial, na proporção do que venderam.
+// Rápido: 1 query pelas filiais do canal.
+async function lerPainelVendasSupabase(g, dmin, dmax) {
   try {
-    const { data, error } = await supabase
+    const sellers = (g.sellers || []).map(Number);
+    const branchs = (g.branchs || []).map(Number);
+    // Puxa TODOS os vendedores das filiais do canal (inclui GERAL negativo)
+    // pra calcular o fator líquido por filial.
+    let q = supabase
       .from('forecast_painel_vendas')
-      .select('seller_code, seller_name, valor')
+      .select('seller_code, seller_name, branch_code, valor')
       .gte('data', toYmd(dmin))
-      .lte('data', toYmd(dmax))
-      .in('seller_code', sellers.map(Number));
+      .lte('data', toYmd(dmax));
+    if (branchs.length) q = q.in('branch_code', branchs);
+    const { data, error } = await q;
     if (error) { console.warn(`[painel-vendas supabase] ${error.message}`); return null; }
     if (!data || data.length === 0) return [];
+
+    // 1) Por filial: total positivo (vendas) e total negativo (devoluções GERAL)
+    const branchPos = new Map();
+    const branchNeg = new Map();
+    for (const r of data) {
+      const b = Number(r.branch_code);
+      const v = Number(r.valor || 0);
+      if (v > 0) branchPos.set(b, (branchPos.get(b) || 0) + v);
+      else branchNeg.set(b, (branchNeg.get(b) || 0) + v);
+    }
+    // 2) Fator líquido por filial = (pos + neg) / pos  (neg é ≤ 0)
+    const fatorFilial = (b) => {
+      const pos = branchPos.get(b) || 0;
+      const neg = branchNeg.get(b) || 0;
+      return pos > 0 ? (pos + neg) / pos : 1;
+    };
+
+    // 3) Soma LÍQUIDO só dos vendedores do canal (aplica fator da filial)
+    const allow = new Set(sellers);
     const acc = new Map();
     for (const r of data) {
       const code = Number(r.seller_code);
+      const v = Number(r.valor || 0);
+      if (v <= 0) continue; // devoluções já entram via fator
+      if (allow.size > 0 && !allow.has(code)) continue;
+      const liquido = v * fatorFilial(Number(r.branch_code));
       const cur = acc.get(code) || { valor: 0, nome: r.seller_name };
-      cur.valor += Number(r.valor || 0);
+      cur.valor += liquido;
       if (r.seller_name) cur.nome = r.seller_name;
       acc.set(code, cur);
     }
@@ -3485,8 +3517,8 @@ async function buildVendedoresLiquido(g, datemin, datemax) {
     const cached = PAINEL_VEND_CACHE.get(cacheKey);
     if (cached && Date.now() - cached.ts < PAINEL_VEND_TTL) return cached.list;
 
-    // 1) Supabase (sincronizado) — rápido
-    let painel = await lerPainelVendasSupabase(g.sellers || [], datemin, datemax);
+    // 1) Supabase (sincronizado) — rápido, já traz LÍQUIDO por vendedor
+    let painel = await lerPainelVendasSupabase(g, datemin, datemax);
     // 2) Fallback: painel ao vivo (TOTVS) se Supabase vazio pro range
     if (!painel || painel.length === 0) {
       const live = await getSellersOficial(g.branchs, g.operations, datemin, datemax);
