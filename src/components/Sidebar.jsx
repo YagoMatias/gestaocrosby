@@ -328,6 +328,18 @@ const varejo = [
     color: 'text-blue-600',
   },
   {
+    name: 'Voucher Varejo',
+    href: '/voucher-varejo',
+    icon: Ticket,
+    color: 'text-purple-600',
+  },
+  {
+    name: 'Promoções',
+    href: '/promocoes',
+    icon: Ticket,
+    color: 'text-pink-600',
+  },
+  {
     name: 'CREDEV VAREJO',
     href: '/credev-varejo',
     icon: Buildings,

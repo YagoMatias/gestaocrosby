@@ -1393,6 +1393,7 @@ const TitulosClientes = ({
 
     let sucessos = 0;
     let erros = 0;
+    const errosDetalhes = [];
 
     for (let i = 0; i < itensSelecionados.length; i++) {
       const item = itensSelecionados[i];
@@ -1418,7 +1419,16 @@ const TitulosClientes = ({
         });
 
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
+          const errBody = await response.json().catch(() => ({}));
+          console.error('🔎 Resposta de erro bank-slip:', JSON.stringify(errBody, null, 2));
+          const d = errBody.details;
+          const detail =
+            errBody.message ||
+            d?.message || d?.errorMessage || d?.detailedMessage ||
+            d?.details?.[0]?.message ||
+            (typeof d === 'string' ? d : '') ||
+            errBody.error || '';
+          throw new Error(detail || `HTTP ${response.status}`);
         }
 
         const data = await response.json();
@@ -1467,7 +1477,8 @@ const TitulosClientes = ({
           erros++;
         }
       } catch (error) {
-        console.error(`❌ Erro ao gerar boleto fatura ${item.nr_fat}:`, error);
+        console.error(`❌ Erro ao gerar boleto fatura ${item.nr_fat}:`, error.message);
+        errosDetalhes.push(`Fatura ${item.nr_fat}: ${error.message}`);
         erros++;
       }
 
@@ -1482,7 +1493,7 @@ const TitulosClientes = ({
     setTitulosSelecionados(new Set());
 
     alert(
-      `Geração concluída!\n✅ ${sucessos} boleto(s) baixado(s)\n${erros > 0 ? `❌ ${erros} erro(s)` : ''}`,
+      `Geração concluída!\n✅ ${sucessos} boleto(s) baixado(s)${erros > 0 ? `\n❌ ${erros} erro(s):\n${errosDetalhes.join('\n')}` : ''}`,
     );
   };
 

@@ -144,6 +144,8 @@ const AVAILABLE_PAGES = [
   // Varejo
   { path: '/dashboard-varejo', name: 'Dashboard Varejo', category: 'Varejo' },
   { path: '/metas-varejo', name: 'Metas Varejo', category: 'Varejo' },
+  { path: '/voucher-varejo', name: 'Voucher Varejo', category: 'Varejo' },
+  { path: '/promocoes', name: 'Promoções', category: 'Varejo' },
   { path: '/credev-varejo', name: 'CREDEV Varejo', category: 'Varejo' },
   { path: '/top-clientes', name: 'Top Clientes', category: 'Varejo' },
   {

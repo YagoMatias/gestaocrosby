@@ -135,6 +135,8 @@ const CRMVendas = lazy(() => import('./pages/CRMVendas'));
 const FaturamentoCanal = lazy(() => import('./pages/FaturamentoCanal'));
 const PainelCompeticao = lazy(() => import('./pages/PainelCompeticao'));
 const VoucherUsage = lazy(() => import('./pages/VoucherUsage'));
+const VoucherVarejo = lazy(() => import('./pages/VoucherVarejo'));
+const Promocoes = lazy(() => import('./pages/Promocoes'));
 const CatalogoAdmin = lazy(() => import('./pages/CatalogoAdmin'));
 const CrosbyManage = lazy(() => import('./pages/CrosbyManage'));
 const ExtratoTotvs = lazy(() => import('./pages/ExtratoTotvs'));
@@ -276,6 +278,8 @@ const protectedRoutes = [
   { path: '/crm/competicao', component: PainelCompeticao },
   { path: '/totvs', component: FaturamentoPanel },
   { path: '/voucher-usage', component: VoucherUsage },
+  { path: '/voucher-varejo', component: VoucherVarejo },
+  { path: '/promocoes', component: Promocoes },
   { path: '/catalogo-admin', component: CatalogoAdmin },
   { path: '/crosby-manage', component: CrosbyManage },
   { path: '/extrato-totvs', component: ExtratoTotvs },

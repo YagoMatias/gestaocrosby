@@ -27,17 +27,15 @@ import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
-  BarElement,
   Title,
   Tooltip,
   Legend,
-  ArcElement,
   PointElement,
   LineElement,
   Filler,
 } from 'chart.js';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
-import { Bar, Pie, Line } from 'react-chartjs-2';
+import { Line } from 'react-chartjs-2';
 import {
   ChartBar,
   CalendarBlank,
@@ -46,20 +44,16 @@ import {
   CircleNotch,
   Users,
   CurrencyDollar,
-  MapPin,
   Receipt,
   Clock,
   Warning,
-  Handshake,
   ChatCircleDots,
   FileText,
-  Gavel,
   TrendUp,
   ArrowUp,
   ArrowDown,
   ChartLineUp,
   ListBullets,
-  Smiley,
   ClockClockwise,
   CheckCircle,
   Trash,
@@ -75,11 +69,9 @@ import {
 ChartJS.register(
   CategoryScale,
   LinearScale,
-  BarElement,
   Title,
   Tooltip,
   Legend,
-  ArcElement,
   PointElement,
   LineElement,
   Filler,
@@ -127,17 +119,11 @@ const InadimplentesMultimarcas = () => {
   const [historicoSelecionado, setHistoricoSelecionado] = useState([]);
   const [loadingHistorico, setLoadingHistorico] = useState(false);
 
-  // Estado para Feeling e Status de cada cliente (valores salvos)
-  const [clienteFeeling, setClienteFeeling] = useState({}); // { cd_cliente: 'POSSÍVEL PAGAMENTO' | 'ATRASO' }
-  const [clienteStatus, setClienteStatus] = useState({}); // { cd_cliente: 'ACORDO' | 'ACORDO EM ANDAMENTO' | 'COBRANÇA' | 'PROTESTADO' }
+  // Estado para Representante de cada cliente (valores salvos)
   const [clienteRepresentante, setClienteRepresentante] = useState({}); // { cd_cliente: 'Nome do Representante' }
 
   // Estados para controle de edição
-  const [editandoFeeling, setEditandoFeeling] = useState(null); // cd_cliente em edição
-  const [editandoStatus, setEditandoStatus] = useState(null); // cd_cliente em edição
   const [editandoRepresentante, setEditandoRepresentante] = useState(null); // cd_cliente em edição
-  const [tempFeeling, setTempFeeling] = useState(''); // valor temporário do select
-  const [tempStatus, setTempStatus] = useState(''); // valor temporário do select
   const [tempRepresentante, setTempRepresentante] = useState(''); // valor temporário do input
 
   // Estados para modal de observações
@@ -285,121 +271,7 @@ const InadimplentesMultimarcas = () => {
     }
   };
 
-  // Handlers para iniciar edição
-  const iniciarEdicaoFeeling = (cdCliente, e) => {
-    e.stopPropagation();
-    setEditandoFeeling(cdCliente);
-    setTempFeeling(clienteFeeling[cdCliente] || '');
-  };
-
-  const iniciarEdicaoStatus = (cdCliente, e) => {
-    e.stopPropagation();
-    setEditandoStatus(cdCliente);
-    setTempStatus(clienteStatus[cdCliente] || '');
-  };
-
-  // Handlers para salvar
-  const salvarFeeling = async (cdCliente, e) => {
-    e.stopPropagation();
-    if (!tempFeeling) return;
-
-    // Atualizar estado local
-    setClienteFeeling((prev) => ({
-      ...prev,
-      [cdCliente]: tempFeeling,
-    }));
-    setEditandoFeeling(null);
-    setTempFeeling('');
-
-    // SALVAR NO SUPABASE
-    const cliente = clientesAgrupados.find((c) => c.cd_cliente === cdCliente);
-
-    if (cliente && user) {
-      const classificacao = {
-        cd_cliente: cliente.cd_cliente,
-        nm_cliente: cliente.nm_cliente,
-        valor_total: cliente.valor_total,
-        ds_siglaest: cliente.ds_uf?.trim() || null,
-        situacao: cliente.situacao,
-        feeling: tempFeeling,
-        status: clienteStatus[cdCliente] || null,
-        usuario: user.email || user.id,
-      };
-
-      const { success, error } = await salvarClassificacao(classificacao);
-
-      if (success) {
-        setNotification({
-          type: 'success',
-          message: 'Feeling salvo com sucesso!',
-        });
-        setTimeout(() => setNotification(null), 3000);
-      } else {
-        setNotification({
-          type: 'error',
-          message: `Erro ao salvar: ${error}`,
-        });
-      }
-    }
-  };
-
-  const salvarStatus = async (cdCliente, e) => {
-    e.stopPropagation();
-    if (!tempStatus) return;
-
-    // Atualizar estado local
-    setClienteStatus((prev) => ({
-      ...prev,
-      [cdCliente]: tempStatus,
-    }));
-    setEditandoStatus(null);
-    setTempStatus('');
-
-    // SALVAR NO SUPABASE
-    const cliente = clientesAgrupados.find((c) => c.cd_cliente === cdCliente);
-
-    if (cliente && user) {
-      const classificacao = {
-        cd_cliente: cliente.cd_cliente,
-        nm_cliente: cliente.nm_cliente,
-        valor_total: cliente.valor_total,
-        ds_siglaest: cliente.ds_uf?.trim() || null,
-        situacao: cliente.situacao,
-        feeling: clienteFeeling[cdCliente] || null,
-        status: tempStatus,
-        usuario: user.email || user.id,
-      };
-
-      const { success, error } = await salvarClassificacao(classificacao);
-
-      if (success) {
-        setNotification({
-          type: 'success',
-          message: 'Status salvo com sucesso!',
-        });
-        setTimeout(() => setNotification(null), 3000);
-      } else {
-        setNotification({
-          type: 'error',
-          message: `Erro ao salvar: ${error}`,
-        });
-      }
-    }
-  };
-
   // Handlers para cancelar
-  const cancelarEdicaoFeeling = (e) => {
-    e.stopPropagation();
-    setEditandoFeeling(null);
-    setTempFeeling('');
-  };
-
-  const cancelarEdicaoStatus = (e) => {
-    e.stopPropagation();
-    setEditandoStatus(null);
-    setTempStatus('');
-  };
-
   const cancelarEdicaoRepresentante = (e) => {
     e.stopPropagation();
     setEditandoRepresentante(null);
@@ -436,8 +308,6 @@ const InadimplentesMultimarcas = () => {
         valor_total: cliente.valor_total,
         ds_siglaest: cliente.ds_uf?.trim() || null,
         situacao: cliente.situacao,
-        feeling: clienteFeeling[cdCliente] || null,
-        status: clienteStatus[cdCliente] || null,
         representante: tempRepresentante,
         usuario: user.email || user.id,
       };
@@ -621,43 +491,6 @@ Crosby`;
     window.open(whatsappUrl, '_blank');
   };
 
-  // Funções para determinar classes CSS dos badges
-  const getFeelingBadgeClass = (feeling) => {
-    switch (feeling) {
-      case 'POSSÍVEL PAGAMENTO':
-        return 'bg-green-100 text-green-800';
-      case 'ATRASO':
-        return 'bg-orange-100 text-orange-800';
-      default:
-        return 'bg-gray-100 text-gray-600';
-    }
-  };
-
-  const getStatusBadgeClass = (status) => {
-    switch (status) {
-      case 'ACORDO':
-        return 'bg-blue-100 text-blue-800';
-      case 'ACORDO EM ANDAMENTO':
-        return 'bg-cyan-100 text-cyan-800';
-      case 'COBRANÇA':
-        return 'bg-purple-100 text-purple-800';
-      case 'PROTESTADO':
-        return 'bg-red-100 text-red-800';
-      case 'PAGO PENDENTE DE BAIXA':
-        return 'bg-green-100 text-green-800';
-      case 'LOJA FECHADA (Tentando ACORDO)':
-        return 'bg-orange-100 text-orange-800';
-      case 'ACORDO CONCLUÍDO':
-        return 'bg-emerald-100 text-emerald-800';
-      case 'NOTIFICAÇÃO JURÍDICA':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'EM AÇÃO JUDICIAL':
-        return 'bg-red-200 text-red-900';
-      default:
-        return 'bg-gray-100 text-gray-600';
-    }
-  };
-
   // Funções para abrir modal de lista com filtros específicos
   const abrirModalLista = (titulo, clientesFiltrados) => {
     setTituloModalLista(titulo);
@@ -673,103 +506,15 @@ Crosby`;
 
   // Handlers para abrir modal por situação
   const abrirModalAtrasados = () => {
-    const clientes = clientesAgrupados.filter((c) => c.situacao === 'ATRASADO');
-    abrirModalLista('Clientes Atrasados (até 31 dias)', clientes);
+    const clientes = clientesAgrupados.filter((c) => c.situacao === 'VENCIDO');
+    abrirModalLista('Clientes Vencidos (até 60 dias)', clientes);
   };
 
   const abrirModalInadimplentes = () => {
     const clientes = clientesAgrupados.filter(
       (c) => c.situacao === 'INADIMPLENTE',
     );
-    abrirModalLista('Clientes Inadimplentes (acima de 31 dias)', clientes);
-  };
-
-  // Handlers para abrir modal por feeling
-  const abrirModalFeelingAtraso = () => {
-    const clientes = clientesAgrupados.filter(
-      (c) => clienteFeeling[c.cd_cliente] === 'ATRASO',
-    );
-    abrirModalLista('Clientes com Feeling: Atraso', clientes);
-  };
-
-  const abrirModalFeelingPossivelPagamento = () => {
-    const clientes = clientesAgrupados.filter(
-      (c) => clienteFeeling[c.cd_cliente] === 'POSSÍVEL PAGAMENTO',
-    );
-    abrirModalLista('Clientes com Feeling: Possível Pagamento', clientes);
-  };
-
-  // Handlers para abrir modal por status
-  const abrirModalStatusAcordo = () => {
-    const clientes = clientesAgrupados.filter(
-      (c) => clienteStatus[c.cd_cliente] === 'ACORDO',
-    );
-    abrirModalLista('Clientes com Status: Acordo', clientes);
-  };
-
-  const abrirModalStatusAcordoAndamento = () => {
-    const clientes = clientesAgrupados.filter(
-      (c) => clienteStatus[c.cd_cliente] === 'ACORDO EM ANDAMENTO',
-    );
-    abrirModalLista('Clientes com Status: Acordo em Andamento', clientes);
-  };
-
-  const abrirModalStatusCobranca = () => {
-    const clientes = clientesAgrupados.filter(
-      (c) => clienteStatus[c.cd_cliente] === 'COBRANÇA',
-    );
-    abrirModalLista('Clientes com Status: Cobrança', clientes);
-  };
-
-  const abrirModalStatusProtestado = () => {
-    const clientes = clientesAgrupados.filter(
-      (c) => clienteStatus[c.cd_cliente] === 'PROTESTADO',
-    );
-    abrirModalLista('Clientes com Status: Protestado', clientes);
-  };
-
-  // Handlers para os novos status
-  const abrirModalStatusPagoPendente = () => {
-    const clientes = clientesAgrupados.filter(
-      (c) => clienteStatus[c.cd_cliente] === 'PAGO PENDENTE DE BAIXA',
-    );
-    abrirModalLista('Clientes com Status: Pago Pendente de Baixa', clientes);
-  };
-
-  const abrirModalStatusLojaFechada = () => {
-    const clientes = clientesAgrupados.filter(
-      (c) => clienteStatus[c.cd_cliente] === 'LOJA FECHADA (Tentando ACORDO)',
-    );
-    abrirModalLista(
-      'Clientes com Status: Loja Fechada (Tentando Acordo)',
-      clientes,
-    );
-  };
-
-  const abrirModalStatusAcordoConcluido = () => {
-    const clientes = clientesAgrupados.filter(
-      (c) => clienteStatus[c.cd_cliente] === 'ACORDO CONCLUÍDO',
-    );
-    abrirModalLista('Clientes com Status: Acordo Concluído', clientes);
-  };
-
-  const abrirModalStatusNotificacaoJuridica = () => {
-    const clientes = clientesAgrupados.filter(
-      (c) => clienteStatus[c.cd_cliente] === 'NOTIFICAÇÃO JURÍDICA',
-    );
-    abrirModalLista('Clientes com Status: Notificação Jurídica', clientes);
-  };
-
-  const abrirModalStatusAcaoJudicial = () => {
-    const clientes = clientesAgrupados.filter(
-      (c) => clienteStatus[c.cd_cliente] === 'EM AÇÃO JUDICIAL',
-    );
-    abrirModalLista('Clientes com Status: Em Ação Judicial', clientes);
-  };
-
-  // Handlers para matriz cruzada (Situação x Status)
-  const abrirModalMatriz = (titulo, clientes) => {
-    abrirModalLista(titulo, clientes);
+    abrirModalLista('Clientes Inadimplentes (acima de 60 dias)', clientes);
   };
 
   // Buscar dados da API via TOTVS
@@ -963,28 +708,16 @@ Crosby`;
           await buscarClassificacoes();
 
         if (success && classificacoesSalvas) {
-          const feelingMap = {};
-          const statusMap = {};
           const representanteMap = {};
 
           classificacoesSalvas.forEach((c) => {
-            if (c.feeling) {
-              feelingMap[c.cd_cliente] = c.feeling;
-            }
-            if (c.status) {
-              statusMap[c.cd_cliente] = c.status;
-            }
             if (c.representante) {
               representanteMap[c.cd_cliente] = c.representante;
             }
           });
 
-          setClienteFeeling(feelingMap);
-          setClienteStatus(statusMap);
           setClienteRepresentante(representanteMap);
           console.log('✅ Classificações carregadas do Supabase:', {
-            feeling: Object.keys(feelingMap).length,
-            status: Object.keys(statusMap).length,
             representante: Object.keys(representanteMap).length,
           });
         }
@@ -1098,14 +831,12 @@ Crosby`;
         return Math.max(max, diff);
       }, 0);
 
-      const situacao = diasAtrasoMax > 60 ? 'INADIMPLENTE' : 'ATRASADO';
+      const situacao = diasAtrasoMax > 60 ? 'INADIMPLENTE' : 'VENCIDO';
 
       return {
         ...cliente,
         diasAtrasoMax,
         situacao,
-        feeling: clienteFeeling[cliente.cd_cliente] || null,
-        status: clienteStatus[cliente.cd_cliente] || null,
         representante: clienteRepresentante[cliente.cd_cliente] || null,
         valor_a_vencer: valoresAVencer[cliente.cd_cliente] || 0,
       };
@@ -1137,14 +868,6 @@ Crosby`;
             valorA = (a.situacao || '').toLowerCase();
             valorB = (b.situacao || '').toLowerCase();
             break;
-          case 'feeling':
-            valorA = (a.feeling || '').toLowerCase();
-            valorB = (b.feeling || '').toLowerCase();
-            break;
-          case 'status':
-            valorA = (a.status || '').toLowerCase();
-            valorB = (b.status || '').toLowerCase();
-            break;
           case 'representante':
             valorA = (a.representante || '').toLowerCase();
             valorB = (b.representante || '').toLowerCase();
@@ -1166,8 +889,6 @@ Crosby`;
     return resultado;
   }, [
     dadosFiltrados,
-    clienteFeeling,
-    clienteStatus,
     clienteRepresentante,
     valoresAVencer,
     ordenarPor,
@@ -1178,7 +899,7 @@ Crosby`;
   const resumoPorRepresentante = useMemo(() => {
     const mapa = {};
     clientesAgrupados.forEach((cliente) => {
-      const rep = cliente.representante || 'SEM REPRESENTANTE';
+      const rep = normalizeRepName(cliente.representante);
       if (!mapa[rep]) {
         mapa[rep] = {
           representante: rep,
@@ -1213,7 +934,7 @@ Crosby`;
         0,
       );
       const atrasados = clientesAgrupados.filter(
-        (c) => c.situacao === 'ATRASADO',
+        (c) => c.situacao === 'VENCIDO',
       );
       const inadimplentes = clientesAgrupados.filter(
         (c) => c.situacao === 'INADIMPLENTE',
@@ -1259,7 +980,16 @@ Crosby`;
       datasets: [
         {
           label: 'Valor Total Inadimplência',
-          data: timeline.map((t) => parseFloat(t.valor_total) || 0),
+          data: timeline.map((t, i) => {
+            const val = parseFloat(t.valor_total) || 0;
+            if (val === 0 && i > 0) {
+              for (let j = i - 1; j >= 0; j--) {
+                const prev = parseFloat(timeline[j].valor_total) || 0;
+                if (prev > 0) return prev;
+              }
+            }
+            return val;
+          }),
           borderColor: '#fe0000',
           backgroundColor: 'rgba(254, 0, 0, 0.1)',
           fill: true,
@@ -1287,7 +1017,16 @@ Crosby`;
       datasets: [
         {
           label: 'Qtd Clientes Inadimplentes',
-          data: timeline.map((t) => parseInt(t.qtd_clientes) || 0),
+          data: timeline.map((t, i) => {
+            const val = parseInt(t.qtd_clientes) || 0;
+            if (val === 0 && i > 0) {
+              for (let j = i - 1; j >= 0; j--) {
+                const prev = parseInt(timeline[j].qtd_clientes) || 0;
+                if (prev > 0) return prev;
+              }
+            }
+            return val;
+          }),
           borderColor: '#3b82f6',
           backgroundColor: 'rgba(59, 130, 246, 0.1)',
           fill: true,
@@ -1321,8 +1060,17 @@ Crosby`;
       }),
       datasets: [
         {
-          label: 'Atrasados (≤ 60 dias)',
-          data: dados.map((t) => parseFloat(t.valor_atrasados) || 0),
+          label: 'Vencidos (≤ 60 dias)',
+          data: dados.map((t, i) => {
+            const val = parseFloat(t.valor_atrasados) || 0;
+            if (val === 0 && i > 0) {
+              for (let j = i - 1; j >= 0; j--) {
+                const prev = parseFloat(dados[j].valor_atrasados) || 0;
+                if (prev > 0) return prev;
+              }
+            }
+            return val;
+          }),
           borderColor: '#f59e0b',
           backgroundColor: 'rgba(245, 158, 11, 0.1)',
           fill: true,
@@ -1335,7 +1083,16 @@ Crosby`;
         },
         {
           label: 'Inadimplentes (> 60 dias)',
-          data: dados.map((t) => parseFloat(t.valor_inadimplentes) || 0),
+          data: dados.map((t, i) => {
+            const val = parseFloat(t.valor_inadimplentes) || 0;
+            if (val === 0 && i > 0) {
+              for (let j = i - 1; j >= 0; j--) {
+                const prev = parseFloat(dados[j].valor_inadimplentes) || 0;
+                if (prev > 0) return prev;
+              }
+            }
+            return val;
+          }),
           borderColor: '#fe0000',
           backgroundColor: 'rgba(254, 0, 0, 0.1)',
           fill: true,
@@ -1351,6 +1108,34 @@ Crosby`;
   }, [timeline]);
 
   // Gráfico: Evolução por Representante (top 5 por último valor)
+  // Normalizar nomes de representantes (agrupar por primeiro nome)
+  const normalizeRepName = (name) => {
+    if (!name) return 'SEM REPRESENTANTE';
+    const firstName = name.trim().split(/\s+/)[0].toUpperCase();
+    return firstName;
+  };
+
+  // Agregar dados de timelineRep por nome normalizado
+  const normalizedTimelineRep = useMemo(() => {
+    if (!timelineRep.length) return [];
+    const grouped = {};
+    timelineRep.forEach((t) => {
+      const normName = normalizeRepName(t.representante);
+      const key = `${t.data}||${normName}`;
+      if (!grouped[key]) {
+        grouped[key] = {
+          data: t.data,
+          representante: normName,
+          valor_total: 0,
+          qtd_clientes: 0,
+        };
+      }
+      grouped[key].valor_total += parseFloat(t.valor_total) || 0;
+      grouped[key].qtd_clientes += parseInt(t.qtd_clientes) || 0;
+    });
+    return Object.values(grouped);
+  }, [timelineRep]);
+
   const CORES_REPRESENTANTES = [
     '#000638',
     '#fe0000',
@@ -1367,10 +1152,10 @@ Crosby`;
   ];
 
   const chartTimelineRepresentantes = useMemo(() => {
-    if (!timelineRep.length) return null;
+    if (!normalizedTimelineRep.length) return null;
 
     // Pegar datas únicas ordenadas
-    const datasUnicas = [...new Set(timelineRep.map((t) => t.data))].sort();
+    const datasUnicas = [...new Set(normalizedTimelineRep.map((t) => t.data))].sort();
     const labels = datasUnicas.map((d) => {
       const dt = parseDateNoTZ(d);
       return dt
@@ -1380,7 +1165,7 @@ Crosby`;
 
     // Pegar nomes únicos de representantes e ordenar pelo valor na última data
     const ultimaData = datasUnicas[datasUnicas.length - 1];
-    const dadosUltimaData = timelineRep.filter((t) => t.data === ultimaData);
+    const dadosUltimaData = normalizedTimelineRep.filter((t) => t.data === ultimaData);
     const repsOrdenados = dadosUltimaData
       .sort(
         (a, b) =>
@@ -1394,7 +1179,7 @@ Crosby`;
       return {
         label: rep,
         data: datasUnicas.map((data) => {
-          const entry = timelineRep.find(
+          const entry = normalizedTimelineRep.find(
             (t) => t.data === data && t.representante === rep,
           );
           return entry ? parseFloat(entry.valor_total) || 0 : 0;
@@ -1412,13 +1197,13 @@ Crosby`;
     });
 
     return { labels, datasets };
-  }, [timelineRep]);
+  }, [normalizedTimelineRep]);
 
   // Chart: Evolução qtd clientes por representante
   const chartTimelineRepClientes = useMemo(() => {
-    if (!timelineRep.length) return null;
+    if (!normalizedTimelineRep.length) return null;
 
-    const datasUnicas = [...new Set(timelineRep.map((t) => t.data))].sort();
+    const datasUnicas = [...new Set(normalizedTimelineRep.map((t) => t.data))].sort();
     const labels = datasUnicas.map((d) => {
       const dt = parseDateNoTZ(d);
       return dt
@@ -1427,7 +1212,7 @@ Crosby`;
     });
 
     const ultimaData = datasUnicas[datasUnicas.length - 1];
-    const dadosUltimaData = timelineRep.filter((t) => t.data === ultimaData);
+    const dadosUltimaData = normalizedTimelineRep.filter((t) => t.data === ultimaData);
     const repsOrdenados = dadosUltimaData
       .sort(
         (a, b) =>
@@ -1440,7 +1225,7 @@ Crosby`;
       return {
         label: rep,
         data: datasUnicas.map((data) => {
-          const entry = timelineRep.find(
+          const entry = normalizedTimelineRep.find(
             (t) => t.data === data && t.representante === rep,
           );
           return entry ? parseInt(entry.qtd_clientes) || 0 : 0;
@@ -1458,7 +1243,7 @@ Crosby`;
     });
 
     return { labels, datasets };
-  }, [timelineRep]);
+  }, [normalizedTimelineRep]);
 
   // Opções dos gráficos de linha
   const lineOptionsValor = {
@@ -1656,7 +1441,7 @@ Crosby`;
 
     // Métricas por Situação
     const atrasados = clientesAgrupados.filter(
-      (c) => c.situacao === 'ATRASADO',
+      (c) => c.situacao === 'VENCIDO',
     );
     const inadimplentes = clientesAgrupados.filter(
       (c) => c.situacao === 'INADIMPLENTE',
@@ -1666,100 +1451,6 @@ Crosby`;
     const valorAtrasados = atrasados.reduce((acc, c) => acc + c.valor_total, 0);
     const qtdInadimplentes = inadimplentes.length;
     const valorInadimplentes = inadimplentes.reduce(
-      (acc, c) => acc + c.valor_total,
-      0,
-    );
-
-    // Métricas por Feeling
-    const feelingAtraso = clientesAgrupados.filter(
-      (c) => clienteFeeling[c.cd_cliente] === 'ATRASO',
-    );
-    const feelingPossivelPagamento = clientesAgrupados.filter(
-      (c) => clienteFeeling[c.cd_cliente] === 'POSSÍVEL PAGAMENTO',
-    );
-
-    const qtdFeelingAtraso = feelingAtraso.length;
-    const valorFeelingAtraso = feelingAtraso.reduce(
-      (acc, c) => acc + c.valor_total,
-      0,
-    );
-    const qtdFeelingPossivelPagamento = feelingPossivelPagamento.length;
-    const valorFeelingPossivelPagamento = feelingPossivelPagamento.reduce(
-      (acc, c) => acc + c.valor_total,
-      0,
-    );
-
-    // Métricas por Status
-    const statusAcordo = clientesAgrupados.filter(
-      (c) => clienteStatus[c.cd_cliente] === 'ACORDO',
-    );
-    const statusAcordoAndamento = clientesAgrupados.filter(
-      (c) => clienteStatus[c.cd_cliente] === 'ACORDO EM ANDAMENTO',
-    );
-    const statusCobranca = clientesAgrupados.filter(
-      (c) => clienteStatus[c.cd_cliente] === 'COBRANÇA',
-    );
-    const statusProtestado = clientesAgrupados.filter(
-      (c) => clienteStatus[c.cd_cliente] === 'PROTESTADO',
-    );
-
-    const qtdAcordo = statusAcordo.length;
-    const valorAcordo = statusAcordo.reduce((acc, c) => acc + c.valor_total, 0);
-    const qtdAcordoAndamento = statusAcordoAndamento.length;
-    const valorAcordoAndamento = statusAcordoAndamento.reduce(
-      (acc, c) => acc + c.valor_total,
-      0,
-    );
-    const qtdCobranca = statusCobranca.length;
-    const valorCobranca = statusCobranca.reduce(
-      (acc, c) => acc + c.valor_total,
-      0,
-    );
-    const qtdProtestado = statusProtestado.length;
-    const valorProtestado = statusProtestado.reduce(
-      (acc, c) => acc + c.valor_total,
-      0,
-    );
-
-    // Métricas para os novos status
-    const statusPagoPendente = clientesAgrupados.filter(
-      (c) => clienteStatus[c.cd_cliente] === 'PAGO PENDENTE DE BAIXA',
-    );
-    const statusLojaFechada = clientesAgrupados.filter(
-      (c) => clienteStatus[c.cd_cliente] === 'LOJA FECHADA (Tentando ACORDO)',
-    );
-    const statusAcordoConcluido = clientesAgrupados.filter(
-      (c) => clienteStatus[c.cd_cliente] === 'ACORDO CONCLUÍDO',
-    );
-    const statusNotificacaoJuridica = clientesAgrupados.filter(
-      (c) => clienteStatus[c.cd_cliente] === 'NOTIFICAÇÃO JURÍDICA',
-    );
-    const statusAcaoJudicial = clientesAgrupados.filter(
-      (c) => clienteStatus[c.cd_cliente] === 'EM AÇÃO JUDICIAL',
-    );
-
-    const qtdPagoPendente = statusPagoPendente.length;
-    const valorPagoPendente = statusPagoPendente.reduce(
-      (acc, c) => acc + c.valor_total,
-      0,
-    );
-    const qtdLojaFechada = statusLojaFechada.length;
-    const valorLojaFechada = statusLojaFechada.reduce(
-      (acc, c) => acc + c.valor_total,
-      0,
-    );
-    const qtdAcordoConcluido = statusAcordoConcluido.length;
-    const valorAcordoConcluido = statusAcordoConcluido.reduce(
-      (acc, c) => acc + c.valor_total,
-      0,
-    );
-    const qtdNotificacaoJuridica = statusNotificacaoJuridica.length;
-    const valorNotificacaoJuridica = statusNotificacaoJuridica.reduce(
-      (acc, c) => acc + c.valor_total,
-      0,
-    );
-    const qtdAcaoJudicial = statusAcaoJudicial.length;
-    const valorAcaoJudicial = statusAcaoJudicial.reduce(
       (acc, c) => acc + c.valor_total,
       0,
     );
@@ -1774,223 +1465,8 @@ Crosby`;
       valorAtrasados,
       qtdInadimplentes,
       valorInadimplentes,
-      // Feeling
-      qtdFeelingAtraso,
-      valorFeelingAtraso,
-      qtdFeelingPossivelPagamento,
-      valorFeelingPossivelPagamento,
-      // Status
-      qtdAcordo,
-      valorAcordo,
-      qtdAcordoAndamento,
-      valorAcordoAndamento,
-      qtdCobranca,
-      valorCobranca,
-      qtdProtestado,
-      valorProtestado,
-      // Novos Status
-      qtdPagoPendente,
-      valorPagoPendente,
-      qtdLojaFechada,
-      valorLojaFechada,
-      qtdAcordoConcluido,
-      valorAcordoConcluido,
-      qtdNotificacaoJuridica,
-      valorNotificacaoJuridica,
-      qtdAcaoJudicial,
-      valorAcaoJudicial,
     };
-  }, [clientesAgrupados, dadosFiltrados, clienteFeeling, clienteStatus]);
-
-  // Matriz cruzada: Situação x Status
-  const matrizSituacaoStatus = useMemo(() => {
-    const matriz = {
-      atrasadosAcordo: clientesAgrupados.filter(
-        (c) =>
-          c.situacao === 'ATRASADO' && clienteStatus[c.cd_cliente] === 'ACORDO',
-      ),
-      atrasadosAcordoAndamento: clientesAgrupados.filter(
-        (c) =>
-          c.situacao === 'ATRASADO' &&
-          clienteStatus[c.cd_cliente] === 'ACORDO EM ANDAMENTO',
-      ),
-      atrasadosCobranca: clientesAgrupados.filter(
-        (c) =>
-          c.situacao === 'ATRASADO' &&
-          clienteStatus[c.cd_cliente] === 'COBRANÇA',
-      ),
-      atrasadosProtestado: clientesAgrupados.filter(
-        (c) =>
-          c.situacao === 'ATRASADO' &&
-          clienteStatus[c.cd_cliente] === 'PROTESTADO',
-      ),
-
-      inadimplentesAcordo: clientesAgrupados.filter(
-        (c) =>
-          c.situacao === 'INADIMPLENTE' &&
-          clienteStatus[c.cd_cliente] === 'ACORDO',
-      ),
-      inadimplentesAcordoAndamento: clientesAgrupados.filter(
-        (c) =>
-          c.situacao === 'INADIMPLENTE' &&
-          clienteStatus[c.cd_cliente] === 'ACORDO EM ANDAMENTO',
-      ),
-      inadimplentesCobranca: clientesAgrupados.filter(
-        (c) =>
-          c.situacao === 'INADIMPLENTE' &&
-          clienteStatus[c.cd_cliente] === 'COBRANÇA',
-      ),
-      inadimplentesProtestado: clientesAgrupados.filter(
-        (c) =>
-          c.situacao === 'INADIMPLENTE' &&
-          clienteStatus[c.cd_cliente] === 'PROTESTADO',
-      ),
-    };
-
-    return {
-      atrasadosAcordo: {
-        clientes: matriz.atrasadosAcordo,
-        qtd: matriz.atrasadosAcordo.length,
-        valor: matriz.atrasadosAcordo.reduce(
-          (acc, c) => acc + c.valor_total,
-          0,
-        ),
-      },
-      atrasadosAcordoAndamento: {
-        clientes: matriz.atrasadosAcordoAndamento,
-        qtd: matriz.atrasadosAcordoAndamento.length,
-        valor: matriz.atrasadosAcordoAndamento.reduce(
-          (acc, c) => acc + c.valor_total,
-          0,
-        ),
-      },
-      atrasadosCobranca: {
-        clientes: matriz.atrasadosCobranca,
-        qtd: matriz.atrasadosCobranca.length,
-        valor: matriz.atrasadosCobranca.reduce(
-          (acc, c) => acc + c.valor_total,
-          0,
-        ),
-      },
-      atrasadosProtestado: {
-        clientes: matriz.atrasadosProtestado,
-        qtd: matriz.atrasadosProtestado.length,
-        valor: matriz.atrasadosProtestado.reduce(
-          (acc, c) => acc + c.valor_total,
-          0,
-        ),
-      },
-      inadimplentesAcordo: {
-        clientes: matriz.inadimplentesAcordo,
-        qtd: matriz.inadimplentesAcordo.length,
-        valor: matriz.inadimplentesAcordo.reduce(
-          (acc, c) => acc + c.valor_total,
-          0,
-        ),
-      },
-      inadimplentesAcordoAndamento: {
-        clientes: matriz.inadimplentesAcordoAndamento,
-        qtd: matriz.inadimplentesAcordoAndamento.length,
-        valor: matriz.inadimplentesAcordoAndamento.reduce(
-          (acc, c) => acc + c.valor_total,
-          0,
-        ),
-      },
-      inadimplentesCobranca: {
-        clientes: matriz.inadimplentesCobranca,
-        qtd: matriz.inadimplentesCobranca.length,
-        valor: matriz.inadimplentesCobranca.reduce(
-          (acc, c) => acc + c.valor_total,
-          0,
-        ),
-      },
-      inadimplentesProtestado: {
-        clientes: matriz.inadimplentesProtestado,
-        qtd: matriz.inadimplentesProtestado.length,
-        valor: matriz.inadimplentesProtestado.reduce(
-          (acc, c) => acc + c.valor_total,
-          0,
-        ),
-      },
-    };
-  }, [clientesAgrupados, clienteStatus]);
-
-  // Dados para gráfico por estado
-  const dadosPorEstado = useMemo(() => {
-    const agrupado = dadosFiltrados.reduce((acc, item) => {
-      const estado = item.ds_uf?.trim() || 'Não informado';
-      if (!acc[estado]) {
-        acc[estado] = { clientes: 0, valor: 0 };
-      }
-      acc[estado].clientes += 1;
-      acc[estado].valor += parseFloat(item.vl_fatura) || 0;
-      return acc;
-    }, {});
-
-    const estados = Object.keys(agrupado);
-    const clientesPorEstado = estados.map(
-      (estado) => agrupado[estado].clientes,
-    );
-    const valoresPorEstado = estados.map((estado) => agrupado[estado].valor);
-
-    return {
-      estados,
-      clientesPorEstado,
-      valoresPorEstado,
-    };
-  }, [dadosFiltrados]);
-
-  // Configuração do gráfico geral
-  // Top clientes por valor inadimplente (top 10) com dias de atraso máximos
-  const topClientes = useMemo(() => {
-    if (!clientesAgrupados || clientesAgrupados.length === 0) return [];
-    const sorted = [...clientesAgrupados]
-      .sort((a, b) => b.valor_total - a.valor_total)
-      .slice(0, 10);
-    return sorted.map((c) => {
-      const diasMax = (c.faturas || []).reduce((max, f) => {
-        if (!f.dt_vencimento) return max;
-        const hoje = new Date();
-        hoje.setHours(0, 0, 0, 0);
-        const [datePart] = String(f.dt_vencimento).split('T');
-        const [y, m, d] = datePart.split('-').map((n) => parseInt(n, 10));
-        const venc = new Date(y, m - 1, d);
-        venc.setHours(0, 0, 0, 0);
-        const diff = Math.floor((hoje - venc) / (1000 * 60 * 60 * 24));
-        return Math.max(max, diff);
-      }, 0);
-      return { ...c, diasAtrasoMax: diasMax };
-    });
-  }, [clientesAgrupados]);
-
-  const graficoPrincipalData = {
-    labels: topClientes.map((c) =>
-      c.nm_cliente ? c.nm_cliente : c.cd_cliente,
-    ),
-    datasets: [
-      {
-        label: 'Valor Inadimplente (R$)',
-        data: topClientes.map((c) => Number(c.valor_total || 0)),
-        backgroundColor: '#000638',
-        borderColor: '#000638',
-        borderWidth: 1,
-      },
-    ],
-  };
-
-  // Configuração do gráfico por estado
-  const graficoEstadoData = {
-    labels: dadosPorEstado.estados,
-    datasets: [
-      {
-        label: 'Clientes',
-        data: dadosPorEstado.clientesPorEstado,
-        backgroundColor: '#000638',
-        borderColor: '#000638',
-        borderWidth: 1,
-      },
-    ],
-  };
+  }, [clientesAgrupados, dadosFiltrados]);
 
   // Mapear tipo de cobrança TOTVS
   const getTipoCobranca = (tipo) => {
@@ -2546,13 +2022,13 @@ Crosby`;
                 </CardContent>
               </Card>
 
-              {/* Gráfico: Evolução Atrasados vs Inadimplentes */}
+              {/* Gráfico: Evolução Vencidos vs Inadimplentes */}
               <Card className="shadow-lg rounded-xl bg-white">
                 <CardHeader className="pb-2">
                   <div className="flex items-center gap-2">
                     <Warning size={18} className="text-yellow-600" />
                     <CardTitle className="text-sm font-bold text-[#000638]">
-                      Evolução Atrasados vs Inadimplentes
+                      Evolução Vencidos vs Inadimplentes
                     </CardTitle>
                     <div className="ml-auto flex items-center gap-2">
                       {variacoes.atrasados !== null && (
@@ -2564,7 +2040,7 @@ Crosby`;
                           ) : variacoes.atrasados < 0 ? (
                             <ArrowDown size={14} weight="bold" />
                           ) : null}
-                          Atr. {variacoes.atrasados > 0 ? '+' : ''}
+                          Venc. {variacoes.atrasados > 0 ? '+' : ''}
                           {variacoes.atrasados.toFixed(1)}%
                         </span>
                       )}
@@ -2584,7 +2060,7 @@ Crosby`;
                     </div>
                   </div>
                   <CardDescription className="text-xs text-gray-500">
-                    Atrasados (≤ 60 dias) vs Inadimplentes ({'>'} 60 dias) —
+                    Vencidos (≤ 60 dias) vs Inadimplentes ({'>'} 60 dias) —
                     acompanhe a gravidade da carteira{' '}
                     {variacoes.primeiraData
                       ? `(ref. ${variacoes.primeiraData})`
@@ -2717,32 +2193,6 @@ Crosby`;
               </CardContent>
             </Card>
 
-            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
-              <CardHeader className="pb-2">
-                <div className="flex items-center gap-2">
-                  <Handshake size={18} className="text-purple-600" />
-                  <CardTitle className="text-sm font-bold text-purple-700">
-                    Valor Total - Acordos
-                  </CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0 px-4 pb-4">
-                <div className="text-base font-extrabold text-purple-600 mb-0.5">
-                  {formatarMoeda(
-                    metricas.valorTotal -
-                      (matrizSituacaoStatus.atrasadosAcordo.valor +
-                        matrizSituacaoStatus.atrasadosAcordoAndamento.valor +
-                        matrizSituacaoStatus.inadimplentesAcordo.valor +
-                        matrizSituacaoStatus.inadimplentesAcordoAndamento
-                          .valor),
-                  )}
-                </div>
-                <CardDescription className="text-xs text-gray-500">
-                  Valor em aberto - Acordos - Acordos em Andamento
-                </CardDescription>
-              </CardContent>
-            </Card>
-
             {/* Juros e Valor Corrigido removidos por solicitação */}
           </div>
 
@@ -2761,7 +2211,7 @@ Crosby`;
                   <div className="flex items-center gap-2">
                     <Clock size={18} className="text-yellow-600" />
                     <CardTitle className="text-sm font-bold text-yellow-700">
-                      Atrasados
+                      Vencidos
                     </CardTitle>
                   </div>
                 </CardHeader>
@@ -2774,7 +2224,7 @@ Crosby`;
                     {formatarMoeda(metricas.valorAtrasados)}
                   </div>
                   <CardDescription className="text-xs text-gray-500">
-                    Até 31 dias de atraso
+                    Até 60 dias de atraso
                   </CardDescription>
                 </CardContent>
               </Card>
@@ -2800,468 +2250,13 @@ Crosby`;
                     {formatarMoeda(metricas.valorInadimplentes)}
                   </div>
                   <CardDescription className="text-xs text-gray-500">
-                    Acima de 31 dias de atraso
+                    Acima de 60 dias de atraso
                   </CardDescription>
                 </CardContent>
               </Card>
             </div>
           </div>
 
-          {/* Sessão Feeling */}
-          <div className="mb-6">
-            <h3 className="text-sm font-bold text-[#000638] mb-3 flex items-center gap-2">
-              <span className="w-1 h-4 bg-[#000638] rounded"></span>
-              Por Feeling
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Card
-                className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-                onClick={abrirModalFeelingAtraso}
-              >
-                <CardHeader className="pb-2">
-                  <div className="flex items-center gap-2">
-                    <ChatCircleDots size={18} className="text-orange-600" />
-                    <CardTitle className="text-sm font-bold text-orange-700">
-                      Atraso
-                    </CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent className="pt-0 px-4 pb-4">
-                  <div className="text-base font-extrabold text-orange-600 mb-0.5">
-                    {metricas.qtdFeelingAtraso} cliente
-                    {metricas.qtdFeelingAtraso !== 1 ? 's' : ''}
-                  </div>
-                  <div className="text-sm font-semibold text-gray-700 mb-1">
-                    {formatarMoeda(metricas.valorFeelingAtraso)}
-                  </div>
-                  <CardDescription className="text-xs text-gray-500">
-                    Clientes marcados com atraso
-                  </CardDescription>
-                </CardContent>
-              </Card>
-
-              <Card
-                className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-                onClick={abrirModalFeelingPossivelPagamento}
-              >
-                <CardHeader className="pb-2">
-                  <div className="flex items-center gap-2">
-                    <TrendUp size={18} className="text-green-600" />
-                    <CardTitle className="text-sm font-bold text-green-700">
-                      Possível Pagamento
-                    </CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent className="pt-0 px-4 pb-4">
-                  <div className="text-base font-extrabold text-green-600 mb-0.5">
-                    {metricas.qtdFeelingPossivelPagamento} cliente
-                    {metricas.qtdFeelingPossivelPagamento !== 1 ? 's' : ''}
-                  </div>
-                  <div className="text-sm font-semibold text-gray-700 mb-1">
-                    {formatarMoeda(metricas.valorFeelingPossivelPagamento)}
-                  </div>
-                  <CardDescription className="text-xs text-gray-500">
-                    Clientes com possibilidade de pagamento
-                  </CardDescription>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-
-          {/* Sessão Status */}
-          <div className="mb-6">
-            <h3 className="text-sm font-bold text-[#000638] mb-3 flex items-center gap-2">
-              <span className="w-1 h-4 bg-[#000638] rounded"></span>
-              Por Status
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <Card
-                className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-                onClick={abrirModalStatusAcordo}
-              >
-                <CardHeader className="pb-2">
-                  <div className="flex items-center gap-2">
-                    <Handshake size={18} className="text-blue-600" />
-                    <CardTitle className="text-sm font-bold text-blue-700">
-                      Acordo
-                    </CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent className="pt-0 px-4 pb-4">
-                  <div className="text-base font-extrabold text-blue-600 mb-0.5">
-                    {metricas.qtdAcordo}
-                  </div>
-                  <CardDescription className="text-xs text-gray-500">
-                    {metricas.qtdAcordo !== 1 ? 'Clientes' : 'Cliente'} -{' '}
-                    {formatarMoeda(metricas.valorAcordo)}
-                  </CardDescription>
-                </CardContent>
-              </Card>
-
-              <Card
-                className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-                onClick={abrirModalStatusAcordoAndamento}
-              >
-                <CardHeader className="pb-2">
-                  <div className="flex items-center gap-2">
-                    <FileText size={18} className="text-cyan-600" />
-                    <CardTitle className="text-sm font-bold text-cyan-700">
-                      Acordo em Andamento
-                    </CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent className="pt-0 px-4 pb-4">
-                  <div className="text-base font-extrabold text-cyan-600 mb-0.5">
-                    {metricas.qtdAcordoAndamento}
-                  </div>
-                  <CardDescription className="text-xs text-gray-500">
-                    {metricas.qtdAcordoAndamento !== 1 ? 'Clientes' : 'Cliente'}{' '}
-                    - {formatarMoeda(metricas.valorAcordoAndamento)}
-                  </CardDescription>
-                </CardContent>
-              </Card>
-
-              <Card
-                className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-                onClick={abrirModalStatusCobranca}
-              >
-                <CardHeader className="pb-2">
-                  <div className="flex items-center gap-2">
-                    <CurrencyDollar size={18} className="text-purple-600" />
-                    <CardTitle className="text-sm font-bold text-purple-700">
-                      Cobrança
-                    </CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent className="pt-0 px-4 pb-4">
-                  <div className="text-base font-extrabold text-purple-600 mb-0.5">
-                    {metricas.qtdCobranca}
-                  </div>
-                  <CardDescription className="text-xs text-gray-500">
-                    {metricas.qtdCobranca !== 1 ? 'Clientes' : 'Cliente'} -{' '}
-                    {formatarMoeda(metricas.valorCobranca)}
-                  </CardDescription>
-                </CardContent>
-              </Card>
-
-              <Card
-                className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-                onClick={abrirModalStatusProtestado}
-              >
-                <CardHeader className="pb-2">
-                  <div className="flex items-center gap-2">
-                    <Gavel size={18} className="text-red-600" />
-                    <CardTitle className="text-sm font-bold text-red-700">
-                      Protestado
-                    </CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent className="pt-0 px-4 pb-4">
-                  <div className="text-base font-extrabold text-red-600 mb-0.5">
-                    {metricas.qtdProtestado}
-                  </div>
-                  <CardDescription className="text-xs text-gray-500">
-                    {metricas.qtdProtestado !== 1 ? 'Clientes' : 'Cliente'} -{' '}
-                    {formatarMoeda(metricas.valorProtestado)}
-                  </CardDescription>
-                </CardContent>
-              </Card>
-
-              {/* Novos cards de status */}
-              <Card
-                className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-                onClick={abrirModalStatusPagoPendente}
-              >
-                <CardHeader className="pb-2">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle size={18} className="text-green-600" />
-                    <CardTitle className="text-sm font-bold text-green-700">
-                      Pago Pendente de Baixa
-                    </CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent className="pt-0 px-4 pb-4">
-                  <div className="text-base font-extrabold text-green-600 mb-0.5">
-                    {metricas.qtdPagoPendente}
-                  </div>
-                  <CardDescription className="text-xs text-gray-500">
-                    {metricas.qtdPagoPendente !== 1 ? 'Clientes' : 'Cliente'} -{' '}
-                    {formatarMoeda(metricas.valorPagoPendente)}
-                  </CardDescription>
-                </CardContent>
-              </Card>
-
-              <Card
-                className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-                onClick={abrirModalStatusLojaFechada}
-              >
-                <CardHeader className="pb-2">
-                  <div className="flex items-center gap-2">
-                    <Warning size={18} className="text-orange-600" />
-                    <CardTitle className="text-sm font-bold text-orange-700">
-                      Loja Fechada (Tentando Acordo)
-                    </CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent className="pt-0 px-4 pb-4">
-                  <div className="text-base font-extrabold text-orange-600 mb-0.5">
-                    {metricas.qtdLojaFechada}
-                  </div>
-                  <CardDescription className="text-xs text-gray-500">
-                    {metricas.qtdLojaFechada !== 1 ? 'Clientes' : 'Cliente'} -{' '}
-                    {formatarMoeda(metricas.valorLojaFechada)}
-                  </CardDescription>
-                </CardContent>
-              </Card>
-
-              <Card
-                className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-                onClick={abrirModalStatusAcordoConcluido}
-              >
-                <CardHeader className="pb-2">
-                  <div className="flex items-center gap-2">
-                    <Smiley size={18} className="text-emerald-600" />
-                    <CardTitle className="text-sm font-bold text-emerald-700">
-                      Acordo Concluído
-                    </CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent className="pt-0 px-4 pb-4">
-                  <div className="text-base font-extrabold text-emerald-600 mb-0.5">
-                    {metricas.qtdAcordoConcluido}
-                  </div>
-                  <CardDescription className="text-xs text-gray-500">
-                    {metricas.qtdAcordoConcluido !== 1 ? 'Clientes' : 'Cliente'}{' '}
-                    - {formatarMoeda(metricas.valorAcordoConcluido)}
-                  </CardDescription>
-                </CardContent>
-              </Card>
-
-              <Card
-                className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-                onClick={abrirModalStatusNotificacaoJuridica}
-              >
-                <CardHeader className="pb-2">
-                  <div className="flex items-center gap-2">
-                    <FileText size={18} className="text-yellow-600" />
-                    <CardTitle className="text-sm font-bold text-yellow-700">
-                      Notificação Jurídica
-                    </CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent className="pt-0 px-4 pb-4">
-                  <div className="text-base font-extrabold text-yellow-600 mb-0.5">
-                    {metricas.qtdNotificacaoJuridica}
-                  </div>
-                  <CardDescription className="text-xs text-gray-500">
-                    {metricas.qtdNotificacaoJuridica !== 1
-                      ? 'Clientes'
-                      : 'Cliente'}{' '}
-                    - {formatarMoeda(metricas.valorNotificacaoJuridica)}
-                  </CardDescription>
-                </CardContent>
-              </Card>
-
-              <Card
-                className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white cursor-pointer"
-                onClick={abrirModalStatusAcaoJudicial}
-              >
-                <CardHeader className="pb-2">
-                  <div className="flex items-center gap-2">
-                    <Gavel size={18} className="text-red-700" />
-                    <CardTitle className="text-sm font-bold text-red-800">
-                      Em Ação Judicial
-                    </CardTitle>
-                  </div>
-                </CardHeader>
-                <CardContent className="pt-0 px-4 pb-4">
-                  <div className="text-base font-extrabold text-red-700 mb-0.5">
-                    {metricas.qtdAcaoJudicial}
-                  </div>
-                  <CardDescription className="text-xs text-gray-500">
-                    {metricas.qtdAcaoJudicial !== 1 ? 'Clientes' : 'Cliente'} -{' '}
-                    {formatarMoeda(metricas.valorAcaoJudicial)}
-                  </CardDescription>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
-
-          {/* Matriz: Situação x Status */}
-          <div className="mb-6">
-            <h3 className="text-sm font-bold text-[#000638] mb-3 flex items-center gap-2">
-              <span className="w-1 h-4 bg-[#000638] rounded"></span>
-              Cruzamento: Situação x Status
-            </h3>
-            <Card className="shadow-lg rounded-xl bg-white">
-              <CardContent className="p-4">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b-2 border-gray-300">
-                        <th className="px-4 py-3 text-left font-bold text-[#000638]">
-                          Situação / Status
-                        </th>
-                        <th className="px-4 py-3 text-center font-bold text-blue-700">
-                          Acordo
-                        </th>
-                        <th className="px-4 py-3 text-center font-bold text-cyan-700">
-                          Acordo em Andamento
-                        </th>
-                        <th className="px-4 py-3 text-center font-bold text-[#000638] bg-gray-100">
-                          Total
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {/* Linha ATRASADOS */}
-                      <tr className="border-b hover:bg-gray-50">
-                        <td className="px-4 py-3 font-bold text-yellow-700 bg-yellow-50">
-                          <div className="flex items-center gap-2">
-                            <Clock size={16} />
-                            ATRASADOS
-                          </div>
-                        </td>
-                        <td
-                          className="px-4 py-3 text-center cursor-pointer hover:bg-blue-50 transition-colors"
-                          onClick={() =>
-                            abrirModalMatriz(
-                              'Atrasados - Acordo',
-                              matrizSituacaoStatus.atrasadosAcordo.clientes,
-                            )
-                          }
-                        >
-                          <div className="font-bold text-blue-600">
-                            {matrizSituacaoStatus.atrasadosAcordo.qtd}
-                          </div>
-                          <div className="text-xs text-gray-600">
-                            {formatarMoeda(
-                              matrizSituacaoStatus.atrasadosAcordo.valor,
-                            )}
-                          </div>
-                        </td>
-                        <td
-                          className="px-4 py-3 text-center cursor-pointer hover:bg-cyan-50 transition-colors"
-                          onClick={() =>
-                            abrirModalMatriz(
-                              'Atrasados - Acordo em Andamento',
-                              matrizSituacaoStatus.atrasadosAcordoAndamento
-                                .clientes,
-                            )
-                          }
-                        >
-                          <div className="font-bold text-cyan-600">
-                            {matrizSituacaoStatus.atrasadosAcordoAndamento.qtd}
-                          </div>
-                          <div className="text-xs text-gray-600">
-                            {formatarMoeda(
-                              matrizSituacaoStatus.atrasadosAcordoAndamento
-                                .valor,
-                            )}
-                          </div>
-                        </td>
-
-                        <td className="px-4 py-3 text-center font-bold bg-yellow-50 border-l-2 border-yellow-300">
-                          <div className="text-base text-blue-700">
-                            {metricas.qtdAtrasados -
-                              (matrizSituacaoStatus.atrasadosAcordo.qtd +
-                                matrizSituacaoStatus.atrasadosAcordoAndamento
-                                  .qtd)}
-                          </div>
-                          <div className="text-sm font-semibold text-gray-700 mt-1">
-                            {formatarMoeda(
-                              metricas.valorAtrasados -
-                                (matrizSituacaoStatus.atrasadosAcordo.valor +
-                                  matrizSituacaoStatus.atrasadosAcordoAndamento
-                                    .valor),
-                            )}
-                          </div>
-                          <div className="text-xs text-gray-500 mt-1 italic">
-                            Total - Acordos
-                          </div>
-                        </td>
-                      </tr>
-
-                      {/* Linha INADIMPLENTES */}
-                      <tr className="hover:bg-gray-50">
-                        <td className="px-4 py-3 font-bold text-red-700 bg-red-50">
-                          <div className="flex items-center gap-2">
-                            <Warning size={16} />
-                            INADIMPLENTES
-                          </div>
-                        </td>
-                        <td
-                          className="px-4 py-3 text-center cursor-pointer hover:bg-blue-50 transition-colors"
-                          onClick={() =>
-                            abrirModalMatriz(
-                              'Inadimplentes - Acordo',
-                              matrizSituacaoStatus.inadimplentesAcordo.clientes,
-                            )
-                          }
-                        >
-                          <div className="font-bold text-blue-600">
-                            {matrizSituacaoStatus.inadimplentesAcordo.qtd}
-                          </div>
-                          <div className="text-xs text-gray-600">
-                            {formatarMoeda(
-                              matrizSituacaoStatus.inadimplentesAcordo.valor,
-                            )}
-                          </div>
-                        </td>
-                        <td
-                          className="px-4 py-3 text-center cursor-pointer hover:bg-cyan-50 transition-colors"
-                          onClick={() =>
-                            abrirModalMatriz(
-                              'Inadimplentes - Acordo em Andamento',
-                              matrizSituacaoStatus.inadimplentesAcordoAndamento
-                                .clientes,
-                            )
-                          }
-                        >
-                          <div className="font-bold text-cyan-600">
-                            {
-                              matrizSituacaoStatus.inadimplentesAcordoAndamento
-                                .qtd
-                            }
-                          </div>
-                          <div className="text-xs text-gray-600">
-                            {formatarMoeda(
-                              matrizSituacaoStatus.inadimplentesAcordoAndamento
-                                .valor,
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-center font-bold bg-red-50 border-l-2 border-red-300">
-                          <div className="text-base text-red-700">
-                            {metricas.qtdInadimplentes -
-                              (matrizSituacaoStatus.inadimplentesAcordo.qtd +
-                                matrizSituacaoStatus
-                                  .inadimplentesAcordoAndamento.qtd)}
-                          </div>
-                          <div className="text-sm font-semibold text-gray-700 mt-1">
-                            {formatarMoeda(
-                              metricas.valorInadimplentes -
-                                (matrizSituacaoStatus.inadimplentesAcordo
-                                  .valor +
-                                  matrizSituacaoStatus
-                                    .inadimplentesAcordoAndamento.valor),
-                            )}
-                          </div>
-                          <div className="text-xs text-gray-500 mt-1 italic">
-                            Total - Acordos
-                          </div>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-                <div className="mt-3 text-xs text-gray-500 italic">
-                  💡 Clique em qualquer célula para ver a lista detalhada de
-                  clientes
-                </div>
-              </CardContent>
-            </Card>
-          </div>
 
           {/* Resumo por Representante */}
           {resumoPorRepresentante.length > 0 && (
@@ -3373,88 +2368,6 @@ Crosby`;
               </Card>
             </div>
           )}
-
-          {/* Gráficos */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
-              <CardHeader className="pb-2">
-                <div className="flex items-center gap-2">
-                  <ChartBar size={18} className="text-blue-600" />
-                  <CardTitle className="text-sm font-bold text-blue-700">
-                    TOP CLIENTES INADIMPLENTES
-                  </CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0 px-4 pb-4">
-                <CardDescription className="text-xs text-gray-500 mb-3">
-                  Visão geral dos dados de inadimplência
-                </CardDescription>
-                <div className="h-64">
-                  <Bar
-                    data={graficoPrincipalData}
-                    options={{
-                      responsive: true,
-                      maintainAspectRatio: false,
-                      plugins: {
-                        legend: { display: false },
-                        tooltip: {
-                          callbacks: {
-                            label: function (context) {
-                              const idx = context.dataIndex;
-                              const cliente = topClientes[idx];
-                              const valor = context.dataset.data[idx] || 0;
-                              const valorFmt = new Intl.NumberFormat('pt-BR', {
-                                style: 'currency',
-                                currency: 'BRL',
-                              }).format(valor);
-                              const dias = cliente?.diasAtrasoMax ?? 0;
-                              return `${valorFmt} — ${dias} dias em atraso`;
-                            },
-                          },
-                        },
-                      },
-                      scales: { y: { beginAtZero: true } },
-                    }}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
-              <CardHeader className="pb-2">
-                <div className="flex items-center gap-2">
-                  <MapPin size={18} className="text-green-600" />
-                  <CardTitle className="text-sm font-bold text-green-700">
-                    Clientes por Estado
-                  </CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0 px-4 pb-4">
-                <CardDescription className="text-xs text-gray-500 mb-3">
-                  Distribuição de inadimplentes por estado
-                </CardDescription>
-                <div className="h-64">
-                  <Bar
-                    data={graficoEstadoData}
-                    options={{
-                      responsive: true,
-                      maintainAspectRatio: false,
-                      plugins: {
-                        legend: {
-                          display: false,
-                        },
-                      },
-                      scales: {
-                        y: {
-                          beginAtZero: true,
-                        },
-                      },
-                    }}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
 
           {/* Tabela */}
           <Card className="shadow-lg transition-all duration-200 hover:shadow-xl hover:-translate-y-1 rounded-xl bg-white">
@@ -3575,34 +2488,6 @@ Crosby`;
                         </th>
                         <th
                           className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
-                          onClick={() => ordenarColuna('feeling')}
-                          title="Clique para ordenar"
-                        >
-                          <div className="flex items-center gap-1">
-                            Feeling
-                            {ordenarPor === 'feeling' && (
-                              <span>
-                                {direcaoOrdenacao === 'asc' ? '↑' : '↓'}
-                              </span>
-                            )}
-                          </div>
-                        </th>
-                        <th
-                          className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
-                          onClick={() => ordenarColuna('status')}
-                          title="Clique para ordenar"
-                        >
-                          <div className="flex items-center gap-1">
-                            Status
-                            {ordenarPor === 'status' && (
-                              <span>
-                                {direcaoOrdenacao === 'asc' ? '↑' : '↓'}
-                              </span>
-                            )}
-                          </div>
-                        </th>
-                        <th
-                          className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
                           onClick={() => ordenarColuna('representante')}
                           title="Clique para ordenar"
                         >
@@ -3623,7 +2508,7 @@ Crosby`;
                       {clientesAgrupados.length === 0 ? (
                         <tr>
                           <td
-                            colSpan={11}
+                            colSpan={9}
                             className="px-4 py-8 text-center text-gray-500"
                           >
                             Nenhum cliente inadimplente encontrado
@@ -3663,121 +2548,6 @@ Crosby`;
                               >
                                 {cliente.situacao}
                               </span>
-                            </td>
-                            <td
-                              className="px-4 py-3"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {editandoFeeling === cliente.cd_cliente ? (
-                                <div className="flex items-center gap-2">
-                                  <select
-                                    value={tempFeeling}
-                                    onChange={(e) =>
-                                      setTempFeeling(e.target.value)
-                                    }
-                                    className="text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    <option value="">Selecione...</option>
-                                    <option value="POSSÍVEL PAGAMENTO">
-                                      POSSÍVEL PAGAMENTO
-                                    </option>
-                                    <option value="ATRASO">ATRASO</option>
-                                  </select>
-                                  <button
-                                    onClick={(e) =>
-                                      salvarFeeling(cliente.cd_cliente, e)
-                                    }
-                                    className="bg-green-500 hover:bg-green-600 text-white text-xs px-2 py-1 rounded transition-colors"
-                                  >
-                                    Salvar
-                                  </button>
-                                  <button
-                                    onClick={cancelarEdicaoFeeling}
-                                    className="bg-gray-400 hover:bg-gray-500 text-white text-xs px-2 py-1 rounded transition-colors"
-                                  >
-                                    ✕
-                                  </button>
-                                </div>
-                              ) : (
-                                <span
-                                  onClick={(e) =>
-                                    iniciarEdicaoFeeling(cliente.cd_cliente, e)
-                                  }
-                                  className={`text-xs font-semibold px-2 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity ${getFeelingBadgeClass(
-                                    cliente.feeling,
-                                  )}`}
-                                >
-                                  {cliente.feeling || '---'}
-                                </span>
-                              )}
-                            </td>
-                            <td
-                              className="px-4 py-3"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {editandoStatus === cliente.cd_cliente ? (
-                                <div className="flex items-center gap-2">
-                                  <select
-                                    value={tempStatus}
-                                    onChange={(e) =>
-                                      setTempStatus(e.target.value)
-                                    }
-                                    className="text-xs border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    <option value="">Selecione...</option>
-                                    <option value="ACORDO">ACORDO</option>
-                                    <option value="ACORDO EM ANDAMENTO">
-                                      ACORDO EM ANDAMENTO
-                                    </option>
-                                    <option value="COBRANÇA">COBRANÇA</option>
-                                    <option value="PROTESTADO">
-                                      PROTESTADO
-                                    </option>
-                                    <option value="PAGO PENDENTE DE BAIXA">
-                                      PAGO PENDENTE DE BAIXA
-                                    </option>
-                                    <option value="LOJA FECHADA (Tentando ACORDO)">
-                                      LOJA FECHADA (Tentando ACORDO)
-                                    </option>
-                                    <option value="ACORDO CONCLUÍDO">
-                                      ACORDO CONCLUÍDO
-                                    </option>
-                                    <option value="NOTIFICAÇÃO JURÍDICA">
-                                      NOTIFICAÇÃO JURÍDICA
-                                    </option>
-                                    <option value="EM AÇÃO JUDICIAL">
-                                      EM AÇÃO JUDICIAL
-                                    </option>
-                                  </select>
-                                  <button
-                                    onClick={(e) =>
-                                      salvarStatus(cliente.cd_cliente, e)
-                                    }
-                                    className="bg-green-500 hover:bg-green-600 text-white text-xs px-2 py-1 rounded transition-colors"
-                                  >
-                                    Salvar
-                                  </button>
-                                  <button
-                                    onClick={cancelarEdicaoStatus}
-                                    className="bg-gray-400 hover:bg-gray-500 text-white text-xs px-2 py-1 rounded transition-colors"
-                                  >
-                                    ✕
-                                  </button>
-                                </div>
-                              ) : (
-                                <span
-                                  onClick={(e) =>
-                                    iniciarEdicaoStatus(cliente.cd_cliente, e)
-                                  }
-                                  className={`text-xs font-semibold px-2 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity ${getStatusBadgeClass(
-                                    cliente.status,
-                                  )}`}
-                                >
-                                  {cliente.status || '---'}
-                                </span>
-                              )}
                             </td>
                             {/* Coluna Representante */}
                             <td
@@ -4157,8 +2927,6 @@ Crosby`;
                       <th className="px-4 py-3">Cliente</th>
                       <th className="px-4 py-3">Valor</th>
                       <th className="px-4 py-3">Situação</th>
-                      <th className="px-4 py-3">Feeling</th>
-                      <th className="px-4 py-3">Status</th>
                       <th className="px-4 py-3">Usuário</th>
                     </tr>
                   </thead>
@@ -4200,24 +2968,6 @@ Crosby`;
                             }`}
                           >
                             {item.situacao || 'N/A'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span
-                            className={`text-xs font-semibold px-2 py-1 rounded ${getFeelingBadgeClass(
-                              item.feeling,
-                            )}`}
-                          >
-                            {item.feeling || '---'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span
-                            className={`text-xs font-semibold px-2 py-1 rounded ${getStatusBadgeClass(
-                              item.status,
-                            )}`}
-                          >
-                            {item.status || '---'}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-xs">
@@ -4302,7 +3052,7 @@ Crosby`;
                     {faturasSelecionadas.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={11}
+                          colSpan={9}
                           className="px-4 py-4 text-center text-gray-500"
                         >
                           Nenhuma fatura vencida encontrada
