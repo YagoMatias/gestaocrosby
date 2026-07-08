@@ -519,6 +519,24 @@ function toYmd(v) {
   return String(v).slice(0, 10);
 }
 
+// Sobrescreve os 4 canais de vendedor com o Painel de Vendas (fonte única).
+// Aplicado em TODOS os retornos do getFaturamentoPorSegmento pra que qualquer
+// consumidor (ontem-canal, promessa, dashboard, etc.) veja o mesmo número do
+// Painel. Guarda hasData: sem painel no período, mantém o valor fat-seg.
+async function aplicarPainelCanaisSeg(out, di, df) {
+  try {
+    const pv = await getPainelSellerCanais(di, df);
+    if (pv.hasData) {
+      for (const canal of ['revenda', 'multimarcas', 'inbound_david', 'inbound_rafael']) {
+        out[canal] = Number(pv[canal] || 0);
+      }
+    }
+  } catch (e) {
+    console.warn(`[getFaturamentoPorSegmento] painel override falhou: ${e.message}`);
+  }
+  return out;
+}
+
 async function getFaturamentoPorSegmento(datemin, datemax) {
   const di = toYmd(datemin);
   const df = toYmd(datemax);
@@ -539,7 +557,7 @@ async function getFaturamentoPorSegmento(datemin, datemax) {
     if (segSb && Object.keys(segSb).some((k) => Number(segSb[k]) !== 0)) {
       const out = { ...segSb };
       out.fabrica = FABRICA_SOURCES.reduce((s, k) => s + Number(segSb[k] || 0), 0);
-      return out;
+      return aplicarPainelCanaisSeg(out, di, df);
     }
     console.warn(`[getFaturamentoPorSegmento] Supabase vazio (${di}~${df}) — fallback TOTVS`);
   }
@@ -566,7 +584,9 @@ async function getFaturamentoPorSegmento(datemin, datemax) {
     const seg = r.data?.data?.segmentos || r.data?.segmentos || {};
     const out = { ...seg };
     out.fabrica = FABRICA_SOURCES.reduce((s, k) => s + Number(seg[k] || 0), 0);
-    return out;
+    // O endpoint crm já aplica o painel, mas reforçamos aqui pra garantir que
+    // o helper SEMPRE devolva os 4 canais do painel (fonte única).
+    return aplicarPainelCanaisSeg(out, di, df);
   } catch (e) {
     console.warn(
       `[forecast/promessa] getFaturamentoPorSegmento fat-seg falhou (${di}~${df}): ${e?.message} — fallback canal-totals`,
