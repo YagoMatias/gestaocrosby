@@ -48,6 +48,19 @@ const formatDate = (dateStr) => {
   return d.toLocaleDateString('pt-BR');
 };
 
+const formatDateTime = (dateStr) => {
+  if (!dateStr) return '—';
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return formatDate(dateStr);
+  return d.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
 const formatDocument = (doc) => {
   if (!doc) return '—';
   const d = String(doc).replace(/\D/g, '');
@@ -933,7 +946,8 @@ const Promocoes = () => {
                   <th className="py-2 px-3">Documento</th>
                   <th className="py-2 px-3">Desconto</th>
                   <th className="py-2 px-3">Código</th>
-                  <th className="py-2 pl-3">Data</th>
+                  <th className="py-2 px-3">Gerado por</th>
+                  <th className="py-2 pl-3">Data / Hora</th>
                 </tr>
               </thead>
               <tbody>
@@ -951,8 +965,11 @@ const Promocoes = () => {
                     <td className="py-2 px-3 font-semibold text-green-700">
                       {v.voucher_code || '—'}
                     </td>
+                    <td className="py-2 px-3 text-gray-600 truncate max-w-[180px]">
+                      {v.criado_por || '—'}
+                    </td>
                     <td className="py-2 pl-3 text-gray-600 whitespace-nowrap">
-                      {formatDate(v.criado_em)}
+                      {formatDateTime(v.criado_em)}
                     </td>
                   </tr>
                 ))}
