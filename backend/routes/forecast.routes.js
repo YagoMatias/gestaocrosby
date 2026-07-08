@@ -3452,17 +3452,26 @@ async function lerPainelVendasSupabase(g, dmin, dmax) {
   try {
     const sellers = (g.sellers || []).map(Number);
     const branchs = (g.branchs || []).map(Number);
-    // Puxa TODOS os vendedores das filiais do canal (inclui GERAL negativo)
-    // pra calcular o fator líquido por filial.
-    let q = supabase
-      .from('forecast_painel_vendas')
-      .select('seller_code, seller_name, branch_code, valor')
-      .gte('data', toYmd(dmin))
-      .lte('data', toYmd(dmax));
-    if (branchs.length) q = q.in('branch_code', branchs);
-    const { data, error } = await q;
-    if (error) { console.warn(`[painel-vendas supabase] ${error.message}`); return null; }
-    if (!data || data.length === 0) return [];
+    // Puxa TODOS os vendedores das filiais do canal (inclui GERAL negativo).
+    // Pagina de 1000 em 1000 — janelas mensais podem passar do cap do Supabase
+    // (ex: mês inteiro × várias filiais) e um corte silencioso subcontaria.
+    const data = [];
+    for (let from = 0; ; from += 1000) {
+      let q = supabase
+        .from('forecast_painel_vendas')
+        .select('seller_code, seller_name, branch_code, valor')
+        .gte('data', toYmd(dmin))
+        .lte('data', toYmd(dmax))
+        .order('data', { ascending: true })
+        .range(from, from + 999);
+      if (branchs.length) q = q.in('branch_code', branchs);
+      const { data: page, error } = await q;
+      if (error) { console.warn(`[painel-vendas supabase] ${error.message}`); return null; }
+      if (!page || page.length === 0) break;
+      data.push(...page);
+      if (page.length < 1000) break;
+    }
+    if (data.length === 0) return [];
 
     // Soma o valor do Painel de Vendas por vendedor, EXATAMENTE como a tela do
     // TOTVS mostra. O seller_sale_value já vem LÍQUIDO (devoluções do próprio
