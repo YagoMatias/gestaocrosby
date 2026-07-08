@@ -3464,33 +3464,21 @@ async function lerPainelVendasSupabase(g, dmin, dmax) {
     if (error) { console.warn(`[painel-vendas supabase] ${error.message}`); return null; }
     if (!data || data.length === 0) return [];
 
-    // 1) Por filial: total positivo (vendas) e total negativo (devoluções GERAL)
-    const branchPos = new Map();
-    const branchNeg = new Map();
-    for (const r of data) {
-      const b = Number(r.branch_code);
-      const v = Number(r.valor || 0);
-      if (v > 0) branchPos.set(b, (branchPos.get(b) || 0) + v);
-      else branchNeg.set(b, (branchNeg.get(b) || 0) + v);
-    }
-    // 2) Fator líquido por filial = (pos + neg) / pos  (neg é ≤ 0)
-    const fatorFilial = (b) => {
-      const pos = branchPos.get(b) || 0;
-      const neg = branchNeg.get(b) || 0;
-      return pos > 0 ? (pos + neg) / pos : 1;
-    };
-
-    // 3) Soma LÍQUIDO só dos vendedores do canal (aplica fator da filial)
+    // Soma o valor do Painel de Vendas por vendedor, EXATAMENTE como a tela do
+    // TOTVS mostra. O seller_sale_value já vem LÍQUIDO (devoluções do próprio
+    // vendedor já descontadas na origem) — então NÃO redistribuímos a linha
+    // GERAL por cima (isso descontava devolução 2x e derrubava o card).
+    // A linha GERAL (dealer 50, valor negativo) fica fora: não é vendedor e o
+    // TOTVS não a atribui a ninguém no Painel de Vendas.
     const allow = new Set(sellers);
     const acc = new Map();
     for (const r of data) {
       const code = Number(r.seller_code);
       const v = Number(r.valor || 0);
-      if (v <= 0) continue; // devoluções já entram via fator
+      if (v <= 0) continue; // GERAL/ajustes negativos não são vendedor
       if (allow.size > 0 && !allow.has(code)) continue;
-      const liquido = v * fatorFilial(Number(r.branch_code));
       const cur = acc.get(code) || { valor: 0, nome: r.seller_name };
-      cur.valor += liquido;
+      cur.valor += v;
       if (r.seller_name) cur.nome = r.seller_name;
       acc.set(code, cur);
     }
