@@ -911,9 +911,9 @@ const TITULARES_B2R = [
   { label: 'Michel', matches: ['MICHEL'] },
   { label: 'Yago', matches: ['YAGO'] },
 ];
+// Renato (65) e Walter (177) desligados (2026-07) — removidos do display.
+// Seguem no allow-list dos totais (65/177) pra não alterar o histórico de junho.
 const TITULARES_B2M = [
-  { label: 'Renato', matches: ['RENATO'] },
-  { label: 'Walter', matches: ['WALTER'] },
   { label: 'Arthur', matches: ['ARTHUR'] },
 ];
 
@@ -2860,9 +2860,9 @@ const VENDEDORES_CARDS = [
     code: 'B2M',
     label: 'B2M',
     canal: 'multimarcas',
+    // Renato/Walter desligados (2026-07) — fora do display. Totais seguem
+    // via allow-list de sellers (65/177) pra preservar histórico de junho.
     titulares: [
-      { nome: 'RENATO', label: 'Renato' },
-      { nome: 'WALTER', label: 'Walter' },
       { nome: 'ARTHUR', label: 'Arthur' },
     ],
     // Vendedores "convidados": cada um puxa meta + faturamento de OUTRO canal
