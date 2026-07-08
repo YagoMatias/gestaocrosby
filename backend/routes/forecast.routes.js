@@ -4355,18 +4355,16 @@ router.get(
     const [refAnt, segAtualReal] = await Promise.all([
       getRefValues(anoAnt, mes, diaAcum),
       periodAtualReal
-        ? ehMesCorrente
-          ? (await getSegViaCanaisTotals(
-              periodAtualReal.datemin,
-              periodAtualReal.datemax,
-            )) || getSegViaTransacaoHistorico(
-              periodAtualReal.datemin,
-              periodAtualReal.datemax,
-            )
-          : getFaturamentoPorSegmento(
-              periodAtualReal.datemin,
-              periodAtualReal.datemax,
-            )
+        // Fonte ÚNICA (2026-07): getFaturamentoPorSegmento — mesma base das
+        // outras telas (fat-seg Supabase + override Painel de Vendas nos canais
+        // de vendedor). Garante que B2M = multimarcas + inbound_david +
+        // inbound_rafael (Arthur + David + Rafael) e bate 1:1 com Métricas por
+        // Canal / Promessa. Antes o mês corrente usava canais-totals-all, que
+        // subcontava B2M/inbound e divergia. RE segue com override fiscal-movement abaixo.
+        ? getFaturamentoPorSegmento(
+            periodAtualReal.datemin,
+            periodAtualReal.datemax,
+          )
         : Promise.resolve(null),
     ]);
     // Override RE via fiscal-movement (mais completo que sale-panel)
