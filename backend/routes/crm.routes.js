@@ -8,6 +8,7 @@ import dotenv from 'dotenv';
 import cron from 'node-cron';
 import evolutionPool from '../config/evolution.js';
 import { createClient } from '@supabase/supabase-js';
+import { getPainelSellerCanais, getPainelPerSeller } from '../services/painelCanais.js';
 import {
   listUazapiInstances,
   listUazapiInstancesRaw,
@@ -13478,6 +13479,26 @@ router.post(
         sellers_used: cfg.sellers,
         devolucao_ops_used: [...DEVOL_OPS_LIQUIDO_TOTVS],
       };
+      // ─── OVERRIDE FINAL: Painel de Vendas (fonte única dos canais de vendedor) ─
+      // Revenda/Multimarcas/Inbound passam a espelhar o Painel de Vendas do
+      // TOTVS — a MESMA fonte da Promessa do Forecast. Sobrescreve total +
+      // per_seller pra a tela "Métricas por Canal" (que soma per_seller) bater
+      // 1:1 com a Promessa. Guarda: só quando o painel tem dado no período.
+      if (['revenda', 'multimarcas', 'inbound_david', 'inbound_rafael'].includes(modulo)) {
+        try {
+          const pv = await getPainelPerSeller(modulo, datemin, datemax);
+          if (pv.hasData) {
+            const beforeInv = responseData.invoice_value;
+            responseData.invoice_value = pv.total;
+            responseData.per_seller = pv.per_seller;
+            responseData.source = 'painel-vendas (seller_sale_value — fonte única canais vendedor)';
+            console.log(`[canal-totals painel-canais] ${modulo}: R$${Number(beforeInv).toFixed(2)} → R$${pv.total.toFixed(2)} (${pv.per_seller.length} vend)`);
+          }
+        } catch (err) {
+          console.warn(`[canal-totals painel-canais ${modulo}] override falhou: ${err.message}`);
+        }
+      }
+
       // Aplica exclusões (Recife Mall fora de Franquia a partir de 21/05/2026)
       try {
         await aplicarExclusaoCanalTotal(responseData, datemin, datemax);
@@ -15226,6 +15247,26 @@ router.post(
       }));
     } catch (err) {
       console.warn('[fat-seg override painel-vend] erro fatal:', err.message);
+    }
+
+    // ─── OVERRIDE FINAL: Painel de Vendas (fonte única dos canais de vendedor) ─
+    // Revenda/Multimarcas/Inbound David/Rafael passam a espelhar o Painel de
+    // Vendas do TOTVS — a MESMA fonte da Promessa Semanal/Mensal do Forecast.
+    // Assim "Métricas por Canal", "Por Canal", CRM e Promessa batem 1:1.
+    // Guarda: só sobrescreve quando o painel tem dado no período (senão mantém
+    // o cálculo fat-seg, pra não zerar histórico não sincronizado). Meses
+    // FECHADOS continuam vindo do snapshot (aplicado logo abaixo, tem prioridade).
+    try {
+      const pv = await getPainelSellerCanais(datemin, datemax);
+      if (pv.hasData) {
+        for (const canal of ['revenda', 'multimarcas', 'inbound_david', 'inbound_rafael']) {
+          const before = Number(segMap[canal] || 0);
+          segMap[canal] = Number(pv[canal] || 0);
+          console.log(`[fat-seg painel-canais] ${canal}: R$${before.toFixed(2)} → R$${segMap[canal].toFixed(2)}`);
+        }
+      }
+    } catch (err) {
+      console.warn(`[fat-seg painel-canais] override falhou: ${err.message}`);
     }
 
     // Arredondamentos finais
