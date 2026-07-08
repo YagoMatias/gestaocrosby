@@ -13,6 +13,7 @@ import {
   errorResponse,
 } from '../utils/errorHandler.js';
 import { getPool } from '../services/uazapiSync.js';
+import { getPainelSellerCanais } from '../services/painelCanais.js';
 
 const router = express.Router();
 
@@ -1339,22 +1340,72 @@ router.get(
             return { ok: false };
           }
         };
-        const davidR = await recalcInboundSupabase('David', [26, 69]);
-        if (davidR.ok) {
-          console.log(`[ovl cache-only] inbound_david: cache=R$${(seg.inbound_david || 0).toFixed(2)} → Supabase=R$${davidR.valor.toFixed(2)}`);
-          seg.inbound_david = davidR.valor;
-        }
-        const rafaelR = await recalcInboundSupabase('Rafael', [21]);
-        if (rafaelR.ok) {
-          console.log(`[ovl cache-only] inbound_rafael: cache=R$${(seg.inbound_rafael || 0).toFixed(2)} → Supabase=R$${rafaelR.valor.toFixed(2)}`);
-          seg.inbound_rafael = rafaelR.valor;
+        // ── FONTE ÚNICA: Painel de Vendas pros 4 canais de vendedor ────────
+        // Revenda/Multimarcas/Inbound David/Rafael vêm do Painel de Vendas
+        // (forecast_painel_vendas via getPainelSellerCanais) — a MESMA fonte da
+        // Promessa / Métricas por Canal / canal-totals. Garante que a Métricas
+        // Diretoria mostre EXATAMENTE o mesmo número das outras telas.
+        // Guarda hasData: sem painel no período, mantém canal_totals_cache +
+        // recalc de inbound via notas_fiscais (histórico não sincronizado).
+        let painelAplicado = false;
+        try {
+          const pv = await getPainelSellerCanais(dmin, dmax);
+          if (pv.hasData) {
+            for (const canal of ['revenda', 'multimarcas', 'inbound_david', 'inbound_rafael']) {
+              const before = Number(seg[canal] || 0);
+              seg[canal] = Number(pv[canal] || 0);
+              console.log(`[ovl cache-only painel] ${canal}: cache=R$${before.toFixed(2)} → painel=R$${seg[canal].toFixed(2)}`);
+            }
+            painelAplicado = true;
+          }
+        } catch (e) {
+          console.warn(`[ovl cache-only] painel override falhou: ${e.message}`);
         }
 
-        // Override de Multimarcas removido: notas_fiscais Supabase usa só ops
-        // [7235, 7241, 9127, 200] que é mais restrito que o sale-panel TOTVS
-        // (canal_totals_cache.multimarcas). Resultado: deflacionava o valor
-        // pra R$ 100k quando o oficial é R$ 154k. Como o cache canal_totals_cache
-        // já bate com o relatório TOTVS oficial, mantemos ele direto.
+        // Fallback (só quando o painel não tem o período): recalc inbound via
+        // notas_fiscais, como antes.
+        if (!painelAplicado) {
+          const davidR = await recalcInboundSupabase('David', [26, 69]);
+          if (davidR.ok) {
+            console.log(`[ovl cache-only] inbound_david: cache=R$${(seg.inbound_david || 0).toFixed(2)} → Supabase=R$${davidR.valor.toFixed(2)}`);
+            seg.inbound_david = davidR.valor;
+          }
+          const rafaelR = await recalcInboundSupabase('Rafael', [21]);
+          if (rafaelR.ok) {
+            console.log(`[ovl cache-only] inbound_rafael: cache=R$${(seg.inbound_rafael || 0).toFixed(2)} → Supabase=R$${rafaelR.valor.toFixed(2)}`);
+            seg.inbound_rafael = rafaelR.valor;
+          }
+        }
+
+        // ── SNAPSHOT OFICIAL (mês fechado) — palavra final, igual às outras
+        // telas (fat-seg / promessa-mensal). Se o range é um mês inteiro já
+        // fechado, os valores oficiais do snapshot têm prioridade sobre o
+        // painel/cache. Garante que Métricas Diretoria == Promessa no fechado.
+        try {
+          const dp = String(dmin).split('-');
+          const dq = String(dmax).split('-');
+          const sameYM = dp[0] === dq[0] && dp[1] === dq[1];
+          const lastDay = new Date(Number(dp[0]), Number(dp[1]), 0).getDate();
+          const isMonthRange = sameYM && dp[2] === '01' && Number(dq[2]) === lastDay;
+          const nowU = new Date();
+          const mesCorrente = nowU.getUTCFullYear() * 100 + (nowU.getUTCMonth() + 1);
+          const mesConsultado = Number(dp[0]) * 100 + Number(dp[1]);
+          if (isMonthRange && mesConsultado < mesCorrente) {
+            const { data: snaps } = await supabase
+              .from('forecast_canal_snapshot')
+              .select('canal, valor_oficial')
+              .eq('period_type', 'mensal')
+              .eq('period_key', `${dp[0]}-${dp[1]}`)
+              .eq('ativo', true);
+            for (const s of snaps || []) {
+              const before = Number(seg[s.canal] || 0);
+              seg[s.canal] = Number(s.valor_oficial);
+              console.log(`[ovl cache-only snapshot] ${dp[0]}-${dp[1]} ${s.canal}: R$${before.toFixed(2)} → R$${seg[s.canal].toFixed(2)}`);
+            }
+          }
+        } catch (e) {
+          console.warn(`[ovl cache-only] snapshot falhou: ${e.message}`);
+        }
 
         // ── Per-seller breakdown via notas_fiscais (B2M e B2R) ────────────
         // Mapping dinâmico dealer_code → nome via view v_vendedores_integracao.
