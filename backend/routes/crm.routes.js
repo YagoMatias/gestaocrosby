@@ -12708,6 +12708,43 @@ router.post(
       );
     }
 
+    // ─── SHORT-CIRCUIT: canais de vendedor 100% do Supabase (Painel de Vendas) ─
+    // Revenda/Multimarcas/Inbound David/Rafael leem direto da tabela
+    // forecast_painel_vendas (sincronizada a cada 30min) — SEM bater no TOTVS.
+    // Resposta instantânea, zero carga no TOTVS e MESMO número da Promessa /
+    // Métricas por Canal. Guarda: só quando o painel tem dado no período; senão
+    // cai no caminho TOTVS completo abaixo (histórico não sincronizado).
+    if (['revenda', 'multimarcas', 'inbound_david', 'inbound_rafael'].includes(modulo)) {
+      try {
+        const pv = await getPainelPerSeller(modulo, datemin, datemax);
+        if (pv.hasData) {
+          const responseData = {
+            modulo,
+            invoice_value: pv.total,
+            invoice_qty: pv.qty,
+            itens_qty: 0, // painel não expõe qtd de itens (só TM disponível)
+            tm: pv.tm,
+            pa: 0,
+            pmpv: 0,
+            gross_invoice_value: pv.total,
+            gross_invoice_qty: pv.qty,
+            devolucao_value: 0,
+            per_seller: pv.per_seller,
+            per_branch: pv.per_branch,
+            mode: 'painel-supabase',
+            source: 'painel-vendas (seller_sale_value — Supabase, fonte única canais vendedor)',
+            branchs_used: cfg.branchs,
+          };
+          CANAL_TOTALS_CACHE.set(cacheKey, { data: responseData, ts: Date.now() });
+          console.log(`[canal-totals painel-supabase] ${modulo} ${datemin}~${datemax}: R$${pv.total.toFixed(2)} (${pv.per_seller.length} vend, sem TOTVS)`);
+          return successResponse(res, responseData, `Totais ${modulo} (Painel de Vendas — Supabase)`);
+        }
+        console.log(`[canal-totals painel-supabase] ${modulo} sem dado no painel (${datemin}~${datemax}) — fallback TOTVS`);
+      } catch (err) {
+        console.warn(`[canal-totals painel-supabase ${modulo}] falhou, fallback TOTVS: ${err.message}`);
+      }
+    }
+
     // Para canais 'allbranchs' (franquia, business, bazar, etc.), busca a
     // lista de todas as branches do TOTVS antes de chamar o sale-panel.
     if (cfg.source === 'totvs-totals-allbranchs' && !cfg.branchs) {
@@ -13479,25 +13516,8 @@ router.post(
         sellers_used: cfg.sellers,
         devolucao_ops_used: [...DEVOL_OPS_LIQUIDO_TOTVS],
       };
-      // ─── OVERRIDE FINAL: Painel de Vendas (fonte única dos canais de vendedor) ─
-      // Revenda/Multimarcas/Inbound passam a espelhar o Painel de Vendas do
-      // TOTVS — a MESMA fonte da Promessa do Forecast. Sobrescreve total +
-      // per_seller pra a tela "Métricas por Canal" (que soma per_seller) bater
-      // 1:1 com a Promessa. Guarda: só quando o painel tem dado no período.
-      if (['revenda', 'multimarcas', 'inbound_david', 'inbound_rafael'].includes(modulo)) {
-        try {
-          const pv = await getPainelPerSeller(modulo, datemin, datemax);
-          if (pv.hasData) {
-            const beforeInv = responseData.invoice_value;
-            responseData.invoice_value = pv.total;
-            responseData.per_seller = pv.per_seller;
-            responseData.source = 'painel-vendas (seller_sale_value — fonte única canais vendedor)';
-            console.log(`[canal-totals painel-canais] ${modulo}: R$${Number(beforeInv).toFixed(2)} → R$${pv.total.toFixed(2)} (${pv.per_seller.length} vend)`);
-          }
-        } catch (err) {
-          console.warn(`[canal-totals painel-canais ${modulo}] override falhou: ${err.message}`);
-        }
-      }
+      // (Canais de vendedor já retornaram cedo via short-circuit do Painel de
+      // Vendas — Supabase. Aqui só passam canais sem painel ou não-vendedor.)
 
       // Aplica exclusões (Recife Mall fora de Franquia a partir de 21/05/2026)
       try {
