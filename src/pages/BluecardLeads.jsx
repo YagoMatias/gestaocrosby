@@ -14,6 +14,7 @@ import {
   WhatsappLogo,
   InstagramLogo,
   Buildings,
+  MapPin,
   Calendar,
   PaperPlaneTilt,
   ClipboardText,
@@ -241,10 +242,10 @@ export default function BluecardLeads() {
 
   const exportarCsv = () => {
     if (!leads.length) return;
-    const headers = ['ID', 'Criado em', 'Status', 'Indicado por', 'Nome', 'CVV', 'Email', 'CPF', 'WhatsApp', 'Empresa', 'Instagram', 'Data Nasc.', 'CEP', 'Endereço', 'Nº', 'Complemento', 'Observação'];
+    const headers = ['ID', 'Criado em', 'Status', 'Indicado por', 'Nome', 'CVV', 'Email', 'CPF', 'WhatsApp', 'Empresa', 'Instagram', 'Data Nasc.', 'CEP', 'Endereço', 'Nº', 'Complemento', 'Cidade', 'Estado', 'Observação'];
     const rows = leads.map((l) => [
       l.id, fmtDate(l.criado_em), l.status, l.indicado_por || '', l.nome, l.cvv || '', l.email, fmtCPF(l.cpf), fmtPhone(l.whatsapp),
-      l.empresa || '', l.instagram || '', l.data_nasc || '', l.cep || '', l.endereco || '', l.numero || '', l.complemento || '', l.observacao || '',
+      l.empresa || '', l.instagram || '', l.data_nasc || '', l.cep || '', l.endereco || '', l.numero || '', l.complemento || '', l.cidade || '', l.estado || '', l.observacao || '',
     ]);
     const csv = [headers, ...rows]
       .map((r) => r.map((c) => `"${String(c || '').replace(/"/g, '""')}"`).join(';'))
@@ -1006,13 +1007,42 @@ function DetalhesModal({ lead, onClose, onSaved, onSyncTotvs }) {
     endereco: lead.endereco || '',
     numero: lead.numero || '',
     complemento: lead.complemento || '',
+    cidade: lead.cidade || '',
+    estado: lead.estado || '',
     indicado_por: lead.indicado_por || '',
     cvv: lead.cvv || '',
     observacao: lead.observacao || '',
   });
   const [salvando, setSalv] = useState(false);
+  const [buscandoCep, setBuscandoCep] = useState(false);
 
   const setField = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  // Busca cidade/estado/endereço pelo CEP via ViaCEP (API pública gratuita).
+  // Preenche cidade e estado sempre; endereço/bairro só se estiverem vazios
+  // (não sobrescreve o que o usuário já digitou).
+  const buscarCep = async (cepRaw) => {
+    const cep = String(cepRaw || '').replace(/\D/g, '');
+    if (cep.length !== 8) return;
+    setBuscandoCep(true);
+    try {
+      const r = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+      const j = await r.json();
+      if (j && !j.erro) {
+        setForm((f) => ({
+          ...f,
+          cidade: j.localidade || f.cidade,
+          estado: j.uf || f.estado,
+          endereco: f.endereco?.trim() ? f.endereco : (j.logradouro || f.endereco),
+          complemento: f.complemento?.trim() ? f.complemento : (j.bairro || f.complemento),
+        }));
+      }
+    } catch {
+      /* silencioso — CEP inválido/offline não bloqueia edição manual */
+    } finally {
+      setBuscandoCep(false);
+    }
+  };
 
   // Detecta o que mudou em relação ao lead original
   const camposAlterados = useMemo(() => {
@@ -1162,9 +1192,12 @@ function DetalhesModal({ lead, onClose, onSaved, onSyncTotvs }) {
             <legend className="text-[10px] uppercase tracking-widest font-bold text-gray-400 mb-1">Endereço</legend>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <CampoEdit
-                label="CEP"
+                label={buscandoCep ? 'CEP (buscando…)' : 'CEP'}
                 value={form.cep}
-                onChange={(v) => setField('cep', v)}
+                onChange={(v) => {
+                  setField('cep', v);
+                  if (String(v).replace(/\D/g, '').length === 8) buscarCep(v);
+                }}
                 placeholder="00000000"
                 mono
               />
@@ -1176,6 +1209,24 @@ function DetalhesModal({ lead, onClose, onSaved, onSyncTotvs }) {
                   placeholder="Rua, avenida…"
                 />
               </div>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="sm:col-span-2">
+                <CampoEdit
+                  label="Cidade"
+                  value={form.cidade}
+                  onChange={(v) => setField('cidade', v)}
+                  placeholder="Preenchida pelo CEP"
+                  icon={MapPin}
+                />
+              </div>
+              <CampoEdit
+                label="Estado (UF)"
+                value={form.estado}
+                onChange={(v) => setField('estado', v.toUpperCase().slice(0, 2))}
+                placeholder="UF"
+                mono
+              />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <CampoEdit
