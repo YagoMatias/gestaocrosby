@@ -3019,10 +3019,34 @@ router.get(
       return out;
     };
 
+    // Ano ANTERIOR (2025): as notas_fiscais de 2025 estão INCOMPLETAS no
+    // Supabase (faltam franquia/multimarcas/showroom; ricardoeletro vem
+    // negativo). Fonte oficial = forecast_comparativo_ref (valores do relatório
+    // TOTVS / planilha Crescimento 24x25), a MESMA do Comparativo Anual.
+    // YTD = meses fechados (valor_full) + mês corrente (valor_acumulado).
+    const agregar2025FromRef = async () => {
+      const mesAtual = hoje.getUTCMonth() + 1;
+      const { data, error } = await supabase
+        .from('forecast_comparativo_ref')
+        .select('mes, canal, valor_full, valor_acumulado')
+        .eq('ano', anoAnterior);
+      if (error) throw new Error(`ref 2025: ${error.message}`);
+      const out = {};
+      for (const r of data || []) {
+        const m = Number(r.mes);
+        let v = 0;
+        if (m < mesAtual) v = Number(r.valor_full || 0);
+        else if (m === mesAtual) v = Number(r.valor_acumulado || 0);
+        else continue;
+        if (v) out[r.canal] = Math.round(((out[r.canal] || 0) + v) * 100) / 100;
+      }
+      return out;
+    };
+
     try {
       const [segAtual, segAnterior] = await Promise.all([
         agregarAno(iniAtual, fimAtual),
-        agregarAno(iniAnterior, fimAnterior),
+        agregar2025FromRef(),
       ]);
       return successResponse(res, {
         ano_atual: anoAtual,
