@@ -69,7 +69,8 @@ export default function VendedoresMensal() {
     setCarregandoLive(true);
     setErro('');
     try {
-      const qs = `?ano=${ano}&mes=${mes}&until_today=true`;
+      // Padrão do Forecast: até ONTEM (D-1, estável) — não conta o dia corrente.
+      const qs = `?ano=${ano}&mes=${mes}&until_today=false`;
       const r = await fetch(`${API_BASE_URL}/api/forecast/vendedores-mensal${qs}`);
       const j = await r.json().catch(() => ({}));
       if (myId !== reqIdRef.current) return;
