@@ -1302,6 +1302,15 @@ router.get(
           }
         }
 
+        // Aplica exclusões (ex: Recife Mall fora de Franquia a partir de 21/05) —
+        // MESMO passo que a Promessa faz. Sem isso a franquia ficava ~R$1.3k
+        // maior aqui do que na Promessa por Canal.
+        try {
+          await aplicarExclusoesForecast(seg, dmin, dmax);
+        } catch (e) {
+          console.warn(`[ovl cache-only] aplicarExclusoesForecast falhou: ${e.message}`);
+        }
+
         const round = (v) => Math.round(Number(v || 0) * 100) / 100;
         const mkSingle = (canal, nome) => {
           const v = round(seg[canal]);
