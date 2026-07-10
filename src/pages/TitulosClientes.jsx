@@ -24,6 +24,8 @@ import {
   FileArrowDown,
   Eye,
   CheckCircle,
+  XCircle,
+  ArrowClockwise,
   MagnifyingGlass,
   X,
   FilePdf,
@@ -90,7 +92,12 @@ const TitulosClientes = ({
   const [progressoBoletos, setProgressoBoletos] = useState({
     atual: 0,
     total: 0,
+    fatura: '',
   });
+  // Modal de resultado da geração em massa: mostra o loading enquanto baixa e,
+  // ao final, quais faturas deram certo/errado + botão de tentar novamente.
+  const [modalBoletosAberto, setModalBoletosAberto] = useState(false);
+  const [resultadosBoletos, setResultadosBoletos] = useState([]);
 
   // Estado para armazenar códigos das filiais (empresas próprias)
   const [filiaisCodigos, setFiliaisCodigos] = useState([]);
@@ -1368,6 +1375,127 @@ const TitulosClientes = ({
   };
 
   // Gerar boletos em massa
+  // Gera e baixa o boleto de UM título. Retorna { ok, erro } sem lançar,
+  // para o processamento em lote continuar mesmo quando um falha.
+  const gerarBoletoDeItem = async (item, indice, total) => {
+    try {
+      const payload = {
+        branchCode: parseInt(item.cd_empresa) || 0,
+        customerCode: item.cd_cliente || '',
+        receivableCode: parseInt(item.nr_fat) || 0,
+        installmentNumber: parseInt(item.nr_parcela) || 0,
+      };
+
+      console.log(`📄 [${indice + 1}/${total}] Gerando boleto:`, payload);
+
+      const response = await fetch(`${TotvsURL}bank-slip`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        console.error(
+          '🔎 Resposta de erro bank-slip:',
+          JSON.stringify(errBody, null, 2),
+        );
+        const d = errBody.details;
+        const detail =
+          errBody.message ||
+          d?.message ||
+          d?.errorMessage ||
+          d?.detailedMessage ||
+          d?.details?.[0]?.message ||
+          (typeof d === 'string' ? d : '') ||
+          errBody.error ||
+          '';
+        throw new Error(detail || `HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      // Extrair base64 (mesma lógica de buscarBoleto)
+      let base64 = '';
+      if (typeof data === 'string') {
+        base64 = data;
+      } else if (data.data?.base64) {
+        base64 =
+          typeof data.data.base64 === 'string'
+            ? data.data.base64
+            : data.data.base64.content || '';
+      } else if (data.data && typeof data.data === 'string') {
+        base64 = data.data;
+      } else if (data.base64) {
+        base64 =
+          typeof data.base64 === 'string'
+            ? data.base64
+            : data.base64.content || '';
+      }
+
+      if (!base64) {
+        throw new Error('Boleto sem conteúdo (base64 vazio)');
+      }
+
+      // Converter e baixar o PDF
+      const cleanBase64 = base64.replace(/^data:application\/pdf;base64,/, '');
+      const binaryString = window.atob(cleanBase64);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let j = 0; j < binaryString.length; j++) {
+        bytes[j] = binaryString.charCodeAt(j);
+      }
+      const blob = new Blob([bytes], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `boleto-${item.nr_fat}-parcela-${item.nr_parcela}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      return { ok: true, erro: '' };
+    } catch (error) {
+      console.error(
+        `❌ Erro ao gerar boleto fatura ${item.nr_fat}:`,
+        error.message,
+      );
+      return { ok: false, erro: error.message };
+    }
+  };
+
+  // Processa uma lista de itens sequencialmente, baixando cada boleto e
+  // reportando o resultado individual via `onResultado` (para atualização ao
+  // vivo do modal). Usada tanto na geração em massa quanto no "tentar novamente".
+  const processarBoletos = async (itens, onResultado) => {
+    for (let i = 0; i < itens.length; i++) {
+      const item = itens[i];
+      setProgressoBoletos({
+        atual: i + 1,
+        total: itens.length,
+        fatura: `${item.nr_fat} / parc. ${item.nr_parcela}`,
+      });
+
+      const { ok, erro } = await gerarBoletoDeItem(item, i, itens.length);
+
+      onResultado({
+        chave: chaveTitulo(item),
+        item,
+        nrFat: item.nr_fat,
+        nrParcela: item.nr_parcela,
+        nmCliente: item.nm_cliente || item.cd_cliente,
+        valor: item.vl_fatura,
+        ok,
+        erro,
+      });
+
+      // Pequeno delay entre requisições para não sobrecarregar a API
+      if (i < itens.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
+  };
+
   const gerarBoletosMassa = async () => {
     if (titulosSelecionados.size === 0) {
       alert('Selecione ao menos um título para gerar boleto.');
@@ -1393,113 +1521,41 @@ const TitulosClientes = ({
     );
     if (!confirma) return;
 
+    // Abre o modal já em modo "carregando" e zera resultados anteriores.
+    setResultadosBoletos([]);
+    setModalBoletosAberto(true);
     setGerandoBoletosMassa(true);
-    setProgressoBoletos({ atual: 0, total: itensSelecionados.length });
+    setProgressoBoletos({ atual: 0, total: itensSelecionados.length, fatura: '' });
 
-    let sucessos = 0;
-    let erros = 0;
-    const errosDetalhes = [];
-
-    for (let i = 0; i < itensSelecionados.length; i++) {
-      const item = itensSelecionados[i];
-      setProgressoBoletos({ atual: i + 1, total: itensSelecionados.length });
-
-      try {
-        const payload = {
-          branchCode: parseInt(item.cd_empresa) || 0,
-          customerCode: item.cd_cliente || '',
-          receivableCode: parseInt(item.nr_fat) || 0,
-          installmentNumber: parseInt(item.nr_parcela) || 0,
-        };
-
-        console.log(
-          `📄 [${i + 1}/${itensSelecionados.length}] Gerando boleto:`,
-          payload,
-        );
-
-        const response = await fetch(`${TotvsURL}bank-slip`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-
-        if (!response.ok) {
-          const errBody = await response.json().catch(() => ({}));
-          console.error('🔎 Resposta de erro bank-slip:', JSON.stringify(errBody, null, 2));
-          const d = errBody.details;
-          const detail =
-            errBody.message ||
-            d?.message || d?.errorMessage || d?.detailedMessage ||
-            d?.details?.[0]?.message ||
-            (typeof d === 'string' ? d : '') ||
-            errBody.error || '';
-          throw new Error(detail || `HTTP ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        // Extrair base64 (mesma lógica de buscarBoleto)
-        let base64 = '';
-        if (typeof data === 'string') {
-          base64 = data;
-        } else if (data.data?.base64) {
-          base64 =
-            typeof data.data.base64 === 'string'
-              ? data.data.base64
-              : data.data.base64.content || '';
-        } else if (data.data && typeof data.data === 'string') {
-          base64 = data.data;
-        } else if (data.base64) {
-          base64 =
-            typeof data.base64 === 'string'
-              ? data.base64
-              : data.base64.content || '';
-        }
-
-        if (base64) {
-          // Converter e baixar o PDF
-          const cleanBase64 = base64.replace(
-            /^data:application\/pdf;base64,/,
-            '',
-          );
-          const binaryString = window.atob(cleanBase64);
-          const bytes = new Uint8Array(binaryString.length);
-          for (let j = 0; j < binaryString.length; j++) {
-            bytes[j] = binaryString.charCodeAt(j);
-          }
-          const blob = new Blob([bytes], { type: 'application/pdf' });
-          const url = window.URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = url;
-          link.download = `boleto-${item.nr_fat}-parcela-${item.nr_parcela}.pdf`;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          window.URL.revokeObjectURL(url);
-          sucessos++;
-        } else {
-          console.error(`❌ Base64 não encontrado para fatura ${item.nr_fat}`);
-          erros++;
-        }
-      } catch (error) {
-        console.error(`❌ Erro ao gerar boleto fatura ${item.nr_fat}:`, error.message);
-        errosDetalhes.push(`Fatura ${item.nr_fat}: ${error.message}`);
-        erros++;
-      }
-
-      // Pequeno delay entre requisições para não sobrecarregar a API
-      if (i < itensSelecionados.length - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 500));
-      }
-    }
+    // Acrescenta cada resultado assim que fica pronto (lista cresce ao vivo).
+    await processarBoletos(itensSelecionados, (resultado) =>
+      setResultadosBoletos((prev) => [...prev, resultado]),
+    );
 
     setGerandoBoletosMassa(false);
-    setProgressoBoletos({ atual: 0, total: 0 });
+    setProgressoBoletos({ atual: 0, total: 0, fatura: '' });
     setTitulosSelecionados(new Set());
+  };
 
-    alert(
-      `Geração concluída!\n✅ ${sucessos} boleto(s) baixado(s)${erros > 0 ? `\n❌ ${erros} erro(s):\n${errosDetalhes.join('\n')}` : ''}`,
+  // Reprocessa apenas as faturas que falharam, substituindo o resultado
+  // correspondente na lista (mantém os que já deram certo).
+  const tentarNovamenteBoletos = async () => {
+    const falhas = resultadosBoletos.filter((r) => !r.ok);
+    if (falhas.length === 0) return;
+
+    setGerandoBoletosMassa(true);
+    setProgressoBoletos({ atual: 0, total: falhas.length, fatura: '' });
+
+    await processarBoletos(
+      falhas.map((f) => f.item),
+      (resultado) =>
+        setResultadosBoletos((prev) =>
+          prev.map((r) => (r.chave === resultado.chave ? resultado : r)),
+        ),
     );
+
+    setGerandoBoletosMassa(false);
+    setProgressoBoletos({ atual: 0, total: 0, fatura: '' });
   };
 
   // Função para converter base64 em PDF e abrir em nova aba
@@ -2310,6 +2366,140 @@ const TitulosClientes = ({
       </div>
 
       {/* Modal de Busca de Clientes */}
+      {modalBoletosAberto && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4"
+          style={{ zIndex: 99999 }}
+        >
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col">
+            {/* Cabeçalho */}
+            <div className="flex justify-between items-center p-5 border-b border-gray-200">
+              <h2 className="text-lg font-bold text-[#000638] flex items-center gap-2 font-barlow">
+                <FilePdf size={22} className="text-red-600" />
+                Geração de Boletos
+              </h2>
+              <button
+                onClick={() => setModalBoletosAberto(false)}
+                disabled={gerandoBoletosMassa}
+                className="text-gray-400 hover:text-gray-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                title={
+                  gerandoBoletosMassa ? 'Aguarde a geração terminar' : 'Fechar'
+                }
+              >
+                <X size={22} weight="bold" />
+              </button>
+            </div>
+
+            {/* Barra de progresso / loading */}
+            {gerandoBoletosMassa && (
+              <div className="px-5 pt-4">
+                <div className="flex items-center gap-2 text-sm text-gray-700 mb-2">
+                  <Spinner size={16} className="animate-spin text-red-600" />
+                  <span>
+                    Gerando boleto {progressoBoletos.atual} de{' '}
+                    {progressoBoletos.total}
+                    {progressoBoletos.fatura
+                      ? ` — Fatura ${progressoBoletos.fatura}`
+                      : ''}
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                  <div
+                    className="bg-red-600 h-2 rounded-full transition-all duration-300"
+                    style={{
+                      width: `${
+                        progressoBoletos.total
+                          ? (progressoBoletos.atual / progressoBoletos.total) *
+                            100
+                          : 0
+                      }%`,
+                    }}
+                  />
+                </div>
+                <p className="text-[11px] text-gray-400 mt-1">
+                  Cada boleto é gerado no TOTVS e pode levar alguns segundos. Não
+                  feche esta janela.
+                </p>
+              </div>
+            )}
+
+            {/* Resumo */}
+            {resultadosBoletos.length > 0 && (
+              <div className="flex items-center gap-4 px-5 py-3 text-sm">
+                <span className="flex items-center gap-1 text-green-700 font-medium">
+                  <CheckCircle size={16} weight="fill" />
+                  {resultadosBoletos.filter((r) => r.ok).length} ok
+                </span>
+                <span className="flex items-center gap-1 text-red-600 font-medium">
+                  <XCircle size={16} weight="fill" />
+                  {resultadosBoletos.filter((r) => !r.ok).length} com erro
+                </span>
+              </div>
+            )}
+
+            {/* Lista de resultados */}
+            <div className="flex-1 overflow-y-auto px-5 pb-2">
+              {resultadosBoletos.length === 0 && !gerandoBoletosMassa && (
+                <p className="text-sm text-gray-500 py-6 text-center">
+                  Nenhum boleto processado.
+                </p>
+              )}
+              <ul className="divide-y divide-gray-100">
+                {resultadosBoletos.map((r) => (
+                  <li key={r.chave} className="flex items-start gap-2 py-2">
+                    {r.ok ? (
+                      <CheckCircle
+                        size={18}
+                        weight="fill"
+                        className="text-green-600 mt-0.5 shrink-0"
+                      />
+                    ) : (
+                      <XCircle
+                        size={18}
+                        weight="fill"
+                        className="text-red-500 mt-0.5 shrink-0"
+                      />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm text-gray-800 font-medium truncate">
+                        Fatura {r.nrFat} · Parcela {r.nrParcela}
+                      </p>
+                      {!r.ok && (
+                        <p className="text-xs text-red-500 break-words">
+                          {r.erro}
+                        </p>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* Rodapé */}
+            <div className="flex items-center justify-end gap-2 p-4 border-t border-gray-200">
+              {!gerandoBoletosMassa &&
+                resultadosBoletos.some((r) => !r.ok) && (
+                  <button
+                    onClick={tentarNovamenteBoletos}
+                    className="flex items-center gap-1 bg-amber-500 text-white px-3 py-1.5 rounded-lg hover:bg-amber-600 transition-colors font-medium text-xs"
+                  >
+                    <ArrowClockwise size={14} weight="bold" />
+                    Tentar novamente (
+                    {resultadosBoletos.filter((r) => !r.ok).length})
+                  </button>
+                )}
+              <button
+                onClick={() => setModalBoletosAberto(false)}
+                disabled={gerandoBoletosMassa}
+                className="bg-[#000638] text-white px-4 py-1.5 rounded-lg hover:bg-[#000638]/90 transition-colors font-medium text-xs disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {modalBuscaAberto && (
         <div
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
