@@ -174,6 +174,13 @@ const InadimplentesMultimarcas = () => {
       currency: 'BRL',
     });
 
+  // Normalizar nomes de representantes (agrupar por primeiro nome)
+  const normalizeRepName = (name) => {
+    if (!name) return 'SEM REPRESENTANTE';
+    const firstName = name.trim().split(/\s+/)[0].toUpperCase();
+    return firstName;
+  };
+
   // ======================== TIMELINE SUPABASE ========================
   const carregarTimeline = useCallback(async () => {
     setLoadingTimeline(true);
@@ -1108,13 +1115,6 @@ Crosby`;
   }, [timeline]);
 
   // Gráfico: Evolução por Representante (top 5 por último valor)
-  // Normalizar nomes de representantes (agrupar por primeiro nome)
-  const normalizeRepName = (name) => {
-    if (!name) return 'SEM REPRESENTANTE';
-    const firstName = name.trim().split(/\s+/)[0].toUpperCase();
-    return firstName;
-  };
-
   // Agregar dados de timelineRep por nome normalizado
   const normalizedTimelineRep = useMemo(() => {
     if (!timelineRep.length) return [];
