@@ -569,59 +569,75 @@ Crosby`;
         multimarcasMap[String(m.code)] = m;
       });
 
-      // Códigos separados por vírgula para query param
-      const codigosMultimarcas = multimarcas.map((m) => m.code).join(',');
+      // Códigos das multimarcas. A lista completa (500+ códigos) numa única
+      // query gera uma URL enorme (~8 KB) que o TOTVS rejeita de forma
+      // intermitente com HTTP 500. Por isso quebramos em lotes menores e
+      // agregamos os itens (faturas são por cliente, então os conjuntos são
+      // disjuntos — a união não gera duplicatas).
+      const codigosMultimarcasArr = multimarcas.map((m) => m.code);
       console.log(`📋 ${multimarcas.length} clientes multimarcas encontrados`);
 
-      // ============================================================
-      // PASSO 2: Buscar contas a receber APENAS dos clientes multimarcas
-      // ============================================================
-      const paramsVencidas = new URLSearchParams({
-        dt_inicio: dataIni,
-        dt_fim: dataFim,
-        modo: 'vencimento',
-        situacao: '1',
-        status: 'Vencido',
-        cd_cliente: codigosMultimarcas,
-      });
+      const CHUNK_SIZE = 250;
+      const lotesClientes = [];
+      for (let i = 0; i < codigosMultimarcasArr.length; i += CHUNK_SIZE) {
+        lotesClientes.push(codigosMultimarcasArr.slice(i, i + CHUNK_SIZE));
+      }
 
-      const paramsAVencer = new URLSearchParams({
-        dt_inicio: amanhaStr,
-        dt_fim: umAnoFrenteStr,
-        modo: 'vencimento',
-        situacao: '1',
-        status: 'Em Aberto',
-        cd_cliente: codigosMultimarcas,
-      });
+      // Busca contas a receber de todos os lotes (em paralelo) e concatena os
+      // itens. `status` = 'Vencido' | 'Em Aberto'. Lança em caso de erro HTTP.
+      const buscarFaturasEmLotes = async (baseParams, status) => {
+        const resultados = await Promise.all(
+          lotesClientes.map(async (lote) => {
+            const params = new URLSearchParams({
+              ...baseParams,
+              status,
+              cd_cliente: lote.join(','),
+            });
+            const resp = await fetch(
+              `${TotvsURL}accounts-receivable/filter?${params.toString()}`,
+            );
+            if (!resp.ok) {
+              const errData = await resp.json().catch(() => ({}));
+              throw new Error(errData.message || `Erro HTTP ${resp.status}`);
+            }
+            const result = await resp.json();
+            return result.data?.items || [];
+          }),
+        );
+        return resultados.flat();
+      };
 
       console.log(
         '🔍 Buscando inadimplentes (apenas multimarcas) via TOTVS...',
       );
 
-      const [responseVencidas, responseAVencer] = await Promise.all([
-        fetch(
-          `${TotvsURL}accounts-receivable/filter?${paramsVencidas.toString()}`,
+      // ============================================================
+      // PASSO 2: Buscar contas a receber APENAS dos clientes multimarcas
+      // ============================================================
+      const [faturasVencidas, faturasAVencerTodas] = await Promise.all([
+        buscarFaturasEmLotes(
+          {
+            dt_inicio: dataIni,
+            dt_fim: dataFim,
+            modo: 'vencimento',
+            situacao: '1',
+          },
+          'Vencido',
         ),
-        fetch(
-          `${TotvsURL}accounts-receivable/filter?${paramsAVencer.toString()}`,
-        ),
+        // "A vencer" é best-effort: se falhar, seguimos só com as vencidas.
+        buscarFaturasEmLotes(
+          {
+            dt_inicio: amanhaStr,
+            dt_fim: umAnoFrenteStr,
+            modo: 'vencimento',
+            situacao: '1',
+          },
+          'Em Aberto',
+        ).catch((err) => {
+          console.warn('⚠️ Erro ao buscar faturas a vencer:', err.message);
+          return [];
+        }),
       ]);
-
-      if (!responseVencidas.ok) {
-        const errData = await responseVencidas.json();
-        throw new Error(
-          errData.message || `Erro HTTP ${responseVencidas.status}`,
-        );
-      }
-
-      const resultVencidas = await responseVencidas.json();
-      const faturasVencidas = resultVencidas.data?.items || [];
-
-      let faturasAVencerTodas = [];
-      if (responseAVencer.ok) {
-        const resultAVencer = await responseAVencer.json();
-        faturasAVencerTodas = resultAVencer.data?.items || [];
-      }
 
       console.log(
         `📊 Faturas multimarcas — vencidas: ${faturasVencidas.length}, A vencer: ${faturasAVencerTodas.length}`,

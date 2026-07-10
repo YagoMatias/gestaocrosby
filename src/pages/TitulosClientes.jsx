@@ -112,8 +112,13 @@ const TitulosClientes = ({
         const response = await fetch(`${TotvsURL}branches`);
         if (response.ok) {
           const data = await response.json();
+          // O endpoint pode devolver um array puro ou um objeto { data: [...] }.
+          // Normalizamos para evitar "data.map is not a function".
+          const lista = Array.isArray(data)
+            ? data
+            : data?.data || data?.items || [];
           // Extrair códigos das filiais (cd_empresa)
-          const codigos = data
+          const codigos = lista
             .map((branch) => parseInt(branch.cd_empresa))
             .filter((code) => !isNaN(code) && code > 0);
           console.log('📋 Filiais carregadas:', codigos);
