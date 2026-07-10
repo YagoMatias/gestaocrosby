@@ -1,6 +1,7 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../components/AuthContext';
+import { API_BASE_URL } from '../config/constants';
 import PageTitle from '../components/ui/PageTitle';
 import {
   Package,
@@ -8,75 +9,268 @@ import {
   PencilSimple,
   Trash,
   X,
-  Check,
-  CaretUp,
-  CaretDown,
   MagnifyingGlass,
   Export,
   Warning,
-  FunnelSimple,
+  Spinner,
+  CurrencyDollar,
+  CheckCircle,
+  Buildings,
+  IdentificationBadge,
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 
+// ── Empresas permitidas ──────────────────────────────────────────────
+const EMPRESAS = [
+  { cd: 1, nome: 'CROSBY MATRIZ' },
+  { cd: 99, nome: 'CROSBY BREJINHO' },
+];
+
+// ── Status (definidos no cadastro / editáveis por todos) ──────────────
+const STATUS_CADASTRO = [
+  'Aguardando Nota',
+  'Pendente de Escrituração',
+  'Aguardando Pagamento',
+];
+const STATUS_LIST = [...STATUS_CADASTRO, 'Pago'];
+
 const STATUS_COLORS = {
-  Pago: 'bg-green-100 text-green-800 border-green-300',
-  Pendente: 'bg-yellow-100 text-yellow-800 border-yellow-300',
-  Parcial: 'bg-orange-100 text-orange-800 border-orange-300',
-  Divergente: 'bg-red-100 text-red-800 border-red-300',
-  Duplicado: 'bg-pink-100 text-pink-800 border-pink-300',
   'Aguardando Nota': 'bg-blue-100 text-blue-800 border-blue-300',
+  'Pendente de Escrituração': 'bg-yellow-100 text-yellow-800 border-yellow-300',
+  'Aguardando Pagamento': 'bg-orange-100 text-orange-800 border-orange-300',
+  Pago: 'bg-green-100 text-green-800 border-green-300',
 };
 
-const EMPRESAS = ['Crosby brejinho', 'Crosby Matriz'];
-const STATUS_LIST = ['Pendente', 'Pago', 'Parcial', 'Divergente', 'Duplicado', 'Aguardando Nota'];
-const FORMAS = ['PIX', 'Cartão', 'Boleto'];
+// ── Forma de pagamento (cadastro) ─────────────────────────────────────
+const TIPOS_PAGAMENTO = [
+  { valor: 'PIX', label: 'Chave PIX' },
+  { valor: 'BOLETO', label: 'Boleto' },
+  { valor: 'CARTAO', label: 'Cartão' },
+];
+const INFO_LABEL = { PIX: 'Chave PIX', BOLETO: 'Linha digitável do boleto', CARTAO: 'Cartão / observação' };
+const FORMA_DISPLAY = { PIX: 'PIX', BOLETO: 'Boleto', CARTAO: 'Cartão', CREDITO: 'Cartão', DEBITO: 'Débito' };
 
 const fmt = (v) =>
-  v != null
+  v != null && v !== ''
     ? Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
     : '—';
 
 const fmtDate = (d) => {
   if (!d) return '—';
-  const dt = new Date(d + 'T00:00:00');
+  const dt = new Date(String(d).slice(0, 10) + 'T00:00:00');
   return dt.toLocaleDateString('pt-BR');
 };
 
+const onlyDigits = (v) => String(v || '').replace(/\D/g, '');
+
+const formatCnpjCpf = (v) => {
+  const d = onlyDigits(v).slice(0, 14);
+  if (d.length <= 11) {
+    return d
+      .replace(/(\d{3})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d)/, '$1.$2')
+      .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+  }
+  return d
+    .replace(/(\d{2})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d)/, '$1.$2')
+    .replace(/(\d{3})(\d)/, '$1/$2')
+    .replace(/(\d{4})(\d{1,2})$/, '$1-$2');
+};
+
+// =====================================================================
+// Busca de Fornecedor (CNPJ / Nome / Nome Fantasia) — usa pes_pessoa
+// via /api/totvs/clientes/search-name (mesmo endpoint do Contas a Pagar)
+// =====================================================================
+const BuscaFornecedor = ({ fornecedor, onSelect }) => {
+  const [tipo, setTipo] = useState('cnpj'); // cnpj | nome | fantasia
+  const [termo, setTermo] = useState('');
+  const [buscando, setBuscando] = useState(false);
+  const [resultados, setResultados] = useState([]);
+  const [mostrarResultados, setMostrarResultados] = useState(false);
+  const boxRef = useRef(null);
+
+  useEffect(() => {
+    const onClick = (e) => {
+      if (boxRef.current && !boxRef.current.contains(e.target)) setMostrarResultados(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, []);
+
+  const buscar = async () => {
+    const t = termo.trim();
+    if (!t) return;
+    setBuscando(true);
+    setResultados([]);
+    try {
+      let qp = '';
+      if (tipo === 'nome') qp = `nome=${encodeURIComponent(t)}`;
+      else if (tipo === 'fantasia') qp = `fantasia=${encodeURIComponent(t)}`;
+      else qp = `cnpj=${encodeURIComponent(onlyDigits(t))}`;
+
+      const resp = await fetch(`${API_BASE_URL}/api/totvs/clientes/search-name?${qp}`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      const lista = (data.success && data.data?.clientes ? data.data.clientes : []).map((f) => ({
+        codigo: f.code != null ? String(f.code) : null,
+        nome: f.nm_pessoa || f.fantasy_name || '',
+        fantasia: f.fantasy_name || null,
+        cnpj: f.cpf || null,
+      }));
+      if (lista.length === 0) {
+        alert('Nenhum fornecedor encontrado com os critérios informados.');
+      } else if (lista.length === 1) {
+        selecionar(lista[0]);
+      } else {
+        setResultados(lista);
+        setMostrarResultados(true);
+      }
+    } catch (err) {
+      console.error('Erro ao buscar fornecedor:', err);
+      alert('Erro ao buscar fornecedor. Tente novamente.');
+    } finally {
+      setBuscando(false);
+    }
+  };
+
+  const selecionar = (f) => {
+    onSelect(f);
+    setMostrarResultados(false);
+    setResultados([]);
+    setTermo('');
+  };
+
+  const placeholders = {
+    cnpj: '00.000.000/0000-00',
+    nome: 'Razão social do fornecedor',
+    fantasia: 'Nome fantasia',
+  };
+
+  return (
+    <div className="relative" ref={boxRef}>
+      <label className="block text-sm font-medium text-gray-700 mb-1.5">Fornecedor *</label>
+
+      {/* Fornecedor selecionado */}
+      {fornecedor?.nome ? (
+        <div className="flex items-start gap-2 px-3 py-2.5 border-2 border-green-400 bg-green-50 rounded-lg">
+          <CheckCircle size={18} weight="fill" className="text-green-600 shrink-0 mt-0.5" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-gray-900 truncate">{fornecedor.nome}</p>
+            <p className="text-[11px] text-gray-500">
+              {fornecedor.codigo ? `Cód. ${fornecedor.codigo}` : ''}
+              {fornecedor.cnpj ? ` • ${formatCnpjCpf(fornecedor.cnpj)}` : ''}
+              {fornecedor.fantasia ? ` • ${fornecedor.fantasia}` : ''}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onSelect(null)}
+            className="p-1 -mr-1 rounded hover:bg-green-100 text-gray-500 shrink-0"
+            title="Limpar fornecedor"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="flex gap-2">
+            <select
+              value={tipo}
+              onChange={(e) => setTipo(e.target.value)}
+              className="w-28 shrink-0 px-2 py-2.5 md:py-2 border border-gray-300 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="cnpj">CNPJ/CPF</option>
+              <option value="nome">Nome</option>
+              <option value="fantasia">Fantasia</option>
+            </select>
+            <input
+              type="text"
+              value={tipo === 'cnpj' ? formatCnpjCpf(termo) : termo}
+              onChange={(e) => setTermo(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), buscar())}
+              placeholder={placeholders[tipo]}
+              maxLength={tipo === 'cnpj' ? 18 : undefined}
+              className="flex-1 min-w-0 px-3 py-2.5 md:py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+            />
+            <button
+              type="button"
+              onClick={buscar}
+              disabled={buscando || !termo.trim()}
+              className="shrink-0 flex items-center gap-1 px-3 py-2.5 md:py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-40 text-sm font-medium"
+            >
+              {buscando ? <Spinner size={15} className="animate-spin" /> : <MagnifyingGlass size={15} />}
+              <span className="hidden sm:inline">Buscar</span>
+            </button>
+          </div>
+          <p className="mt-1 text-[10px] text-gray-400">
+            Busque pelo CNPJ/CPF, nome (razão social) ou nome fantasia do fornecedor.
+          </p>
+        </>
+      )}
+
+      {/* Dropdown de resultados */}
+      {mostrarResultados && resultados.length > 0 && (
+        <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-xl max-h-64 overflow-y-auto">
+          {resultados.map((f, i) => (
+            <button
+              type="button"
+              key={`${f.codigo}-${i}`}
+              onClick={() => selecionar(f)}
+              className="w-full text-left px-3 py-2.5 hover:bg-blue-50 border-b border-gray-100 last:border-0"
+            >
+              <p className="text-sm font-medium text-gray-900 truncate">{f.nome}</p>
+              <p className="text-[11px] text-gray-500">
+                {f.codigo ? `Cód. ${f.codigo}` : ''}
+                {f.cnpj ? ` • ${formatCnpjCpf(f.cnpj)}` : ''}
+                {f.fantasia ? ` • ${f.fantasia}` : ''}
+              </p>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const emptyForm = {
+  cd_empresa: EMPRESAS[0].cd,
+  fornecedor: null, // { codigo, nome, fantasia, cnpj }
+  valor: '',
+  data_lancamento: '',
+  status: 'Aguardando Nota',
+  tem_nota: false,
+  transacao: '',
+  nfe: '',
+  tipo_pagamento: '',
+  info_pagamento: '',
+};
+
 const PagamentosFabricas = () => {
-  const { user, hasRole } = useAuth?.() || { user: null, hasRole: () => false };
-  const isFinanceiro = hasRole('owner') || hasRole('admin') || hasRole('manager');
+  const { user } = useAuth?.() || { user: null };
+  const role = user?.role || user?.user_metadata?.role;
+  // Financeiro / administrador / proprietário podem liberar pagamento
+  const isFinanceiro = role === 'owner' || role === 'admin' || role === 'user';
+  const userNome =
+    user?.name ||
+    user?.user_metadata?.nome ||
+    user?.user_metadata?.full_name ||
+    user?.email ||
+    'Usuário';
 
   const [dados, setDados] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modalAberto, setModalAberto] = useState(false);
   const [modalEditando, setModalEditando] = useState(null);
-  const [modalFinanceiro, setModalFinanceiro] = useState(null);
   const [busca, setBusca] = useState('');
   const [filtroStatus, setFiltroStatus] = useState('TODOS');
   const [filtroEmpresa, setFiltroEmpresa] = useState('TODOS');
-  const [sortConfig, setSortConfig] = useState({ key: 'data_lancamento', direction: 'desc' });
+  const [processandoId, setProcessandoId] = useState(null);
+  const [form, setForm] = useState(emptyForm);
+  const [salvando, setSalvando] = useState(false);
 
-  const [form, setForm] = useState({
-    empresa: EMPRESAS[0],
-    transacao: '',
-    fornecedor: '',
-    nfe: '',
-    valor: '',
-    data_lancamento: '',
-    tem_nota: true,
-    tem_transacao: true,
-  });
-
-  const [formFin, setFormFin] = useState({
-    status: 'Pendente',
-    data_pagamento: '',
-    forma: '',
-    cartao_conta: '',
-    parcelas: '',
-    valor_pago: '',
-    observacao: '',
-  });
+  const empresaNome = (cd) => EMPRESAS.find((e) => e.cd === Number(cd))?.nome || '';
 
   const carregarDados = useCallback(async () => {
     setLoading(true);
@@ -84,7 +278,6 @@ const PagamentosFabricas = () => {
       .from('pagamentos_fabricas')
       .select('*')
       .order('created_at', { ascending: false });
-
     if (error) {
       console.error('Erro ao carregar pagamentos_fabricas:', error);
       setDados([]);
@@ -94,138 +287,137 @@ const PagamentosFabricas = () => {
     setLoading(false);
   }, []);
 
-  useEffect(() => { carregarDados(); }, [carregarDados]);
-
-  const handleSort = (key) => {
-    setSortConfig((prev) => ({
-      key,
-      direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc',
-    }));
-  };
+  useEffect(() => {
+    carregarDados();
+  }, [carregarDados]);
 
   const dadosFiltrados = useMemo(() => {
     let filtered = [...dados];
     if (filtroStatus !== 'TODOS') filtered = filtered.filter((d) => d.status === filtroStatus);
-    if (filtroEmpresa !== 'TODOS') filtered = filtered.filter((d) => d.empresa === filtroEmpresa);
+    if (filtroEmpresa !== 'TODOS')
+      filtered = filtered.filter((d) => Number(d.cd_empresa) === Number(filtroEmpresa));
     if (busca.trim()) {
       const q = busca.toLowerCase();
       filtered = filtered.filter(
         (d) =>
           d.fornecedor?.toLowerCase().includes(q) ||
+          d.fornecedor_cnpj?.toLowerCase().includes(q) ||
           d.nfe?.toLowerCase().includes(q) ||
-          d.transacao?.toLowerCase().includes(q) ||
-          d.observacao?.toLowerCase().includes(q)
+          d.transacao?.toLowerCase().includes(q)
       );
     }
-    filtered.sort((a, b) => {
-      const va = a[sortConfig.key];
-      const vb = b[sortConfig.key];
-      if (va == null && vb == null) return 0;
-      if (va == null) return 1;
-      if (vb == null) return -1;
-      if (va < vb) return sortConfig.direction === 'asc' ? -1 : 1;
-      if (va > vb) return sortConfig.direction === 'asc' ? 1 : -1;
-      return 0;
-    });
     return filtered;
-  }, [dados, filtroStatus, filtroEmpresa, busca, sortConfig]);
+  }, [dados, filtroStatus, filtroEmpresa, busca]);
 
   const resumo = useMemo(() => {
     const total = dados.reduce((s, d) => s + (Number(d.valor) || 0), 0);
-    const totalPago = dados.reduce((s, d) => s + (Number(d.valor_pago) || 0), 0);
-    const pendentes = dados.filter((d) => d.status === 'Pendente' || d.status === 'Aguardando Nota').length;
+    const totalPago = dados
+      .filter((d) => d.status === 'Pago')
+      .reduce((s, d) => s + (Number(d.valor_pago ?? d.valor) || 0), 0);
     const pagos = dados.filter((d) => d.status === 'Pago').length;
-    return { total, totalPago, pendentes, pagos, count: dados.length };
+    const pendentes = dados.filter((d) => d.status !== 'Pago').length;
+    return { total, totalPago, pagos, pendentes, count: dados.length };
   }, [dados]);
 
   const abrirModal = () => {
     setModalEditando(null);
-    setForm({ empresa: EMPRESAS[0], transacao: '', fornecedor: '', nfe: '', valor: '', data_lancamento: '', tem_nota: true, tem_transacao: true });
+    setForm(emptyForm);
     setModalAberto(true);
   };
 
   const abrirEdicao = (item) => {
     setModalEditando(item.id);
     setForm({
-      empresa: item.empresa || EMPRESAS[0],
-      transacao: item.transacao || '',
-      fornecedor: item.fornecedor || '',
-      nfe: item.nfe || '',
+      cd_empresa: item.cd_empresa ?? EMPRESAS[0].cd,
+      fornecedor: item.fornecedor
+        ? {
+            codigo: item.fornecedor_codigo || null,
+            nome: item.fornecedor,
+            fantasia: null,
+            cnpj: item.fornecedor_cnpj || null,
+          }
+        : null,
       valor: item.valor ?? '',
       data_lancamento: item.data_lancamento || '',
-      tem_nota: item.tem_nota ?? true,
-      tem_transacao: item.tem_transacao ?? true,
+      status: item.status || 'Aguardando Nota',
+      tem_nota: item.tem_nota ?? false,
+      transacao: item.transacao || '',
+      nfe: item.nfe || '',
+      tipo_pagamento: item.tipo_pagamento || '',
+      info_pagamento: item.info_pagamento || '',
     });
     setModalAberto(true);
   };
 
-  const abrirFinanceiro = (item) => {
-    setModalFinanceiro(item.id);
-    setFormFin({
-      status: item.status || 'Pendente',
-      data_pagamento: item.data_pagamento || '',
-      forma: item.forma || '',
-      cartao_conta: item.cartao_conta || '',
-      parcelas: item.parcelas ?? '',
-      valor_pago: item.valor_pago ?? '',
-      observacao: item.observacao || '',
-    });
-  };
+  // Validação do formulário
+  const erroForm = useMemo(() => {
+    if (!form.fornecedor?.nome) return 'Selecione o fornecedor.';
+    if (form.valor === '' || Number(form.valor) <= 0) return 'Informe o valor.';
+    if (!form.data_lancamento) return 'Informe a data de lançamento.';
+    if (form.tem_nota) {
+      if (!form.transacao.trim()) return 'Informe a transação.';
+      if (!form.nfe.trim()) return 'Informe a nota fiscal.';
+    }
+    if (form.tipo_pagamento === 'PIX' && !form.info_pagamento.trim())
+      return 'Informe a chave PIX.';
+    if (form.tipo_pagamento === 'BOLETO' && !form.info_pagamento.trim())
+      return 'Informe a linha digitável do boleto.';
+    return null;
+  }, [form]);
 
   const salvar = async () => {
+    if (erroForm) {
+      alert(erroForm);
+      return;
+    }
+    setSalvando(true);
     const payload = {
-      empresa: form.empresa,
-      fornecedor: form.fornecedor,
-      transacao: form.tem_transacao ? form.transacao || null : null,
-      nfe: form.tem_nota ? form.nfe || null : null,
-      valor: form.valor ? Number(form.valor) : null,
+      empresa: empresaNome(form.cd_empresa),
+      cd_empresa: Number(form.cd_empresa),
+      fornecedor: form.fornecedor.nome,
+      fornecedor_cnpj: form.fornecedor.cnpj || null,
+      fornecedor_codigo: form.fornecedor.codigo || null,
+      valor: Number(form.valor),
       data_lancamento: form.data_lancamento || null,
+      status: form.status,
       tem_nota: form.tem_nota,
-      tem_transacao: form.tem_transacao,
-      status: !form.tem_nota || !form.tem_transacao ? 'Aguardando Nota' : 'Pendente',
+      tem_transacao: form.tem_nota,
+      transacao: form.tem_nota ? form.transacao.trim() || null : null,
+      nfe: form.tem_nota ? form.nfe.trim() || null : null,
+      tipo_pagamento: form.tipo_pagamento || null,
+      info_pagamento: form.tipo_pagamento ? form.info_pagamento.trim() || null : null,
     };
 
+    let error;
     if (modalEditando) {
-      const { error } = await supabase.from('pagamentos_fabricas').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', modalEditando);
-      if (error) return alert('Erro ao atualizar: ' + error.message);
+      ({ error } = await supabase
+        .from('pagamentos_fabricas')
+        .update({ ...payload, updated_at: new Date().toISOString() })
+        .eq('id', modalEditando));
     } else {
-      const { error } = await supabase.from('pagamentos_fabricas').insert(payload);
-      if (error) return alert('Erro ao inserir: ' + error.message);
+      ({ error } = await supabase.from('pagamentos_fabricas').insert(payload));
+    }
+    setSalvando(false);
+    if (error) {
+      alert('Erro ao salvar: ' + error.message);
+      return;
     }
     setModalAberto(false);
     carregarDados();
   };
 
-  const salvarFinanceiro = async () => {
-    const payload = {
-      status: formFin.status,
-      data_pagamento: formFin.data_pagamento || null,
-      forma: formFin.forma || null,
-      cartao_conta: formFin.cartao_conta || null,
-      parcelas: formFin.parcelas ? Number(formFin.parcelas) : null,
-      valor_pago: formFin.valor_pago ? Number(formFin.valor_pago) : null,
-      observacao: formFin.observacao || null,
-      updated_at: new Date().toISOString(),
-    };
-    const { error } = await supabase.from('pagamentos_fabricas').update(payload).eq('id', modalFinanceiro);
-    if (error) return alert('Erro ao atualizar: ' + error.message);
-    setModalFinanceiro(null);
-    carregarDados();
-  };
-
-  const completarNota = async (item) => {
-    setModalEditando(item.id);
-    setForm({
-      empresa: item.empresa || EMPRESAS[0],
-      transacao: item.transacao || '',
-      fornecedor: item.fornecedor || '',
-      nfe: item.nfe || '',
-      valor: item.valor ?? '',
-      data_lancamento: item.data_lancamento || '',
-      tem_nota: true,
-      tem_transacao: true,
-    });
-    setModalAberto(true);
+  // Alterar status inline (editável por todos)
+  const alterarStatus = async (item, novoStatus) => {
+    if (novoStatus === item.status) return;
+    const { error } = await supabase
+      .from('pagamentos_fabricas')
+      .update({ status: novoStatus, updated_at: new Date().toISOString() })
+      .eq('id', item.id);
+    if (error) {
+      alert('Erro ao alterar status: ' + error.message);
+      return;
+    }
+    setDados((prev) => prev.map((d) => (d.id === item.id ? { ...d, status: novoStatus } : d)));
   };
 
   const excluir = async (id) => {
@@ -235,21 +427,102 @@ const PagamentosFabricas = () => {
     carregarDados();
   };
 
+  // ── Liberar para pagamento (cria row em pagamentos_liberacao) ────────
+  const liberarPagamento = async (item) => {
+    if (!isFinanceiro) {
+      alert('Apenas o financeiro pode liberar o pagamento.');
+      return;
+    }
+    if (item.pagamento_liberacao_id) {
+      alert('Este lançamento já foi liberado para pagamento.');
+      return;
+    }
+    if (!item.valor) {
+      alert('O lançamento precisa de um valor para ser liberado.');
+      return;
+    }
+    if (
+      !window.confirm(
+        `Liberar o pagamento de ${item.fornecedor || ''} (${fmt(item.valor)}) para a fila de Liberação de Pagamento?`
+      )
+    )
+      return;
+
+    setProcessandoId(item.id);
+    const now = new Date().toISOString();
+    const tp = item.tipo_pagamento;
+    const formaLib = tp === 'PIX' ? 'PIX' : tp === 'BOLETO' ? 'BOLETO' : tp === 'CARTAO' ? 'CREDITO' : null;
+
+    const row = {
+      status: 'PENDENTE',
+      nm_empresa: item.empresa,
+      cd_empresa: item.cd_empresa,
+      nm_fornecedor: item.fornecedor,
+      cd_fornecedor: item.fornecedor_codigo || null,
+      nr_duplicata: item.nfe || item.transacao || null,
+      dt_emissao: item.data_lancamento || null,
+      dt_vencimento: item.data_lancamento || null,
+      vl_duplicata: Number(item.valor),
+      forma_pagamento: formaLib,
+      chave_pix: tp === 'PIX' ? item.info_pagamento || null : null,
+      codigo_barras: tp === 'BOLETO' ? item.info_pagamento || null : null,
+      link_pagamento: tp === 'CARTAO' ? item.info_pagamento || null : null,
+      observacao: `Pagamento Fábrica${item.transacao ? ` • Transação ${item.transacao}` : ''}`,
+      enviado_por: user?.email || null,
+      enviado_em: now,
+      dados_completos: {
+        origem: 'pagamento_fabrica',
+        pagamento_fabrica_id: item.id,
+        fornecedor_cnpj: item.fornecedor_cnpj || null,
+        transacao: item.transacao || null,
+        nfe: item.nfe || null,
+      },
+    };
+
+    const { data: novo, error: errIns } = await supabase
+      .from('pagamentos_liberacao')
+      .insert([row])
+      .select('id')
+      .single();
+    if (errIns) {
+      setProcessandoId(null);
+      alert('Erro ao liberar pagamento: ' + errIns.message);
+      return;
+    }
+
+    const patch = {
+      pagamento_liberacao_id: novo.id,
+      liberado_pagamento_em: now,
+      liberado_pagamento_por: user?.id || null,
+      liberado_pagamento_por_nome: userNome,
+      status: 'Aguardando Pagamento',
+      updated_at: now,
+    };
+    const { error: errUpd } = await supabase
+      .from('pagamentos_fabricas')
+      .update(patch)
+      .eq('id', item.id);
+    setProcessandoId(null);
+    if (errUpd) {
+      alert('Pagamento liberado, mas houve erro ao vincular: ' + errUpd.message);
+    }
+    setDados((prev) => prev.map((d) => (d.id === item.id ? { ...d, ...patch } : d)));
+  };
+
   const exportarExcel = () => {
     const rows = dadosFiltrados.map((d) => ({
       Empresa: d.empresa,
-      Transação: d.transacao,
       Fornecedor: d.fornecedor,
-      NFE: d.nfe,
+      'CNPJ/CPF': d.fornecedor_cnpj || '',
       Valor: d.valor,
-      'Data Lanç.': d.data_lancamento ? fmtDate(d.data_lancamento) : '',
+      Transação: d.transacao || '',
+      'Nota Fiscal': d.nfe || '',
+      Lançamento: d.data_lancamento ? fmtDate(d.data_lancamento) : '',
+      'Forma (cadastro)': d.tipo_pagamento ? FORMA_DISPLAY[d.tipo_pagamento] || d.tipo_pagamento : '',
       Status: d.status,
-      'Data Pgto': d.data_pagamento ? fmtDate(d.data_pagamento) : '',
-      Forma: d.forma,
-      'Cartão/Conta': d.cartao_conta,
-      Parcelas: d.parcelas,
+      'Forma Pago': d.forma ? FORMA_DISPLAY[d.forma] || d.forma : '',
       'Valor Pago': d.valor_pago,
-      Observação: d.observacao,
+      'Data Pagamento': d.data_pagamento ? fmtDate(d.data_pagamento) : '',
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
@@ -258,10 +531,17 @@ const PagamentosFabricas = () => {
     saveAs(new Blob([buf]), 'pagamentos_fabricas.xlsx');
   };
 
-  const SortIcon = ({ col }) => {
-    if (sortConfig.key !== col) return null;
-    return sortConfig.direction === 'asc' ? <CaretUp size={12} weight="bold" /> : <CaretDown size={12} weight="bold" />;
-  };
+  const StatusBadge = ({ status }) => (
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold border ${
+        STATUS_COLORS[status] || 'bg-gray-100 text-gray-600 border-gray-300'
+      }`}
+    >
+      {status === 'Aguardando Nota' && <Warning size={11} />}
+      {status === 'Pago' && <CheckCircle size={11} weight="fill" />}
+      {status}
+    </span>
+  );
 
   return (
     <div className="min-h-screen bg-gray-50 px-3 py-4 md:p-6 pb-24 md:pb-6">
@@ -280,7 +560,7 @@ const PagamentosFabricas = () => {
           <p className="text-[10px] md:text-xs text-gray-400 mt-0.5">{resumo.pagos} pagos</p>
         </div>
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 md:p-4">
-          <p className="text-[10px] md:text-xs text-gray-500 uppercase tracking-wide">Saldo Pendente</p>
+          <p className="text-[10px] md:text-xs text-gray-500 uppercase tracking-wide">Em Aberto</p>
           <p className="text-base md:text-xl font-bold text-orange-600 mt-0.5">{fmt(resumo.total - resumo.totalPago)}</p>
           <p className="text-[10px] md:text-xs text-gray-400 mt-0.5">{resumo.pendentes} pendentes</p>
         </div>
@@ -299,7 +579,7 @@ const PagamentosFabricas = () => {
             <MagnifyingGlass size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
-              placeholder="Buscar fornecedor, NFE, transação..."
+              placeholder="Buscar fornecedor, CNPJ, NF, transação..."
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
               className="w-full pl-9 pr-3 py-2.5 md:py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
@@ -313,7 +593,9 @@ const PagamentosFabricas = () => {
             >
               <option value="TODOS">Todos os Status</option>
               {STATUS_LIST.map((s) => (
-                <option key={s} value={s}>{s}</option>
+                <option key={s} value={s}>
+                  {s}
+                </option>
               ))}
             </select>
             <select
@@ -323,7 +605,9 @@ const PagamentosFabricas = () => {
             >
               <option value="TODOS">Todas Empresas</option>
               {EMPRESAS.map((e) => (
-                <option key={e} value={e}>{e}</option>
+                <option key={e.cd} value={e.cd}>
+                  {e.nome} - {e.cd}
+                </option>
               ))}
             </select>
           </div>
@@ -336,7 +620,7 @@ const PagamentosFabricas = () => {
             </button>
             <button
               onClick={abrirModal}
-              className="flex items-center justify-center gap-1.5 px-4 py-2.5 md:py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              className="flex items-center justify-center gap-1.5 px-4 py-2.5 md:py-2 text-sm bg-[#000638] text-white rounded-lg hover:bg-[#fe0000] transition-colors font-medium"
             >
               <Plus size={16} weight="bold" /> Novo
             </button>
@@ -347,46 +631,24 @@ const PagamentosFabricas = () => {
       {/* Desktop: Tabela */}
       <div className="hidden md:block bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-200">
-                <th colSpan={6} className="px-3 py-2 text-xs font-semibold text-blue-700 bg-blue-50 text-left uppercase tracking-wide">Expedição</th>
-                <th colSpan={7} className="px-3 py-2 text-xs font-semibold text-green-700 bg-green-50 text-left uppercase tracking-wide">Financeiro</th>
-                <th className="px-3 py-2 bg-gray-50"></th>
-              </tr>
-              <tr className="bg-gray-50 border-b border-gray-200">
-                {[
-                  { key: 'empresa', label: 'Empresa', bg: 'bg-blue-50/50' },
-                  { key: 'transacao', label: 'Transação', bg: 'bg-blue-50/50' },
-                  { key: 'fornecedor', label: 'Fornecedor', bg: 'bg-blue-50/50' },
-                  { key: 'nfe', label: 'NFE', bg: 'bg-blue-50/50' },
-                  { key: 'valor', label: 'Valor', bg: 'bg-blue-50/50' },
-                  { key: 'data_lancamento', label: 'Data Lanç.', bg: 'bg-blue-50/50' },
-                  { key: 'status', label: 'Status', bg: 'bg-green-50/50' },
-                  { key: 'data_pagamento', label: 'Data Pgto', bg: 'bg-green-50/50' },
-                  { key: 'forma', label: 'Forma', bg: 'bg-green-50/50' },
-                  { key: 'cartao_conta', label: 'Cartão/Conta', bg: 'bg-green-50/50' },
-                  { key: 'parcelas', label: 'Parc.', bg: 'bg-green-50/50' },
-                  { key: 'valor_pago', label: 'Valor Pago', bg: 'bg-green-50/50' },
-                  { key: 'observacao', label: 'Obs.', bg: 'bg-green-50/50' },
-                ].map((col) => (
-                  <th
-                    key={col.key}
-                    onClick={() => handleSort(col.key)}
-                    className={`px-3 py-2.5 text-left text-xs font-semibold text-gray-600 cursor-pointer hover:bg-gray-100 whitespace-nowrap ${col.bg}`}
-                  >
-                    <span className="flex items-center gap-1">
-                      {col.label} <SortIcon col={col.key} />
-                    </span>
-                  </th>
-                ))}
-                <th className="px-3 py-2.5 text-center text-xs font-semibold text-gray-600 w-24">Ações</th>
+          <table className="min-w-full text-xs">
+            <thead className="bg-[#000638] text-white sticky top-0">
+              <tr>
+                <th className="px-3 py-2.5 text-left font-semibold uppercase tracking-wide">Empresa</th>
+                <th className="px-3 py-2.5 text-left font-semibold uppercase tracking-wide">Fornecedor</th>
+                <th className="px-3 py-2.5 text-right font-semibold uppercase tracking-wide">Valor</th>
+                <th className="px-3 py-2.5 text-left font-semibold uppercase tracking-wide">Transação</th>
+                <th className="px-3 py-2.5 text-left font-semibold uppercase tracking-wide">Nota Fiscal</th>
+                <th className="px-3 py-2.5 text-left font-semibold uppercase tracking-wide">Lançamento</th>
+                <th className="px-3 py-2.5 text-left font-semibold uppercase tracking-wide">Status</th>
+                <th className="px-3 py-2.5 text-left font-semibold uppercase tracking-wide">Pagamento</th>
+                <th className="px-3 py-2.5 text-center font-semibold uppercase tracking-wide">Ações</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={14} className="text-center py-12 text-gray-400">
+                  <td colSpan={9} className="text-center py-12 text-gray-400">
                     <div className="flex flex-col items-center gap-2">
                       <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
                       Carregando...
@@ -395,69 +657,108 @@ const PagamentosFabricas = () => {
                 </tr>
               ) : dadosFiltrados.length === 0 ? (
                 <tr>
-                  <td colSpan={14} className="text-center py-12 text-gray-400">Nenhum lançamento encontrado</td>
+                  <td colSpan={9} className="text-center py-12 text-gray-400">
+                    Nenhum lançamento encontrado
+                  </td>
                 </tr>
               ) : (
-                dadosFiltrados.map((d) => (
-                  <tr key={d.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                    <td className="px-3 py-2.5 whitespace-nowrap text-xs">{d.empresa}</td>
-                    <td className="px-3 py-2.5 whitespace-nowrap text-xs font-mono">{d.transacao || '—'}</td>
-                    <td className="px-3 py-2.5 text-xs max-w-[200px] truncate" title={d.fornecedor}>{d.fornecedor}</td>
-                    <td className="px-3 py-2.5 whitespace-nowrap text-xs font-mono">{d.nfe || '—'}</td>
-                    <td className="px-3 py-2.5 whitespace-nowrap text-xs font-semibold text-right">{fmt(d.valor)}</td>
-                    <td className="px-3 py-2.5 whitespace-nowrap text-xs">{fmtDate(d.data_lancamento)}</td>
-                    <td className="px-3 py-2.5 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${STATUS_COLORS[d.status] || 'bg-gray-100 text-gray-600 border-gray-300'}`}>
-                        {d.status === 'Aguardando Nota' && <Warning size={12} className="mr-1" />}
-                        {d.status}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2.5 whitespace-nowrap text-xs">{fmtDate(d.data_pagamento)}</td>
-                    <td className="px-3 py-2.5 whitespace-nowrap text-xs">{d.forma || '—'}</td>
-                    <td className="px-3 py-2.5 whitespace-nowrap text-xs">{d.cartao_conta || '—'}</td>
-                    <td className="px-3 py-2.5 whitespace-nowrap text-xs text-center">{d.parcelas || '—'}</td>
-                    <td className="px-3 py-2.5 whitespace-nowrap text-xs font-semibold text-right text-green-700">{fmt(d.valor_pago)}</td>
-                    <td className="px-3 py-2.5 text-xs max-w-[180px] truncate text-gray-500" title={d.observacao}>{d.observacao || '—'}</td>
-                    <td className="px-3 py-2.5 whitespace-nowrap text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        {d.status === 'Aguardando Nota' && (
-                          <button
-                            onClick={() => completarNota(d)}
-                            title="Completar dados da nota/transação"
-                            className="p-1 rounded hover:bg-blue-100 text-blue-600 transition-colors"
-                          >
-                            <Warning size={16} />
-                          </button>
+                dadosFiltrados.map((d) => {
+                  const pago = d.status === 'Pago';
+                  const liberado = !!d.pagamento_liberacao_id;
+                  return (
+                    <tr key={d.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        <span className="font-medium text-gray-800">{empresaNome(d.cd_empresa) || d.empresa}</span>
+                        <span className="block text-[10px] text-gray-400">Cód. {d.cd_empresa}</span>
+                      </td>
+                      <td className="px-3 py-2.5 max-w-[220px]">
+                        <span className="font-medium text-gray-900 truncate block" title={d.fornecedor}>
+                          {d.fornecedor}
+                        </span>
+                        {d.fornecedor_cnpj && (
+                          <span className="block text-[10px] text-gray-400 font-mono">
+                            {formatCnpjCpf(d.fornecedor_cnpj)}
+                          </span>
                         )}
-                        <button
-                          onClick={() => abrirEdicao(d)}
-                          title="Editar lançamento"
-                          className="p-1 rounded hover:bg-gray-200 text-gray-600 transition-colors"
-                        >
-                          <PencilSimple size={16} />
-                        </button>
-                        {isFinanceiro && (
-                          <button
-                            onClick={() => abrirFinanceiro(d)}
-                            title="Preencher dados financeiros"
-                            className="p-1 rounded hover:bg-green-100 text-green-600 transition-colors"
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap text-right font-semibold text-gray-900">
+                        {fmt(d.valor)}
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap font-mono text-gray-700">{d.transacao || '—'}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap font-mono text-gray-700">{d.nfe || '—'}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap text-gray-700">{fmtDate(d.data_lancamento)}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        {pago ? (
+                          <StatusBadge status={d.status} />
+                        ) : (
+                          <select
+                            value={d.status}
+                            onChange={(e) => alterarStatus(d, e.target.value)}
+                            className={`text-[11px] font-bold border rounded-full px-2 py-0.5 cursor-pointer focus:ring-2 focus:ring-blue-500 ${
+                              STATUS_COLORS[d.status] || 'bg-gray-100 text-gray-600 border-gray-300'
+                            }`}
+                            title="Alterar status"
                           >
-                            <Check size={16} />
-                          </button>
+                            {STATUS_CADASTRO.map((s) => (
+                              <option key={s} value={s} className="bg-white text-gray-800">
+                                {s}
+                              </option>
+                            ))}
+                          </select>
                         )}
-                        {isFinanceiro && (
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        {pago ? (
+                          <div className="text-[11px] leading-tight">
+                            <span className="font-semibold text-green-700">{fmt(d.valor_pago ?? d.valor)}</span>
+                            <span className="block text-gray-500">
+                              {d.forma ? FORMA_DISPLAY[d.forma] || d.forma : '—'} • {fmtDate(d.data_pagamento)}
+                            </span>
+                          </div>
+                        ) : liberado ? (
+                          <span className="text-[10px] text-blue-600 font-semibold">Em liberação</span>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        <div className="flex items-center justify-center gap-1">
+                          {isFinanceiro && !pago && !liberado && (
+                            <button
+                              onClick={() => liberarPagamento(d)}
+                              disabled={processandoId === d.id}
+                              title="Liberar para pagamento"
+                              className="flex items-center gap-1 px-2 py-1 rounded bg-green-600 text-white text-[11px] font-medium hover:bg-green-700 transition-colors disabled:opacity-50"
+                            >
+                              {processandoId === d.id ? (
+                                <Spinner size={13} className="animate-spin" />
+                              ) : (
+                                <CurrencyDollar size={13} weight="bold" />
+                              )}
+                              Liberar
+                            </button>
+                          )}
                           <button
-                            onClick={() => excluir(d.id)}
-                            title="Excluir"
-                            className="p-1 rounded hover:bg-red-100 text-red-600 transition-colors"
+                            onClick={() => abrirEdicao(d)}
+                            title="Editar"
+                            className="p-1 rounded hover:bg-gray-200 text-gray-600 transition-colors"
                           >
-                            <Trash size={16} />
+                            <PencilSimple size={16} />
                           </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                          {isFinanceiro && (
+                            <button
+                              onClick={() => excluir(d.id)}
+                              title="Excluir"
+                              className="p-1 rounded hover:bg-red-100 text-red-600 transition-colors"
+                            >
+                              <Trash size={16} />
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -478,106 +779,91 @@ const PagamentosFabricas = () => {
           <div className="text-center py-12 text-gray-400 text-sm">Nenhum lançamento encontrado</div>
         ) : (
           <>
-            {dadosFiltrados.map((d) => (
-              <div key={d.id} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                {/* Header do card */}
-                <div className="px-3.5 pt-3 pb-2 flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-gray-900 truncate">{d.fornecedor}</p>
-                    <p className="text-[11px] text-gray-500 mt-0.5">{d.empresa}</p>
+            {dadosFiltrados.map((d) => {
+              const pago = d.status === 'Pago';
+              const liberado = !!d.pagamento_liberacao_id;
+              return (
+                <div key={d.id} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="px-3.5 pt-3 pb-2 flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold text-gray-900 truncate">{d.fornecedor}</p>
+                      <p className="text-[11px] text-gray-500 mt-0.5">
+                        {empresaNome(d.cd_empresa) || d.empresa}
+                      </p>
+                    </div>
+                    <StatusBadge status={d.status} />
                   </div>
-                  <span className={`inline-flex items-center shrink-0 px-2 py-0.5 rounded-full text-[11px] font-medium border ${STATUS_COLORS[d.status] || 'bg-gray-100 text-gray-600 border-gray-300'}`}>
-                    {d.status === 'Aguardando Nota' && <Warning size={11} className="mr-0.5" />}
-                    {d.status}
-                  </span>
-                </div>
-
-                {/* Valores principais */}
-                <div className="px-3.5 pb-2">
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Valor:</span>
-                      <span className="font-semibold text-gray-900">{fmt(d.valor)}</span>
+                  <div className="px-3.5 pb-2">
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Valor:</span>
+                        <span className="font-semibold text-gray-900">{fmt(d.valor)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Lanç.:</span>
+                        <span className="text-gray-700">{fmtDate(d.data_lancamento)}</span>
+                      </div>
+                      {d.transacao && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">Transação:</span>
+                          <span className="font-mono text-gray-700">{d.transacao}</span>
+                        </div>
+                      )}
+                      {d.nfe && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">NF:</span>
+                          <span className="font-mono text-gray-700">{d.nfe}</span>
+                        </div>
+                      )}
+                      {pago && (
+                        <>
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Pago:</span>
+                            <span className="font-semibold text-green-700">{fmt(d.valor_pago ?? d.valor)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">Pgto:</span>
+                            <span className="text-gray-700">
+                              {d.forma ? FORMA_DISPLAY[d.forma] || d.forma : ''} {fmtDate(d.data_pagamento)}
+                            </span>
+                          </div>
+                        </>
+                      )}
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Pago:</span>
-                      <span className="font-semibold text-green-700">{fmt(d.valor_pago)}</span>
-                    </div>
-                    {d.transacao && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Transação:</span>
-                        <span className="font-mono text-gray-700">{d.transacao}</span>
-                      </div>
+                  </div>
+                  <div className="flex items-center border-t border-gray-100 divide-x divide-gray-100">
+                    {isFinanceiro && !pago && !liberado && (
+                      <button
+                        onClick={() => liberarPagamento(d)}
+                        disabled={processandoId === d.id}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs text-green-700 font-medium hover:bg-green-50 active:bg-green-100 transition-colors disabled:opacity-50"
+                      >
+                        <CurrencyDollar size={15} weight="bold" /> Liberar
+                      </button>
                     )}
-                    {d.nfe && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">NFE:</span>
-                        <span className="font-mono text-gray-700">{d.nfe}</span>
-                      </div>
+                    {liberado && !pago && (
+                      <span className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs text-blue-600 font-medium">
+                        Em liberação
+                      </span>
                     )}
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Lanç.:</span>
-                      <span className="text-gray-700">{fmtDate(d.data_lancamento)}</span>
-                    </div>
-                    {d.data_pagamento && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Pgto:</span>
-                        <span className="text-gray-700">{fmtDate(d.data_pagamento)}</span>
-                      </div>
-                    )}
-                    {d.forma && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Forma:</span>
-                        <span className="text-gray-700">{d.forma}{d.parcelas ? ` (${d.parcelas}x)` : ''}</span>
-                      </div>
-                    )}
-                    {d.cartao_conta && (
-                      <div className="flex justify-between">
-                        <span className="text-gray-500">Conta:</span>
-                        <span className="text-gray-700 truncate ml-1">{d.cartao_conta}</span>
-                      </div>
+                    <button
+                      onClick={() => abrirEdicao(d)}
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs text-gray-600 hover:bg-gray-50 active:bg-gray-100 transition-colors"
+                    >
+                      <PencilSimple size={15} /> Editar
+                    </button>
+                    {isFinanceiro && (
+                      <button
+                        onClick={() => excluir(d.id)}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs text-red-600 hover:bg-red-50 active:bg-red-100 transition-colors"
+                      >
+                        <Trash size={15} /> Excluir
+                      </button>
                     )}
                   </div>
-                  {d.observacao && (
-                    <p className="text-[11px] text-gray-500 mt-1.5 line-clamp-2 italic">{d.observacao}</p>
-                  )}
                 </div>
-
-                {/* Ações do card */}
-                <div className="flex items-center border-t border-gray-100 divide-x divide-gray-100">
-                  {d.status === 'Aguardando Nota' && (
-                    <button
-                      onClick={() => completarNota(d)}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs text-blue-600 hover:bg-blue-50 active:bg-blue-100 transition-colors"
-                    >
-                      <Warning size={15} /> Completar
-                    </button>
-                  )}
-                  <button
-                    onClick={() => abrirEdicao(d)}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs text-gray-600 hover:bg-gray-50 active:bg-gray-100 transition-colors"
-                  >
-                    <PencilSimple size={15} /> Editar
-                  </button>
-                  {isFinanceiro && (
-                    <button
-                      onClick={() => abrirFinanceiro(d)}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs text-green-600 hover:bg-green-50 active:bg-green-100 transition-colors"
-                    >
-                      <Check size={15} /> Financeiro
-                    </button>
-                  )}
-                  {isFinanceiro && (
-                    <button
-                      onClick={() => excluir(d.id)}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs text-red-600 hover:bg-red-50 active:bg-red-100 transition-colors"
-                    >
-                      <Trash size={15} /> Excluir
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
             <div className="text-center text-xs text-gray-400 py-2">
               {dadosFiltrados.length} de {dados.length} lançamentos
             </div>
@@ -585,22 +871,24 @@ const PagamentosFabricas = () => {
         )}
       </div>
 
-      {/* FAB - Botão flutuante mobile */}
+      {/* FAB mobile */}
       <button
         onClick={abrirModal}
-        className="md:hidden fixed bottom-6 right-4 w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg flex items-center justify-center hover:bg-blue-700 active:bg-blue-800 transition-colors z-40"
+        className="md:hidden fixed bottom-6 right-4 w-14 h-14 bg-[#000638] text-white rounded-full shadow-lg flex items-center justify-center hover:bg-[#fe0000] active:bg-blue-800 transition-colors z-40"
       >
         <Plus size={24} weight="bold" />
       </button>
 
-      {/* Modal Novo/Editar Lançamento (Expedição) */}
+      {/* Modal Novo/Editar */}
       {modalAberto && (
-        <div className="fixed inset-0 bg-black/50 flex items-end md:items-center justify-center z-50 md:p-4" onClick={() => setModalAberto(false)}>
+        <div
+          className="fixed inset-0 bg-black/50 flex items-end md:items-center justify-center z-50 md:p-4"
+          onClick={() => setModalAberto(false)}
+        >
           <div
-            className="bg-white w-full max-h-[92vh] md:max-h-[85vh] rounded-t-2xl md:rounded-2xl shadow-xl md:max-w-lg flex flex-col"
+            className="bg-white w-full max-h-[92vh] md:max-h-[88vh] rounded-t-2xl md:rounded-2xl shadow-xl md:max-w-lg flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Drag handle mobile */}
             <div className="flex justify-center pt-2 pb-0 md:hidden">
               <div className="w-10 h-1 bg-gray-300 rounded-full" />
             </div>
@@ -608,151 +896,188 @@ const PagamentosFabricas = () => {
               <h3 className="text-base md:text-lg font-semibold text-gray-900">
                 {modalEditando ? 'Editar Lançamento' : 'Novo Lançamento'}
               </h3>
-              <button onClick={() => setModalAberto(false)} className="p-2 -mr-1 rounded-lg hover:bg-gray-100 active:bg-gray-200">
+              <button
+                onClick={() => setModalAberto(false)}
+                className="p-2 -mr-1 rounded-lg hover:bg-gray-100 active:bg-gray-200"
+              >
                 <X size={20} />
               </button>
             </div>
+
             <div className="px-4 md:px-6 py-4 space-y-4 overflow-y-auto flex-1 overscroll-contain">
+              {/* Empresa */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Empresa *</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  <Buildings size={14} className="inline mr-1 -mt-0.5" />
+                  Empresa *
+                </label>
                 <select
-                  value={form.empresa}
-                  onChange={(e) => setForm({ ...form, empresa: e.target.value })}
-                  className="w-full px-3 py-3 md:py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 bg-white appearance-none"
+                  value={form.cd_empresa}
+                  onChange={(e) => setForm({ ...form, cd_empresa: Number(e.target.value) })}
+                  className="w-full px-3 py-3 md:py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 bg-white"
                 >
-                  {EMPRESAS.map((e) => <option key={e} value={e}>{e}</option>)}
+                  {EMPRESAS.map((e) => (
+                    <option key={e.cd} value={e.cd}>
+                      {e.nome} - {e.cd}
+                    </option>
+                  ))}
                 </select>
               </div>
 
-              <div className="flex items-center gap-5">
+              {/* Fornecedor */}
+              <BuscaFornecedor
+                fornecedor={form.fornecedor}
+                onSelect={(f) => setForm({ ...form, fornecedor: f })}
+              />
+
+              {/* Valor + Data */}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Valor (R$) *</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    inputMode="decimal"
+                    value={form.valor}
+                    onChange={(e) => setForm({ ...form, valor: e.target.value })}
+                    placeholder="0,00"
+                    className="w-full px-3 py-3 md:py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Data de Lançamento *</label>
+                  <input
+                    type="date"
+                    value={form.data_lancamento}
+                    onChange={(e) => setForm({ ...form, data_lancamento: e.target.value })}
+                    className="w-full px-3 py-3 md:py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* Status */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Status *</label>
+                <select
+                  value={form.status === 'Pago' ? 'Aguardando Pagamento' : form.status}
+                  onChange={(e) => setForm({ ...form, status: e.target.value })}
+                  disabled={form.status === 'Pago'}
+                  className="w-full px-3 py-3 md:py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 bg-white disabled:opacity-60"
+                >
+                  {STATUS_CADASTRO.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+                {form.status === 'Pago' && (
+                  <p className="mt-1 text-[10px] text-green-600 font-semibold">
+                    Lançamento já pago pela Liberação de Pagamento.
+                  </p>
+                )}
+              </div>
+
+              {/* Flag tem nota fiscal */}
+              <div>
                 <label className="flex items-center gap-2.5 text-sm text-gray-700">
-                  <input type="checkbox" checked={form.tem_transacao} onChange={(e) => setForm({ ...form, tem_transacao: e.target.checked })} className="w-5 h-5 md:w-4 md:h-4 rounded border-gray-300 text-blue-600" />
-                  Tem transação?
-                </label>
-                <label className="flex items-center gap-2.5 text-sm text-gray-700">
-                  <input type="checkbox" checked={form.tem_nota} onChange={(e) => setForm({ ...form, tem_nota: e.target.checked })} className="w-5 h-5 md:w-4 md:h-4 rounded border-gray-300 text-blue-600" />
+                  <input
+                    type="checkbox"
+                    checked={form.tem_nota}
+                    onChange={(e) => setForm({ ...form, tem_nota: e.target.checked })}
+                    className="w-5 h-5 md:w-4 md:h-4 rounded border-gray-300 text-blue-600"
+                  />
                   Tem nota fiscal?
                 </label>
+                {form.tem_nota && (
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 mt-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Transação *</label>
+                      <input
+                        type="text"
+                        value={form.transacao}
+                        onChange={(e) => setForm({ ...form, transacao: e.target.value })}
+                        placeholder="Nº da transação"
+                        className="w-full px-3 py-3 md:py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1.5">Nota Fiscal *</label>
+                      <input
+                        type="text"
+                        value={form.nfe}
+                        onChange={(e) => setForm({ ...form, nfe: e.target.value })}
+                        placeholder="Nº da nota fiscal"
+                        className="w-full px-3 py-3 md:py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+                )}
+                {!form.tem_nota && (
+                  <p className="mt-1.5 text-[10px] text-gray-400 flex items-center gap-1">
+                    <Warning size={12} /> Sem nota fiscal informada.
+                  </p>
+                )}
               </div>
 
-              {!form.tem_transacao && !form.tem_nota && (
-                <div className="flex items-start gap-2 px-3 py-2.5 bg-blue-50 rounded-lg text-sm text-blue-700">
-                  <Warning size={16} className="shrink-0 mt-0.5" />
-                  <span>O lançamento ficará com status "Aguardando Nota" até os dados serem preenchidos.</span>
-                </div>
-              )}
-
-              {form.tem_transacao && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Transação</label>
-                  <input type="text" value={form.transacao} onChange={(e) => setForm({ ...form, transacao: e.target.value })} placeholder="Nº da transação" className="w-full px-3 py-3 md:py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Fornecedor *</label>
-                <input type="text" value={form.fornecedor} onChange={(e) => setForm({ ...form, fornecedor: e.target.value })} placeholder="Nome do fornecedor" className="w-full px-3 py-3 md:py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
-              </div>
-
-              {form.tem_nota && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">NFE</label>
-                  <input type="text" value={form.nfe} onChange={(e) => setForm({ ...form, nfe: e.target.value })} placeholder="Nº da nota fiscal" className="w-full px-3 py-3 md:py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
-                </div>
-              )}
-
+              {/* Forma de pagamento */}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Valor (R$)</label>
-                  <input type="number" step="0.01" inputMode="decimal" value={form.valor} onChange={(e) => setForm({ ...form, valor: e.target.value })} placeholder="0,00" className="w-full px-3 py-3 md:py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Data Lançamento</label>
-                  <input type="date" value={form.data_lancamento} onChange={(e) => setForm({ ...form, data_lancamento: e.target.value })} className="w-full px-3 py-3 md:py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500" />
-                </div>
-              </div>
-            </div>
-            <div className="flex gap-3 px-4 md:px-6 py-4 border-t border-gray-200 bg-gray-50 rounded-b-2xl safe-area-pb">
-              <button onClick={() => setModalAberto(false)} className="flex-1 md:flex-none px-4 py-3 md:py-2 text-sm text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 active:bg-gray-400 transition-colors">Cancelar</button>
-              <button
-                onClick={salvar}
-                disabled={!form.fornecedor || !form.empresa}
-                className="flex-1 md:flex-none px-4 py-3 md:py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 active:bg-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium"
-              >
-                {modalEditando ? 'Salvar Alterações' : 'Adicionar Lançamento'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal Financeiro */}
-      {modalFinanceiro && (
-        <div className="fixed inset-0 bg-black/50 flex items-end md:items-center justify-center z-50 md:p-4" onClick={() => setModalFinanceiro(null)}>
-          <div
-            className="bg-white w-full max-h-[92vh] md:max-h-[85vh] rounded-t-2xl md:rounded-2xl shadow-xl md:max-w-lg flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* Drag handle mobile */}
-            <div className="flex justify-center pt-2 pb-0 md:hidden">
-              <div className="w-10 h-1 bg-gray-300 rounded-full" />
-            </div>
-            <div className="flex items-center justify-between px-4 md:px-6 py-3 md:py-4 border-b border-gray-200">
-              <h3 className="text-base md:text-lg font-semibold text-gray-900">Dados do Financeiro</h3>
-              <button onClick={() => setModalFinanceiro(null)} className="p-2 -mr-1 rounded-lg hover:bg-gray-100 active:bg-gray-200">
-                <X size={20} />
-              </button>
-            </div>
-            <div className="px-4 md:px-6 py-4 space-y-4 overflow-y-auto flex-1 overscroll-contain">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Status</label>
-                <select
-                  value={formFin.status}
-                  onChange={(e) => setFormFin({ ...formFin, status: e.target.value })}
-                  className="w-full px-3 py-3 md:py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 bg-white appearance-none"
-                >
-                  {STATUS_LIST.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Data Pagamento</label>
-                  <input type="date" value={formFin.data_pagamento} onChange={(e) => setFormFin({ ...formFin, data_pagamento: e.target.value })} className="w-full px-3 py-3 md:py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Forma</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    <IdentificationBadge size={14} className="inline mr-1 -mt-0.5" />
+                    Forma de Pagamento
+                  </label>
                   <select
-                    value={formFin.forma}
-                    onChange={(e) => setFormFin({ ...formFin, forma: e.target.value })}
-                    className="w-full px-3 py-3 md:py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 bg-white appearance-none"
+                    value={form.tipo_pagamento}
+                    onChange={(e) => setForm({ ...form, tipo_pagamento: e.target.value, info_pagamento: '' })}
+                    className="w-full px-3 py-3 md:py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 bg-white"
                   >
                     <option value="">Selecione</option>
-                    {FORMAS.map((f) => <option key={f} value={f}>{f}</option>)}
+                    {TIPOS_PAGAMENTO.map((t) => (
+                      <option key={t.valor} value={t.valor}>
+                        {t.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
+                {form.tipo_pagamento && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                      {INFO_LABEL[form.tipo_pagamento]}
+                      {form.tipo_pagamento !== 'CARTAO' ? ' *' : ''}
+                    </label>
+                    <input
+                      type="text"
+                      value={form.info_pagamento}
+                      onChange={(e) => setForm({ ...form, info_pagamento: e.target.value })}
+                      placeholder={INFO_LABEL[form.tipo_pagamento]}
+                      className="w-full px-3 py-3 md:py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                )}
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Cartão/Conta</label>
-                <input type="text" value={formFin.cartao_conta} onChange={(e) => setFormFin({ ...formFin, cartao_conta: e.target.value })} placeholder="Ex: NUBANK SARA, STONE - 1007" className="w-full px-3 py-3 md:py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500" />
-              </div>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Parcelas</label>
-                  <input type="number" inputMode="numeric" value={formFin.parcelas} onChange={(e) => setFormFin({ ...formFin, parcelas: e.target.value })} placeholder="Qtd." className="w-full px-3 py-3 md:py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Valor Pago (R$)</label>
-                  <input type="number" step="0.01" inputMode="decimal" value={formFin.valor_pago} onChange={(e) => setFormFin({ ...formFin, valor_pago: e.target.value })} placeholder="0,00" className="w-full px-3 py-3 md:py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Observação</label>
-                <textarea value={formFin.observacao} onChange={(e) => setFormFin({ ...formFin, observacao: e.target.value })} rows={3} placeholder="Detalhes extras..." className="w-full px-3 py-3 md:py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 resize-none" />
-              </div>
+
+              {erroForm && (
+                <p className="text-[12px] text-amber-600 font-semibold flex items-center gap-1">
+                  <Warning size={14} /> {erroForm}
+                </p>
+              )}
             </div>
+
             <div className="flex gap-3 px-4 md:px-6 py-4 border-t border-gray-200 bg-gray-50 rounded-b-2xl safe-area-pb">
-              <button onClick={() => setModalFinanceiro(null)} className="flex-1 md:flex-none px-4 py-3 md:py-2 text-sm text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 active:bg-gray-400 transition-colors">Cancelar</button>
-              <button onClick={salvarFinanceiro} className="flex-1 md:flex-none px-4 py-3 md:py-2 text-sm text-white bg-green-600 rounded-lg hover:bg-green-700 active:bg-green-800 transition-colors font-medium">Salvar</button>
+              <button
+                onClick={() => setModalAberto(false)}
+                className="flex-1 md:flex-none px-4 py-3 md:py-2 text-sm text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 active:bg-gray-400 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={salvar}
+                disabled={!!erroForm || salvando}
+                className="flex-1 md:flex-none px-4 py-3 md:py-2 text-sm text-white bg-[#000638] rounded-lg hover:bg-[#fe0000] active:bg-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed font-medium flex items-center justify-center gap-2"
+              >
+                {salvando && <Spinner size={15} className="animate-spin" />}
+                {modalEditando ? 'Salvar Alterações' : 'Adicionar Lançamento'}
+              </button>
             </div>
           </div>
         </div>

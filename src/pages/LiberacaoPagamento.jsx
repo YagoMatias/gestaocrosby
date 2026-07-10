@@ -3060,6 +3060,43 @@ const LiberacaoPagamento = () => {
   // Mudança de status (forward ou backward) com ajuste de saldo automático.
   // novoStatus: 'PENDENTE' | 'APROVADO' | 'PAGO'
   // extra pode incluir: dt_pagamento, banco_pagamento, forma_pagamento, etc.
+  // Propaga o status de pagamento de volta para "Pagamentos Fábricas"
+  // (título originado da tela de Pagamentos Fábricas via pagamento_liberacao_id).
+  const sincronizarPagamentoFabrica = useCallback(async (titulo, novoStatus) => {
+    if (!titulo) return;
+    const origemFabrica = titulo?.dados_completos?.origem === 'pagamento_fabrica';
+    if (!origemFabrica && !titulo?.dados_completos?.pagamento_fabrica_id) return;
+    try {
+      if (novoStatus === 'PAGO') {
+        await supabase
+          .from('pagamentos_fabricas')
+          .update({
+            status: 'Pago',
+            data_pagamento:
+              titulo.dt_pagamento || new Date().toISOString().slice(0, 10),
+            forma: titulo.forma_pagamento || null,
+            valor_pago: titulo.vl_real ?? titulo.vl_duplicata ?? null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('pagamento_liberacao_id', titulo.id);
+      } else {
+        // Pagamento revertido -> volta para "Aguardando Pagamento"
+        await supabase
+          .from('pagamentos_fabricas')
+          .update({
+            status: 'Aguardando Pagamento',
+            data_pagamento: null,
+            forma: null,
+            valor_pago: null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('pagamento_liberacao_id', titulo.id);
+      }
+    } catch (e) {
+      console.error('Erro ao sincronizar Pagamentos Fábricas:', e);
+    }
+  }, []);
+
   const mudarStatusTitulo = useCallback(
     async (id, novoStatus, extra = {}, opts = {}) => {
       const titulo = titulos.find((t) => t.id === id);
@@ -3116,12 +3153,16 @@ const LiberacaoPagamento = () => {
         return;
       }
 
+      if (novoStatus === 'PAGO' || oldStatus === 'PAGO') {
+        await sincronizarPagamentoFabrica({ ...titulo, ...patch }, novoStatus);
+      }
+
       setProcessandoId(null);
       setTitulos((prev) =>
         prev.map((t) => (t.id === id ? { ...t, ...patch } : t)),
       );
     },
-    [titulos, user],
+    [titulos, user, sincronizarPagamentoFabrica],
   );
 
   // Mudança de status em lote
@@ -3186,6 +3227,9 @@ const LiberacaoPagamento = () => {
           );
           continue;
         }
+        if (novoStatus === 'PAGO' || oldStatus === 'PAGO') {
+          await sincronizarPagamentoFabrica({ ...titulo, ...patch }, novoStatus);
+        }
         setTitulos((prev) =>
           prev.map((t) => (t.id === id ? { ...t, ...patch } : t)),
         );
@@ -3193,7 +3237,7 @@ const LiberacaoPagamento = () => {
       setProcessando(false);
       setSelecionados(new Set());
     },
-    [selecionados, titulos, user],
+    [selecionados, titulos, user, sincronizarPagamentoFabrica],
   );
 
   const aprovarSelecionados = useCallback(async () => {
@@ -3265,6 +3309,7 @@ const LiberacaoPagamento = () => {
           alert(`Erro: ${error.message}`);
           continue;
         }
+        await sincronizarPagamentoFabrica({ ...t, ...patch }, 'PAGO');
         setTitulos((prev) =>
           prev.map((x) => (x.id === id ? { ...x, ...patch } : x)),
         );
@@ -3272,7 +3317,7 @@ const LiberacaoPagamento = () => {
       setProcessando(false);
       setSelecionados(new Set());
     },
-    [selecionados, titulos, user],
+    [selecionados, titulos, user, sincronizarPagamentoFabrica],
   );
 
   const toggleBaixado = useCallback(
@@ -3382,6 +3427,7 @@ const LiberacaoPagamento = () => {
         alert('Erro ao marcar como pago: ' + error.message);
         return;
       }
+      await sincronizarPagamentoFabrica({ ...titulo, ...patch }, 'PAGO');
       // Deduzir do saldo bancário
       const banco = extraData.banco_pagamento ?? titulo?.banco_pagamento;
       if (banco) {
@@ -3427,7 +3473,7 @@ const LiberacaoPagamento = () => {
         ),
       );
     },
-    [user, titulos],
+    [user, titulos, sincronizarPagamentoFabrica],
   );
 
   const adicionarTransferencia = useCallback((novoItem) => {
