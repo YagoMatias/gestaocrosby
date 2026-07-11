@@ -13,7 +13,7 @@ import {
   errorResponse,
 } from '../utils/errorHandler.js';
 import { getPool } from '../services/uazapiSync.js';
-import { getPainelSellerCanais, getPainelPerSeller } from '../services/painelCanais.js';
+import { getPainelSellerCanais, getPainelPerSeller, getRicardoEletroFM } from '../services/painelCanais.js';
 
 const router = express.Router();
 
@@ -519,10 +519,11 @@ function toYmd(v) {
   return String(v).slice(0, 10);
 }
 
-// Sobrescreve os 4 canais de vendedor com o Painel de Vendas (fonte única).
-// Aplicado em TODOS os retornos do getFaturamentoPorSegmento pra que qualquer
-// consumidor (ontem-canal, promessa, dashboard, etc.) veja o mesmo número do
-// Painel. Guarda hasData: sem painel no período, mantém o valor fat-seg.
+// Sobrescreve os 4 canais de vendedor com o Painel de Vendas (fonte única) +
+// Ricardo Eletro via fiscal-movement (não está nas notas). Aplicado em TODOS os
+// retornos do getFaturamentoPorSegmento pra qualquer consumidor (ontem-canal,
+// promessa, dashboard) ver o mesmo número. Guarda hasData: sem painel no
+// período, mantém o valor fat-seg.
 async function aplicarPainelCanaisSeg(out, di, df) {
   try {
     const pv = await getPainelSellerCanais(di, df);
@@ -534,6 +535,10 @@ async function aplicarPainelCanaisSeg(out, di, df) {
   } catch (e) {
     console.warn(`[getFaturamentoPorSegmento] painel override falhou: ${e.message}`);
   }
+  try {
+    const re = await getRicardoEletroFM(di, df);
+    if (re != null) out.ricardoeletro = re;
+  } catch { /* mantém o valor fat-seg */ }
   return out;
 }
 
