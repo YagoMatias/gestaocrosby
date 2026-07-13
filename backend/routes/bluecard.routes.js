@@ -355,6 +355,22 @@ async function _cadastrarLeadNoTotvsInner(lead) {
   //     mesma rota usada por src/pages/CadastrarCliente.jsx.
   const phoneCheck = normalizarTelefone(lead.whatsapp);
   const cepCheck = lead.cep ? validarCEP(lead.cep) : { ok: false };
+  // Bairro (neighborhood): o lead não tem coluna dedicada — busca no ViaCEP
+  // pelo CEP. Fallback pro complemento (o formulário preenche bairro nele via
+  // ViaCEP). Sem isso o TOTVS ficava sem o bairro do cliente.
+  let bairro = null;
+  if (cepCheck.ok) {
+    try {
+      const cepDigits = String(cepCheck.cep).replace(/\D/g, '');
+      const vr = await axios.get(`https://viacep.com.br/ws/${cepDigits}/json/`, {
+        timeout: 8000,
+      });
+      if (vr.data && !vr.data.erro && vr.data.bairro) bairro = vr.data.bairro;
+    } catch {
+      /* ViaCEP offline/inválido — segue sem bairro */
+    }
+  }
+  if (!bairro && lead.complemento) bairro = String(lead.complemento).trim() || null;
   const branchInsertCode = Number(process.env.BLUECARD_BRANCH_INSERT_CODE || 1);
   // Classificação BlueCard no TOTVS:
   //   classificationTypeCode=55 → "TIPO CLIENTE VAREJO"
@@ -398,6 +414,7 @@ async function _cadastrarLeadNoTotvsInner(lead) {
               cep: cepCheck.cep,
               address: lead.endereco,
               number: Number(String(lead.numero || '').replace(/\D/g, '')) || undefined,
+              neighborhood: bairro || undefined,
               complement: lead.complemento || undefined,
             },
           ]
