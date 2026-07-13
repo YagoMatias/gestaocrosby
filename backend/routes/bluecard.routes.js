@@ -359,6 +359,19 @@ async function _cadastrarLeadNoTotvsInner(lead) {
   }
   const cpf = cpfCheck.cpf;
 
+  // Sexo: manual (lead.sexo) tem prioridade; senão infere pelo nome. Se não
+  // conseguir identificar, NÃO cadastra — sinaliza pra informar manualmente.
+  const gender = (lead.sexo === 'Male' || lead.sexo === 'Female')
+    ? lead.sexo
+    : inferGenderFromName(lead.nome);
+  if (!gender) {
+    return {
+      ok: false,
+      needsGender: true,
+      error: 'Sexo não identificado pelo nome — informe o sexo manualmente antes de cadastrar no TOTVS',
+    };
+  }
+
   const tk = await getToken();
   const accessToken = tk?.access_token;
   if (!accessToken) {
@@ -558,6 +571,7 @@ router.patch('/leads/:id', async (req, res) => {
     'estado',
     'indicado_por',
     'cvv',
+    'sexo',
   ];
   const patch = {};
   for (const k of allowed) {
@@ -572,6 +586,14 @@ router.patch('/leads/:id', async (req, res) => {
       // Email lowercase
       if (k === 'email' && typeof val === 'string') {
         val = val.toLowerCase();
+      }
+      // Sexo: normaliza pra formato TOTVS ('Male'/'Female')
+      if (k === 'sexo' && typeof val === 'string') {
+        const s = val.toLowerCase();
+        if (s.startsWith('m') && !s.startsWith('mu') && s !== 'mulher') val = 'Male';
+        else if (s === 'male') val = 'Male';
+        else if (s.startsWith('f') || s.startsWith('mu') || s === 'mulher') val = 'Female';
+        else val = null;
       }
       patch[k] = val;
     }
@@ -599,10 +621,17 @@ router.patch('/leads/:id', async (req, res) => {
   // 🔹 Automação TOTVS: se o status virou 'info_completas' e ainda não tem
   // personCode, cadastra a pessoa no TOTVS e salva o código. NÃO bloqueia
   // a resposta — atualiza em background pra UI continuar fluida.
+  // Re-tenta o cadastro quando: (a) o status virou 'info_completas', ou
+  // (b) o sexo acabou de ser preenchido manualmente e o cadastro estava
+  // bloqueado por falta de sexo. Só se ainda não houver personCode.
+  const sexoAgoraPreenchido =
+    'sexo' in req.body &&
+    (patch.sexo === 'Male' || patch.sexo === 'Female') &&
+    /sexo/i.test(String(data.totvs_sync_error || ''));
   let totvsResult = null;
   if (
-    req.body.status === 'info_completas' &&
-    !data.totvs_person_code
+    !data.totvs_person_code &&
+    (req.body.status === 'info_completas' || sexoAgoraPreenchido)
   ) {
     totvsResult = await cadastrarLeadNoTotvs(data);
     const upd = totvsResult.ok

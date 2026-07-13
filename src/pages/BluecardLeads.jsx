@@ -1003,6 +1003,7 @@ function DetalhesModal({ lead, onClose, onSaved, onSyncTotvs }) {
     empresa: lead.empresa || '',
     instagram: lead.instagram || '',
     data_nasc: lead.data_nasc || '',
+    sexo: lead.sexo || '',
     cep: lead.cep || '',
     endereco: lead.endereco || '',
     numero: lead.numero || '',
@@ -1141,6 +1142,25 @@ function DetalhesModal({ lead, onClose, onSaved, onSyncTotvs }) {
                 placeholder="DD/MM/AAAA"
                 icon={Calendar}
               />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-gray-500 mb-1">
+                Sexo
+                {!form.sexo && (
+                  <span className="ml-2 text-[10px] font-bold text-amber-600">
+                    ⚠ obrigatório p/ cadastrar no TOTVS
+                  </span>
+                )}
+              </label>
+              <select
+                value={form.sexo}
+                onChange={(e) => setField('sexo', e.target.value)}
+                className={`w-full rounded-lg border px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-200 ${form.sexo ? 'border-gray-200' : 'border-amber-300 bg-amber-50'}`}
+              >
+                <option value="">— Selecione —</option>
+                <option value="Female">Feminino</option>
+                <option value="Male">Masculino</option>
+              </select>
             </div>
           </fieldset>
 
