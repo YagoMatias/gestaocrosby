@@ -296,6 +296,37 @@ router.get('/leads', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────
 // PATCH /api/bluecard/leads/:id — atualiza status/observação
 // ─────────────────────────────────────────────────────────────────────
+// Infere o sexo pelo PRIMEIRO nome (o lead não captura sexo). Heurística PT-BR
+// + listas de exceção. Retorna 'Male' | 'Female' | null. null = não arrisca
+// (deixa em branco no TOTVS em vez de gravar um gênero possivelmente errado).
+const NOMES_MASCULINOS = new Set([
+  'FELIPE', 'PHILIPE', 'HENRIQUE', 'ANDRE', 'ALEXANDRE', 'GUILHERME', 'VICENTE',
+  'JORGE', 'ENRIQUE', 'DANTE', 'LUCA', 'NICOLA', 'ISAAC', 'KAIQUE', 'JOSUE',
+  'MOISES', 'ELIAS', 'TADEU', 'ABEL', 'NOE', 'DAVI', 'LEVI', 'ELI', 'REMI',
+  'JOSE', 'JAIME', 'JAYME', 'IZAQUE', 'CAIQUE', 'DEIVID', 'ROQUE',
+]);
+const NOMES_FEMININOS = new Set([
+  'BEATRIZ', 'ISABEL', 'ISABELLE', 'ISABELE', 'RAQUEL', 'ESTER', 'ESTHER',
+  'RUTH', 'MIRIAM', 'MYRIAN', 'CARMEN', 'INES', 'SOLANGE', 'SIMONE',
+  'CRISTIANE', 'ELIANE', 'VIVIANE', 'ROSANE', 'JULIANE', 'LUCIANE', 'IVONE',
+  'IONE', 'DAIANE', 'DAYANE', 'ADRIANE', 'LUANE', 'JAQUELINE', 'JACQUELINE',
+  'GEANE', 'NOEMI', 'ABIGAIL', 'DALILA', 'MICHELE', 'MICHELLE', 'DANIELE',
+  'DANIELLE', 'GABRIELE', 'GABRIELLE', 'RAFAELE', 'MARLI', 'NOELI', 'ROSELI',
+]);
+function stripAccents(s) {
+  return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+function inferGenderFromName(nome) {
+  const first = stripAccents(nome).trim().toUpperCase().split(/\s+/)[0];
+  if (!first || first.length < 2) return null;
+  if (NOMES_MASCULINOS.has(first)) return 'Male';
+  if (NOMES_FEMININOS.has(first)) return 'Female';
+  const last = first[first.length - 1];
+  if (last === 'A') return 'Female';
+  if ('OSRLZMNDT'.includes(last)) return 'Male';
+  return null; // 'E'/'I'/'U' e ambíguos → deixa em branco
+}
+
 // Helper: cadastra um lead como PF (individual) no TOTVS Moda.
 //   - Não bloqueia o PATCH se falhar; salva o erro em totvs_sync_error.
 //   - Idempotente: se já tem totvs_person_code, retorna sem chamar TOTVS.
@@ -387,6 +418,9 @@ async function _cadastrarLeadNoTotvsInner(lead) {
     insertDate: new Date().toISOString(),
     name: lead.nome,
     cpf,
+    // Sexo inferido pelo primeiro nome (o lead não captura). undefined quando
+    // ambíguo — melhor em branco do que gravar gênero errado no TOTVS.
+    gender: inferGenderFromName(lead.nome) || undefined,
     classifications: [
       {
         classificationTypeCode,
