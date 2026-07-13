@@ -283,6 +283,12 @@ const painelVendasItems = [
     color: 'text-violet-600',
   },
   {
+    name: 'New Forecast',
+    href: '/new-forecast',
+    icon: ChartBar,
+    color: 'text-fuchsia-600',
+  },
+  {
     name: 'Painel Competição',
     href: '/crm/competicao',
     icon: Trophy,

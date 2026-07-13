@@ -181,6 +181,57 @@ const InadimplentesMultimarcas = () => {
     return firstName;
   };
 
+  // Saneamento de série temporal: em alguns dias o job noturno gravou dados
+  // incompletos, gerando quedas bruscas irreais no gráfico. Percorrendo a série
+  // em ordem cronológica, sempre que o valor cair mais de 20% em relação ao
+  // último valor válido, herdamos o valor anterior (mantém a linha coerente).
+  const LIMIAR_QUEDA = 0.8; // valor do dia < 80% do anterior => dado incompleto
+  const sanitizarValores = (valoresBrutos) => {
+    const resultado = [];
+    let anteriorValido = null;
+    for (let i = 0; i < valoresBrutos.length; i++) {
+      let val = Number(valoresBrutos[i]) || 0;
+      if (
+        anteriorValido != null &&
+        anteriorValido > 0 &&
+        val < anteriorValido * LIMIAR_QUEDA
+      ) {
+        val = anteriorValido; // herda o valor do dia anterior (inclui zeros)
+      }
+      resultado.push(val);
+      if (val > 0) anteriorValido = val;
+    }
+    return resultado;
+  };
+
+  // Igual ao sanitizarValores, mas também corrige PICOS PARA CIMA (subida acima
+  // de ~25%). Usado na série "SEM REPRESENTANTE": nos dias de carga incompleta os
+  // clientes perdem a classificação e caem nesse balde, inflando o valor. Como
+  // 0.8 e 1/0.8 (=1.25) são recíprocos, o limiar fica simétrico (−20% / +25%).
+  const sanitizarValoresBidirecional = (valoresBrutos) => {
+    const resultado = [];
+    let anteriorValido = null;
+    for (let i = 0; i < valoresBrutos.length; i++) {
+      let val = Number(valoresBrutos[i]) || 0;
+      if (anteriorValido != null && anteriorValido > 0) {
+        if (
+          val < anteriorValido * LIMIAR_QUEDA ||
+          val > anteriorValido / LIMIAR_QUEDA
+        ) {
+          val = anteriorValido; // herda o valor do dia anterior
+        }
+      }
+      resultado.push(val);
+      if (val > 0) anteriorValido = val;
+    }
+    return resultado;
+  };
+
+  // "SEM REPRESENTANTE" pode aparecer como 'SEM REPRESENTANTE' (bruto) ou 'SEM'
+  // (após normalizeRepName pegar só o 1º nome). Cobre os dois casos.
+  const ehSemRepresentante = (nome) =>
+    nome === 'SEM' || nome === 'SEM REPRESENTANTE';
+
   // ======================== TIMELINE SUPABASE ========================
   const carregarTimeline = useCallback(async () => {
     setLoadingTimeline(true);
@@ -265,6 +316,129 @@ const InadimplentesMultimarcas = () => {
   useEffect(() => {
     carregarTimeline();
   }, [carregarTimeline]);
+
+  // ======================== SANEAMENTO PERSISTENTE ========================
+  // Corrige de forma definitiva no banco os dias com dados incompletos
+  // (quedas > 20% em relação ao dia anterior), gravando o valor herdado.
+  // Roda uma vez por sessão; o dia de HOJE é ignorado para não conflitar com
+  // o snapshot noturno que grava o valor real do dia.
+  const timelineSaneadoRef = useRef(false);
+  const repsSaneadoRef = useRef(false);
+
+  // Timeline principal
+  useEffect(() => {
+    if (timelineSaneadoRef.current) return;
+    if (!timeline.length) return;
+
+    const campos = [
+      'valor_total',
+      'qtd_clientes',
+      'qtd_titulos',
+      'valor_atrasados',
+      'valor_inadimplentes',
+    ];
+    const camposInteiros = ['qtd_clientes', 'qtd_titulos'];
+
+    const corrigidos = {};
+    campos.forEach((campo) => {
+      corrigidos[campo] = sanitizarValores(
+        timeline.map((t) => parseFloat(t[campo]) || 0),
+      );
+    });
+
+    const linhas = [];
+    timeline.forEach((t, i) => {
+      if (t.data === hojeStr) return; // não mexe no dia de hoje
+      const novo = {};
+      let mudou = false;
+      campos.forEach((campo) => {
+        const orig = parseFloat(t[campo]) || 0;
+        let corr = corrigidos[campo][i];
+        if (camposInteiros.includes(campo)) corr = Math.round(corr);
+        if (Math.abs(orig - corr) > 0.01) mudou = true;
+        novo[campo] = corr;
+      });
+      if (mudou) {
+        linhas.push({
+          data: t.data,
+          ...novo,
+          updated_at: new Date().toISOString(),
+        });
+      }
+    });
+
+    timelineSaneadoRef.current = true;
+    if (linhas.length > 0) {
+      supabase
+        .from('inadimplencia_mtm_timeline')
+        .upsert(linhas, { onConflict: 'data' })
+        .then(({ error }) => {
+          if (error) {
+            console.error('Erro ao sanear timeline MTM:', error);
+          } else {
+            console.log(
+              `🩹 ${linhas.length} dia(s) corrigido(s) na timeline MTM`,
+            );
+            carregarTimeline();
+          }
+        });
+    }
+  }, [timeline, hojeStr, carregarTimeline]);
+
+  // Timeline por representante (corrige cada representante bruto separadamente)
+  useEffect(() => {
+    if (repsSaneadoRef.current) return;
+    if (!timelineRep.length) return;
+
+    const porRep = {};
+    timelineRep.forEach((t) => {
+      if (!porRep[t.representante]) porRep[t.representante] = [];
+      porRep[t.representante].push(t);
+    });
+
+    const linhas = [];
+    Object.values(porRep).forEach((rows) => {
+      const ordenado = [...rows].sort((a, b) => (a.data < b.data ? -1 : 1));
+      // "SEM REPRESENTANTE" incha nos dias ruins => corrige também picos p/ cima
+      const fn = ehSemRepresentante(ordenado[0]?.representante)
+        ? sanitizarValoresBidirecional
+        : sanitizarValores;
+      const vt = fn(ordenado.map((r) => parseFloat(r.valor_total) || 0));
+      const qc = fn(ordenado.map((r) => parseInt(r.qtd_clientes) || 0));
+      ordenado.forEach((r, i) => {
+        if (r.data === hojeStr) return; // não mexe no dia de hoje
+        const origVt = parseFloat(r.valor_total) || 0;
+        const origQc = parseInt(r.qtd_clientes) || 0;
+        const corrQc = Math.round(qc[i]);
+        if (Math.abs(origVt - vt[i]) > 0.01 || origQc !== corrQc) {
+          linhas.push({
+            data: r.data,
+            representante: r.representante,
+            valor_total: vt[i],
+            qtd_clientes: corrQc,
+            updated_at: new Date().toISOString(),
+          });
+        }
+      });
+    });
+
+    repsSaneadoRef.current = true;
+    if (linhas.length > 0) {
+      supabase
+        .from('inadimplencia_mtm_representantes_timeline')
+        .upsert(linhas, { onConflict: 'data,representante' })
+        .then(({ error }) => {
+          if (error) {
+            console.error('Erro ao sanear timeline MTM por representante:', error);
+          } else {
+            console.log(
+              `🩹 ${linhas.length} registro(s) corrigido(s) por representante`,
+            );
+            carregarTimeline();
+          }
+        });
+    }
+  }, [timelineRep, hojeStr, carregarTimeline]);
 
   // Função para ordenar colunas
   const ordenarColuna = (coluna) => {
@@ -987,16 +1161,9 @@ Crosby`;
       datasets: [
         {
           label: 'Valor Total Inadimplência',
-          data: timeline.map((t, i) => {
-            const val = parseFloat(t.valor_total) || 0;
-            if (val === 0 && i > 0) {
-              for (let j = i - 1; j >= 0; j--) {
-                const prev = parseFloat(timeline[j].valor_total) || 0;
-                if (prev > 0) return prev;
-              }
-            }
-            return val;
-          }),
+          data: sanitizarValores(
+            timeline.map((t) => parseFloat(t.valor_total) || 0),
+          ),
           borderColor: '#fe0000',
           backgroundColor: 'rgba(254, 0, 0, 0.1)',
           fill: true,
@@ -1024,16 +1191,9 @@ Crosby`;
       datasets: [
         {
           label: 'Qtd Clientes Inadimplentes',
-          data: timeline.map((t, i) => {
-            const val = parseInt(t.qtd_clientes) || 0;
-            if (val === 0 && i > 0) {
-              for (let j = i - 1; j >= 0; j--) {
-                const prev = parseInt(timeline[j].qtd_clientes) || 0;
-                if (prev > 0) return prev;
-              }
-            }
-            return val;
-          }),
+          data: sanitizarValores(
+            timeline.map((t) => parseInt(t.qtd_clientes) || 0),
+          ),
           borderColor: '#3b82f6',
           backgroundColor: 'rgba(59, 130, 246, 0.1)',
           fill: true,
@@ -1068,16 +1228,9 @@ Crosby`;
       datasets: [
         {
           label: 'Vencidos (≤ 60 dias)',
-          data: dados.map((t, i) => {
-            const val = parseFloat(t.valor_atrasados) || 0;
-            if (val === 0 && i > 0) {
-              for (let j = i - 1; j >= 0; j--) {
-                const prev = parseFloat(dados[j].valor_atrasados) || 0;
-                if (prev > 0) return prev;
-              }
-            }
-            return val;
-          }),
+          data: sanitizarValores(
+            dados.map((t) => parseFloat(t.valor_atrasados) || 0),
+          ),
           borderColor: '#f59e0b',
           backgroundColor: 'rgba(245, 158, 11, 0.1)',
           fill: true,
@@ -1090,16 +1243,9 @@ Crosby`;
         },
         {
           label: 'Inadimplentes (> 60 dias)',
-          data: dados.map((t, i) => {
-            const val = parseFloat(t.valor_inadimplentes) || 0;
-            if (val === 0 && i > 0) {
-              for (let j = i - 1; j >= 0; j--) {
-                const prev = parseFloat(dados[j].valor_inadimplentes) || 0;
-                if (prev > 0) return prev;
-              }
-            }
-            return val;
-          }),
+          data: sanitizarValores(
+            dados.map((t) => parseFloat(t.valor_inadimplentes) || 0),
+          ),
           borderColor: '#fe0000',
           backgroundColor: 'rgba(254, 0, 0, 0.1)',
           fill: true,
@@ -1178,12 +1324,16 @@ Crosby`;
       const cor = CORES_REPRESENTANTES[idx % CORES_REPRESENTANTES.length];
       return {
         label: rep,
-        data: datasUnicas.map((data) => {
-          const entry = normalizedTimelineRep.find(
-            (t) => t.data === data && t.representante === rep,
-          );
-          return entry ? parseFloat(entry.valor_total) || 0 : 0;
-        }),
+        data: (ehSemRepresentante(rep)
+          ? sanitizarValoresBidirecional
+          : sanitizarValores)(
+          datasUnicas.map((data) => {
+            const entry = normalizedTimelineRep.find(
+              (t) => t.data === data && t.representante === rep,
+            );
+            return entry ? parseFloat(entry.valor_total) || 0 : 0;
+          }),
+        ),
         borderColor: cor,
         backgroundColor: cor + '1A',
         fill: false,
@@ -1224,12 +1374,16 @@ Crosby`;
       const cor = CORES_REPRESENTANTES[idx % CORES_REPRESENTANTES.length];
       return {
         label: rep,
-        data: datasUnicas.map((data) => {
-          const entry = normalizedTimelineRep.find(
-            (t) => t.data === data && t.representante === rep,
-          );
-          return entry ? parseInt(entry.qtd_clientes) || 0 : 0;
-        }),
+        data: (ehSemRepresentante(rep)
+          ? sanitizarValoresBidirecional
+          : sanitizarValores)(
+          datasUnicas.map((data) => {
+            const entry = normalizedTimelineRep.find(
+              (t) => t.data === data && t.representante === rep,
+            );
+            return entry ? parseInt(entry.qtd_clientes) || 0 : 0;
+          }),
+        ),
         borderColor: cor,
         backgroundColor: cor + '1A',
         fill: false,
@@ -1399,27 +1553,30 @@ Crosby`;
       };
     }
 
-    const primeiro = timeline[0];
-    const ultimo = timeline[timeline.length - 1];
+    // Usar séries saneadas (mesma correção dos gráficos) para o cálculo
+    const valorSane = sanitizarValores(
+      timeline.map((t) => parseFloat(t.valor_total) || 0),
+    );
+    const clientesSane = sanitizarValores(
+      timeline.map((t) => parseInt(t.qtd_clientes) || 0),
+    );
+    const atrasadosSane = sanitizarValores(
+      timeline.map((t) => parseFloat(t.valor_atrasados) || 0),
+    );
+    const inadimplentesSane = sanitizarValores(
+      timeline.map((t) => parseFloat(t.valor_inadimplentes) || 0),
+    );
+    const ultimoIdx = timeline.length - 1;
 
     return {
-      valor: calcVar(
-        parseFloat(primeiro.valor_total) || 0,
-        parseFloat(ultimo.valor_total) || 0,
-      ),
-      clientes: calcVar(
-        parseInt(primeiro.qtd_clientes) || 0,
-        parseInt(ultimo.qtd_clientes) || 0,
-      ),
-      atrasados: calcVar(
-        parseFloat(primeiro.valor_atrasados) || 0,
-        parseFloat(ultimo.valor_atrasados) || 0,
-      ),
+      valor: calcVar(valorSane[0], valorSane[ultimoIdx]),
+      clientes: calcVar(clientesSane[0], clientesSane[ultimoIdx]),
+      atrasados: calcVar(atrasadosSane[0], atrasadosSane[ultimoIdx]),
       inadimplentes: calcVar(
-        parseFloat(primeiro.valor_inadimplentes) || 0,
-        parseFloat(ultimo.valor_inadimplentes) || 0,
+        inadimplentesSane[0],
+        inadimplentesSane[ultimoIdx],
       ),
-      primeiraData: primeiro.data,
+      primeiraData: timeline[0].data,
     };
   }, [timeline]);
 
