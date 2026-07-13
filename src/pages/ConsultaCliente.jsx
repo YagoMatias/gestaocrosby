@@ -41,6 +41,9 @@ const ConsultaCliente = () => {
   const [cliente, setCliente] = useState(null);
   const [clientesList, setClientesList] = useState([]); // Lista para busca por nome
   const [dadosCarregados, setDadosCarregados] = useState(false);
+  // Estatísticas de compra (rota dedicada — o search de pessoa não traz)
+  const [estatisticas, setEstatisticas] = useState(null);
+  const [loadingStats, setLoadingStats] = useState(false);
 
   // Busca rápida por nome no Supabase (pes_pessoa)
   const [buscaNome, setBuscaNome] = useState('');
@@ -57,7 +60,7 @@ const ConsultaCliente = () => {
     emails: true,
     contacts: false,
     classifications: false,
-    statistics: false,
+    statistics: true,
     preferences: false,
     observations: false,
   });
@@ -143,6 +146,39 @@ const ConsultaCliente = () => {
       document.head.removeChild(styleElement);
     };
   }, []);
+
+  // Busca as estatísticas de compra (rota dedicada — o search de pessoa
+  // devolve statistics=null, então as compras precisam vir daqui).
+  useEffect(() => {
+    const code = cliente?.code;
+    if (!code) {
+      setEstatisticas(null);
+      return;
+    }
+    let cancelado = false;
+    (async () => {
+      setLoadingStats(true);
+      setEstatisticas(null);
+      try {
+        const resp = await fetch(`${TotvsURL}person-statistics`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ personCode: Number(code) }),
+        });
+        const json = await resp.json();
+        if (!cancelado && json.success && json.data) {
+          setEstatisticas(json.data);
+        }
+      } catch {
+        /* silencioso — sem estatísticas não bloqueia o resto da ficha */
+      } finally {
+        if (!cancelado) setLoadingStats(false);
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, [cliente?.code]);
 
   // Buscar cliente pelo nome/fantasia na tabela pes_pessoa do Supabase
   const buscarClienteSupabase = async () => {
@@ -1034,6 +1070,91 @@ const ConsultaCliente = () => {
                           <InfoItem label="Situação" value={cliente.status} />
                         )}
                       </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Compras (estatísticas — rota dedicada person-statistics) */}
+                <div className="section-card">
+                  <SectionHeader
+                    title="Compras"
+                    icon={Receipt}
+                    section="statistics"
+                    badge={
+                      estatisticas?.lastPurchaseDate
+                        ? `Últ.: ${formatDate(estatisticas.lastPurchaseDate)}`
+                        : undefined
+                    }
+                  />
+                  {expandedSections.statistics && (
+                    <div className="section-content">
+                      {loadingStats ? (
+                        <div className="flex items-center gap-2 text-sm text-gray-500 py-4">
+                          <Spinner size={16} className="animate-spin" />
+                          Carregando compras...
+                        </div>
+                      ) : !estatisticas ||
+                        (!estatisticas.purchaseQuantity &&
+                          !estatisticas.totalPurchaseValue) ? (
+                        <div className="flex items-center gap-2 text-sm text-gray-500 py-4">
+                          <Info size={16} />
+                          Nenhuma compra registrada para este cliente.
+                        </div>
+                      ) : (
+                        <div className="info-grid">
+                          <InfoItem
+                            label="Qtd. Compras"
+                            value={estatisticas.purchaseQuantity}
+                            highlight
+                          />
+                          <InfoItem
+                            label="Peças Compradas"
+                            value={estatisticas.purchasePiecesQuantity}
+                          />
+                          <InfoItem
+                            label="Total Comprado"
+                            value={formatCurrency(estatisticas.totalPurchaseValue)}
+                            highlight
+                          />
+                          <InfoItem
+                            label="Ticket Médio"
+                            value={formatCurrency(
+                              estatisticas.averagePurchaseValue,
+                            )}
+                          />
+                          <InfoItem
+                            label="Primeira Compra"
+                            value={formatDate(estatisticas.firstPurchaseDate)}
+                          />
+                          <InfoItem
+                            label="Última Compra"
+                            value={formatDate(estatisticas.lastPurchaseDate)}
+                            highlight
+                          />
+                          <InfoItem
+                            label="Valor Última Compra"
+                            value={formatCurrency(estatisticas.lastPurchaseValue)}
+                          />
+                          <InfoItem
+                            label="Maior Compra"
+                            value={formatCurrency(
+                              estatisticas.biggestPurchaseValue,
+                            )}
+                          />
+                          <InfoItem
+                            label="Data Maior Compra"
+                            value={formatDate(estatisticas.biggestPurchaseDate)}
+                          />
+                          <InfoItem
+                            label="Atraso Médio (dias)"
+                            value={estatisticas.averageDelay}
+                          />
+                          <InfoItem
+                            label="Atraso Máximo (dias)"
+                            value={estatisticas.maximumDelay}
+                          />
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
