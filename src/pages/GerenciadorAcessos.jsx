@@ -153,6 +153,16 @@ const AVAILABLE_PAGES = [
     name: 'Documento Bluecred',
     category: 'Varejo',
   },
+  {
+    path: '/clientes-bluecred',
+    name: 'Clientes Bluecred',
+    category: 'Varejo',
+  },
+  {
+    path: '/antecipacao-bluecred',
+    name: 'Antecipação Bluecred',
+    category: 'Varejo',
+  },
 
   // Estoque
   {

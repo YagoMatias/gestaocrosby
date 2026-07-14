@@ -144,6 +144,7 @@ const ExtratoTotvs = lazy(() => import('./pages/ExtratoTotvs'));
 const TopClientes = lazy(() => import('./pages/TopClientes'));
 const DocumentoBluecred = lazy(() => import('./pages/DocumentoBluecred'));
 const ClientesBluecred = lazy(() => import('./pages/ClientesBluecred'));
+const AntecipacaoBoletos = lazy(() => import('./pages/AntecipacaoBoletos'));
 const ConsultaNFs = lazy(() => import('./pages/ConsultaNFs'));
 const FaturamentoPanel = lazy(() => import('./components/FaturamentoPanel'));
 const AtividadeClientes = lazy(() => import('./pages/AtividadeClientes'));
@@ -252,6 +253,7 @@ const protectedRoutes = [
   { path: '/top-clientes', component: TopClientes },
   { path: '/documento-bluecred', component: DocumentoBluecred },
   { path: '/clientes-bluecred', component: ClientesBluecred },
+  { path: '/antecipacao-bluecred', component: AntecipacaoBoletos },
   { path: '/solicitacao-baixa', component: SolicitacaoBaixa },
   { path: '/minhas-solicitacoes-baixa', component: MinhasSolicitacoesBaixa },
   {
