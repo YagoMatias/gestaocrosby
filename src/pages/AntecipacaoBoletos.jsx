@@ -18,6 +18,12 @@ import {
 import { TotvsURL } from '../config/constants';
 import PageTitle from '../components/ui/PageTitle';
 
+// Faixa de filiais consideradas: 1 a 99 (varejo/lojas próprias; exclui
+// franquias 6000+ e outras faixas). O filtro é aplicado no cliente porque a
+// API do TOTVS não aceita uma lista grande de filiais no branchCodeList.
+const BRANCH_MIN = 1;
+const BRANCH_MAX = 99;
+
 function fmtBRL(v) {
   const n = Number(v);
   if (!Number.isFinite(n)) return '—';
@@ -128,8 +134,8 @@ export default function AntecipacaoBoletos() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          // Sem branchCodeList: busca por cliente traz os títulos de QUALQUER
-          // filial (ex: filial 65, que não estava na lista fixa antiga).
+          // Sem branchCodeList (a API não aceita lista grande de filiais).
+          // Filtramos a faixa 1–99 no cliente, logo abaixo.
           filter: {
             customerCodeList: [Number(code)],
             hasOpenInvoices: true,
@@ -145,7 +151,12 @@ export default function AntecipacaoBoletos() {
         throw new Error(e.message || `Erro HTTP ${resp.status}`);
       }
       const json = await resp.json();
-      const items = (json.data?.items || []).map((it) => ({
+      const items = (json.data?.items || [])
+        .filter((it) => {
+          const b = Number(it.branchCode);
+          return b >= BRANCH_MIN && b <= BRANCH_MAX;
+        })
+        .map((it) => ({
         branchCode: it.branchCode,
         customerCode: it.customerCode,
         receivableCode: it.receivableCode,
