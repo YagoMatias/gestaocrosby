@@ -26,6 +26,21 @@ import PageTitle from '../components/ui/PageTitle';
 
 const API_KEY = import.meta.env.VITE_API_KEY || '';
 
+function fmtBRL(v) {
+  if (v == null || v === '') return '—';
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '—';
+  return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+function fmtTelefone(s) {
+  if (!s) return '—';
+  const d = String(s).replace(/\D/g, '');
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return s;
+}
+
 function fmtCNPJ(s) {
   if (!s) return '—';
   const d = String(s).replace(/\D/g, '');
@@ -35,11 +50,16 @@ function fmtCNPJ(s) {
 }
 
 function exportCSV(results, filename) {
-  const headers = ['Customer Code', 'Voucher Number', 'Voucher Code', 'Status', 'Erro'];
+  const headers = ['Customer Code', 'Nome', 'Telefone', 'Ultima Compra', 'Valor Voucher', 'Voucher Number', 'Voucher Code', 'Status', 'Erro'];
+  const num = (v) => (v == null || v === '' ? '' : String(v).replace('.', ','));
   const csv = [
     headers.join(';'),
     ...results.map((r) => [
       r.customerCode,
+      `"${(r.nome || '').replace(/"/g, '""')}"`,
+      r.telefone || '',
+      num(r.ultima_compra_valor),
+      num(r.valor_voucher),
       r.voucherNumber || '',
       r.voucherCode || '',
       r.success ? 'OK' : 'FALHA',
@@ -631,6 +651,10 @@ export default function CriarVouchers() {
                       <tr className="text-left text-[10px] uppercase tracking-wider font-bold text-gray-500 border-b">
                         <th className="py-2.5 px-3 w-10"></th>
                         <th className="py-2.5 px-3">Cliente</th>
+                        <th className="py-2.5 px-3">Nome</th>
+                        <th className="py-2.5 px-3">Telefone</th>
+                        <th className="py-2.5 px-3 text-right">Última Compra</th>
+                        <th className="py-2.5 px-3 text-right">Valor ({percentage}%)</th>
                         <th className="py-2.5 px-3">Voucher Number</th>
                         <th className="py-2.5 px-3">Voucher Code</th>
                         <th className="py-2.5 px-3">Erro</th>
@@ -645,6 +669,10 @@ export default function CriarVouchers() {
                               : <XCircle size={16} weight="fill" className="text-rose-600" />}
                           </td>
                           <td className="py-2 px-3 font-mono text-xs">#{r.customerCode}</td>
+                          <td className="py-2 px-3 text-xs font-semibold text-gray-800 truncate max-w-[220px]">{r.nome || '—'}</td>
+                          <td className="py-2 px-3 text-xs font-mono text-gray-600">{fmtTelefone(r.telefone)}</td>
+                          <td className="py-2 px-3 text-xs text-right tabular-nums text-gray-600">{fmtBRL(r.ultima_compra_valor)}</td>
+                          <td className="py-2 px-3 text-xs text-right tabular-nums font-bold text-emerald-700">{fmtBRL(r.valor_voucher)}</td>
                           <td className="py-2 px-3 font-mono text-xs font-bold text-purple-700">{r.voucherNumber || '—'}</td>
                           <td className="py-2 px-3 font-mono text-xs">{r.voucherCode || '—'}</td>
                           <td className="py-2 px-3 text-xs text-rose-700">{r.error || '—'}</td>
@@ -748,6 +776,10 @@ export default function CriarVouchers() {
                     <tr className="text-left text-[10px] uppercase tracking-wider font-bold text-gray-500 border-b">
                       <th className="py-2.5 px-3 w-10"></th>
                       <th className="py-2.5 px-3">Cliente</th>
+                      <th className="py-2.5 px-3">Nome</th>
+                      <th className="py-2.5 px-3">Telefone</th>
+                      <th className="py-2.5 px-3 text-right">Última Compra</th>
+                      <th className="py-2.5 px-3 text-right">Valor ({batchDetail.percentage}%)</th>
                       <th className="py-2.5 px-3">Voucher Number</th>
                       <th className="py-2.5 px-3">Voucher Code</th>
                       <th className="py-2.5 px-3">Erro</th>
@@ -762,6 +794,10 @@ export default function CriarVouchers() {
                             : <XCircle size={16} weight="fill" className="text-rose-600" />}
                         </td>
                         <td className="py-2 px-3 font-mono text-xs">#{r.customerCode}</td>
+                        <td className="py-2 px-3 text-xs font-semibold text-gray-800 truncate max-w-[220px]">{r.nome || '—'}</td>
+                        <td className="py-2 px-3 text-xs font-mono text-gray-600">{fmtTelefone(r.telefone)}</td>
+                        <td className="py-2 px-3 text-xs text-right tabular-nums text-gray-600">{fmtBRL(r.ultima_compra_valor)}</td>
+                        <td className="py-2 px-3 text-xs text-right tabular-nums font-bold text-emerald-700">{fmtBRL(r.valor_voucher)}</td>
                         <td className="py-2 px-3 font-mono text-xs font-bold text-purple-700">{r.voucherNumber || '—'}</td>
                         <td className="py-2 px-3 font-mono text-xs">{r.voucherCode || '—'}</td>
                         <td className="py-2 px-3 text-xs text-rose-700">{r.error || '—'}</td>
