@@ -5,7 +5,7 @@
 import cron from 'node-cron';
 import axios from 'axios';
 import supabase from '../config/supabase.js';
-import { getPainelSellerCanais } from '../services/painelCanais.js';
+import { getPainelSellerCanais, getRicardoEletroFM } from '../services/painelCanais.js';
 
 const INTERNAL_API_BASE =
   process.env.INTERNAL_API_BASE || `http://localhost:${process.env.PORT || 4100}`;
@@ -87,6 +87,20 @@ async function popularCachePeriodo({ key, datemin, datemax }) {
     } catch (e) {
       console.warn(`[canal-totals-cache] painel override falhou: ${e.message}`);
     }
+  }
+
+  // Ricardo Eletro (filiais 11/111) via fiscal-movement — fonte canônica.
+  // O analytics do /canais-totals-all usa só a op 5102 e subconta (ex: julho
+  // 370 em vez de 7.850). Vale pra qualquer período. Só sobrescreve se vier
+  // valor válido (>0); em falha/timeout preserva o que já estava.
+  try {
+    const re = await getRicardoEletroFM(datemin, datemax);
+    if (Number(re) > 0) {
+      res.segmentos.ricardoeletro = Number(re);
+      console.log(`[canal-totals-cache]   ⟳ RE fiscal-movement override: ${re}`);
+    }
+  } catch (e) {
+    console.warn(`[canal-totals-cache] RE override falhou: ${e.message}`);
   }
 
   const rows = [];
