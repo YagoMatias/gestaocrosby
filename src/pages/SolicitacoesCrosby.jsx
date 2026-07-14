@@ -332,6 +332,9 @@ const SolicitacoesCrosby = () => {
   const [motivoMassa, setMotivoMassa] = useState('');
   const [executandoMassa, setExecutandoMassa] = useState(false);
 
+  // Aba ativa: 'geral' (pagamento/reembolso/rh) | 'antigas' (compra/manutencao)
+  const [aba, setAba] = useState('geral');
+
   const [filtroStatus, setFiltroStatus] = useState('TODOS');
   const [filtroTipo, setFiltroTipo] = useState('TODOS');
   const [filtroSetor, setFiltroSetor] = useState('TODOS');
@@ -456,11 +459,23 @@ const SolicitacoesCrosby = () => {
   // Compra/Manutenção têm controle dedicado em /solicitacoes-crosby/compras-manutencao
   // — por isso, são excluídas da listagem geral por padrão.
   const TIPOS_OCULTOS_GERAL = ['compra', 'manutencao'];
+  // A aba "antigas" inverte o filtro: mostra justamente compra/manutencao.
   const solicitacoesGerais = useMemo(
     () =>
-      solicitacoes.filter(
-        (s) => !TIPOS_OCULTOS_GERAL.includes(s.tipo_solicitacao),
+      solicitacoes.filter((s) =>
+        aba === 'antigas'
+          ? TIPOS_OCULTOS_GERAL.includes(s.tipo_solicitacao)
+          : !TIPOS_OCULTOS_GERAL.includes(s.tipo_solicitacao),
       ),
+    [solicitacoes, aba],
+  );
+
+  // Contagem fixa da aba antigas (não muda com a aba ativa) — usada no badge.
+  const totalAntigas = useMemo(
+    () =>
+      solicitacoes.filter((s) =>
+        TIPOS_OCULTOS_GERAL.includes(s.tipo_solicitacao),
+      ).length,
     [solicitacoes],
   );
 
@@ -1387,6 +1402,47 @@ const SolicitacoesCrosby = () => {
         iconColor="text-[#000638]"
       />
 
+      {/* Abas */}
+      <div className="flex items-center gap-1 mb-3 border-b border-gray-200">
+        <button
+          onClick={() => {
+            setAba('geral');
+            setFiltroTipo('TODOS');
+            setFiltroStatus('TODOS');
+          }}
+          className={`px-4 py-2 text-sm font-bold transition-colors border-b-2 -mb-px ${
+            aba === 'geral'
+              ? 'border-[#000638] text-[#000638]'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Solicitações
+        </button>
+        <button
+          onClick={() => {
+            setAba('antigas');
+            setFiltroTipo('TODOS');
+            setFiltroStatus('TODOS');
+          }}
+          className={`px-4 py-2 text-sm font-bold transition-colors border-b-2 -mb-px flex items-center gap-1.5 ${
+            aba === 'antigas'
+              ? 'border-[#000638] text-[#000638]'
+              : 'border-transparent text-gray-500 hover:text-gray-700'
+          }`}
+        >
+          Solicitações Antigas
+          <span
+            className={`text-[10px] font-extrabold px-1.5 py-0.5 rounded-full ${
+              aba === 'antigas'
+                ? 'bg-[#000638] text-white'
+                : 'bg-gray-200 text-gray-600'
+            }`}
+          >
+            {totalAntigas}
+          </span>
+        </button>
+      </div>
+
       {/* Navegação para Compras & Manutenção */}
       <RouterLink
         to="/solicitacoes-crosby/compras-manutencao"
@@ -1513,9 +1569,18 @@ const SolicitacoesCrosby = () => {
             className="border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#000638] min-w-[130px] mb-4"
           >
             <option value="TODOS">Todos</option>
-            <option value="pagamento">Pagamento</option>
-            <option value="reembolso">Reembolso</option>
-            {canVerRH && <option value="rh">RH</option>}
+            {aba === 'antigas' ? (
+              <>
+                <option value="compra">Compra</option>
+                <option value="manutencao">Manutenção</option>
+              </>
+            ) : (
+              <>
+                <option value="pagamento">Pagamento</option>
+                <option value="reembolso">Reembolso</option>
+                {canVerRH && <option value="rh">RH</option>}
+              </>
+            )}
           </select>
         </div>
         <div className="flex flex-col">
