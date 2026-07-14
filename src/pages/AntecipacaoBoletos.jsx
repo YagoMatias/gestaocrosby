@@ -18,9 +18,6 @@ import {
 import { TotvsURL } from '../config/constants';
 import PageTitle from '../components/ui/PageTitle';
 
-// Filiais padrão pra buscar títulos (mesma lista do Portal de Títulos).
-const BRANCHES_PADRAO = [1, 2, 6, 100, 101, 99, 990, 200, 400, 4, 850, 85];
-
 function fmtBRL(v) {
   const n = Number(v);
   if (!Number.isFinite(n)) return '—';
@@ -131,8 +128,9 @@ export default function AntecipacaoBoletos() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          // Sem branchCodeList: busca por cliente traz os títulos de QUALQUER
+          // filial (ex: filial 65, que não estava na lista fixa antiga).
           filter: {
-            branchCodeList: BRANCHES_PADRAO,
             customerCodeList: [Number(code)],
             hasOpenInvoices: true,
             dischargeTypeList: [0],
