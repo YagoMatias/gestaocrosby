@@ -15,6 +15,7 @@ import {
   CheckCircle,
   WhatsappLogo,
   ArrowSquareOut,
+  Copy,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
@@ -38,19 +39,28 @@ const formatPhone = (v) => {
   return v;
 };
 
-const maskInput = (v) => {
-  const n = v.replace(/\D/g, '').slice(0, 14);
-  if (n.length <= 11)
-    return n
-      .replace(/(\d{3})(\d)/, '$1.$2')
-      .replace(/(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
-      .replace(/\.(\d{3})(\d)/, '.$1-$2');
-  return n
-    .replace(/(\d{2})(\d)/, '$1.$2')
-    .replace(/(\d{3})(\d)/, '$1.$2')
-    .replace(/(\d{3})(\d)/, '$1/$2')
-    .replace(/(\d{4})(\d)/, '$1-$2');
+// Traduções dos enums do TOTVS (vêm em inglês) para pt-BR.
+const GENERO = { Male: 'Masculino', Female: 'Feminino' };
+const ESTADO_CIVIL = {
+  Single: 'Solteiro(a)',
+  Married: 'Casado(a)',
+  Divorced: 'Divorciado(a)',
+  Widowed: 'Viúvo(a)',
+  Separated: 'Separado(a)',
+  StableUnion: 'União Estável',
+  CommonLaw: 'União Estável',
 };
+const traduzGenero = (g) =>
+  !g || g === 'NotInformed' ? null : GENERO[g] || g;
+const traduzEstadoCivil = (m) =>
+  !m || m === 'NotInformed' ? null : ESTADO_CIVIL[m] || m;
+
+// Cliente é BlueCred se tiver a classificação correspondente no TOTVS.
+const isBluecred = (c) =>
+  Array.isArray(c?.classifications) &&
+  c.classifications.some((cl) =>
+    /blue/i.test(`${cl?.name || ''} ${cl?.typeName || ''}`),
+  );
 
 // ─── sub-componentes ─────────────────────────────────────────────────────────
 function InfoRow({ label, value }) {
@@ -109,8 +119,13 @@ function ClientModal({ client, onClose, onSolicitar, solicitarLoading }) {
               <User size={18} className="text-blue-600" />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-[#000638] uppercase tracking-wide">
+              <h2 className="text-sm font-bold text-[#000638] uppercase tracking-wide flex items-center gap-2">
                 {client.name || '—'}
+                {isBluecred(client) && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[9px] font-bold tracking-normal">
+                    <IdentificationCard size={10} weight="fill" /> BlueCred
+                  </span>
+                )}
               </h2>
               {client.cpf && (
                 <p className="text-[10px] text-gray-400">
@@ -161,17 +176,10 @@ function ClientModal({ client, onClose, onSolicitar, solicitarLoading }) {
                     : null
                 }
               />
-              <InfoRow
-                label="Sexo"
-                value={client.gender !== 'NotInformed' ? client.gender : null}
-              />
+              <InfoRow label="Sexo" value={traduzGenero(client.gender)} />
               <InfoRow
                 label="Estado Civil"
-                value={
-                  client.maritalStatus !== 'NotInformed'
-                    ? client.maritalStatus
-                    : null
-                }
+                value={traduzEstadoCivil(client.maritalStatus)}
               />
               <InfoRow label="Nacionalidade" value={client.nationality} />
               <InfoRow label="Naturalidade" value={client.homeTown} />
@@ -308,6 +316,13 @@ function SuccessModal({ result, onClose }) {
   const signatario = doc?.signers?.[0];
   const linkAssinatura =
     signatario?.link?.short_link || signatario?.link?.url || null;
+  const [linkCopiado, setLinkCopiado] = useState(false);
+  const copiarLink = () => {
+    if (!linkAssinatura) return;
+    navigator.clipboard?.writeText(linkAssinatura);
+    setLinkCopiado(true);
+    setTimeout(() => setLinkCopiado(false), 1500);
+  };
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6 flex flex-col gap-4">
@@ -370,7 +385,26 @@ function SuccessModal({ result, onClose }) {
           antes de finalizar.
         </div>
 
-        <div className="flex gap-2 justify-end">
+        <div className="flex gap-2 justify-end flex-wrap">
+          {linkAssinatura && (
+            <button
+              type="button"
+              onClick={copiarLink}
+              className="flex items-center gap-1 text-xs text-[#000638] border border-[#000638]/30 px-4 py-2 rounded-lg hover:bg-[#000638]/5 transition-colors font-semibold"
+            >
+              {linkCopiado ? (
+                <>
+                  <CheckCircle size={13} weight="fill" className="text-green-600" />
+                  Copiado!
+                </>
+              ) : (
+                <>
+                  <Copy size={13} />
+                  Copiar link
+                </>
+              )}
+            </button>
+          )}
           {linkAssinatura && (
             <a
               href={linkAssinatura}
@@ -488,41 +522,97 @@ export default function DocumentoBluecred() {
     }
   };
 
-  const handleInput = (e) => setInputValue(maskInput(e.target.value));
+  const [detalheLoading, setDetalheLoading] = useState(false);
+
+  const handleInput = (e) => setInputValue(e.target.value);
+
+  // Detalhe completo (phones/emails/addresses/classifications) via CPF/CNPJ.
+  const buscarPorFiscal = async (digits) => {
+    const res = await fetch(
+      `${API_BASE_URL}/api/totvs/clientes/search-by-fiscal`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fiscalNumber: digits }),
+      },
+    );
+    const json = await res.json();
+    if (!json.success) throw new Error(json.message || 'Erro ao buscar cliente.');
+    return json.data?.items || [];
+  };
 
   const handleBuscar = async (e) => {
     e.preventDefault();
-    const clean = inputValue.replace(/\D/g, '');
-    if (clean.length !== 11 && clean.length !== 14) {
-      setErro(
-        'Informe um CPF válido (11 dígitos) ou CNPJ válido (14 dígitos).',
-      );
+    const q = inputValue.trim();
+    if (!q) {
+      setErro('Digite nome, CPF/CNPJ ou código do cliente.');
       return;
     }
     setLoading(true);
     setErro('');
     setClientes(null);
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/api/totvs/clientes/search-by-fiscal`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fiscalNumber: clean }),
-        },
-      );
-      const json = await res.json();
-      if (!json.success)
-        throw new Error(json.message || 'Erro ao buscar cliente.');
-      if (!json.data?.items?.length) {
-        setErro('Nenhum cliente encontrado com esse CPF/CNPJ.');
+      const digits = q.replace(/\D/g, '');
+      // CPF/CNPJ → detalhe completo direto (cards já com dados)
+      if (digits.length === 11 || digits.length === 14) {
+        const items = await buscarPorFiscal(digits);
+        if (!items.length) setErro('Nenhum cliente encontrado com esse CPF/CNPJ.');
+        else setClientes(items.map((it) => ({ ...it, _full: true })));
       } else {
-        setClientes(json.data.items);
+        // Nome ou código → busca básica (pes_pessoa). Detalhe é carregado ao abrir.
+        const params = new URLSearchParams();
+        if (/^\d+$/.test(q) && q.length <= 8) params.append('code', q);
+        else params.append('nome', q);
+        const res = await fetch(
+          `${API_BASE_URL}/api/totvs/clientes/search-name?${params.toString()}`,
+        );
+        const json = await res.json();
+        const lista = json?.data?.clientes || [];
+        if (!lista.length) setErro('Nenhum cliente encontrado.');
+        else
+          setClientes(
+            lista.map((c) => ({
+              code: c.code,
+              name: c.nm_pessoa,
+              fantasyName: c.fantasy_name,
+              cpf: c.cpf,
+              _full: false,
+            })),
+          );
       }
     } catch (err) {
       setErro(err.message || 'Erro ao conectar com a API.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Abre o modal — se o card não tem detalhe completo (busca por nome/código),
+  // busca a ficha completa por CPF antes.
+  const abrirCliente = async (c) => {
+    if (c._full) {
+      setModalClient(c);
+      return;
+    }
+    if (!c.cpf) {
+      setErro('Cliente sem CPF/CNPJ cadastrado — não é possível carregar a ficha.');
+      return;
+    }
+    setDetalheLoading(true);
+    setErro('');
+    try {
+      const items = await buscarPorFiscal(String(c.cpf).replace(/\D/g, ''));
+      if (!items.length) {
+        setErro('Não foi possível carregar os detalhes do cliente.');
+        return;
+      }
+      const full =
+        items.find((it) => Number(it.code) === Number(c.code)) || items[0];
+      setModalClient({ ...full, _full: true });
+    } catch (err) {
+      setErro(err.message || 'Erro ao carregar detalhes.');
+    } finally {
+      setDetalheLoading(false);
     }
   };
 
@@ -561,7 +651,7 @@ export default function DocumentoBluecred() {
   return (
     <div className="w-full max-w-4xl mx-auto flex flex-col items-stretch py-3 px-2 gap-4">
       <PageTitle
-        title="Documento Bluecred"
+        title="Documentos Bluecred"
         subtitle="Consulta e solicitação de documentação • Varejo"
         icon={FileText}
         iconColor="text-blue-600"
@@ -575,13 +665,13 @@ export default function DocumentoBluecred() {
         >
           <div className="flex-1">
             <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
-              CNPJ / CPF do cliente
+              Cliente (nome, CPF/CNPJ ou código)
             </label>
             <input
               type="text"
               value={inputValue}
               onChange={handleInput}
-              placeholder="000.000.000-00 ou 00.000.000/0000-00"
+              placeholder="Ex: João Silva  /  000.000.000-00  /  12345"
               className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-sm"
               autoFocus
             />
@@ -719,7 +809,7 @@ export default function DocumentoBluecred() {
       {/* Estado inicial */}
       {!loading && !clientes && !erro && (
         <div className="flex justify-center items-center py-16 text-gray-400 text-sm">
-          Informe o CNPJ ou CPF do cliente e clique em "Buscar".
+          Busque por nome, CPF/CNPJ ou código do cliente e clique em "Buscar".
         </div>
       )}
 
@@ -729,15 +819,25 @@ export default function DocumentoBluecred() {
           {clientes.map((c) => (
             <button
               key={c.code}
-              onClick={() => setModalClient(c)}
-              className="text-left bg-white border border-[#000638]/10 rounded-xl shadow-sm p-4 hover:ring-2 hover:ring-[#000638]/30 hover:shadow-md transition-all flex items-center gap-3"
+              onClick={() => abrirCliente(c)}
+              disabled={detalheLoading}
+              className="text-left bg-white border border-[#000638]/10 rounded-xl shadow-sm p-4 hover:ring-2 hover:ring-[#000638]/30 hover:shadow-md transition-all flex items-center gap-3 disabled:opacity-60"
             >
               <div className="p-2 rounded-full bg-blue-50 shrink-0">
-                <User size={22} className="text-blue-600" />
+                {detalheLoading ? (
+                  <Spinner size={22} className="animate-spin text-blue-600" />
+                ) : (
+                  <User size={22} className="text-blue-600" />
+                )}
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-bold text-[#000638] truncate">
+                <p className="text-sm font-bold text-[#000638] truncate flex items-center gap-1.5">
                   {c.name || '—'}
+                  {isBluecred(c) && (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[8px] font-bold shrink-0">
+                      BlueCred
+                    </span>
+                  )}
                 </p>
                 {c.fantasyName && c.fantasyName !== c.name && (
                   <p className="text-xs text-gray-500 truncate">
