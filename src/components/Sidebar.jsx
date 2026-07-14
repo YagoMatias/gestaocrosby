@@ -358,16 +358,24 @@ const varejo = [
     color: 'text-amber-600',
   },
   {
-    name: 'Documento Bluecred',
-    href: '/documento-bluecred',
-    icon: FileText,
+    name: 'Bluecred',
+    href: '#',
+    icon: CreditCard,
     color: 'text-blue-600',
-  },
-  {
-    name: 'Clientes Bluecred',
-    href: '/clientes-bluecred',
-    icon: ClipboardText,
-    color: 'text-blue-700',
+    children: [
+      {
+        name: 'Documentos Bluecred',
+        href: '/documento-bluecred',
+        icon: FileText,
+        color: 'text-blue-600',
+      },
+      {
+        name: 'Clientes Bluecred',
+        href: '/clientes-bluecred',
+        icon: ClipboardText,
+        color: 'text-blue-700',
+      },
+    ],
   },
 ];
 
