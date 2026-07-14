@@ -358,7 +358,7 @@ const varejo = [
     color: 'text-amber-600',
   },
   {
-    name: 'Bluecred',
+    name: 'BlueCred',
     href: '#',
     icon: CreditCard,
     color: 'text-blue-600',
