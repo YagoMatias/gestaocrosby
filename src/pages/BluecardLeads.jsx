@@ -818,9 +818,9 @@ function ListaAgrupada({ leads, atualizarStatus, sincronizarTotvs, setEditLead, 
             })()}
 
             {!colapsado && gLeads.length > 0 && (
-              <div className="bg-white rounded-2xl ring-1 ring-gray-200/70 overflow-hidden">
+              <div className="bg-white rounded-2xl ring-1 ring-gray-200/70 overflow-x-auto">
                 {/* Header de colunas — cliques ordenam */}
-                <div className="grid grid-cols-[28px_1.7fr_120px_140px_160px_110px_1fr_120px_70px_130px_110px_70px] items-center gap-2 px-5 py-3 text-[10px] font-medium uppercase tracking-wider text-gray-400 border-b border-gray-100">
+                <div className="grid min-w-[1500px] grid-cols-[28px_1.7fr_120px_140px_160px_110px_1fr_120px_70px_130px_110px_70px] items-center gap-2 px-5 py-3 text-[10px] font-medium uppercase tracking-wider text-gray-400 border-b border-gray-100">
                   <div></div>
                   <SortHeader label="Nome" sortKey="nome" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
                   <SortHeader label="Cod. Cliente" sortKey="cod_cliente" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
@@ -847,7 +847,7 @@ function ListaAgrupada({ leads, atualizarStatus, sincronizarTotvs, setEditLead, 
                     <div
                       key={l.id}
                       onClick={() => setEditLead(l)}
-                      className={`grid grid-cols-[28px_1.7fr_120px_140px_160px_110px_1fr_120px_70px_130px_110px_70px] items-center gap-2 px-5 py-3 transition-colors cursor-pointer ${
+                      className={`grid min-w-[1500px] grid-cols-[28px_1.7fr_120px_140px_160px_110px_1fr_120px_70px_130px_110px_70px] items-center gap-2 px-5 py-3 transition-colors cursor-pointer ${
                         isSel ? 'bg-blue-50/60' : 'hover:bg-blue-50/30'
                       } ${!isLast ? 'border-b border-gray-50' : ''}`}
                     >
