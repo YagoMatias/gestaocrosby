@@ -48,6 +48,9 @@ const AVAILABLE_PAGES = [
     name: 'Solicitações Crosby RH (dados sensíveis)',
     category: 'Principal',
   },
+  { path: '/crosby-bot', name: 'Crosby Bot', category: 'Principal' },
+  { path: '/dashboard', name: 'BI Externo (Dashboard)', category: 'Principal' },
+  { path: '/bi-externo', name: 'BI Externo', category: 'Principal' },
   { path: '/user-panel', name: 'Painel do Usuário', category: 'Principal' },
 
   // Financeiro
@@ -94,6 +97,11 @@ const AVAILABLE_PAGES = [
     category: 'Financeiro',
   },
   {
+    path: '/analise-renegociacao',
+    name: 'Análise de Renegociações',
+    category: 'Financeiro',
+  },
+  {
     path: '/batida-carteira',
     name: 'Batida de Carteira',
     category: 'Financeiro',
@@ -120,6 +128,19 @@ const AVAILABLE_PAGES = [
     name: 'Extratos Bancos',
     category: 'Financeiro',
   },
+  {
+    path: '/extrato-totvs',
+    name: 'Extrato TOTVS',
+    category: 'Financeiro',
+  },
+
+  // CMV
+  { path: '/cmv-consolidado', name: 'CMV Consolidado', category: 'CMV' },
+  { path: '/cmv-multimarcas', name: 'CMV Multimarcas', category: 'CMV' },
+  { path: '/cmv-revenda', name: 'CMV Revenda', category: 'CMV' },
+  { path: '/cmv-franquia', name: 'CMV Franquia', category: 'CMV' },
+  { path: '/cmv-varejo', name: 'CMV Varejo', category: 'CMV' },
+
   // Varejo
   { path: '/dashboard-varejo', name: 'Dashboard Varejo', category: 'Varejo' },
   { path: '/metas-varejo', name: 'Metas Varejo', category: 'Varejo' },
@@ -143,7 +164,43 @@ const AVAILABLE_PAGES = [
     category: 'Varejo',
   },
 
+  // Estoque
+  {
+    path: '/estoque/expedicao-showroom',
+    name: 'Expedição Franquias',
+    category: 'Estoque',
+  },
+
+  // Showroom
+  {
+    path: '/showroom',
+    name: 'Showroom — Pedidos (Wix)',
+    category: 'Showroom',
+  },
+
+  // Marketing
+  {
+    path: '/bluecard/leads',
+    name: 'BlueCard — Leads',
+    category: 'Marketing',
+  },
+  {
+    path: '/lp/bluecard',
+    name: 'BlueCard — Página Pública (LP)',
+    category: 'Marketing',
+  },
+
   // Multimarcas
+  {
+    path: '/dashboard-multimarcas',
+    name: 'Dashboard Multimarcas',
+    category: 'Multimarcas',
+  },
+  {
+    path: '/credev-multimarcas',
+    name: 'CREDEV Multimarcas',
+    category: 'Multimarcas',
+  },
   {
     path: '/inadimplentes-multimarcas',
     name: 'Inadimplentes Multimarcas',
@@ -172,12 +229,23 @@ const AVAILABLE_PAGES = [
 
   // Revenda
   {
+    path: '/dashboard-revenda',
+    name: 'Dashboard Revenda',
+    category: 'Revenda',
+  },
+  { path: '/credev-revenda', name: 'CREDEV Revenda', category: 'Revenda' },
+  {
     path: '/inadimplentes-revenda',
     name: 'Inadimplentes Revenda',
     category: 'Revenda',
   },
 
   // Franquias
+  {
+    path: '/dashboard-franquias',
+    name: 'Dashboard Franquias',
+    category: 'Franquias',
+  },
   {
     path: '/voucher-usage',
     name: 'Vouchers',
@@ -186,6 +254,12 @@ const AVAILABLE_PAGES = [
   {
     path: '/compras-franquias',
     name: 'Compras Franquias',
+    category: 'Franquias',
+  },
+  { path: '/credev', name: 'CREDEV', category: 'Franquias' },
+  {
+    path: '/credito-franquia',
+    name: 'Crédito Franquia',
     category: 'Franquias',
   },
   {
@@ -212,7 +286,22 @@ const AVAILABLE_PAGES = [
     name: 'Contas a Pagar Franquias',
     category: 'Minha Franquia',
   },
+  {
+    path: '/solicitacao-credito',
+    name: 'Solicitação de Crédito',
+    category: 'Minha Franquia',
+  },
+  {
+    path: '/renegociacao-dividas',
+    name: 'Renegociação de Dívidas',
+    category: 'Minha Franquia',
+  },
   { path: '/notas-fiscais', name: 'Notas Fiscais', category: 'Minha Franquia' },
+  {
+    path: '/extrato-credito',
+    name: 'Extrato de Crédito',
+    category: 'Minha Franquia',
+  },
   {
     path: '/aniversariantes-franquia',
     name: 'Aniversariantes',
@@ -290,6 +379,7 @@ const AVAILABLE_PAGES = [
   },
 
   // Outros
+  { path: '/widgets', name: 'Meus Widgets', category: 'Outros' },
   {
     path: '/ranking-faturamento',
     name: 'Ranking Faturamento',
@@ -298,6 +388,11 @@ const AVAILABLE_PAGES = [
 
   // Administração
   { path: '/painel-admin', name: 'Painel Admin', category: 'Administração' },
+  {
+    path: '/gerenciador-dashboards',
+    name: 'Gerenciador de Dashboards',
+    category: 'Administração',
+  },
   {
     path: '/gerenciador-acessos',
     name: 'Gerenciador de Acessos',

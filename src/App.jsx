@@ -17,6 +17,8 @@ import TabBar from './components/ContasPagarTabs/TabBar';
 import TabContainer from './components/ContasPagarTabs/TabContainer';
 // Lazy loading de todas as páginas para otimizar bundle
 const Home = lazy(() => import('./pages/Home'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const BIExterno = lazy(() => import('./pages/BIExterno'));
 const ContasAPagar = lazy(() => import('./pages/ContasAPagar'));
 const Emprestimos = lazy(() => import('./pages/Emprestimos'));
 const DespesaFilial = lazy(() => import('./pages/DespesaFilial'));
@@ -28,8 +30,12 @@ const BatidaCarteira = lazy(() => import('./pages/BatidaCarteira'));
 const ContasPagarFranquias = lazy(() => import('./pages/ContasPagarFranquias'));
 const TitulosClientes = lazy(() => import('./pages/TitulosClientes'));
 const TitulosClientesVarejo = lazy(() => import('./pages/TitulosClientesVarejo'));
+const SolicitacaoCredito = lazy(() => import('./pages/SolicitacaoCredito'));
 const AnaliseCredito = lazy(() => import('./pages/AnaliseCredito'));
+const RenegociacaoDividas = lazy(() => import('./pages/RenegociacaoDividas'));
+const AnaliseRenegociacao = lazy(() => import('./pages/AnaliseRenegociacao'));
 const NotasFiscais = lazy(() => import('./pages/NotasFiscais'));
+const ExtratoCredito = lazy(() => import('./pages/ExtratoCredito'));
 const AniversariantesFranquia = lazy(
   () => import('./pages/AniversariantesFranquia'),
 );
@@ -41,8 +47,12 @@ const RankingComprasFranquias = lazy(
   () => import('./pages/RankingComprasFranquias'),
 );
 const ComprasFranquias = lazy(() => import('./pages/ComprasFranquias'));
+const Credev = lazy(() => import('./pages/Credev'));
+const CreditoFranquia = lazy(() => import('./pages/CreditoFranquia'));
 const CreditosClientes = lazy(() => import('./pages/CreditosClientes'));
+const CredevRevenda = lazy(() => import('./pages/CredevRevenda'));
 const CredevVarejo = lazy(() => import('./pages/CredevVarejo'));
+const CredevMultimarcas = lazy(() => import('./pages/CredevMultimarcas'));
 const PainelAdmin = lazy(() => import('./pages/PainelAdmin'));
 const UserPanel = lazy(() => import('./pages/UserPanel'));
 const ExtratosBancos = lazy(() => import('./pages/ExtratosBancos'));
@@ -51,7 +61,15 @@ const PMR = lazy(() => import('./pages/DashboardPMR'));
 const DashContasAReceber = lazy(() => import('./pages/DashContasAReceber'));
 const DashContasAPagar = lazy(() => import('./pages/DashContasAPagar'));
 const DashInadimplencia = lazy(() => import('./pages/DashInadimplencia'));
+const CMVConsolidado = lazy(() => import('./pages/CMVConsolidado'));
+const CMVMultimarcas = lazy(() => import('./pages/CMVMultimarcas'));
+const CMVRevenda = lazy(() => import('./pages/CMVRevenda'));
+const CMVFranquia = lazy(() => import('./pages/CMVFranquia'));
 const DashboardVarejo = lazy(() => import('./pages/DashboardVarejo'));
+const DashboardMultimarcas = lazy(() => import('./pages/DashboardMultimarcas'));
+const DashboardFranquias = lazy(() => import('./pages/DashboardFranquias'));
+const DashboardRevenda = lazy(() => import('./pages/DashboardRevenda'));
+const CrosbyBot = lazy(() => import('./pages/CrosbyBot'));
 const InadimplentesMultimarcas = lazy(
   () => import('./pages/InadimplentesMultimarcas'),
 );
@@ -60,9 +78,14 @@ const InadimplentesFranquias = lazy(
   () => import('./pages/InadimplentesFranquias'),
 );
 const RecuperacaoCredito = lazy(() => import('./pages/RecuperacaoCredito'));
+const CMVVarejo = lazy(() => import('./pages/CMVVarejo'));
 const DRE = lazy(() => import('./pages/DRE'));
+const GerenciadorDashboards = lazy(
+  () => import('./pages/GerenciadorDashboards'),
+);
 const GerenciadorAcessos = lazy(() => import('./pages/GerenciadorAcessos'));
 const GerenciadorAvisos = lazy(() => import('./pages/GerenciadorAvisos'));
+const Widgets = lazy(() => import('./pages/Widgets'));
 const ConsultaCliente = lazy(() => import('./pages/ConsultaCliente'));
 const ClientesTotvs = lazy(() => import('./pages/ClientesTotvs'));
 const SolicitacaoBaixa = lazy(() => import('./pages/SolicitacaoBaixa'));
@@ -93,6 +116,9 @@ const ApresentacaoForecast = lazy(() => import('./pages/ApresentacaoForecast'));
 const CrosbyForm = lazy(() => import('./crosby/CrosbyForm'));
 const CrosbyFormIndicacao = lazy(() => import('./crosby/CrosbyFormIndicacao'));
 const CrosbyObrigado = lazy(() => import('./crosby/CrosbyObrigado'));
+const BluecardLeads = lazy(() => import('./pages/BluecardLeads'));
+const Showroom = lazy(() => import('./pages/Showroom'));
+const ExpedicaoShowroom = lazy(() => import('./pages/ExpedicaoShowroom'));
 const FaturamentoHistorico = lazy(() => import('./pages/FaturamentoHistorico'));
 const DashboardVendas = lazy(() => import('./pages/DashboardVendas'));
 const Forecast = lazy(() => import('./pages/Forecast'));
@@ -104,6 +130,7 @@ const CotacaoCompras = lazy(() => import('./pages/CotacaoCompras'));
 const ClientesPorEmpresa = lazy(() => import('./pages/ClientesPorEmpresa'));
 const CriarVouchers = lazy(() => import('./pages/CriarVouchers'));
 const ApiClaude = lazy(() => import('./pages/ApiClaude'));
+const Estoque = lazy(() => import('./pages/Estoque'));
 const PainelVendas = lazy(() => import('./pages/PainelVendas'));
 const CRMVendas = lazy(() => import('./pages/CRMVendas'));
 const FaturamentoCanal = lazy(() => import('./pages/FaturamentoCanal'));
@@ -113,6 +140,7 @@ const VoucherVarejo = lazy(() => import('./pages/VoucherVarejo'));
 const Promocoes = lazy(() => import('./pages/Promocoes'));
 const CatalogoAdmin = lazy(() => import('./pages/CatalogoAdmin'));
 const CrosbyManage = lazy(() => import('./pages/CrosbyManage'));
+const ExtratoTotvs = lazy(() => import('./pages/ExtratoTotvs'));
 const TopClientes = lazy(() => import('./pages/TopClientes'));
 const DocumentoBluecred = lazy(() => import('./pages/DocumentoBluecred'));
 const ClientesBluecred = lazy(() => import('./pages/ClientesBluecred'));
@@ -143,6 +171,9 @@ PageLoadingFallback.displayName = 'PageLoadingFallback';
 
 // Lista de rotas protegidas (constante estática no módulo)
 const protectedRoutes = [
+  { path: '/bluecard/leads', component: BluecardLeads },
+  { path: '/showroom', component: Showroom },
+  { path: '/estoque/expedicao-showroom', component: ExpedicaoShowroom },
   { path: '/forecast/faturamento-historico', component: Forecast },
   { path: '/dashboard-vendas', component: Forecast },
   { path: '/tecnologia/controle-chip', component: ControleChips },
@@ -154,10 +185,15 @@ const protectedRoutes = [
   { path: '/tecnologia/cotacao-compras', component: CotacaoCompras },
   { path: '/tecnologia/clientes-por-empresa', component: ClientesPorEmpresa },
   { path: '/tecnologia/criar-vouchers', component: CriarVouchers },
+  { path: '/gerenciador-dashboards', component: GerenciadorDashboards },
+  { path: '/widgets', component: Widgets },
+
   { path: '/dash-contas-a-receber', component: DashContasAReceber },
   { path: '/dash-inadimplencia', component: DashInadimplencia },
   { path: '/pmr', component: PMR },
   { path: '/home', component: Home },
+  { path: '/dashboard', component: Dashboard },
+  { path: '/bi-externo', component: BIExterno },
   { path: '/contas-a-pagar', component: ContasAPagar },
   { path: '/dash-contas-a-pagar', component: DashContasAPagar },
   { path: '/pagamentos-fabricas', component: PagamentosFabricas },
@@ -172,23 +208,40 @@ const protectedRoutes = [
   { path: '/contas-pagar-franquias', component: ContasPagarFranquias },
   { path: '/titulos-clientes', component: TitulosClientes },
   { path: '/titulos-clientes-varejo', component: TitulosClientesVarejo },
+  { path: '/solicitacao-credito', component: SolicitacaoCredito },
   { path: '/analise-credito', component: AnaliseCredito },
+  { path: '/renegociacao-dividas', component: RenegociacaoDividas },
+  { path: '/analise-renegociacao', component: AnaliseRenegociacao },
   { path: '/notas-fiscais', component: NotasFiscais },
   { path: '/consulta-nfs', component: ConsultaNFs },
   { path: '/atividade-clientes', component: AtividadeClientes },
   { path: '/extratos-bancos', component: ExtratosBancos },
+  { path: '/extrato-credito', component: ExtratoCredito },
   { path: '/aniversariantes-franquia', component: AniversariantesFranquia },
   { path: '/metas-varejo', component: MetasVarejo },
   { path: '/ranking-faturamento', component: RankingFaturamento },
   { path: '/ranking-compras-franquias', component: RankingComprasFranquias },
+  { path: '/cmv-consolidado', component: CMVConsolidado },
+  { path: '/cmv-multimarcas', component: CMVMultimarcas },
+  { path: '/cmv-revenda', component: CMVRevenda },
+  { path: '/cmv-franquia', component: CMVFranquia },
+  { path: '/cmv-varejo', component: CMVVarejo },
   { path: '/dre', component: DRE },
   { path: '/compras-franquias', component: ComprasFranquias },
+  { path: '/credev', component: Credev },
+  { path: '/credito-franquia', component: CreditoFranquia },
+  { path: '/credev-revenda', component: CredevRevenda },
   { path: '/credev-varejo', component: CredevVarejo },
+  { path: '/credev-multimarcas', component: CredevMultimarcas },
   { path: '/inadimplentes-multimarcas', component: InadimplentesMultimarcas },
   { path: '/inadimplentes-revenda', component: InadimplentesRevenda },
   { path: '/inadimplentes-franquias', component: InadimplentesFranquias },
   { path: '/recuperacao-credito', component: RecuperacaoCredito },
   { path: '/dashboard-varejo', component: DashboardVarejo },
+  { path: '/dashboard-multimarcas', component: DashboardMultimarcas },
+  { path: '/dashboard-franquias', component: DashboardFranquias },
+  { path: '/dashboard-revenda', component: DashboardRevenda },
+  { path: '/crosby-bot', component: CrosbyBot },
   { path: '/painel-admin', component: PainelAdmin },
   { path: '/gerenciador-acessos', component: GerenciadorAcessos },
   { path: '/gerenciador-avisos', component: GerenciadorAvisos },
@@ -219,6 +272,7 @@ const protectedRoutes = [
   { path: '/clientes-mtm', component: ClientesMTM },
   { path: '/analise-credito-mtm', component: AnaliseCreditoMultimarcas },
   { path: '/api-claude', component: ApiClaude },
+  { path: '/estoque', component: Estoque },
   { path: '/painel-vendas', component: PainelVendas },
   { path: '/crm-vendas', component: CRMVendas },
   { path: '/forecast', component: Forecast },
@@ -232,6 +286,7 @@ const protectedRoutes = [
   { path: '/promocoes', component: Promocoes },
   { path: '/catalogo-admin', component: CatalogoAdmin },
   { path: '/crosby-manage', component: CrosbyManage },
+  { path: '/extrato-totvs', component: ExtratoTotvs },
   { path: '/solicitacoes-crosby', component: SolicitacoesCrosby },
   {
     path: '/solicitacoes-crosby/compras-manutencao',
