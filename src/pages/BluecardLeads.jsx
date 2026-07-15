@@ -243,9 +243,9 @@ export default function BluecardLeads() {
 
   const exportarCsv = () => {
     if (!leads.length) return;
-    const headers = ['ID', 'Criado em', 'Status', 'Indicado por', 'Nome', 'CVV', 'Rastreio', 'Email', 'CPF', 'WhatsApp', 'Empresa', 'Instagram', 'Data Nasc.', 'CEP', 'Endereço', 'Nº', 'Complemento', 'Cidade', 'Estado', 'Observação'];
+    const headers = ['ID', 'Criado em', 'Status', 'Indicado por', 'Nome', 'CVV', 'Rastreio', 'Data Envio', 'Email', 'CPF', 'WhatsApp', 'Empresa', 'Instagram', 'Data Nasc.', 'CEP', 'Endereço', 'Nº', 'Complemento', 'Cidade', 'Estado', 'Observação'];
     const rows = leads.map((l) => [
-      l.id, fmtDate(l.criado_em), l.status, l.indicado_por || '', l.nome, l.cvv || '', l.codigo_rastreio || '', l.email, fmtCPF(l.cpf), fmtPhone(l.whatsapp),
+      l.id, fmtDate(l.criado_em), l.status, l.indicado_por || '', l.nome, l.cvv || '', l.codigo_rastreio || '', l.data_envio || '', l.email, fmtCPF(l.cpf), fmtPhone(l.whatsapp),
       l.empresa || '', l.instagram || '', l.data_nasc || '', l.cep || '', l.endereco || '', l.numero || '', l.complemento || '', l.cidade || '', l.estado || '', l.observacao || '',
     ]);
     const csv = [headers, ...rows]
@@ -688,6 +688,7 @@ const SORT_COMPARATORS = {
   instagram:   (a, b) => String(a.instagram || '').localeCompare(String(b.instagram || ''), 'pt-BR'),
   cvv:         (a, b) => Number(a.cvv || 0) - Number(b.cvv || 0),
   codigo_rastreio: (a, b) => String(a.codigo_rastreio || '').localeCompare(String(b.codigo_rastreio || '')),
+  data_envio:  (a, b) => String(a.data_envio || '').localeCompare(String(b.data_envio || '')),
   criado_em:   (a, b) => String(a.criado_em || '').localeCompare(String(b.criado_em || '')),
 };
 
@@ -819,7 +820,7 @@ function ListaAgrupada({ leads, atualizarStatus, sincronizarTotvs, setEditLead, 
             {!colapsado && gLeads.length > 0 && (
               <div className="bg-white rounded-2xl ring-1 ring-gray-200/70 overflow-hidden">
                 {/* Header de colunas — cliques ordenam */}
-                <div className="grid grid-cols-[28px_1.7fr_120px_140px_160px_110px_1fr_120px_70px_130px_70px] items-center gap-2 px-5 py-3 text-[10px] font-medium uppercase tracking-wider text-gray-400 border-b border-gray-100">
+                <div className="grid grid-cols-[28px_1.7fr_120px_140px_160px_110px_1fr_120px_70px_130px_110px_70px] items-center gap-2 px-5 py-3 text-[10px] font-medium uppercase tracking-wider text-gray-400 border-b border-gray-100">
                   <div></div>
                   <SortHeader label="Nome" sortKey="nome" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
                   <SortHeader label="Cod. Cliente" sortKey="cod_cliente" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
@@ -830,6 +831,7 @@ function ListaAgrupada({ leads, atualizarStatus, sincronizarTotvs, setEditLead, 
                   <SortHeader label="Instagram" sortKey="instagram" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
                   <SortHeader label="CVV" sortKey="cvv" sortBy={sortBy} sortDir={sortDir} onSort={onSort} align="center" />
                   <SortHeader label="Rastreio" sortKey="codigo_rastreio" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
+                  <SortHeader label="Envio" sortKey="data_envio" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
                   <div></div>
                 </div>
 
@@ -845,7 +847,7 @@ function ListaAgrupada({ leads, atualizarStatus, sincronizarTotvs, setEditLead, 
                     <div
                       key={l.id}
                       onClick={() => setEditLead(l)}
-                      className={`grid grid-cols-[28px_1.7fr_120px_140px_160px_110px_1fr_120px_70px_130px_70px] items-center gap-2 px-5 py-3 transition-colors cursor-pointer ${
+                      className={`grid grid-cols-[28px_1.7fr_120px_140px_160px_110px_1fr_120px_70px_130px_110px_70px] items-center gap-2 px-5 py-3 transition-colors cursor-pointer ${
                         isSel ? 'bg-blue-50/60' : 'hover:bg-blue-50/30'
                       } ${!isLast ? 'border-b border-gray-50' : ''}`}
                     >
@@ -944,6 +946,11 @@ function ListaAgrupada({ leads, atualizarStatus, sincronizarTotvs, setEditLead, 
                         {l.codigo_rastreio || <span className="text-gray-300">—</span>}
                       </div>
 
+                      {/* Data de envio */}
+                      <div className="text-[12px] text-gray-600 tabular-nums">
+                        {l.data_envio ? new Date(l.data_envio).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : <span className="text-gray-300">—</span>}
+                      </div>
+
                       {/* Ações — só aparecem no hover, mais discreto */}
                       <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 hover:opacity-100">
                         <select
@@ -1021,6 +1028,7 @@ function DetalhesModal({ lead, onClose, onSaved, onSyncTotvs }) {
     indicado_por: lead.indicado_por || '',
     cvv: lead.cvv || '',
     codigo_rastreio: lead.codigo_rastreio || '',
+    data_envio: lead.data_envio || '',
     observacao: lead.observacao || '',
   });
   const [salvando, setSalv] = useState(false);
@@ -1293,14 +1301,23 @@ function DetalhesModal({ lead, onClose, onSaved, onSyncTotvs }) {
                 mono
               />
             </div>
-            <CampoEdit
-              label="Código de rastreio"
-              value={form.codigo_rastreio}
-              onChange={(v) => setField('codigo_rastreio', v)}
-              placeholder="Ex: AA123456789BR"
-              mono
-              icon={Truck}
-            />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <CampoEdit
+                label="Código de rastreio"
+                value={form.codigo_rastreio}
+                onChange={(v) => setField('codigo_rastreio', v)}
+                placeholder="Ex: AA123456789BR"
+                mono
+                icon={Truck}
+              />
+              <CampoEdit
+                label="Data de envio"
+                type="date"
+                value={form.data_envio}
+                onChange={(v) => setField('data_envio', v)}
+                icon={Calendar}
+              />
+            </div>
           </fieldset>
 
           {/* Integração TOTVS — apenas leitura */}
