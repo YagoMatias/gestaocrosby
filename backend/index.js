@@ -18,6 +18,7 @@ import filaRoutes from './routes/fila.routes.js';
 import forecastRoutes from './routes/forecast.routes.js';
 import bluecardRoutes from './routes/bluecard.routes.js';
 import wixRoutes from './routes/wix.routes.js';
+import expedicaoShowroomRoutes from './routes/expedicaoShowroom.routes.js';
 import faturamentoHistoricoRoutes from './routes/faturamentoHistorico.routes.js';
 import faturamentoTransacaoRoutes from './routes/faturamentoTransacao.routes.js';
 import techRoutes from './routes/tech.routes.js';
@@ -124,6 +125,7 @@ app.use('/api/fila', filaRoutes); // Fila da Vez (varejo) — admin + público (
 app.use('/api/forecast', forecastRoutes); // Forecast — Promessa Semanal por Canal
 app.use('/api/bluecard', bluecardRoutes); // BlueCard — leads da LP /lp/bluecard
 app.use('/api/wix', wixRoutes); // Wix — sync de pedidos do e-commerce
+app.use('/api/expedicao-showroom', expedicaoShowroomRoutes); // Expedição Showroom — controle envios
 app.use('/api/faturamento-historico', faturamentoHistoricoRoutes); // Faturamento histórico diário por canal
 app.use('/api/faturamento-transacao', faturamentoTransacaoRoutes); // Faturamento histórico por NF (transação)
 app.use('/api/tech', techRoutes); // Tecnologia — Controle de chips, etc
