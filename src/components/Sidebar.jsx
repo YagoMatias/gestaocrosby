@@ -920,7 +920,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           isActive={pathname === '/home'}
         />
 
-        {/* Seção Solicitações Crosby */}
+        {/* Seção Solicitaçõ Crosby */}
         <MenuSection
           {...menuProps}
           title="Solicitações Crosby"
