@@ -385,26 +385,45 @@ function SuccessModal({ result, onClose }) {
           antes de finalizar.
         </div>
 
+        {/* Link do contrato — visível e copiável */}
+        {linkAssinatura && (
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+              Link do contrato
+            </span>
+            <div className="flex gap-1.5">
+              <input
+                type="text"
+                readOnly
+                value={linkAssinatura}
+                onClick={(e) => e.target.select()}
+                onFocus={(e) => e.target.select()}
+                title="Clique para selecionar todo o link"
+                className="flex-1 min-w-0 border border-[#000638]/20 rounded-lg px-3 py-2 bg-gray-50 text-xs font-mono text-[#000638] focus:outline-none focus:ring-2 focus:ring-[#000638] cursor-pointer"
+              />
+              <button
+                type="button"
+                onClick={copiarLink}
+                title="Copiar link do contrato"
+                className="flex items-center gap-1 shrink-0 text-xs px-3 py-2 rounded-lg font-semibold transition-colors border border-[#000638]/30 text-[#000638] hover:bg-[#000638]/5"
+              >
+                {linkCopiado ? (
+                  <>
+                    <CheckCircle size={13} weight="fill" className="text-green-600" />
+                    Copiado!
+                  </>
+                ) : (
+                  <>
+                    <Copy size={13} />
+                    Copiar
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="flex gap-2 justify-end flex-wrap">
-          {linkAssinatura && (
-            <button
-              type="button"
-              onClick={copiarLink}
-              className="flex items-center gap-1 text-xs text-[#000638] border border-[#000638]/30 px-4 py-2 rounded-lg hover:bg-[#000638]/5 transition-colors font-semibold"
-            >
-              {linkCopiado ? (
-                <>
-                  <CheckCircle size={13} weight="fill" className="text-green-600" />
-                  Copiado!
-                </>
-              ) : (
-                <>
-                  <Copy size={13} />
-                  Copiar link
-                </>
-              )}
-            </button>
-          )}
           {linkAssinatura && (
             <a
               href={linkAssinatura}
