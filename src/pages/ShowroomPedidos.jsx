@@ -61,9 +61,14 @@ const fmtDateOnly = (iso) => {
 };
 
 const HOJE = new Date().toISOString().slice(0, 10);
-const MES_INI = (() => {
+// Janela padrão de 12 meses. Antes o padrão era o 1º dia do mês corrente, o que
+// escondia todos os pedidos (e marcações de vendedor) dos meses anteriores —
+// dava a impressão de que os dados tinham sumido. 12 meses mostra o histórico
+// todo hoje e continua sensato conforme a base cresce.
+const JANELA_INI = (() => {
   const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
+  d.setDate(d.getDate() - 365);
+  return d.toISOString().slice(0, 10);
 })();
 
 export default function ShowroomPedidos() {
@@ -73,7 +78,7 @@ export default function ShowroomPedidos() {
   const [syncing, setSyncing] = useState(false);
   const [erro, setErro] = useState('');
   const [filtros, setFiltros] = useState({
-    datemin: MES_INI,
+    datemin: JANELA_INI,
     datemax: HOJE,
     status: '',
     busca: '',
