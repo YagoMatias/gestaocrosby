@@ -336,9 +336,14 @@ function SuccessModal({ result, onClose }) {
   const { document: doc, cliente } = result;
   const apenasLink = result?.apenas_link === true;
   const classif = result?.classificacao_bluecred || null;
-  const signatario = doc?.signers?.[0];
+  // O backend já devolve o link pronto em link_assinatura. Fallback: cava no
+  // documento (Autentique usa "signatures"; "signers" é legado).
+  const signatario = doc?.signatures?.[0] || doc?.signers?.[0];
   const linkAssinatura =
-    signatario?.link?.short_link || signatario?.link?.url || null;
+    result?.link_assinatura ||
+    signatario?.link?.short_link ||
+    signatario?.link?.url ||
+    null;
   const [linkCopiado, setLinkCopiado] = useState(false);
   const copiarLink = () => {
     if (!linkAssinatura) return;
