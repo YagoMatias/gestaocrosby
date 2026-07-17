@@ -335,6 +335,7 @@ function ClientModal({ client, onClose, onSolicitar, solicitarLoading, gerarLink
 function SuccessModal({ result, onClose }) {
   const { document: doc, cliente } = result;
   const apenasLink = result?.apenas_link === true;
+  const classif = result?.classificacao_bluecred || null;
   const signatario = doc?.signers?.[0];
   const linkAssinatura =
     signatario?.link?.short_link || signatario?.link?.url || null;
@@ -417,6 +418,42 @@ function SuccessModal({ result, onClose }) {
             </>
           )}
         </div>
+
+        {/* Classificação BlueCred no TOTVS */}
+        {classif && classif.status === 'aplicada' && (
+          <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-4 py-2.5 text-xs text-green-700">
+            <CheckCircle size={16} weight="fill" className="text-green-600 shrink-0" />
+            Cliente classificado como <strong>BlueCred</strong> no TOTVS.
+          </div>
+        )}
+        {classif && classif.status === 'ja_bluecred' && (
+          <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-4 py-2.5 text-xs text-gray-600">
+            <CheckCircle size={16} weight="fill" className="text-gray-400 shrink-0" />
+            Cliente já era <strong>BlueCred</strong> no TOTVS.
+          </div>
+        )}
+        {classif && classif.status === 'conflito' && (
+          <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 text-xs text-amber-800">
+            <WarningCircle size={16} weight="fill" className="text-amber-500 shrink-0 mt-0.5" />
+            <span>
+              Cliente já tem a classificação varejo{' '}
+              <strong>{classif.atual_nome}</strong> no TOTVS. Como esse tipo é
+              único, ele <strong>não</strong> foi marcado como BlueCred
+              automaticamente. Para substituir por BlueCred, é preciso trocar{' '}
+              <strong>manualmente no TOTVS</strong> (a API não permite a troca).
+            </span>
+          </div>
+        )}
+        {classif && classif.status === 'erro' && (
+          <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 text-xs text-amber-800">
+            <WarningCircle size={16} weight="fill" className="text-amber-500 shrink-0 mt-0.5" />
+            <span>
+              Não foi possível classificar como BlueCred no TOTVS
+              {classif.erro ? `: ${classif.erro}` : '.'} O contrato foi gerado
+              normalmente.
+            </span>
+          </div>
+        )}
 
         {/* Link do contrato — visível e copiável */}
         {linkAssinatura && (
