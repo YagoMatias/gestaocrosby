@@ -16,6 +16,7 @@ import {
   WhatsappLogo,
   ArrowSquareOut,
   Copy,
+  LinkSimple,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
@@ -74,7 +75,7 @@ function InfoRow({ label, value }) {
   );
 }
 
-function ClientModal({ client, onClose, onSolicitar, solicitarLoading }) {
+function ClientModal({ client, onClose, onSolicitar, solicitarLoading, gerarLinkLoading }) {
   const phones = client.phones || [];
   const emails = client.emails || [];
   const addresses = client.addresses || [];
@@ -285,10 +286,30 @@ function ClientModal({ client, onClose, onSolicitar, solicitarLoading }) {
         </div>
 
         {/* Footer */}
-        <div className="border-t px-5 py-3 flex justify-end">
+        <div className="border-t px-5 py-3 flex justify-end gap-2 flex-wrap">
+          {/* Só gera o link do contrato (não envia por WhatsApp) */}
           <button
-            onClick={() => onSolicitar(client)}
-            disabled={solicitarLoading}
+            onClick={() => onSolicitar(client, true)}
+            disabled={solicitarLoading || gerarLinkLoading}
+            title="Gera o contrato e devolve o link pra copiar, sem enviar ao cliente"
+            className="flex items-center gap-2 border border-[#000638]/30 text-[#000638] px-5 py-2 rounded-lg hover:bg-[#000638]/5 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-xs font-bold uppercase tracking-wide"
+          >
+            {gerarLinkLoading ? (
+              <>
+                <Spinner size={14} className="animate-spin" />
+                Gerando...
+              </>
+            ) : (
+              <>
+                <LinkSimple size={14} />
+                Gerar link
+              </>
+            )}
+          </button>
+          {/* Gera + envia (WhatsApp Meta ou Autentique) */}
+          <button
+            onClick={() => onSolicitar(client, false)}
+            disabled={solicitarLoading || gerarLinkLoading}
             className="flex items-center gap-2 bg-[#000638] text-white px-5 py-2 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-xs font-bold uppercase tracking-wide shadow-md"
           >
             {solicitarLoading ? (
@@ -299,7 +320,7 @@ function ClientModal({ client, onClose, onSolicitar, solicitarLoading }) {
             ) : (
               <>
                 <ClipboardText size={14} />
-                Solicitar Documentação
+                Solicitar e enviar
               </>
             )}
           </button>
@@ -313,6 +334,7 @@ function ClientModal({ client, onClose, onSolicitar, solicitarLoading }) {
 // ─── Modal de sucesso do Termo de Crédito ───────────────────────────────────
 function SuccessModal({ result, onClose }) {
   const { document: doc, cliente } = result;
+  const apenasLink = result?.apenas_link === true;
   const signatario = doc?.signers?.[0];
   const linkAssinatura =
     signatario?.link?.short_link || signatario?.link?.url || null;
@@ -332,7 +354,7 @@ function SuccessModal({ result, onClose }) {
           </div>
           <div>
             <h2 className="text-base font-bold text-[#000638]">
-              Termo enviado!
+              {apenasLink ? 'Link gerado!' : 'Termo enviado!'}
             </h2>
             <p className="text-xs text-gray-500">
               Documento criado na Autentique
@@ -379,10 +401,21 @@ function SuccessModal({ result, onClose }) {
         </div>
 
         <div className="bg-blue-50 rounded-lg px-4 py-3 text-xs text-blue-700 leading-relaxed">
-          O cliente receberá o Termo de Crédito via WhatsApp e precisará
-          realizar a verificação com <strong>selfie + documento</strong>. Um
-          funcionário da Crosby precisará <strong>aprovar manualmente</strong>{' '}
-          antes de finalizar.
+          {apenasLink ? (
+            <>
+              Contrato gerado <strong>sem envio</strong>. Copie o link abaixo e
+              compartilhe com o cliente. Ele precisará assinar com{' '}
+              <strong>selfie + documento</strong> e um funcionário da Crosby
+              <strong> aprova manualmente</strong> antes de finalizar.
+            </>
+          ) : (
+            <>
+              O cliente receberá o Termo de Crédito via WhatsApp e precisará
+              realizar a verificação com <strong>selfie + documento</strong>. Um
+              funcionário da Crosby precisará <strong>aprovar manualmente</strong>{' '}
+              antes de finalizar.
+            </>
+          )}
         </div>
 
         {/* Link do contrato — visível e copiável */}
@@ -454,6 +487,7 @@ export default function DocumentoBluecred() {
   const [clientes, setClientes] = useState(null);
   const [modalClient, setModalClient] = useState(null);
   const [solicitarLoading, setSolicitarLoading] = useState(false);
+  const [gerarLinkLoading, setGerarLinkLoading] = useState(false);
   const [solicitarResult, setSolicitarResult] = useState(null);
   const [solicitarErro, setSolicitarErro] = useState('');
 
@@ -635,8 +669,10 @@ export default function DocumentoBluecred() {
     }
   };
 
-  const handleSolicitar = async (client) => {
-    setSolicitarLoading(true);
+  // apenasLink=true → só gera o contrato e devolve o link (não envia WhatsApp).
+  const handleSolicitar = async (client, apenasLink = false) => {
+    const setLoading = apenasLink ? setGerarLinkLoading : setSolicitarLoading;
+    setLoading(true);
     setSolicitarErro('');
     setSolicitarResult(null);
     try {
@@ -647,8 +683,12 @@ export default function DocumentoBluecred() {
         '';
       const body = { fiscalNumber };
       if (telPrimario) body.phone = telPrimario;
-      if (selectedAccountId) body.accountId = selectedAccountId;
-      if (templateName?.trim()) body.templateName = templateName.trim();
+      if (apenasLink) {
+        body.apenasLink = true; // não envia — só devolve o link
+      } else {
+        if (selectedAccountId) body.accountId = selectedAccountId;
+        if (templateName?.trim()) body.templateName = templateName.trim();
+      }
 
       const res = await fetch(`${API_BASE_URL}/api/autentique/termo-credito`, {
         method: 'POST',
@@ -661,9 +701,9 @@ export default function DocumentoBluecred() {
       }
       setSolicitarResult(json.data);
     } catch (err) {
-      setSolicitarErro(err.message || 'Erro ao enviar o termo de crédito.');
+      setSolicitarErro(err.message || 'Erro ao gerar o termo de crédito.');
     } finally {
-      setSolicitarLoading(false);
+      setLoading(false);
     }
   };
 
@@ -879,6 +919,7 @@ export default function DocumentoBluecred() {
           onClose={() => setModalClient(null)}
           onSolicitar={handleSolicitar}
           solicitarLoading={solicitarLoading}
+          gerarLinkLoading={gerarLinkLoading}
         />
       )}
 
