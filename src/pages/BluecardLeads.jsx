@@ -67,6 +67,15 @@ function fmtPhone(s) {
   if (d.length === 10) return d.replace(/(\d{2})(\d{4})(\d{4})/, '($1) $2-$3');
   return s;
 }
+function fmtMoeda(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '—';
+  return n.toLocaleString('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    minimumFractionDigits: 2,
+  });
+}
 
 export default function BluecardLeads() {
   const [leads, setLeads] = useState([]);
@@ -243,9 +252,11 @@ export default function BluecardLeads() {
 
   const exportarCsv = () => {
     if (!leads.length) return;
-    const headers = ['ID', 'Criado em', 'Status', 'Indicado por', 'Nome', 'CVV', 'Rastreio', 'Data Envio', 'Email', 'CPF', 'WhatsApp', 'Empresa', 'Instagram', 'Data Nasc.', 'CEP', 'Endereço', 'Nº', 'Complemento', 'Cidade', 'Estado', 'Observação'];
+    const headers = ['ID', 'Criado em', 'Status', 'Indicado por', 'Nome', 'Cod. Cliente', 'LTV', 'Ticket Médio', 'Qtd Compras', 'Última Compra', 'CVV', 'Rastreio', 'Data Envio', 'Email', 'CPF', 'WhatsApp', 'Empresa', 'Instagram', 'Data Nasc.', 'CEP', 'Endereço', 'Nº', 'Complemento', 'Cidade', 'Estado', 'Observação'];
     const rows = leads.map((l) => [
-      l.id, fmtDate(l.criado_em), l.status, l.indicado_por || '', l.nome, l.cvv || '', l.codigo_rastreio || '', l.data_envio || '', l.email, fmtCPF(l.cpf), fmtPhone(l.whatsapp),
+      l.id, fmtDate(l.criado_em), l.status, l.indicado_por || '', l.nome,
+      l.totvs_person_code || '', Number(l.ltv) > 0 ? Number(l.ltv).toFixed(2) : '', Number(l.ticket_medio) > 0 ? Number(l.ticket_medio).toFixed(2) : '', l.qtd_compras || '', l.ultima_compra || '',
+      l.cvv || '', l.codigo_rastreio || '', l.data_envio || '', l.email, fmtCPF(l.cpf), fmtPhone(l.whatsapp),
       l.empresa || '', l.instagram || '', l.data_nasc || '', l.cep || '', l.endereco || '', l.numero || '', l.complemento || '', l.cidade || '', l.estado || '', l.observacao || '',
     ]);
     const csv = [headers, ...rows]
@@ -687,6 +698,8 @@ const SORT_COMPARATORS = {
   empresa:     (a, b) => String(a.empresa || '').localeCompare(String(b.empresa || ''), 'pt-BR'),
   instagram:   (a, b) => String(a.instagram || '').localeCompare(String(b.instagram || ''), 'pt-BR'),
   cvv:         (a, b) => Number(a.cvv || 0) - Number(b.cvv || 0),
+  ltv:         (a, b) => (Number(a.ltv) || 0) - (Number(b.ltv) || 0),
+  ticket_medio:(a, b) => (Number(a.ticket_medio) || 0) - (Number(b.ticket_medio) || 0),
   codigo_rastreio: (a, b) => String(a.codigo_rastreio || '').localeCompare(String(b.codigo_rastreio || '')),
   data_envio:  (a, b) => String(a.data_envio || '').localeCompare(String(b.data_envio || '')),
   criado_em:   (a, b) => String(a.criado_em || '').localeCompare(String(b.criado_em || '')),
@@ -699,7 +712,7 @@ function SortHeader({ label, sortKey, sortBy, sortDir, onSort, align = 'left' })
     <button
       onClick={() => onSort(sortKey)}
       className={`inline-flex items-center gap-1 group hover:text-gray-700 transition-colors ${
-        align === 'center' ? 'justify-center w-full' : ''
+        align === 'center' ? 'justify-center w-full' : align === 'right' ? 'justify-end w-full' : ''
       } ${ativo ? 'text-gray-700' : ''}`}
       title={`Ordenar por ${label}`}
     >
@@ -820,10 +833,12 @@ function ListaAgrupada({ leads, atualizarStatus, sincronizarTotvs, setEditLead, 
             {!colapsado && gLeads.length > 0 && (
               <div className="bg-white rounded-2xl ring-1 ring-gray-200/70 overflow-x-auto">
                 {/* Header de colunas — cliques ordenam */}
-                <div className="grid min-w-[1500px] grid-cols-[28px_1.7fr_120px_140px_160px_110px_1fr_120px_70px_130px_110px_70px] items-center gap-2 px-5 py-3 text-[10px] font-medium uppercase tracking-wider text-gray-400 border-b border-gray-100">
+                <div className="grid min-w-[1720px] grid-cols-[28px_1.7fr_120px_120px_110px_140px_160px_110px_1fr_120px_70px_130px_110px_70px] items-center gap-2 px-5 py-3 text-[10px] font-medium uppercase tracking-wider text-gray-400 border-b border-gray-100">
                   <div></div>
                   <SortHeader label="Nome" sortKey="nome" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
                   <SortHeader label="Cod. Cliente" sortKey="cod_cliente" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
+                  <SortHeader label="LTV" sortKey="ltv" sortBy={sortBy} sortDir={sortDir} onSort={onSort} align="right" />
+                  <SortHeader label="Ticket Médio" sortKey="ticket_medio" sortBy={sortBy} sortDir={sortDir} onSort={onSort} align="right" />
                   <SortHeader label="CPF" sortKey="cpf" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
                   <SortHeader label="WhatsApp" sortKey="whatsapp" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
                   <SortHeader label="Data Nasc." sortKey="data_nasc" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
@@ -847,7 +862,7 @@ function ListaAgrupada({ leads, atualizarStatus, sincronizarTotvs, setEditLead, 
                     <div
                       key={l.id}
                       onClick={() => setEditLead(l)}
-                      className={`grid min-w-[1500px] grid-cols-[28px_1.7fr_120px_140px_160px_110px_1fr_120px_70px_130px_110px_70px] items-center gap-2 px-5 py-3 transition-colors cursor-pointer ${
+                      className={`grid min-w-[1720px] grid-cols-[28px_1.7fr_120px_120px_110px_140px_160px_110px_1fr_120px_70px_130px_110px_70px] items-center gap-2 px-5 py-3 transition-colors cursor-pointer ${
                         isSel ? 'bg-blue-50/60' : 'hover:bg-blue-50/30'
                       } ${!isLast ? 'border-b border-gray-50' : ''}`}
                     >
@@ -890,6 +905,20 @@ function ListaAgrupada({ leads, atualizarStatus, sincronizarTotvs, setEditLead, 
                       {/* Cod cliente */}
                       <div className="text-[12px] text-gray-400 font-mono truncate" title={codCli || ''}>
                         {codCli || <span className="text-gray-300">—</span>}
+                      </div>
+
+                      {/* LTV — total gasto pelo cliente (person-statistics TOTVS) */}
+                      <div className="text-right text-[12px] tabular-nums" title={l.ultima_compra ? `Última compra: ${new Date(l.ultima_compra).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}` : 'Sem compras'}>
+                        {Number(l.ltv) > 0 ? (
+                          <span className="font-semibold text-emerald-700">{fmtMoeda(l.ltv)}</span>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </div>
+
+                      {/* Ticket médio */}
+                      <div className="text-right text-[12px] text-gray-600 tabular-nums" title={l.qtd_compras ? `${l.qtd_compras} compra(s)` : ''}>
+                        {Number(l.ticket_medio) > 0 ? fmtMoeda(l.ticket_medio) : <span className="text-gray-300">—</span>}
                       </div>
 
                       {/* CPF */}
