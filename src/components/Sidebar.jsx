@@ -373,6 +373,13 @@ const marketing = [
       },
     ],
   },
+  {
+    name: 'Crosby Bot',
+    href: '/crosby-bot',
+    icon: Megaphone,
+    color: 'text-indigo-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
+  },
 ];
 
 const multimarcas = [

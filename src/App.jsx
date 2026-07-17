@@ -134,6 +134,7 @@ const FormularioSolicitacoes = lazy(
 const DuplicataVendas = lazy(() => import('./pages/DuplicataVendas'));
 const PagamentosFabricas = lazy(() => import('./pages/PagamentosFabricas'));
 const ConciliacaoStone = lazy(() => import('./pages/ConciliacaoStone'));
+const CrosbyBot = lazy(() => import('./pages/CrosbyBot'));
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -149,6 +150,7 @@ const protectedRoutes = [
   { path: '/bluecard/leads', component: BluecardLeads },
   { path: '/estoque/expedicao-showroom', component: ExpedicaoShowroom },
   { path: '/showroom', component: Showroom },
+  { path: '/crosby-bot', component: CrosbyBot },
   { path: '/forecast/faturamento-historico', component: Forecast },
   { path: '/dashboard-vendas', component: Forecast },
   { path: '/tecnologia/controle-chip', component: ControleChips },
