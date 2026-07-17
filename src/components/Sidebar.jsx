@@ -62,6 +62,27 @@ const ChevronIcon = ({ open }) =>
     />
   );
 
+const solicitacoesCrosby = [
+  {
+    name: 'Solicitações Crosby',
+    href: '/solicitacoes-crosby',
+    icon: ClipboardText,
+    color: 'text-orange-600',
+  },
+  {
+    name: 'Formulário de Solicitações',
+    href: '/formulario-solicitacoes',
+    icon: FileText,
+    color: 'text-blue-600',
+  },
+  {
+    name: 'Compras & Manutenção',
+    href: '/solicitacoes-crosby/compras-manutencao',
+    icon: ShoppingCart,
+    color: 'text-blue-600',
+  },
+];
+
 const financeiro = [
   {
     name: 'Contas a Pagar',
@@ -170,35 +191,28 @@ const financeiro = [
         color: 'text-cyan-600',
         roles: ['owner', 'admin', 'manager', 'user'],
       },
+      {
+        name: 'Batida de Carteira',
+        href: '/batida-carteira',
+        icon: Wallet,
+        color: 'text-emerald-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
+        name: 'Solicitação de Baixa',
+        href: '/solicitacao-baixa',
+        icon: Receipt,
+        color: 'text-indigo-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
+        name: 'Análise de Crédito',
+        href: '/analise-credito',
+        icon: ClipboardText,
+        color: 'text-purple-600',
+        roles: ['owner', 'admin', 'manager'],
+      },
     ],
-  },
-  {
-    name: 'Batida de Carteira',
-    href: '/batida-carteira',
-    icon: Wallet,
-    color: 'text-emerald-600',
-    roles: ['owner', 'admin', 'manager', 'user'],
-  },
-  {
-    name: 'Solicitação de Baixa',
-    href: '/solicitacao-baixa',
-    icon: Receipt,
-    color: 'text-indigo-600',
-    roles: ['owner', 'admin', 'manager', 'user'],
-  },
-  {
-    name: 'Análise de Crédito',
-    href: '/analise-credito',
-    icon: ClipboardText,
-    color: 'text-purple-600',
-    roles: ['owner', 'admin', 'manager'],
-  },
-  {
-    name: 'Análise de Renegociações',
-    href: '/analise-renegociacao',
-    icon: Handshake,
-    color: 'text-orange-600',
-    roles: ['owner', 'admin', 'manager'],
   },
   {
     name: 'DRE',
@@ -206,61 +220,6 @@ const financeiro = [
     icon: ChartBar,
     color: 'text-purple-600',
     roles: ['owner', 'admin', 'manager', 'user'],
-  },
-  {
-    name: 'Extrato TOTVS',
-    href: '/extrato-totvs',
-    icon: Bank,
-    color: 'text-teal-600',
-    roles: ['owner', 'admin', 'manager', 'user'],
-  },
-];
-
-const faturamento = [
-  {
-    name: 'CMV Consolidado',
-    href: '/cmv-consolidado',
-    icon: FileText,
-    color: 'text-indigo-600',
-  },
-  {
-    name: 'CMV Multimarcas',
-    href: '/cmv-multimarcas',
-    icon: FileText,
-    color: 'text-indigo-600',
-  },
-  {
-    name: 'CMV Revenda',
-    href: '/cmv-revenda',
-    icon: FileText,
-    color: 'text-indigo-600',
-  },
-  {
-    name: 'CMV Franquia',
-    href: '/cmv-franquia',
-    icon: FileText,
-    color: 'text-indigo-600',
-  },
-  {
-    name: 'CMV Varejo',
-    href: '/cmv-varejo',
-    icon: FileText,
-    color: 'text-indigo-600',
-  },
-];
-
-const estoqueItems = [
-  {
-    name: 'Consulta de Estoque',
-    href: '/estoque',
-    icon: Package,
-    color: 'text-teal-600',
-  },
-  {
-    name: 'Expedição Franquias',
-    href: '/estoque/expedicao-showroom',
-    icon: Truck,
-    color: 'text-blue-700',
   },
 ];
 
@@ -418,18 +377,6 @@ const marketing = [
 
 const multimarcas = [
   {
-    name: 'Dashboard Multimarcas',
-    href: '/dashboard-multimarcas',
-    icon: ChartLineUp,
-    color: 'text-indigo-600',
-  },
-  {
-    name: 'CREDEV MULTIMARCAS',
-    href: '/credev-multimarcas',
-    icon: Buildings,
-    color: 'text-purple-600',
-  },
-  {
     name: 'Inadimplentes Multimarcas',
     href: '/inadimplentes-multimarcas',
     icon: ChartBar,
@@ -463,18 +410,6 @@ const multimarcas = [
 
 const revenda = [
   {
-    name: 'Dashboard Revenda',
-    href: '/dashboard-revenda',
-    icon: ChartLineUp,
-    color: 'text-indigo-600',
-  },
-  {
-    name: 'CREDEV REVENDA',
-    href: '/credev-revenda',
-    icon: Buildings,
-    color: 'text-blue-600',
-  },
-  {
     name: 'Inadimplentes Revenda',
     href: '/inadimplentes-revenda',
     icon: ChartBar,
@@ -484,22 +419,9 @@ const revenda = [
 
 const franquias = [
   {
-    name: 'Dashboard Franquias',
-    href: '/dashboard-franquias',
-    icon: ChartLineUp,
-    color: 'text-indigo-600',
-  },
-  {
     name: 'Compras Franquias',
     href: '/compras-franquias',
     icon: ShoppingCart,
-    color: 'text-emerald-600',
-  },
-  { name: 'CREDEV', href: '/credev', icon: Buildings, color: 'text-blue-600' },
-  {
-    name: 'Crédito Franquia',
-    href: '/credito-franquia',
-    icon: Wallet,
     color: 'text-emerald-600',
   },
   {
@@ -513,6 +435,12 @@ const franquias = [
     href: '/minhas-solicitacoes-baixa',
     icon: ClipboardText,
     color: 'text-indigo-600',
+  },
+  {
+    name: 'Expedição Franquias',
+    href: '/estoque/expedicao-showroom',
+    icon: Truck,
+    color: 'text-blue-700',
   },
 ];
 
@@ -562,6 +490,12 @@ const confianca = [
 ];
 
 const clientesItems = [
+  {
+    name: 'Cadastrar Cliente',
+    href: '/cadastrar-cliente',
+    icon: IdentificationCard,
+    color: 'text-teal-600',
+  },
   {
     name: 'Consulta Cliente',
     href: '/consulta-cliente',
@@ -635,12 +569,6 @@ const adminItems = [
     color: 'text-red-600',
   },
   {
-    name: 'Gerenciador de Dashboards',
-    href: '/gerenciador-dashboards',
-    icon: SquaresFour,
-    color: 'text-blue-600',
-  },
-  {
     name: 'Gerenciador de Acessos',
     href: '/gerenciador-acessos',
     icon: Shield,
@@ -683,24 +611,6 @@ const minhaFranquiaItem = {
       href: '/voucher-usage',
       icon: Ticket,
       color: 'text-purple-600',
-    },
-    {
-      name: 'Extrato de Crédito',
-      href: '/extrato-credito',
-      icon: CurrencyDollar,
-      color: 'text-green-600',
-    },
-    {
-      name: 'Solicitação de Crédito',
-      href: '/solicitacao-credito',
-      icon: CurrencyDollar,
-      color: 'text-green-600',
-    },
-    {
-      name: 'Renegociação de Dívidas',
-      href: '/renegociacao-dividas',
-      icon: Handshake,
-      color: 'text-orange-600',
     },
     {
       name: 'Notas Fiscais',
@@ -1010,76 +920,26 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           isActive={pathname === '/home'}
         />
 
-        {/* Solicitações Crosby */}
-        <MenuItem
+        {/* Seção Solicitaçõ Crosby */}
+        <MenuSection
           {...menuProps}
-          item={{
-            name: 'Solicitações Crosby',
-            href: '/solicitacoes-crosby',
-            icon: ClipboardText,
-            color: 'text-orange-600',
-          }}
-          isActive={pathname === '/solicitacoes-crosby'}
+          title="Solicitações Crosby"
+          items={solicitacoesCrosby}
+          isOpen={openSection === 'solicitacoesCrosby'}
+          onToggle={() => handleSectionToggle('solicitacoesCrosby')}
+          icon={ClipboardText}
+          color="text-orange-600"
         />
 
-        {/* Compras & Manutenção (controle de etapas) */}
-        <MenuItem
+        {/* Seção Clientes */}
+        <MenuSection
           {...menuProps}
-          item={{
-            name: 'Compras & Manutenção',
-            href: '/solicitacoes-crosby/compras-manutencao',
-            icon: ShoppingCart,
-            color: 'text-blue-600',
-          }}
-          isActive={pathname === '/solicitacoes-crosby/compras-manutencao'}
-        />
-
-        {/* Cadastrar Cliente */}
-        <MenuItem
-          {...menuProps}
-          item={{
-            name: 'Cadastrar Cliente',
-            href: '/cadastrar-cliente',
-            icon: IdentificationCard,
-            color: 'text-teal-600',
-          }}
-          isActive={pathname === '/cadastrar-cliente'}
-        />
-
-        {/* Crosby Bot */}
-        <MenuItem
-          {...menuProps}
-          item={{
-            name: 'Crosby Bot',
-            href: '/crosby-bot',
-            icon: Megaphone,
-            color: 'text-indigo-600',
-          }}
-          isActive={pathname === '/crosby-bot'}
-        />
-
-        {/* BI EXTERNO */}
-        <MenuItem
-          {...menuProps}
-          item={{
-            name: 'Estoque e Showroom',
-            href: '/bi-externo',
-            icon: ChartLineUp,
-            color: 'text-indigo-600',
-          }}
-          isActive={pathname === '/bi-externo'}
-        />
-
-        {/* BI EXTERNO */}
-        <MenuItem
-          {...menuProps}
-          item={{
-            name: 'BIs Externo',
-            href: '/dashboard',
-            icon: ChartLineUp,
-            color: 'text-indigo-600',
-          }}
-          isActive={pathname === '/dashboard'}
+          title="Clientes"
+          items={clientesItems}
+          isOpen={openSection === 'clientes'}
+          onToggle={() => handleSectionToggle('clientes')}
+          icon={IdentificationCard}
+          color="text-blue-600"
         />
 
         {/* SHOWROOM */}
@@ -1105,17 +965,6 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           color="text-emerald-600"
         />
 
-        {/* Seção CMV */}
-        <MenuSection
-          {...menuProps}
-          title="CMV"
-          items={faturamento}
-          isOpen={openSection === 'faturamento'}
-          onToggle={() => handleSectionToggle('faturamento')}
-          icon={ChartLineUp}
-          color="text-blue-600"
-        />
-
         {/* Seção Painel de Vendas */}
         <MenuSection
           {...menuProps}
@@ -1125,17 +974,6 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           onToggle={() => handleSectionToggle('painelVendas')}
           icon={ShoppingCart}
           color="text-blue-600"
-        />
-
-        {/* Seção Estoque */}
-        <MenuSection
-          {...menuProps}
-          title="Estoque"
-          items={estoqueItems}
-          isOpen={openSection === 'estoque'}
-          onToggle={() => handleSectionToggle('estoque')}
-          icon={Package}
-          color="text-teal-600"
         />
 
         {/* Seção Varejo */}
@@ -1228,54 +1066,6 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
 
         {/* Minha Franquia (pasta) */}
         <MenuItem {...menuProps} item={minhaFranquiaItem} isActive={false} />
-
-        {/* VIGIA - item independente */}
-        <MenuItem
-          {...menuProps}
-          item={{
-            name: 'Vigia',
-            href: 'https://vigia.crosbytech.com.br/',
-            icon: Eye,
-            color: 'text-blue-600',
-            external: true,
-          }}
-          isActive={false}
-        />
-
-        <MenuItem
-          {...menuProps}
-          item={{
-            name: 'Playlist Loja',
-            href: 'https://open.spotify.com/playlist/0luIH9EeXQsM1EVLEe10Co?si=PVAUen1xTNq_65EcEFuHSw&pi=rle4YjINSti0l&nd=1&dlsi=514142e8d84b44b8',
-            icon: SpotifyLogo,
-            color: 'text-blue-600',
-            external: true,
-          }}
-          isActive={false}
-        />
-
-        {/* Seção Clientes */}
-        <MenuSection
-          {...menuProps}
-          title="Clientes"
-          items={clientesItems}
-          isOpen={openSection === 'clientes'}
-          onToggle={() => handleSectionToggle('clientes')}
-          icon={IdentificationCard}
-          color="text-blue-600"
-        />
-
-        {/* Widgets */}
-        <MenuItem
-          {...menuProps}
-          item={{
-            name: 'Meus Widgets',
-            href: '/widgets',
-            icon: SquaresFour,
-            color: 'text-indigo-600',
-          }}
-          isActive={pathname === '/widgets'}
-        />
 
         {/* Ranking Faturamento */}
         {hasAccessToPage('/ranking-faturamento') && (
