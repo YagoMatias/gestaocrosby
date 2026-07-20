@@ -221,6 +221,13 @@ const financeiro = [
     color: 'text-purple-600',
     roles: ['owner', 'admin', 'manager', 'user'],
   },
+  {
+    name: 'Automação Financeiro',
+    href: '/automacao-financeiro',
+    icon: Cpu,
+    color: 'text-emerald-600',
+    roles: ['owner'],
+  },
 ];
 
 const painelVendasItems = [
