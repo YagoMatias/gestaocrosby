@@ -135,6 +135,7 @@ const DuplicataVendas = lazy(() => import('./pages/DuplicataVendas'));
 const PagamentosFabricas = lazy(() => import('./pages/PagamentosFabricas'));
 const ConciliacaoStone = lazy(() => import('./pages/ConciliacaoStone'));
 const CrosbyBot = lazy(() => import('./pages/CrosbyBot'));
+const AutomacaoFinanceiro = lazy(() => import('./pages/AutomacaoFinanceiro'));
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -191,6 +192,7 @@ const protectedRoutes = [
   { path: '/ranking-faturamento', component: RankingFaturamento },
   { path: '/ranking-compras-franquias', component: RankingComprasFranquias },
   { path: '/dre', component: DRE },
+  { path: '/automacao-financeiro', component: AutomacaoFinanceiro },
   { path: '/compras-franquias', component: ComprasFranquias },
   { path: '/credev-varejo', component: CredevVarejo },
   { path: '/inadimplentes-multimarcas', component: InadimplentesMultimarcas },
