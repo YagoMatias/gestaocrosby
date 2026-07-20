@@ -158,6 +158,10 @@ export default function ShowroomPedidos() {
     (id, v) => patchPedido(id, { vendedor: v || null }),
     [patchPedido],
   );
+  const atualizarParcelas = useCallback(
+    (id, v) => patchPedido(id, { parcelas: v ? Number(v) : null }),
+    [patchPedido],
+  );
 
   // Modal de troca de cliente
   const [editClientePedido, setEditClientePedido] = useState(null);
@@ -330,7 +334,7 @@ export default function ShowroomPedidos() {
       ) : (
         <div className="bg-white rounded-2xl ring-1 ring-gray-200/70 overflow-hidden">
           {/* Header */}
-          <div className="grid grid-cols-[40px_90px_1fr_150px_120px_115px_115px_115px_100px_115px] items-center gap-2 px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-gray-500 border-b border-gray-100 bg-gray-50/40">
+          <div className="grid grid-cols-[40px_90px_1fr_150px_120px_115px_115px_90px_115px_100px_115px] items-center gap-2 px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-gray-500 border-b border-gray-100 bg-gray-50/40">
             <div></div>
             <div>Pedido</div>
             <div>Cliente</div>
@@ -338,6 +342,7 @@ export default function ShowroomPedidos() {
             <div>Classif.</div>
             <div>Vendedor</div>
             <div>Pagamento</div>
+            <div>Parcelas</div>
             <div>Data</div>
             <div className="text-right">Itens</div>
             <div className="text-right">Total</div>
@@ -350,7 +355,7 @@ export default function ShowroomPedidos() {
               <React.Fragment key={p.id}>
                 <div
                   onClick={() => toggleExpand(p.id)}
-                  className={`relative grid grid-cols-[40px_90px_1fr_150px_120px_115px_115px_115px_100px_115px] items-center gap-2 px-4 py-3 cursor-pointer border-b border-gray-50 transition-colors ${
+                  className={`relative grid grid-cols-[40px_90px_1fr_150px_120px_115px_115px_90px_115px_100px_115px] items-center gap-2 px-4 py-3 cursor-pointer border-b border-gray-50 transition-colors ${
                     isOpen ? 'bg-blue-50/40' : (st.rowBg || 'hover:bg-blue-50/30')
                   }`}
                   title={`Status: ${st.label}`}
@@ -444,6 +449,25 @@ export default function ShowroomPedidos() {
                     >
                       {FORMAS_PAGAMENTO.map((f) => (
                         <option key={f.v} value={f.v}>{f.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Parcelas */}
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <select
+                      value={p.parcelas || ''}
+                      onChange={(e) => atualizarParcelas(p.id, e.target.value)}
+                      className={`text-[11px] font-semibold rounded-md px-2 py-1 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-200 border-0 w-full ${
+                        p.parcelas
+                          ? 'bg-indigo-100 text-indigo-700'
+                          : 'bg-gray-100 text-gray-400'
+                      }`}
+                      title="Em quantas vezes foi parcelado"
+                    >
+                      <option value="">—</option>
+                      {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => (
+                        <option key={n} value={n}>{n}x</option>
                       ))}
                     </select>
                   </div>
