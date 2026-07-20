@@ -4230,16 +4230,16 @@ const LiberacaoPagamento = () => {
                     PAGAR SELECIONADOS
                   </button>
                 )}
-                {/* Voltar para PENDENTE em lote */}
+                {/* Voltar para PENDENTE em lote (inclui os que estão em Provisão) */}
                 {Array.from(selecionados).some((id) => {
                   const s = titulos.find((t) => t.id === id)?.status;
-                  return s === 'APROVADO' || s === 'PAGO';
+                  return s === 'PROVISAO' || s === 'APROVADO' || s === 'PAGO';
                 }) && (
                   <button
                     onClick={() => mudarStatusSelecionados('PENDENTE')}
                     disabled={processando}
                     className="flex items-center gap-1 bg-yellow-100 hover:bg-yellow-200 disabled:opacity-50 text-yellow-800 text-xs font-bold px-3 py-1.5 rounded border border-yellow-300 transition-colors"
-                    title="Voltar para Pendente (estorna saldo se necessário)"
+                    title="Voltar os selecionados para Pendente (estorna saldo se necessário)"
                   >
                     <Clock size={12} weight="bold" />
                     PENDENTE
