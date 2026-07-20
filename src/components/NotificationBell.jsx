@@ -4,6 +4,7 @@ import { useAuth } from './AuthContext';
 import { useNotices } from '../hooks/useNotices';
 import NoticesModal from './NoticesModal';
 import { supabase } from '../lib/supabase';
+import { filtroNotificacaoSistema } from '../utils/notificacoesAcesso';
 
 /**
  * Componente de sino de notificações no Header
@@ -41,30 +42,20 @@ const NotificationBell = () => {
         totalCount += result.count;
       }
 
-      // Contar notificações de crédito não lidas
-      const { count: countCredito, error: errorCredito } = await supabase
-        .from('notificacoes_credito')
-        .select('*', { count: 'exact', head: true })
-        .or(
-          `destinatario_id.eq.${user.id},destinatario_tipo.eq.FINANCEIRO,destinatario_tipo.eq.ADMIN`,
-        )
-        .eq('lida', false);
+      // Contar notificações de sistema não lidas (segmentadas por papel ou
+      // endereçadas diretamente ao usuário via destinatario_id).
+      const filtroSistema = filtroNotificacaoSistema(user);
+      if (filtroSistema) {
+        const { data: sistemaRows, error: errorSistema } = await supabase
+          .from('notificacoes_sistema')
+          .select('lida_por')
+          .or(filtroSistema);
 
-      if (!errorCredito && countCredito) {
-        totalCount += countCredito;
-      }
-
-      // Contar notificações de renegociação não lidas
-      const { count: countReneg, error: errorReneg } = await supabase
-        .from('notificacoes_renegociacao')
-        .select('*', { count: 'exact', head: true })
-        .or(
-          `destinatario_id.eq.${user.id},destinatario_tipo.eq.FINANCEIRO,destinatario_tipo.eq.ADMIN`,
-        )
-        .eq('lida', false);
-
-      if (!errorReneg && countReneg) {
-        totalCount += countReneg;
+        if (!errorSistema && Array.isArray(sistemaRows)) {
+          totalCount += sistemaRows.filter(
+            (r) => !(r.lida_por || []).includes(user.id),
+          ).length;
+        }
       }
 
       setUnreadCount(totalCount);

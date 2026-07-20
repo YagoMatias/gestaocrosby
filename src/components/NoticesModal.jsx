@@ -5,82 +5,66 @@ import {
   Circle,
   CheckCircle,
   Calendar,
-  Eye,
   Bell,
-  Handshake,
   XCircle,
 } from '@phosphor-icons/react';
 import { useAuth } from './AuthContext';
 import { useNotices } from '../hooks/useNotices';
 import { supabase } from '../lib/supabase';
 import { useNavigate } from 'react-router-dom';
+import { filtroNotificacaoSistema } from '../utils/notificacoesAcesso';
 
 /**
- * Modal que exibe todos os avisos do usuário
- * Aberto ao clicar no sino de notificações
+ * Modal exibido ao clicar no sino de notificações.
+ * Reúne duas fontes:
+ *   - Avisos (notices) — criados por administradores.
+ *   - Notificações de sistema (notificacoes_sistema) — geradas por jobs e
+ *     por eventos do sistema (ex.: análises de crédito), segmentadas por
+ *     papel (destinatario_roles) ou por usuário (destinatario_id).
  *
- * PERMISSÃO: Todos os usuários autenticados podem visualizar seus avisos
- * Não requer permissão específica no gerenciador de acessos
+ * PERMISSÃO: qualquer usuário autenticado vê as próprias notificações.
  */
 const NoticesModal = ({ onClose }) => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { getUserNotices, confirmRead } = useNotices();
   const [notices, setNotices] = useState([]);
-  const [notificacoesCredito, setNotificacoesCredito] = useState([]);
-  const [notificacoesRenegociacao, setNotificacoesRenegociacao] = useState([]);
+  const [notificacoesSistema, setNotificacoesSistema] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all'); // 'all', 'unread', 'read'
-  const [tipoFiltro, setTipoFiltro] = useState('todos'); // 'todos', 'avisos', 'credito', 'renegociacao'
+  const [tipoFiltro, setTipoFiltro] = useState('todos'); // 'todos', 'avisos', 'sistema'
   const [selectedNotice, setSelectedNotice] = useState(null);
+  const [selectedSistema, setSelectedSistema] = useState(null);
   const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
     loadNotices();
-    loadNotificacoesCredito();
-    loadNotificacoesRenegociacao();
+    loadNotificacoesSistema();
 
-    // Configurar listener em tempo real para notificações de crédito
-    const channelCredito = supabase
-      .channel('notificacoes_credito_modal')
+    // Listener em tempo real para notificações de sistema
+    const channelSistema = supabase
+      .channel('notificacoes_sistema_modal')
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
-          table: 'notificacoes_credito',
+          table: 'notificacoes_sistema',
         },
         () => {
-          loadNotificacoesCredito();
-        },
-      )
-      .subscribe();
-
-    // Configurar listener em tempo real para notificações de renegociação
-    const channelRenegociacao = supabase
-      .channel('notificacoes_renegociacao_modal')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'notificacoes_renegociacao',
-        },
-        () => {
-          loadNotificacoesRenegociacao();
+          loadNotificacoesSistema();
         },
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channelCredito);
-      supabase.removeChannel(channelRenegociacao);
+      supabase.removeChannel(channelSistema);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadNotices = async () => {
     if (!user?.id) return;
-
     try {
       const result = await getUserNotices(user.id);
       if (result.success) {
@@ -91,161 +75,67 @@ const NoticesModal = ({ onClose }) => {
     }
   };
 
-  const loadNotificacoesCredito = async () => {
-    if (!user?.id) return;
+  const loadNotificacoesSistema = async () => {
+    const filtro = filtroNotificacaoSistema(user);
+    if (!filtro) return;
 
     setLoading(true);
     try {
       const { data, error } = await supabase
-        .from('notificacoes_credito')
+        .from('notificacoes_sistema')
         .select('*')
-        .or(
-          `destinatario_id.eq.${user.id},destinatario_tipo.eq.FINANCEIRO,destinatario_tipo.eq.ADMIN`,
-        )
+        .or(filtro)
         .order('dt_criacao', { ascending: false })
         .limit(50);
 
       if (error) {
-        console.error('Erro ao buscar notificações de crédito:', error);
+        console.error('Erro ao buscar notificações de sistema:', error);
         return;
       }
 
-      setNotificacoesCredito(data || []);
+      // "lida" é por-usuário: presença do id no array lida_por
+      const mapped = (data || []).map((n) => ({
+        ...n,
+        lida: (n.lida_por || []).includes(user.id),
+      }));
+      setNotificacoesSistema(mapped);
     } catch (error) {
-      console.error('Erro ao buscar notificações:', error);
+      console.error('Erro ao buscar notificações de sistema:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const loadNotificacoesRenegociacao = async () => {
-    if (!user?.id) return;
-
-    setLoading(true);
+  const marcarSistemaComoLida = async (notificacaoId) => {
     try {
-      const { data, error } = await supabase
-        .from('notificacoes_renegociacao')
-        .select('*')
-        .or(
-          `destinatario_id.eq.${user.id},destinatario_tipo.eq.FINANCEIRO,destinatario_tipo.eq.ADMIN`,
-        )
-        .order('dt_criacao', { ascending: false })
-        .limit(50);
-
-      if (error) {
-        console.error('Erro ao buscar notificações de renegociação:', error);
-        return;
-      }
-
-      setNotificacoesRenegociacao(data || []);
-    } catch (error) {
-      console.error('Erro ao buscar notificações de renegociação:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const marcarCreditoComoLida = async (notificacaoId) => {
-    try {
-      const { error } = await supabase
-        .from('notificacoes_credito')
-        .update({ lida: true, dt_leitura: new Date().toISOString() })
-        .eq('id', notificacaoId);
-
+      const { error } = await supabase.rpc('marcar_notificacao_sistema_lida', {
+        p_id: notificacaoId,
+        p_user: user.id,
+      });
       if (error) throw error;
-      await loadNotificacoesCredito();
-    } catch (error) {
-      console.error('Erro ao marcar notificação como lida:', error);
-    }
-  };
-
-  const marcarRenegociacaoComoLida = async (notificacaoId) => {
-    try {
-      const { error } = await supabase
-        .from('notificacoes_renegociacao')
-        .update({ lida: true, dt_leitura: new Date().toISOString() })
-        .eq('id', notificacaoId);
-
-      if (error) throw error;
-      await loadNotificacoesRenegociacao();
-    } catch (error) {
-      console.error(
-        'Erro ao marcar notificação de renegociação como lida:',
-        error,
+      setNotificacoesSistema((prev) =>
+        prev.map((n) =>
+          n.id === notificacaoId
+            ? { ...n, lida: true, lida_por: [...(n.lida_por || []), user.id] }
+            : n,
+        ),
       );
+    } catch (error) {
+      console.error('Erro ao marcar notificação de sistema como lida:', error);
     }
   };
 
-  const formatDateRelative = (dateString) => {
-    const now = new Date();
-    const date = new Date(dateString);
-    const diff = Math.floor((now - date) / 1000);
-
-    if (diff < 60) return 'Agora';
-    if (diff < 3600) return `${Math.floor(diff / 60)}m atrás`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h atrás`;
-    if (diff < 172800) return 'Ontem';
-    return `${Math.floor(diff / 86400)}d atrás`;
-  };
-
-  const getIconeCredito = (tipo) => {
-    switch (tipo) {
-      case 'NOVA_SOLICITACAO':
-        return <Bell size={16} weight="fill" className="text-blue-500" />;
-      case 'CONTRAPROPOSTA_ENVIADA':
-        return (
-          <Handshake size={16} weight="fill" className="text-orange-500" />
-        );
-      case 'CONTRAPROPOSTA_ACEITA':
-      case 'APROVACAO':
-        return (
-          <CheckCircle size={16} weight="fill" className="text-green-500" />
-        );
-      case 'CONTRAPROPOSTA_RECUSADA':
-      case 'REPROVACAO':
-        return <XCircle size={16} weight="fill" className="text-red-500" />;
-      default:
-        return <Bell size={16} weight="fill" className="text-gray-500" />;
-    }
-  };
-
-  const abrirSolicitacaoCredito = async (notificacao) => {
-    await marcarCreditoComoLida(notificacao.id);
-    onClose();
-
-    if (
-      notificacao.tipo === 'NOVA_SOLICITACAO' ||
-      notificacao.tipo === 'CONTRAPROPOSTA_ACEITA' ||
-      notificacao.tipo === 'CONTRAPROPOSTA_RECUSADA'
-    ) {
-      navigate('/analise-credito');
-    } else {
-      navigate('/solicitacao-credito');
-    }
-  };
-
-  const abrirSolicitacaoRenegociacao = async (notificacao) => {
-    await marcarRenegociacaoComoLida(notificacao.id);
-    onClose();
-
-    if (
-      notificacao.tipo === 'NOVA_SOLICITACAO' ||
-      notificacao.tipo === 'CONTRAPROPOSTA_ACEITA' ||
-      notificacao.tipo === 'CONTRAPROPOSTA_RECUSADA'
-    ) {
-      navigate('/analise-renegociacao');
-    } else {
-      navigate('/solicitacao-renegociacao');
-    }
+  const abrirNotificacaoSistema = (notificacao) => {
+    if (!notificacao.lida) marcarSistemaComoLida(notificacao.id);
+    setSelectedNotice(null);
+    setSelectedSistema(notificacao);
   };
 
   const handleConfirmRead = async (noticeId) => {
     if (confirming) return;
-
     setConfirming(true);
     try {
       await confirmRead(noticeId, user.id);
-      // Atualizar lista após confirmação
       await loadNotices();
       setSelectedNotice(null);
     } catch (error) {
@@ -255,21 +145,53 @@ const NoticesModal = ({ onClose }) => {
     }
   };
 
-  // Mesclar notificações de avisos, crédito e renegociação
+  const formatDate = (dateString) => {
+    if (!dateString) return '-';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const getIconeSistema = (nivel) => {
+    switch (nivel) {
+      case 'success':
+        return (
+          <CheckCircle size={16} weight="fill" className="text-green-500" />
+        );
+      case 'error':
+        return <XCircle size={16} weight="fill" className="text-red-500" />;
+      case 'warning':
+        return <Bell size={16} weight="fill" className="text-orange-500" />;
+      default:
+        return <Bell size={16} weight="fill" className="text-blue-500" />;
+    }
+  };
+
+  // Rota associada a uma notificação de sistema (quando aplicável)
+  const rotaDaNotificacao = (notif) => {
+    if (!notif?.tipo) return null;
+    if (String(notif.tipo).startsWith('ANALISE_CREDITO'))
+      return '/analise-credito';
+    if (String(notif.tipo) === 'PROVISAO_LIBERACAO')
+      return '/liberacao-pagamento';
+    return null;
+  };
+
+  // Mesclar avisos + notificações de sistema
   const notificacoesMescladas = [
     ...notices.map((n) => ({
       ...n,
       tipo_fonte: 'aviso',
       data_ordenacao: new Date(n.created_at),
     })),
-    ...notificacoesCredito.map((n) => ({
+    ...notificacoesSistema.map((n) => ({
       ...n,
-      tipo_fonte: 'credito',
-      data_ordenacao: new Date(n.dt_criacao),
-    })),
-    ...notificacoesRenegociacao.map((n) => ({
-      ...n,
-      tipo_fonte: 'renegociacao',
+      tipo_fonte: 'sistema',
       data_ordenacao: new Date(n.dt_criacao),
     })),
   ].sort((a, b) => b.data_ordenacao - a.data_ordenacao);
@@ -277,9 +199,7 @@ const NoticesModal = ({ onClose }) => {
   // Filtrar por tipo de notificação
   const notificacoesPorTipo = notificacoesMescladas.filter((notif) => {
     if (tipoFiltro === 'avisos') return notif.tipo_fonte === 'aviso';
-    if (tipoFiltro === 'credito') return notif.tipo_fonte === 'credito';
-    if (tipoFiltro === 'renegociacao')
-      return notif.tipo_fonte === 'renegociacao';
+    if (tipoFiltro === 'sistema') return notif.tipo_fonte === 'sistema';
     return true; // 'todos'
   });
 
@@ -294,41 +214,27 @@ const NoticesModal = ({ onClose }) => {
 
   const unreadCount =
     notices.filter((n) => !n.is_confirmed).length +
-    notificacoesCredito.filter((n) => !n.lida).length +
-    notificacoesRenegociacao.filter((n) => !n.lida).length;
+    notificacoesSistema.filter((n) => !n.lida).length;
   const readCount =
     notices.filter((n) => n.is_confirmed).length +
-    notificacoesCredito.filter((n) => n.lida).length +
-    notificacoesRenegociacao.filter((n) => n.lida).length;
-  const creditoCount = notificacoesCredito.length;
-  const renegociacaoCount = notificacoesRenegociacao.length;
+    notificacoesSistema.filter((n) => n.lida).length;
   const avisosCount = notices.length;
-
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
+  const sistemaCount = notificacoesSistema.length;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col  h-4/5">
+      <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col h-4/5">
         {/* Header */}
-        <div className="bg-[#000638] from-blue-600 to-indigo-600 p-4 text-white">
+        <div className="bg-[#000638] p-4 text-white">
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-lg font-bold mb-0.5">Meus Avisos</h2>
               <p className="text-xs text-blue-100">
                 {unreadCount > 0
-                  ? `Você tem ${unreadCount} aviso${
-                      unreadCount > 1 ? 's' : ''
-                    } não lido${unreadCount > 1 ? 's' : ''}`
-                  : 'Todos os avisos foram lidos'}
+                  ? `Você tem ${unreadCount} notificação${
+                      unreadCount > 1 ? 'ões' : ''
+                    } não lida${unreadCount > 1 ? 's' : ''}`
+                  : 'Tudo lido por aqui'}
               </p>
             </div>
             <button
@@ -362,26 +268,18 @@ const NoticesModal = ({ onClose }) => {
             >
               Avisos ({avisosCount})
             </button>
-            <button
-              onClick={() => setTipoFiltro('credito')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                tipoFiltro === 'credito'
-                  ? 'bg-white text-blue-600 shadow-md'
-                  : 'bg-white bg-opacity-20 text-white hover:bg-opacity-30'
-              }`}
-            >
-              Crédito ({creditoCount})
-            </button>
-            <button
-              onClick={() => setTipoFiltro('renegociacao')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                tipoFiltro === 'renegociacao'
-                  ? 'bg-white text-blue-600 shadow-md'
-                  : 'bg-white bg-opacity-20 text-white hover:bg-opacity-30'
-              }`}
-            >
-              Renegociação ({renegociacaoCount})
-            </button>
+            {sistemaCount > 0 && (
+              <button
+                onClick={() => setTipoFiltro('sistema')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  tipoFiltro === 'sistema'
+                    ? 'bg-white text-blue-600 shadow-md'
+                    : 'bg-white bg-opacity-20 text-white hover:bg-opacity-30'
+                }`}
+              >
+                Sistema ({sistemaCount})
+              </button>
+            )}
           </div>
 
           {/* Filtros por Status */}
@@ -421,10 +319,10 @@ const NoticesModal = ({ onClose }) => {
 
         {/* Content */}
         <div className="flex-1 overflow-hidden flex">
-          {/* Lista de avisos */}
+          {/* Lista */}
           <div
             className={`${
-              selectedNotice ? 'w-1/3' : 'w-full'
+              selectedNotice || selectedSistema ? 'w-1/3' : 'w-full'
             } border-r border-gray-200 overflow-y-auto transition-all`}
           >
             {loading ? (
@@ -434,13 +332,15 @@ const NoticesModal = ({ onClose }) => {
             ) : filteredNotices.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-48 text-gray-500 p-3">
                 <Circle size={48} weight="thin" className="mb-3" />
-                <p className="text-sm font-semibold">Nenhum aviso encontrado</p>
+                <p className="text-sm font-semibold">
+                  Nenhuma notificação encontrada
+                </p>
                 <p className="text-xs text-center mt-1.5">
                   {filter === 'unread'
-                    ? 'Você está em dia com todos os avisos!'
+                    ? 'Você está em dia!'
                     : filter === 'read'
-                    ? 'Você ainda não leu nenhum aviso'
-                    : 'Não há avisos para exibir'}
+                      ? 'Você ainda não leu nenhuma notificação'
+                      : 'Não há notificações para exibir'}
                 </p>
               </div>
             ) : (
@@ -458,15 +358,17 @@ const NoticesModal = ({ onClose }) => {
                       key={`${notif.tipo_fonte}-${notif.id}`}
                       onClick={() => {
                         if (isAviso) {
+                          setSelectedSistema(null);
                           setSelectedNotice(notif);
-                        } else if (notif.tipo_fonte === 'credito') {
-                          abrirSolicitacaoCredito(notif);
-                        } else if (notif.tipo_fonte === 'renegociacao') {
-                          abrirSolicitacaoRenegociacao(notif);
+                        } else {
+                          abrirNotificacaoSistema(notif);
                         }
                       }}
                       className={`w-full p-3 text-left hover:bg-gray-50 transition-colors ${
-                        selectedNotice?.id === notif.id ? 'bg-blue-50' : ''
+                        selectedNotice?.id === notif.id ||
+                        selectedSistema?.id === notif.id
+                          ? 'bg-blue-50'
+                          : ''
                       } ${isUnread ? 'bg-yellow-50 bg-opacity-50' : ''}`}
                     >
                       <div className="flex items-start gap-2">
@@ -487,7 +389,7 @@ const NoticesModal = ({ onClose }) => {
                               />
                             )
                           ) : (
-                            getIconeCredito(notif.tipo)
+                            getIconeSistema(notif.nivel)
                           )}
                         </div>
 
@@ -507,11 +409,7 @@ const NoticesModal = ({ onClose }) => {
                           )}
                           <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-gray-500">
                             <Calendar size={12} />
-                            <span>
-                              {isAviso
-                                ? formatDate(dateField)
-                                : formatDateRelative(dateField)}
-                            </span>
+                            <span>{formatDate(dateField)}</span>
                           </div>
                           {isUnread && (
                             <span className="inline-block mt-1.5 px-1.5 py-0.5 bg-orange-100 text-orange-700 text-[10px] font-semibold rounded">
@@ -530,7 +428,6 @@ const NoticesModal = ({ onClose }) => {
           {/* Detalhes do aviso selecionado */}
           {selectedNotice && (
             <div className="flex-1 flex flex-col overflow-hidden">
-              {/* Header do aviso */}
               <div className="p-4 border-b border-gray-200 bg-gray-50">
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1">
@@ -561,7 +458,6 @@ const NoticesModal = ({ onClose }) => {
                 </div>
               </div>
 
-              {/* Conteúdo do aviso */}
               <div className="flex-1 overflow-y-auto p-4">
                 <div
                   className="prose prose-sm max-w-none text-sm"
@@ -569,13 +465,12 @@ const NoticesModal = ({ onClose }) => {
                 />
               </div>
 
-              {/* Footer com ações */}
               {!selectedNotice.is_confirmed && (
                 <div className="p-4 border-t border-gray-200 bg-gray-50">
                   <button
                     onClick={() => handleConfirmRead(selectedNotice.id)}
                     disabled={confirming}
-                    className="w-full py-2 bg-[#000638] from-green-600 to-emerald-600 text-white text-sm rounded-lg font-bold hover:from-green-700 hover:to-emerald-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    className="w-full py-2 bg-[#000638] text-white text-sm rounded-lg font-bold hover:bg-[#001060] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   >
                     {confirming ? (
                       <>
@@ -591,6 +486,144 @@ const NoticesModal = ({ onClose }) => {
                   </button>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Detalhes da notificação de sistema selecionada */}
+          {selectedSistema && (
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="p-4 border-b border-gray-200 bg-gray-50">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      {getIconeSistema(selectedSistema.nivel)}
+                      <h3 className="text-base font-bold text-gray-900">
+                        {selectedSistema.titulo}
+                      </h3>
+                    </div>
+                    <div className="flex items-center gap-1 text-xs text-gray-600">
+                      <Calendar size={13} />
+                      <span>{formatDate(selectedSistema.dt_criacao)}</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setSelectedSistema(null)}
+                    className="p-1.5 rounded-lg hover:bg-gray-200 transition-colors"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-4">
+                {selectedSistema.mensagem && (
+                  <p className="text-sm text-gray-700 mb-3">
+                    {selectedSistema.mensagem}
+                  </p>
+                )}
+
+                {/* Resumo (quando houver) */}
+                {selectedSistema.dados &&
+                  (selectedSistema.dados.janela ||
+                    selectedSistema.dados.inseridos !== undefined) && (
+                    <div className="grid grid-cols-2 gap-2 mb-4">
+                      {[
+                        ['Período (venc.)', selectedSistema.dados.janela],
+                        ['Encontrados', selectedSistema.dados.encontrados],
+                        ['Provisionados', selectedSistema.dados.inseridos],
+                        ['Já existentes', selectedSistema.dados.jaExistentes],
+                      ]
+                        .filter(([, v]) => v !== undefined && v !== null)
+                        .map(([label, v]) => (
+                          <div
+                            key={label}
+                            className="bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5"
+                          >
+                            <p className="text-[10px] font-bold uppercase text-gray-400">
+                              {label}
+                            </p>
+                            <p className="text-sm font-semibold text-gray-800">
+                              {String(v)}
+                            </p>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+
+                {/* Lista de duplicatas provisionadas (job) */}
+                {Array.isArray(selectedSistema.dados?.duplicatas) &&
+                  selectedSistema.dados.duplicatas.length > 0 && (
+                    <div className="mb-4">
+                      <p className="text-[11px] font-bold uppercase text-gray-600 mb-1.5">
+                        Duplicatas provisionadas (
+                        {selectedSistema.dados.duplicatas.length})
+                      </p>
+                      <div className="border border-gray-200 rounded-lg overflow-hidden">
+                        <table className="w-full text-[11px]">
+                          <thead className="bg-[#000638] text-white">
+                            <tr>
+                              <th className="px-2 py-1 text-left">Fornecedor</th>
+                              <th className="px-2 py-1 text-left">Despesa</th>
+                              <th className="px-2 py-1 text-left">Dupl.</th>
+                              <th className="px-2 py-1 text-left">Venc.</th>
+                              <th className="px-2 py-1 text-right">Valor</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {selectedSistema.dados.duplicatas.map((d, i) => (
+                              <tr
+                                key={i}
+                                className="border-t border-gray-100 odd:bg-white even:bg-gray-50"
+                              >
+                                <td className="px-2 py-1 text-gray-800">
+                                  {d.fornecedor || '—'}
+                                </td>
+                                <td className="px-2 py-1 text-gray-600">
+                                  {d.despesa || '—'}
+                                </td>
+                                <td className="px-2 py-1 text-gray-600">
+                                  {d.duplicata || '—'}
+                                </td>
+                                <td className="px-2 py-1 text-gray-600 whitespace-nowrap">
+                                  {d.vencimento
+                                    ? String(d.vencimento)
+                                        .split('-')
+                                        .reverse()
+                                        .join('/')
+                                    : '—'}
+                                </td>
+                                <td className="px-2 py-1 text-right font-semibold text-green-700 whitespace-nowrap">
+                                  {(d.valor || 0).toLocaleString('pt-BR', {
+                                    style: 'currency',
+                                    currency: 'BRL',
+                                  })}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {selectedSistema.dados.duplicatasTruncadas && (
+                        <p className="text-[10px] text-gray-400 mt-1">
+                          Lista truncada — veja todas na Liberação de Pagamento.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                {/* Ação de navegação (quando aplicável) */}
+                {rotaDaNotificacao(selectedSistema) && (
+                  <button
+                    onClick={() => {
+                      navigate(rotaDaNotificacao(selectedSistema));
+                      onClose();
+                    }}
+                    className="w-full py-2 bg-[#000638] text-white text-sm rounded-lg font-bold hover:bg-[#001060] transition-all"
+                  >
+                    Abrir
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>
