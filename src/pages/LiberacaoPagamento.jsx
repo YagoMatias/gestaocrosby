@@ -45,6 +45,7 @@ import {
   ArrowsDownUp,
   CaretDown,
   Storefront,
+  Sparkle,
 } from '@phosphor-icons/react';
 
 const BANCOS = [
@@ -1875,6 +1876,7 @@ const LinhaTitulo = React.memo(
     ].filter(Boolean);
 
     const isManual = !!item.dados_completos?.inserido_manualmente;
+    const isIncluidoIA = !!item.dados_completos?.incluido_por_ia;
     const isTransferencia = item.status === 'TRANSFERENCIA';
     const isShoppingRecife =
       !isTransferencia &&
@@ -1929,6 +1931,15 @@ const LinhaTitulo = React.memo(
             <span className="mt-1 flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-300 font-bold w-fit">
               <Storefront size={8} weight="bold" />
               Shopping Recife
+            </span>
+          )}
+          {isIncluidoIA && (
+            <span
+              className="mt-1 flex items-center gap-1 text-[8px] px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-500 border border-indigo-200 font-semibold w-fit"
+              title="Título incluído automaticamente pela provisão da IA"
+            >
+              <Sparkle size={7} weight="bold" />
+              Incluído por IA
             </span>
           )}
         </td>
@@ -2696,6 +2707,9 @@ const LiberacaoPagamento = () => {
   const [ordenacao, setOrdenacao] = useState({ coluna: null, dir: 'asc' });
   // Modal de pagamento em lote
   const [modalPagarSelecionados, setModalPagarSelecionados] = useState(false);
+  // Execução manual do job de provisão automática (admin/owner)
+  const [rodandoProvisao, setRodandoProvisao] = useState(false);
+  const [showProvisaoMenu, setShowProvisaoMenu] = useState(false);
 
   const toggleOrdem = useCallback((coluna) => {
     setOrdenacao((prev) =>
@@ -2722,6 +2736,41 @@ const LiberacaoPagamento = () => {
     const { data } = await supabase.from('saldo_bancario').select('*');
     setSaldos(data || []);
   }, []);
+
+  // Dispara o job de provisão automática sob demanda (admin/owner).
+  // dryRun=true apenas simula (não insere e não notifica).
+  const rodarProvisao = useCallback(
+    async (dryRun) => {
+      setShowProvisaoMenu(false);
+      setRodandoProvisao(true);
+      try {
+        const res = await fetch(
+          `${API_BASE_URL}/api/jobs/provisao-liberacao/run${dryRun ? '?dryRun=1' : ''}`,
+          { method: 'POST' },
+        );
+        const json = await res.json();
+        if (!res.ok || json.success === false) {
+          throw new Error(json.message || `HTTP ${res.status}`);
+        }
+        const r = json.resultado || {};
+        const resumo =
+          `Período (venc.): ${r.janela ?? '—'}\n` +
+          `Encontrados: ${r.encontrados ?? 0}\n` +
+          `Novos: ${r.novos ?? 0}\n` +
+          `Já existentes: ${r.jaExistentes ?? 0}\n` +
+          `Inseridos: ${r.inseridos ?? 0}`;
+        alert(
+          `${dryRun ? '🧪 Simulação — nada foi inserido' : '✅ Execução concluída'}\n\n${resumo}`,
+        );
+        if (!dryRun) carregar();
+      } catch (e) {
+        alert('Erro ao rodar a provisão: ' + e.message);
+      } finally {
+        setRodandoProvisao(false);
+      }
+    },
+    [carregar],
+  );
 
   useEffect(() => {
     carregar();
@@ -4063,6 +4112,57 @@ const LiberacaoPagamento = () => {
           <PlusCircle size={14} weight="bold" />
           Adicionar Duplicata
         </button>
+
+        {isAdmin && (
+          <div className="relative">
+            <button
+              onClick={() => setShowProvisaoMenu((v) => !v)}
+              disabled={rodandoProvisao}
+              title="Executar a provisão automática de Contas a Pagar sob demanda"
+              className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-semibold px-3 py-1.5 rounded transition-colors"
+            >
+              {rodandoProvisao ? (
+                <Spinner size={14} className="animate-spin" />
+              ) : (
+                <Sparkle size={14} weight="bold" />
+              )}
+              {rodandoProvisao ? 'Rodando...' : 'Rodar provisão'}
+              {!rodandoProvisao && <CaretDown size={12} weight="bold" />}
+            </button>
+            {showProvisaoMenu && !rodandoProvisao && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setShowProvisaoMenu(false)}
+                />
+                <div className="absolute z-50 left-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl w-56 py-1">
+                  <button
+                    onClick={() => rodarProvisao(true)}
+                    className="w-full text-left px-3 py-2 hover:bg-gray-50 text-xs"
+                  >
+                    <span className="font-semibold text-gray-800">
+                      🧪 Simular (dry-run)
+                    </span>
+                    <span className="block text-[10px] text-gray-500">
+                      Mostra o que seria provisionado, sem inserir nada.
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => rodarProvisao(false)}
+                    className="w-full text-left px-3 py-2 hover:bg-indigo-50 text-xs border-t border-gray-100"
+                  >
+                    <span className="font-semibold text-indigo-700">
+                      ✅ Executar agora
+                    </span>
+                    <span className="block text-[10px] text-gray-500">
+                      Provisiona os títulos e notifica admin/owner.
+                    </span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
 
         {(isAdmin || isFinanceiro) && (
           <div className="ml-auto flex items-center gap-2">
