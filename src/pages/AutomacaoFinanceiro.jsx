@@ -16,6 +16,7 @@ import {
   Flask,
   Lightning,
   Stop,
+  Trash,
 } from '@phosphor-icons/react';
 
 // ── Roadmap das automações do Financeiro ──────────────────────────────────
@@ -55,6 +56,7 @@ const STATUS_AUTOMACAO = {
 // ── Estilo por status de envio ─────────────────────────────────────────────
 const STATUS_ENVIO = {
   enviado: { label: 'Enviado', cls: 'bg-green-100 text-green-700' },
+  enviando: { label: 'Enviando…', cls: 'bg-blue-100 text-blue-700' },
   pendente: { label: 'Pendente', cls: 'bg-yellow-100 text-yellow-700' },
   falha: { label: 'Falha', cls: 'bg-red-100 text-red-700' },
   pulado_pago: { label: 'Pulado — pago', cls: 'bg-gray-100 text-gray-600' },
@@ -69,6 +71,10 @@ const STATUS_ENVIO = {
   pulado_sem_boleto: {
     label: 'Sem boleto',
     cls: 'bg-gray-100 text-gray-600',
+  },
+  pulado_duplicado: {
+    label: 'Duplicada — não reenviada',
+    cls: 'bg-purple-100 text-purple-700',
   },
   cancelado_manual: {
     label: 'Cancelado',
@@ -265,6 +271,32 @@ const AutomacaoFinanceiro = () => {
     }
   };
 
+  const resetar = async () => {
+    const ok = window.confirm(
+      `Resetar o dia ${fmtData(data)}?\n\n` +
+        `Isso APAGA todos os registros do dia (inclusive enviados), para você rodar do zero.\n\n` +
+        `⚠️ Se rodar de novo em modo REAL, clientes já contatados podem receber novamente.\n\n` +
+        `Confirmar?`,
+    );
+    if (!ok) return;
+    setAcao({ tipo: 'loading', msg: 'Resetando o dia…' });
+    try {
+      const r = await fetch(
+        `${API_BASE_URL}/api/automacao/boletos/resetar?data=${data}`,
+        { method: 'POST' },
+      );
+      const j = await r.json();
+      if (!j.success) throw new Error(j.message || 'Erro');
+      setAcao({
+        tipo: 'ok',
+        msg: `🗑️ Dia resetado: ${j.removidos} registro(s) apagado(s). Pode rodar "Executar automação" de novo.`,
+      });
+      carregar(data);
+    } catch (e) {
+      setAcao({ tipo: 'erro', msg: e.message });
+    }
+  };
+
   const simular = async () => {
     setAcao({ tipo: 'loading', msg: 'Simulando planejamento (dry run)…' });
     try {
@@ -383,6 +415,12 @@ const AutomacaoFinanceiro = () => {
             className="flex items-center gap-1 border border-red-300 text-red-600 rounded-lg px-3 py-1.5 text-sm hover:bg-red-50"
           >
             <Stop size={16} /> Parar envios
+          </button>
+          <button
+            onClick={resetar}
+            className="flex items-center gap-1 border border-gray-300 text-gray-600 rounded-lg px-3 py-1.5 text-sm hover:bg-gray-50"
+          >
+            <Trash size={16} /> Resetar dia
           </button>
         </div>
       </div>
