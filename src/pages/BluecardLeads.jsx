@@ -833,7 +833,7 @@ function ListaAgrupada({ leads, atualizarStatus, sincronizarTotvs, setEditLead, 
             {!colapsado && gLeads.length > 0 && (
               <div className="bg-white rounded-2xl ring-1 ring-gray-200/70 overflow-x-auto">
                 {/* Header de colunas — cliques ordenam */}
-                <div className="grid min-w-[1720px] grid-cols-[28px_1.7fr_120px_120px_110px_140px_160px_110px_1fr_120px_70px_130px_110px_70px] items-center gap-2 px-5 py-3 text-[10px] font-medium uppercase tracking-wider text-gray-400 border-b border-gray-100">
+                <div className="grid min-w-[1720px] grid-cols-[28px_2.6fr_120px_120px_110px_140px_160px_110px_1fr_120px_70px_130px_110px_70px] items-center gap-2 px-5 py-3 text-[10px] font-medium uppercase tracking-wider text-gray-400 border-b border-gray-100">
                   <div></div>
                   <SortHeader label="Nome" sortKey="nome" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
                   <SortHeader label="Cod. Cliente" sortKey="cod_cliente" sortBy={sortBy} sortDir={sortDir} onSort={onSort} />
@@ -862,7 +862,7 @@ function ListaAgrupada({ leads, atualizarStatus, sincronizarTotvs, setEditLead, 
                     <div
                       key={l.id}
                       onClick={() => setEditLead(l)}
-                      className={`grid min-w-[1720px] grid-cols-[28px_1.7fr_120px_120px_110px_140px_160px_110px_1fr_120px_70px_130px_110px_70px] items-center gap-2 px-5 py-3 transition-colors cursor-pointer ${
+                      className={`grid min-w-[1720px] grid-cols-[28px_2.6fr_120px_120px_110px_140px_160px_110px_1fr_120px_70px_130px_110px_70px] items-center gap-2 px-5 py-3 transition-colors cursor-pointer ${
                         isSel ? 'bg-blue-50/60' : 'hover:bg-blue-50/30'
                       } ${!isLast ? 'border-b border-gray-50' : ''}`}
                     >
@@ -874,32 +874,40 @@ function ListaAgrupada({ leads, atualizarStatus, sincronizarTotvs, setEditLead, 
                         />
                       </div>
 
-                      {/* Nome */}
-                      <div className="flex items-center gap-2.5 min-w-0">
+                      {/* Nome — a etiqueta de indicação vai ABAIXO pra não
+                          espremer/cortar o nome do cliente na mesma linha */}
+                      <div className="flex items-start gap-2.5 min-w-0">
                         <span
-                          className={`w-2 h-2 rounded-full ${dot.bg} shrink-0`}
+                          className={`w-2 h-2 rounded-full ${dot.bg} shrink-0 mt-[6px]`}
                           title={s.label}
                         />
-                        <span className="font-semibold text-gray-800 text-[13px] truncate">
-                          {l.nome}
-                        </span>
-                        {l.indicado_por && (
-                          <span
-                            className={`inline-flex items-center px-2 py-[1px] rounded-md text-[10px] font-bold ${cor.bg} ${cor.text} whitespace-nowrap shrink-0`}
-                            title={`Indicado por ${l.indicado_por}`}
-                          >
-                            {slug || l.indicado_por}
-                          </span>
-                        )}
-                        {l.totvs_sync_error && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); sincronizarTotvs(l); }}
-                            className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md bg-rose-50 text-rose-600 hover:bg-rose-100 shrink-0"
-                            title={l.totvs_sync_error}
-                          >
-                            retry
-                          </button>
-                        )}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span
+                              className="font-semibold text-gray-800 text-[13px] truncate"
+                              title={l.nome}
+                            >
+                              {l.nome}
+                            </span>
+                            {l.totvs_sync_error && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); sincronizarTotvs(l); }}
+                                className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md bg-rose-50 text-rose-600 hover:bg-rose-100 shrink-0"
+                                title={l.totvs_sync_error}
+                              >
+                                retry
+                              </button>
+                            )}
+                          </div>
+                          {l.indicado_por && (
+                            <span
+                              className={`inline-block max-w-full truncate align-top px-1.5 py-[1px] mt-0.5 rounded text-[9px] font-bold ${cor.bg} ${cor.text}`}
+                              title={`Indicado por ${l.indicado_por}`}
+                            >
+                              {slug || l.indicado_por}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       {/* Cod cliente */}
