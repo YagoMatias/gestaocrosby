@@ -21,6 +21,7 @@
  * CONFIG (.env / Render)
  *   BOLETO_COBRANCA_ENABLED   = 'true' para ativar (default 'false')
  *   UAZAPI_BASE_URL           = host da UAzapi (ex.: https://xxx.uazapi.com)
+ *   UAZAPI_ADMIN_TOKEN        = token admin (lista instâncias / resolve token)
  *   UAZAPI_COBRANCA_INSTANCE  = nome da instância dedicada (default 'cobranca')
  *   BOLETO_COBRANCA_REMETENTE = assinatura da mensagem (default 'Grupo Crosby')
  *   BOLETO_COBRANCA_TZ        = timezone (default 'America/Sao_Paulo')
@@ -29,7 +30,7 @@
 import cron from 'node-cron';
 import axios from 'axios';
 import supabase from '../config/supabase.js';
-import { getPool } from '../services/uazapiSync.js';
+import { listUazapiInstancesRaw } from '../config/uazapi.js';
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 const UAZ_BASE = process.env.UAZAPI_BASE_URL || '';
@@ -40,17 +41,22 @@ const ENABLED =
 const REMETENTE = process.env.BOLETO_COBRANCA_REMETENTE || 'Grupo Crosby';
 const TZ = process.env.BOLETO_COBRANCA_TZ || 'America/Sao_Paulo';
 // TRAVA DE TESTE: se definido, TODOS os envios são redirecionados para este
-// número (com o PDF e o texto reais do cliente), em vez do telefone real.
+// número (com o texto real do cliente), em vez do telefone real.
 // Deixe VAZIO em produção para enviar aos clientes de verdade.
 const TEST_PHONE = process.env.BOLETO_COBRANCA_TEST_PHONE || '';
+// Filiais consultadas na cobrança (separadas por vírgula). Default: 1,65,99,101.
+const BRANCHES = process.env.BOLETO_COBRANCA_BRANCHES || '1,65,99,101';
 const INTERNAL_API_BASE =
   process.env.INTERNAL_API_BASE_URL ||
   `http://localhost:${process.env.PORT || 4100}`;
 
 const TABLE = 'automacao_boleto_envios';
-const MIN_GAP_MS = 120_000; // 2 min mínimo entre 2 envios (anti-ban)
-const GAP_MIN_S = 120; // espaçamento do agendamento: 2 min
-const GAP_MAX_S = 180; // até 3 min
+// Ritmo anti-banimento: no máximo BATCH_SIZE cobranças enviadas a cada
+// BATCH_WINDOW (janela deslizante). Default: 5 a cada 30 minutos.
+const BATCH_SIZE = Number(process.env.BOLETO_COBRANCA_BATCH_SIZE || 5);
+const BATCH_WINDOW_MS =
+  Number(process.env.BOLETO_COBRANCA_BATCH_MINUTES || 30) * 60_000;
+const MIN_GAP_MS = 45_000; // gap mínimo entre 2 envios (espaça o lote)
 const MAX_TENTATIVAS = 3;
 const RETRY_DELAY_MS = 5 * 60_000; // reagenda 5 min em caso de erro de envio
 
@@ -69,9 +75,6 @@ function addDays(ymdStr, n) {
   const dt = new Date(Date.UTC(y, m - 1, d));
   dt.setUTCDate(dt.getUTCDate() + n);
   return dt.toISOString().slice(0, 10);
-}
-function randInt(min, max) {
-  return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
 // ─── Helpers de formatação ───────────────────────────────────────────────────
@@ -96,10 +99,10 @@ function normalizeBrPhone(s) {
 
 // ─── Mensagem enviada ao cliente ─────────────────────────────────────────────
 function montarMensagem(row) {
-  const primeiroNome = String(row.nome_cliente || 'Cliente').split(/\s+/)[0];
+  const nome = String(row.nome_cliente || 'Cliente').trim();
   const venceTxt = row.tipo === 'D-3' ? 'vence em 3 dias' : 'vence hoje';
   return [
-    `Olá, ${primeiroNome}! 👋`,
+    `Olá, ${nome}! 👋`,
     `Lembrete da sua fatura junto ao ${REMETENTE}.`,
     ``,
     `📄 Fatura: ${row.nr_fatura}`,
@@ -107,38 +110,78 @@ function montarMensagem(row) {
     `⏰ Vencimento: ${formatDateBR(row.dt_vencimento)} (${venceTxt})`,
     `💰 Valor: ${formatBRL(row.vl_fatura)}`,
     ``,
-    `Segue o boleto em anexo. Pague pela linha digitável:`,
-    `${row.linha_digitavel || '(disponível no PDF em anexo)'}`,
+    `Segue abaixo a linha digitável do boleto para pagamento 👇`,
     ``,
     `✅ Se já efetuou o pagamento, por favor desconsidere esta mensagem.`,
   ].join('\n');
 }
 
 // ─── UAzapi: resolver instância e enviar documento (PDF) ─────────────────────
+// Resolve a instância dedicada direto da API da UAzapi (GET /instance/all via
+// UAZAPI_ADMIN_TOKEN) — SEM depender de banco. Retorna {name, token, status}.
 async function resolverInstancia() {
-  const pool = getPool();
-  let r = await pool.query(
-    `SELECT id, name, token, status FROM instances
-      WHERE LOWER(name) = LOWER($1)
-      ORDER BY (status = 'connected') DESC
-      LIMIT 1`,
-    [INSTANCE],
+  const arr = await listUazapiInstancesRaw();
+  const alvo = String(INSTANCE).toLowerCase();
+  // instâncias conectadas têm prioridade no match
+  const ordenadas = [...arr].sort(
+    (a, b) =>
+      Number(b.status === 'connected') - Number(a.status === 'connected'),
   );
-  if (r.rows[0]?.token) return r.rows[0];
-  r = await pool.query(
-    `SELECT id, name, token, status FROM instances
-      WHERE LOWER(name) LIKE '%' || LOWER($1) || '%'
-      ORDER BY (status = 'connected') DESC
-      LIMIT 1`,
-    [INSTANCE],
+  return (
+    ordenadas.find((i) => String(i.name).toLowerCase() === alvo) ||
+    ordenadas.find((i) => String(i.name).toLowerCase().includes(alvo)) ||
+    null
   );
-  return r.rows[0] || null;
+}
+
+// Envia uma mensagem de TEXTO via UAzapi (/send/text, com fallback /sendText).
+// É o caminho usado hoje na cobrança: manda os dados da fatura + linha digitável.
+async function enviarTextoUazapi({ phone, text, token }) {
+  if (!UAZ_BASE) throw new Error('UAZAPI_BASE_URL não configurado');
+  const number = normalizeBrPhone(phone);
+  if (!number) throw new Error('Telefone inválido');
+  try {
+    await axios.post(
+      `${UAZ_BASE}/send/text`,
+      { number, text },
+      { headers: { token, 'Content-Type': 'application/json' }, timeout: 30_000 },
+    );
+  } catch (err) {
+    if (err.response?.status === 404) {
+      await axios.post(
+        `${UAZ_BASE}/sendText`,
+        { number, text },
+        { headers: { token, 'Content-Type': 'application/json' }, timeout: 30_000 },
+      );
+    } else {
+      throw err;
+    }
+  }
+  return { number };
+}
+
+// Envia a cobrança completa: 1ª mensagem com os dados da fatura, e 2ª mensagem
+// contendo SÓ a linha digitável (pra o cliente copiar e colar). A 2ª é
+// best-effort — se falhar, não invalida o envio (a 1ª já foi entregue).
+async function enviarCobranca({ phone, row, token }) {
+  await enviarTextoUazapi({ phone, text: montarMensagem(row), token });
+  const linha = String(row.linha_digitavel || '').trim();
+  if (linha) {
+    try {
+      await enviarTextoUazapi({ phone, text: linha, token });
+    } catch (e) {
+      console.warn(
+        `⚠️ [boleto-cobranca] 2ª mensagem (linha digitável) falhou p/ ${phone}: ${e.message}`,
+      );
+    }
+  }
 }
 
 /**
- * Envia um documento (PDF em base64) via UAzapi. Tenta múltiplos formatos de
- * payload por compatibilidade entre versões da API (igual ao envio de imagem
- * já existente em forecast.routes.js).
+ * Envia um documento (PDF em base64) via UAzapi. Mantido para reativar o anexo
+ * do boleto no futuro (hoje a cobrança envia só a linha digitável em texto).
+ * OBS: o base64 devolvido pelo TOTVS bank-slip é rejeitado pela UAzapi
+ * ("illegal base64 data") — precisa ser saneado antes de reativar.
  */
 async function enviarDocumentoUazapi({
   phone,
@@ -156,7 +199,17 @@ async function enviarDocumentoUazapi({
   );
   if (!cleanB64) throw new Error('PDF vazio');
 
+  const dataUri = `data:application/pdf;base64,${cleanB64}`;
+  // Formatos conhecidos de envio de documento na UAzapi (varia entre versões).
   const tries = [
+    {
+      url: `${UAZ_BASE}/send/media`,
+      body: { number, type: 'document', file: cleanB64, docName: fileName, text: caption },
+    },
+    {
+      url: `${UAZ_BASE}/send/media`,
+      body: { number, type: 'document', file: dataUri, docName: fileName, text: caption },
+    },
     {
       url: `${UAZ_BASE}/send/media`,
       body: {
@@ -164,18 +217,17 @@ async function enviarDocumentoUazapi({
         type: 'document',
         file: cleanB64,
         docName: fileName,
+        mimetype: 'application/pdf',
         text: caption,
       },
     },
     {
+      url: `${UAZ_BASE}/send/document`,
+      body: { number, file: cleanB64, docName: fileName, text: caption },
+    },
+    {
       url: `${UAZ_BASE}/send/media`,
-      body: {
-        number,
-        mediatype: 'document',
-        file: `data:application/pdf;base64,${cleanB64}`,
-        fileName,
-        caption,
-      },
+      body: { number, mediatype: 'document', file: dataUri, fileName, caption },
     },
     {
       url: `${UAZ_BASE}/sendDocument`,
@@ -183,7 +235,7 @@ async function enviarDocumentoUazapi({
     },
   ];
 
-  let lastErr;
+  const erros = [];
   for (const t of tries) {
     try {
       await axios.post(t.url, t.body, {
@@ -194,12 +246,21 @@ async function enviarDocumentoUazapi({
       });
       return { number, endpoint: t.url };
     } catch (err) {
-      lastErr = err;
-      if (err.response?.status === 404 || err.response?.status === 400) continue;
-      throw err;
+      // Segue para o próximo formato em QUALQUER erro, guardando o motivo real
+      const corpo = err.response?.data
+        ? typeof err.response.data === 'string'
+          ? err.response.data
+          : JSON.stringify(err.response.data)
+        : err.message;
+      const rota = t.url.replace(UAZ_BASE, '');
+      erros.push(
+        `${rota} [${err.response?.status || err.code || '?'}]: ${String(corpo).slice(0, 180)}`,
+      );
     }
   }
-  throw lastErr || new Error('Nenhum endpoint UAzapi aceitou o documento');
+  throw new Error(
+    `Nenhum formato de envio de documento funcionou na UAzapi. Detalhes: ${erros.join(' || ')}`,
+  );
 }
 
 // ─── Chamadas internas TOTVS ─────────────────────────────────────────────────
@@ -208,6 +269,7 @@ async function buscarFaturas({ dtInicio, dtFim, cdCliente, nrFatura } = {}) {
     dt_inicio: dtInicio,
     dt_fim: dtFim,
     modo: 'vencimento',
+    branches: BRANCHES, // só as filiais configuradas (default 1,65,99,101)
   };
   if (cdCliente) params.cd_cliente = cdCliente;
   if (nrFatura) params.nr_fatura = nrFatura;
@@ -228,18 +290,41 @@ async function buscarTelefones(codigos) {
   return resp.data?.data || {};
 }
 
-async function gerarPdfBoleto(row) {
-  const resp = await axios.post(
-    `${INTERNAL_API_BASE}/api/totvs/bank-slip`,
-    {
-      branchCode: row.cd_empresa,
-      customerCode: row.cd_cliente,
-      receivableCode: row.nr_fatura,
-      installmentNumber: row.nr_parcela,
-    },
-    { timeout: 0 }, // geração do boleto no TOTVS é lenta (fala com banco/CNAB)
-  );
-  return resp.data?.data?.base64 || null;
+// Gera o PDF do boleto (TOTVS). O TOTVS às vezes derruba a conexão
+// (ECONNRESET / socket hang up) porque fala com banco/CNAB — então tenta
+// novamente em erros transientes (rede / 5xx), com backoff curto.
+async function gerarPdfBoleto(row, { retries = 2 } = {}) {
+  let lastErr;
+  for (let tentativa = 0; tentativa <= retries; tentativa++) {
+    try {
+      const resp = await axios.post(
+        `${INTERNAL_API_BASE}/api/totvs/bank-slip`,
+        {
+          branchCode: row.cd_empresa,
+          customerCode: row.cd_cliente,
+          receivableCode: row.nr_fatura,
+          installmentNumber: row.nr_parcela,
+        },
+        { timeout: 120_000 },
+      );
+      return resp.data?.data?.base64 || null;
+    } catch (err) {
+      lastErr = err;
+      const transiente =
+        err.code === 'ECONNRESET' ||
+        err.code === 'ETIMEDOUT' ||
+        /socket hang up|ECONNRESET|ETIMEDOUT|timeout|network/i.test(
+          err.message || '',
+        ) ||
+        Number(err.response?.status) >= 500;
+      if (tentativa < retries && transiente) {
+        await new Promise((r) => setTimeout(r, 1500 * (tentativa + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
 }
 
 // ─── Classificação de status de uma fatura ───────────────────────────────────
@@ -297,7 +382,34 @@ export async function planejarEnvios({ dryRun = false } = {}) {
 
   // Filtra: só FATURAS (documentType=1), não pagas, não canceladas, e que
   // vencem exatamente em D-0 ou D-3.
-  const selecionados = filtrarElegiveis(faturas, hoje, alvoD3);
+  const elegiveis = filtrarElegiveis(faturas, hoje, alvoD3);
+  // Enviamos só a linha digitável (texto): fila = faturas que TÊM boleto.
+  const comBoleto = elegiveis.filter((s) => s.f.linha_digitavel);
+  const semBoletoCount = elegiveis.length - comBoleto.length;
+  // DEDUPE por IDENTIDADE da fatura (cliente|nº|parcela|vencimento|valor —
+  // SEM empresa, pois a mesma fatura pode aparecer sob filiais diferentes):
+  // a API do TOTVS pagina em paralelo e pode devolver o mesmo item 2x —
+  // cada fatura entra na fila 1 única vez.
+  const vistos = new Set();
+  const selecionados = [];
+  for (const s of comBoleto) {
+    const k = [
+      s.f.cd_cliente,
+      s.f.nr_fatura ?? s.f.nr_fat,
+      s.f.nr_parcela,
+      String(s.f.dt_vencimento || '').slice(0, 10),
+      Number(s.f.vl_fatura || 0).toFixed(2),
+    ].join('|');
+    if (vistos.has(k)) continue;
+    vistos.add(k);
+    selecionados.push(s);
+  }
+  const duplicadasApi = comBoleto.length - selecionados.length;
+  if (duplicadasApi > 0) {
+    console.warn(
+      `⚠️ [boleto-cobranca] ${duplicadasApi} item(ns) duplicado(s) na resposta do TOTVS — removidos`,
+    );
+  }
 
   // Telefones (em lote) — nomes reais + celular
   const codigos = [...new Set(selecionados.map((s) => s.f.cd_cliente))];
@@ -310,15 +422,15 @@ export async function planejarEnvios({ dryRun = false } = {}) {
     );
   }
 
-  // Monta as linhas, com agendamento espaçado (2–3 min entre cada)
-  let cursor = Date.now();
+  // Monta as linhas. Todas ficam "prontas para agora" — quem controla o ritmo
+  // (5 a cada 30 min) é o worker, por janela deslizante.
+  const agoraISO = new Date().toISOString();
   const rows = selecionados.map(({ f, tipo }) => {
     const pessoa = pessoas[f.cd_cliente] || {};
     const telefone = normalizeBrPhone(pessoa.phone);
     // Em modo teste, mesmo sem telefone do cliente o item entra na fila
     // (o destino será o número de teste).
     const temDestino = !!telefone || !!TEST_PHONE;
-    cursor += randInt(GAP_MIN_S, GAP_MAX_S) * 1000;
     return {
       data_ref: hoje,
       tipo,
@@ -336,7 +448,7 @@ export async function planejarEnvios({ dryRun = false } = {}) {
       linha_digitavel: f.linha_digitavel || null,
       status: temDestino ? 'pendente' : 'pulado_sem_telefone',
       erro: temDestino ? null : 'Cliente sem telefone cadastrado no TOTVS',
-      scheduled_at: temDestino ? new Date(cursor).toISOString() : null,
+      scheduled_at: temDestino ? agoraISO : null,
     };
   });
 
@@ -348,6 +460,7 @@ export async function planejarEnvios({ dryRun = false } = {}) {
     d0: rows.filter((r) => r.tipo === 'D-0').length,
     d3: rows.filter((r) => r.tipo === 'D-3').length,
     sem_telefone: rows.filter((r) => r.status === 'pulado_sem_telefone').length,
+    sem_boleto: semBoletoCount,
     modo_teste: !!TEST_PHONE,
     test_phone: TEST_PHONE ? normalizeBrPhone(TEST_PHONE) : null,
     dryRun,
@@ -409,76 +522,64 @@ export async function enviarBoletoTeste() {
     return { ok: false, error: 'Nenhuma fatura elegível (D-0 ou D-3) hoje.' };
   }
 
-  // Pega a primeira fatura elegível como amostra
-  const { f, tipo } = elegiveis[0];
-
-  // Nome real do cliente (o telefone dele é ignorado — vai pro número de teste)
-  let pessoa = {};
-  try {
-    const pessoas = await buscarTelefones([f.cd_cliente]);
-    pessoa = pessoas[f.cd_cliente] || {};
-  } catch {
-    /* nome é opcional para o teste */
-  }
-
-  const row = {
-    tipo,
-    cd_empresa: f.cd_empresa,
-    cd_cliente: f.cd_cliente,
-    nome_cliente: pessoa.name || pessoa.fantasyName || f.nm_cliente || 'Cliente',
-    nr_fatura: String(f.nr_fatura ?? f.nr_fat ?? ''),
-    nr_parcela: String(f.nr_parcela ?? ''),
-    vl_fatura: Number(f.vl_fatura || 0),
-    dt_emissao: f.dt_emissao ? String(f.dt_emissao).slice(0, 10) : null,
-    dt_vencimento: f.dt_vencimento ? String(f.dt_vencimento).slice(0, 10) : null,
-    linha_digitavel: f.linha_digitavel || null,
-  };
-
-  // Instância dedicada — resolvida da tabela `instances` (Postgres UAZAPI_DB_*)
+  // Instância dedicada — resolvida direto da API da UAzapi (sem banco)
   let sender;
   try {
     sender = await resolverInstancia();
   } catch (err) {
     return {
       ok: false,
-      error: `Falha ao consultar a tabela "instances" no banco da UAzapi. Confira as vars UAZAPI_DB_HOST/PORT/USER/PASSWORD/NAME no .env. Detalhe: ${err.message}`,
+      error: `Falha ao consultar a UAzapi (GET /instance/all). Confira UAZAPI_BASE_URL e UAZAPI_ADMIN_TOKEN. Detalhe: ${err.message}`,
     };
   }
   if (!sender) {
     return {
       ok: false,
-      error: `Instância "${INSTANCE}" não existe na tabela "instances". Rode POST /api/uazapi-sync/run para sincronizar, e confira UAZAPI_COBRANCA_INSTANCE.`,
+      error: `Instância "${INSTANCE}" não encontrada na UAzapi. Confira UAZAPI_COBRANCA_INSTANCE (e se UAZAPI_BASE_URL/UAZAPI_ADMIN_TOKEN estão certos).`,
     };
   }
   if (!sender.token) {
     return {
       ok: false,
-      error: `Instância "${INSTANCE}" encontrada (status: ${sender.status || 'desconhecido'}) mas SEM token. Reconecte-a na UAzapi e rode o sync novamente.`,
+      error: `Instância "${INSTANCE}" encontrada (status: ${sender.status || 'desconhecido'}) mas SEM token. Reconecte-a na UAzapi.`,
     };
   }
 
-  // PDF do boleto
-  let pdfBase64;
-  try {
-    pdfBase64 = await gerarPdfBoleto(row);
-  } catch (err) {
-    const msg = err.response?.data?.message || err.message;
-    return { ok: false, error: `Erro ao gerar boleto no TOTVS: ${msg}` };
+  // Enviamos só a LINHA DIGITÁVEL (texto). Então usamos a primeira fatura
+  // elegível que tenha linha digitável no TOTVS.
+  const comBoleto = elegiveis.filter((e) => e.f.linha_digitavel);
+  if (!comBoleto.length) {
+    return {
+      ok: false,
+      error: `Nenhuma das ${elegiveis.length} fatura(s) elegível(is) hoje tem linha digitável (boleto) no TOTVS — nada a enviar por texto.`,
+    };
   }
-  if (!pdfBase64) {
-    return { ok: false, error: 'PDF do boleto veio vazio do TOTVS.' };
+  const { f, tipo } = comBoleto[0];
+  const row = {
+    tipo,
+    cd_empresa: f.cd_empresa,
+    cd_cliente: f.cd_cliente,
+    nr_fatura: String(f.nr_fatura ?? f.nr_fat ?? ''),
+    nr_parcela: String(f.nr_parcela ?? ''),
+    vl_fatura: Number(f.vl_fatura || 0),
+    dt_emissao: f.dt_emissao ? String(f.dt_emissao).slice(0, 10) : null,
+    dt_vencimento: f.dt_vencimento ? String(f.dt_vencimento).slice(0, 10) : null,
+    linha_digitavel: f.linha_digitavel,
+  };
+
+  // Nome real do cliente da fatura escolhida (o telefone dele é ignorado — o
+  // envio vai para o número de teste).
+  try {
+    const pessoas = await buscarTelefones([row.cd_cliente]);
+    const pessoa = pessoas[row.cd_cliente] || {};
+    row.nome_cliente = pessoa.name || pessoa.fantasyName || 'Cliente';
+  } catch {
+    row.nome_cliente = 'Cliente';
   }
 
-  // Envio
-  const caption = montarMensagem(row);
+  // Envio: mensagem principal + 2ª mensagem só com a linha digitável
   try {
-    await enviarDocumentoUazapi({
-      phone: destino,
-      pdfBase64,
-      fileName: `boleto-TESTE-${row.nr_fatura}-${row.nr_parcela}.pdf`,
-      caption,
-      token: sender.token,
-    });
+    await enviarCobranca({ phone: destino, row, token: sender.token });
   } catch (err) {
     const msg = err.response?.data?.message || err.message;
     return { ok: false, error: `Erro no envio UAzapi: ${msg}` };
@@ -502,46 +603,163 @@ export async function enviarBoletoTeste() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// WORKER — processa 1 item por tick, respeitando o gap mínimo
+// WORKER — processamento SEQUENCIAL: monta um array com os itens do lote da
+// janela (até BATCH_SIZE) e envia UM POR VEZ, num loop. Cada item só é enviado
+// depois que o anterior teve o status CONFIRMADO no banco. Se a confirmação
+// falhar, o loop ABORTA (nunca arriscar duplicar).
+//
+// Defesas anti-duplicação (em camadas):
+//   a) claim atômico 'pendente'→'enviando' (só 1 instância vence a linha);
+//   b) checagem de idempotência POR FATURA: se a mesma fatura (empresa/cliente/
+//      número/parcela) já está 'enviado' ou 'enviando' hoje em QUALQUER outra
+//      linha, pula — a mesma fatura nunca sai 2x no dia;
+//   c) status 'enviado' é gravado e VERIFICADO antes de passar ao próximo item;
+//   d) trava em memória de gap mínimo entre envios.
 // ─────────────────────────────────────────────────────────────────────────────
 let processando = false;
+let ultimaTentativaEnvio = 0; // timestamp da última tentativa (trava anti-flood)
+// Memória de faturas já enviadas por ESTA instância (chave → timestamp).
+// Garante que a mesma fatura nunca sai 2x na mesma janela, mesmo que o banco
+// falhe ou atrase.
+const enviosRecentes = new Map();
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Chave de IDENTIDADE da fatura (independente de id/linha/empresa):
+// cliente + nº fatura + parcela + vencimento + emissão + valor.
+function chaveFatura(r) {
+  const val = Number(r.vl_fatura || 0).toFixed(2);
+  return `${r.cd_cliente}|${r.nr_fatura}|${r.nr_parcela}|${r.dt_vencimento}|${r.dt_emissao}|${val}`;
+}
 
 export async function processarFila() {
   if (!ENABLED) return;
-  if (processando) return; // evita sobreposição de ticks
+  if (processando) return; // evita sobreposição de ticks na mesma instância
   processando = true;
   try {
     const hoje = ymd();
+    const agoraISO = new Date().toISOString();
 
-    // Guard anti-ban: se enviamos algo há menos de MIN_GAP_MS, espera.
-    const { data: ultimos } = await supabase
+    // Recupera linhas presas em 'enviando' (instância morreu no meio). NÃO
+    // reenvia — não dá pra saber se a mensagem saiu; marca falha p/ revisão.
+    const presasDesde = new Date(Date.now() - 10 * 60_000).toISOString();
+    await supabase
       .from(TABLE)
-      .select('enviado_em')
-      .eq('status', 'enviado')
-      .not('enviado_em', 'is', null)
-      .order('enviado_em', { ascending: false })
-      .limit(1);
-    const ultimoEnvio = ultimos?.[0]?.enviado_em
-      ? new Date(ultimos[0].enviado_em).getTime()
-      : 0;
-    if (Date.now() - ultimoEnvio < MIN_GAP_MS) return;
+      .update({
+        status: 'falha',
+        erro: 'Interrompido durante envio (restart) — verificar antes de reenviar',
+        atualizado_em: agoraISO,
+      })
+      .eq('status', 'enviando')
+      .lt('atualizado_em', presasDesde);
 
-    // Próxima pendente já vencida (scheduled_at <= agora)
-    const { data: pend, error } = await supabase
+    // Quota da janela: no máx BATCH_SIZE enviados nos últimos BATCH_WINDOW_MS.
+    const desdeJanela = new Date(Date.now() - BATCH_WINDOW_MS).toISOString();
+    const { count: enviadosJanela } = await supabase
+      .from(TABLE)
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'enviado')
+      .gte('enviado_em', desdeJanela);
+    const quota = BATCH_SIZE - (enviadosJanela || 0);
+    if (quota <= 0) return; // janela cheia — aguarda a próxima
+
+    // ARRAY DO LOTE: até `quota` pendentes vencidas, em ordem
+    const { data: lote, error } = await supabase
       .from(TABLE)
       .select('*')
       .eq('status', 'pendente')
-      .lte('scheduled_at', new Date().toISOString())
+      .lte('scheduled_at', agoraISO)
       .order('scheduled_at', { ascending: true })
-      .limit(1);
+      .order('id', { ascending: true })
+      .limit(quota);
     if (error) {
       console.error(`❌ [boleto-cobranca] Erro ao buscar fila: ${error.message}`);
       return;
     }
-    const row = pend?.[0];
-    if (!row) return;
+    if (!lote?.length) return;
 
-    await processarUm(row, hoje);
+    console.log(
+      `📦 [boleto-cobranca] Lote: ${lote.length} item(ns) — enviando 1 por vez`,
+    );
+
+    // LOOP SEQUENCIAL — um item por vez, status confirmado entre cada um
+    for (const row of lote) {
+      // Gap mínimo entre envios (memória + relógio)
+      const espera = MIN_GAP_MS - (Date.now() - ultimaTentativaEnvio);
+      if (espera > 0) await sleep(espera);
+
+      // a) CLAIM atômico: só segue quem mudar 'pendente'→'enviando'
+      const { data: claimed, error: claimErr } = await supabase
+        .from(TABLE)
+        .update({ status: 'enviando', atualizado_em: new Date().toISOString() })
+        .eq('id', row.id)
+        .eq('status', 'pendente')
+        .select('id');
+      if (claimErr) {
+        console.error(
+          `❌ [boleto-cobranca] claim #${row.id}: ${claimErr.message} — abortando lote`,
+        );
+        break; // sem certeza do estado → não arriscar
+      }
+      if (!claimed?.length) continue; // outra instância pegou esta linha
+
+      // b) IDEMPOTÊNCIA POR FATURA (cliente+fatura+parcela+vencimento, SEM
+      // empresa — a mesma fatura pode aparecer sob filiais diferentes):
+      // já enviada/em envio hoje em qualquer outra linha?
+      const { count: jaTratada, error: dupErr } = await supabase
+        .from(TABLE)
+        .select('id', { count: 'exact', head: true })
+        .eq('data_ref', row.data_ref)
+        .eq('cd_cliente', row.cd_cliente)
+        .eq('nr_fatura', row.nr_fatura)
+        .eq('nr_parcela', row.nr_parcela)
+        .eq('dt_vencimento', row.dt_vencimento)
+        .in('status', ['enviado', 'enviando'])
+        .neq('id', row.id);
+      if (dupErr) {
+        console.error(
+          `❌ [boleto-cobranca] check duplicidade #${row.id}: ${dupErr.message} — abortando lote`,
+        );
+        await marcar(row.id, { status: 'pendente' }); // devolve pra fila
+        break;
+      }
+      if ((jaTratada || 0) > 0) {
+        await marcar(row.id, {
+          status: 'pulado_duplicado',
+          erro: `Fatura ${chaveFatura(row)} já enviada hoje em outra linha`,
+        });
+        console.log(
+          `⏭️ [boleto-cobranca] #${row.id} pulado (fatura duplicada no dia)`,
+        );
+        continue;
+      }
+
+      // b2) TRAVA DE MEMÓRIA: esta instância já enviou esta fatura na janela?
+      // (protege mesmo se o banco falhar/atrasar)
+      const chave = chaveFatura(row);
+      const ultimoEnvioFatura = enviosRecentes.get(chave) || 0;
+      if (Date.now() - ultimoEnvioFatura < BATCH_WINDOW_MS) {
+        await marcar(row.id, {
+          status: 'pulado_duplicado',
+          erro: `Fatura ${chave} enviada há menos de ${Math.round(BATCH_WINDOW_MS / 60000)} min (memória)`,
+        });
+        console.log(
+          `⏭️ [boleto-cobranca] #${row.id} pulado (duplicada na memória)`,
+        );
+        continue;
+      }
+
+      // c) Envia e CONFIRMA o status antes do próximo
+      ultimaTentativaEnvio = Date.now();
+      const resultado = await processarUm(row, hoje);
+      if (resultado === 'enviado') enviosRecentes.set(chave, Date.now());
+      if (resultado === 'abort') {
+        console.error(
+          `🛑 [boleto-cobranca] status do #${row.id} não confirmado — lote abortado p/ evitar duplicação`,
+        );
+        break;
+      }
+    }
   } catch (err) {
     console.error(`❌ [boleto-cobranca] worker: ${err.message}`);
   } finally {
@@ -549,11 +767,35 @@ export async function processarFila() {
   }
 }
 
+// Atualiza a linha e retorna true/false conforme a gravação foi CONFIRMADA.
 async function marcar(id, patch) {
-  await supabase
+  const nowISO = new Date().toISOString();
+  const { error } = await supabase
     .from(TABLE)
-    .update({ ...patch, atualizado_em: new Date().toISOString() })
+    .update({ ...patch, atualizado_em: nowISO })
     .eq('id', id);
+  if (!error) return true;
+  // CRÍTICO: se a atualização completa falhar (ex.: coluna inexistente na
+  // tabela), tenta um patch MÍNIMO com colunas garantidas. O essencial é a
+  // linha SAIR da fila — senão o worker a reenviaria (flood).
+  console.error(
+    `❌ [boleto-cobranca] marcar #${id} falhou (${error.message}) — retry com patch mínimo`,
+  );
+  const minimal = { atualizado_em: nowISO };
+  if (patch.status !== undefined) minimal.status = patch.status;
+  if (patch.enviado_em !== undefined) minimal.enviado_em = patch.enviado_em;
+  if (patch.erro !== undefined) minimal.erro = patch.erro;
+  const { error: e2 } = await supabase
+    .from(TABLE)
+    .update(minimal)
+    .eq('id', id);
+  if (e2) {
+    console.error(
+      `❌ [boleto-cobranca] marcar #${id} FALHOU no retry mínimo: ${e2.message} — risco de reenvio!`,
+    );
+    return false;
+  }
+  return true;
 }
 
 async function processarUm(row, hoje) {
@@ -615,57 +857,56 @@ async function processarUm(row, hoje) {
   if (!sender?.token) {
     await falharOuReagendar(
       row,
-      `Instância "${INSTANCE}" não encontrada/conectada (rode o sync UAzapi)`,
+      `Instância "${INSTANCE}" não encontrada/conectada na UAzapi (confira UAZAPI_COBRANCA_INSTANCE e UAZAPI_ADMIN_TOKEN)`,
     );
     return;
   }
 
-  // 3) Gerar PDF do boleto
-  let pdfBase64;
-  try {
-    pdfBase64 = await gerarPdfBoleto(row);
-  } catch (err) {
-    const msg = err.response?.data?.message || err.message;
-    // TOTVS costuma recusar boleto de título já pago
-    if (/pag|liquid|baix/i.test(String(msg))) {
-      await marcar(row.id, { status: 'pulado_pago', erro: msg });
-      return;
-    }
-    await falharOuReagendar(row, `Erro ao gerar boleto: ${msg}`);
-    return;
-  }
-  if (!pdfBase64) {
-    await falharOuReagendar(row, 'PDF do boleto veio vazio do TOTVS');
+  // 3) Precisa da linha digitável (enviamos só texto, sem PDF)
+  if (!row.linha_digitavel) {
+    await marcar(row.id, {
+      status: 'pulado_sem_boleto',
+      erro: 'Fatura sem linha digitável (boleto) no TOTVS',
+    });
+    console.log(`⏭️ [boleto-cobranca] #${row.id} pulado (sem linha digitável)`);
     return;
   }
 
-  // 4) Enviar via UAzapi
+  // 4) Enviar via UAzapi: mensagem principal + 2ª msg só com a linha digitável
   const caption = montarMensagem(row);
   try {
-    await enviarDocumentoUazapi({
-      phone: destino,
-      pdfBase64,
-      fileName: `boleto-${row.nr_fatura}-${row.nr_parcela}.pdf`,
-      caption,
-      token: sender.token,
-    });
-    await marcar(row.id, {
-      status: 'enviado',
-      enviado_em: new Date().toISOString(),
-      conteudo_enviado: caption,
-      redirecionado_para: TEST_PHONE ? destino : null,
-      erro: null,
-    });
-    console.log(
-      `✅ [boleto-cobranca] #${row.id} enviado → ${row.nome_cliente} ` +
-        (TEST_PHONE
-          ? `[TESTE → ${destino}] (cliente real: ${row.telefone || 'sem telefone'})`
-          : `(${destino})`),
-    );
+    await enviarCobranca({ phone: destino, row, token: sender.token });
   } catch (err) {
     const msg = err.response?.data?.message || err.message;
     await falharOuReagendar(row, `Erro no envio UAzapi: ${msg}`);
+    return 'falha';
   }
+
+  // 5) CONFIRMAR o status 'enviado' no banco ANTES de liberar o próximo item.
+  // Se não conseguir confirmar, o chamador ABORTA o lote (nunca duplicar).
+  const okMarcar = await marcar(row.id, {
+    status: 'enviado',
+    enviado_em: new Date().toISOString(),
+    conteudo_enviado: caption,
+    redirecionado_para: TEST_PHONE ? destino : null,
+    erro: null,
+  });
+  if (!okMarcar) {
+    // Verificação final: relê a linha pra ter certeza do estado
+    const { data: check } = await supabase
+      .from(TABLE)
+      .select('status')
+      .eq('id', row.id)
+      .single();
+    if (check?.status !== 'enviado') return 'abort';
+  }
+  console.log(
+    `✅ [boleto-cobranca] #${row.id} enviado → ${row.nome_cliente} ` +
+      (TEST_PHONE
+        ? `[TESTE → ${destino}] (cliente real: ${row.telefone || 'sem telefone'})`
+        : `(${destino})`),
+  );
+  return 'enviado';
 }
 
 async function falharOuReagendar(row, mensagem) {
@@ -698,12 +939,13 @@ export function iniciarJobBoletoCobranca() {
     );
     return null;
   }
-  // Planner: 09:00 seg-sex
+  // Planner automático: 09:00 seg-sex
   cron.schedule('0 9 * * 1-5', () => planejarEnvios({}), { timezone: TZ });
-  // Worker: a cada minuto das 09h às 21h, seg-sex (drena a fila espaçadamente)
-  cron.schedule('* 9-21 * * 1-5', () => processarFila(), { timezone: TZ });
+  // Worker: a cada minuto das 08h às 21h, todos os dias (drena a fila no ritmo
+  // de BATCH_SIZE por janela). Janela ampla p/ também drenar execuções manuais.
+  cron.schedule('* 8-21 * * *', () => processarFila(), { timezone: TZ });
   console.log(
-    `⏰ [boleto-cobranca] Agendado — planner 09:00 seg-sex, worker a cada min (09h–21h). Instância: "${INSTANCE}"`,
+    `⏰ [boleto-cobranca] Agendado — planner 09:00 seg-sex; worker a cada min (08h–21h); ritmo ${BATCH_SIZE}/${Math.round(BATCH_WINDOW_MS / 60000)}min. Instância: "${INSTANCE}"`,
   );
   if (TEST_PHONE) {
     console.warn(

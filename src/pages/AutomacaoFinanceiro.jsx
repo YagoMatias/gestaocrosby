@@ -14,6 +14,9 @@ import {
   Prohibit,
   CurrencyDollar,
   Flask,
+  Lightning,
+  Stop,
+  Trash,
 } from '@phosphor-icons/react';
 
 // ── Roadmap das automações do Financeiro ──────────────────────────────────
@@ -53,6 +56,7 @@ const STATUS_AUTOMACAO = {
 // ── Estilo por status de envio ─────────────────────────────────────────────
 const STATUS_ENVIO = {
   enviado: { label: 'Enviado', cls: 'bg-green-100 text-green-700' },
+  enviando: { label: 'Enviando…', cls: 'bg-blue-100 text-blue-700' },
   pendente: { label: 'Pendente', cls: 'bg-yellow-100 text-yellow-700' },
   falha: { label: 'Falha', cls: 'bg-red-100 text-red-700' },
   pulado_pago: { label: 'Pulado — pago', cls: 'bg-gray-100 text-gray-600' },
@@ -63,6 +67,18 @@ const STATUS_ENVIO = {
   pulado_sem_telefone: {
     label: 'Sem telefone',
     cls: 'bg-orange-100 text-orange-700',
+  },
+  pulado_sem_boleto: {
+    label: 'Sem boleto',
+    cls: 'bg-gray-100 text-gray-600',
+  },
+  pulado_duplicado: {
+    label: 'Duplicada — não reenviada',
+    cls: 'bg-purple-100 text-purple-700',
+  },
+  cancelado_manual: {
+    label: 'Cancelado',
+    cls: 'bg-gray-200 text-gray-600',
   },
 };
 
@@ -149,6 +165,14 @@ const AutomacaoFinanceiro = () => {
     if (user?.role === 'owner') carregar(data);
   }, [data, user, carregar]);
 
+  // Auto-atualiza o log do dia de hoje a cada 30s (acompanha o lote sendo enviado)
+  useEffect(() => {
+    if (user?.role !== 'owner') return;
+    if (data !== hojeBRT()) return;
+    const id = setInterval(() => carregar(data), 30000);
+    return () => clearInterval(id);
+  }, [data, user, carregar]);
+
   const testarEnvio = async () => {
     setAcao({ tipo: 'loading', msg: 'Enviando 1 boleto de teste ao seu número…' });
     try {
@@ -163,6 +187,111 @@ const AutomacaoFinanceiro = () => {
         tipo: 'ok',
         msg: `🧪 Teste enviado para ${res.destino} (instância "${res.instancia}"). Amostra: ${a.cliente} — fatura ${a.fatura} (${a.tipo}), ${fmtBRL(a.valor)}. Confira seu WhatsApp.`,
       });
+    } catch (e) {
+      setAcao({ tipo: 'erro', msg: e.message });
+    }
+  };
+
+  const executar = async () => {
+    // 1) Pré-visualiza (dry-run) para saber quantas e se está em modo teste
+    setAcao({ tipo: 'loading', msg: 'Verificando faturas do dia…' });
+    let plano;
+    try {
+      const r = await fetch(
+        `${API_BASE_URL}/api/automacao/boletos/run?dryRun=1`,
+        { method: 'POST' },
+      );
+      const j = await r.json();
+      if (!j.success) throw new Error(j.message || 'Erro');
+      plano = j.resultado || {};
+    } catch (e) {
+      setAcao({ tipo: 'erro', msg: e.message });
+      return;
+    }
+    const n = plano.selecionados ?? 0;
+    if (!n) {
+      setAcao({ tipo: 'erro', msg: 'Nenhuma fatura com boleto para enviar hoje.' });
+      return;
+    }
+    const destinoTxt = plano.modo_teste
+      ? `⚠️ MODO TESTE: TODAS as mensagens vão para ${plano.test_phone} (nenhum cliente real será contatado).`
+      : '🔴 ENVIO REAL: as mensagens vão para os CLIENTES.';
+    const horas = (Math.ceil(n / 5) * 0.5).toFixed(1);
+    const ok = window.confirm(
+      `Executar automação de cobrança agora?\n\n` +
+        `${n} fatura(s) serão enfileiradas.\n` +
+        `${destinoTxt}\n\n` +
+        `Ritmo: 5 a cada 30 minutos (leva ~${horas}h para enviar todas).\n\n` +
+        `Confirmar?`,
+    );
+    if (!ok) {
+      setAcao(null);
+      return;
+    }
+    // 2) Executa de verdade (enfileira; o worker dispara no ritmo)
+    setAcao({ tipo: 'loading', msg: 'Enfileirando envios…' });
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/automacao/boletos/run`, {
+        method: 'POST',
+      });
+      const j = await r.json();
+      const res = j.resultado || {};
+      if (!j.success && !res.ok)
+        throw new Error(res.error || j.message || 'Erro ao executar');
+      setAcao({
+        tipo: 'ok',
+        msg: `✅ Automação executada: ${res.selecionados ?? n} fatura(s) na fila. Serão enviadas 5 a cada 30 min${plano.modo_teste ? ' para o número de teste' : ' aos clientes'}. Acompanhe o log abaixo (atualiza sozinho a cada 30s).`,
+      });
+      carregar(data);
+    } catch (e) {
+      setAcao({ tipo: 'erro', msg: e.message });
+    }
+  };
+
+  const parar = async () => {
+    const ok = window.confirm(
+      'Parar os envios pendentes de hoje?\n\nOs que já foram enviados não são afetados; os que ainda estão na fila serão cancelados.',
+    );
+    if (!ok) return;
+    setAcao({ tipo: 'loading', msg: 'Cancelando pendentes…' });
+    try {
+      const r = await fetch(
+        `${API_BASE_URL}/api/automacao/boletos/cancelar?data=${data}`,
+        { method: 'POST' },
+      );
+      const j = await r.json();
+      if (!j.success) throw new Error(j.message || 'Erro');
+      setAcao({
+        tipo: 'ok',
+        msg: `⏹️ ${j.cancelados} envio(s) pendente(s) cancelado(s).`,
+      });
+      carregar(data);
+    } catch (e) {
+      setAcao({ tipo: 'erro', msg: e.message });
+    }
+  };
+
+  const resetar = async () => {
+    const ok = window.confirm(
+      `Resetar o dia ${fmtData(data)}?\n\n` +
+        `Isso APAGA todos os registros do dia (inclusive enviados), para você rodar do zero.\n\n` +
+        `⚠️ Se rodar de novo em modo REAL, clientes já contatados podem receber novamente.\n\n` +
+        `Confirmar?`,
+    );
+    if (!ok) return;
+    setAcao({ tipo: 'loading', msg: 'Resetando o dia…' });
+    try {
+      const r = await fetch(
+        `${API_BASE_URL}/api/automacao/boletos/resetar?data=${data}`,
+        { method: 'POST' },
+      );
+      const j = await r.json();
+      if (!j.success) throw new Error(j.message || 'Erro');
+      setAcao({
+        tipo: 'ok',
+        msg: `🗑️ Dia resetado: ${j.removidos} registro(s) apagado(s). Pode rodar "Executar automação" de novo.`,
+      });
+      carregar(data);
     } catch (e) {
       setAcao({ tipo: 'erro', msg: e.message });
     }
@@ -183,7 +312,7 @@ const AutomacaoFinanceiro = () => {
         : '';
       setAcao({
         tipo: 'ok',
-        msg: `Simulação: ${res.selecionados ?? 0} fatura(s) elegíveis (D-3: ${res.d3 ?? 0}, D-0: ${res.d0 ?? 0}, sem telefone: ${res.sem_telefone ?? 0}) de ${res.total_faturas ?? 0} no período.${testeMsg}`,
+        msg: `Simulação: ${res.selecionados ?? 0} fatura(s) com boleto a enviar (D-3: ${res.d3 ?? 0}, D-0: ${res.d0 ?? 0}, sem telefone: ${res.sem_telefone ?? 0}, sem boleto: ${res.sem_boleto ?? 0}) de ${res.total_faturas ?? 0} no período.${testeMsg}`,
       });
     } catch (e) {
       setAcao({ tipo: 'erro', msg: e.message });
@@ -274,6 +403,24 @@ const AutomacaoFinanceiro = () => {
             className="flex items-center gap-1 bg-emerald-600 text-white rounded-lg px-3 py-1.5 text-sm hover:opacity-90"
           >
             <PaperPlaneTilt size={16} /> Enviar 1 teste
+          </button>
+          <button
+            onClick={executar}
+            className="flex items-center gap-1 bg-[#fe0000] text-white rounded-lg px-3 py-1.5 text-sm font-semibold hover:opacity-90"
+          >
+            <Lightning size={16} weight="fill" /> Executar automação
+          </button>
+          <button
+            onClick={parar}
+            className="flex items-center gap-1 border border-red-300 text-red-600 rounded-lg px-3 py-1.5 text-sm hover:bg-red-50"
+          >
+            <Stop size={16} /> Parar envios
+          </button>
+          <button
+            onClick={resetar}
+            className="flex items-center gap-1 border border-gray-300 text-gray-600 rounded-lg px-3 py-1.5 text-sm hover:bg-gray-50"
+          >
+            <Trash size={16} /> Resetar dia
           </button>
         </div>
       </div>
