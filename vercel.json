@@ -1,8 +1,7 @@
 {
   "redirects": [
     {
-      "_comment": "No dominio publico de vagas, so a LP responde. O lookahead libera /vagas/*, os bundles em /assets/* e qualquer arquivo com extensao (imagens, favicon) — sem eles o SPA nao carrega. As demais rotas (painel) vao para o site institucional.",
-      "source": "/((?!vagas|assets|.*\\.).*)",
+      "source": "/((?!vagas|assets)[^.]*)",
       "has": [{ "type": "host", "value": "vagas.crosbyoficial.com.br" }],
       "destination": "https://crosbyoficial.com.br",
       "permanent": false
