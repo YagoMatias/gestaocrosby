@@ -46,6 +46,7 @@ import {
   Cpu,
   ChartPieSlice,
   Cake,
+  Briefcase,
 } from '@phosphor-icons/react';
 
 // Componentes de ícones modernos
@@ -79,6 +80,15 @@ const solicitacoesCrosby = [
     name: 'Compras & Manutenção',
     href: '/solicitacoes-crosby/compras-manutencao',
     icon: ShoppingCart,
+    color: 'text-blue-600',
+  },
+];
+
+const rh = [
+  {
+    name: 'Vagas & Banco de Talentos',
+    href: '/rh/vagas',
+    icon: Briefcase,
     color: 'text-blue-600',
   },
 ];
@@ -943,6 +953,17 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           onToggle={() => handleSectionToggle('solicitacoesCrosby')}
           icon={ClipboardText}
           color="text-orange-600"
+        />
+
+        {/* Seção RH — Banco de Talentos */}
+        <MenuSection
+          {...menuProps}
+          title="RH / Banco de Talentos"
+          items={rh}
+          isOpen={openSection === 'rh'}
+          onToggle={() => handleSectionToggle('rh')}
+          icon={Briefcase}
+          color="text-blue-600"
         />
 
         {/* Seção Clientes */}

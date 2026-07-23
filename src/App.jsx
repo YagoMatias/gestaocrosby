@@ -136,6 +136,10 @@ const PagamentosFabricas = lazy(() => import('./pages/PagamentosFabricas'));
 const ConciliacaoStone = lazy(() => import('./pages/ConciliacaoStone'));
 const CrosbyBot = lazy(() => import('./pages/CrosbyBot'));
 const AutomacaoFinanceiro = lazy(() => import('./pages/AutomacaoFinanceiro'));
+// RH — Banco de Talentos (vagas + inscrições) + LP pública
+const RhVagas = lazy(() => import('./pages/rh/Vagas'));
+const RhVagaInscricoes = lazy(() => import('./pages/rh/VagaInscricoes'));
+const VagaPublica = lazy(() => import('./pages/rh/VagaPublica'));
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -250,6 +254,9 @@ const protectedRoutes = [
   },
   { path: '/cadastrar-cliente', component: CadastrarCliente },
   { path: '/duplicata-vendas', component: DuplicataVendas },
+  // RH — Banco de Talentos
+  { path: '/rh/vagas', component: RhVagas },
+  { path: '/rh/inscricoes', component: RhVagaInscricoes },
 ];
 
 // Conteúdo interno do layout — acessa o TabContext
@@ -386,6 +393,15 @@ function App() {
           element={
             <Suspense fallback={<PageLoadingFallback />}>
               <CrosbyObrigado />
+            </Suspense>
+          }
+        />
+        {/* Pública: LP de vaga — Banco de Talentos (link exclusivo por vaga) */}
+        <Route
+          path="/vagas/:slug"
+          element={
+            <Suspense fallback={<PageLoadingFallback />}>
+              <VagaPublica />
             </Suspense>
           }
         />

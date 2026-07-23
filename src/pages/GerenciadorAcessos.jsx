@@ -50,6 +50,18 @@ const AVAILABLE_PAGES = [
   },
   { path: '/user-panel', name: 'Painel do Usuário', category: 'Principal' },
 
+  // RH — Banco de Talentos
+  {
+    path: '/rh/vagas',
+    name: 'Vagas & Banco de Talentos',
+    category: 'RH',
+  },
+  {
+    path: '/rh/inscricoes',
+    name: 'Inscrições da Vaga (candidatos e currículos)',
+    category: 'RH',
+  },
+
   // Financeiro
   { path: '/contas-a-pagar', name: 'Contas a Pagar', category: 'Financeiro' },
   { path: '/emprestimos', name: 'Empréstimos', category: 'Financeiro' },
