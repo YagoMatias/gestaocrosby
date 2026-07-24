@@ -216,19 +216,28 @@ const AutomacaoFinanceiro = () => {
     const destinoTxt = plano.modo_teste
       ? `⚠️ MODO TESTE: TODAS as mensagens vão para ${plano.test_phone} (nenhum cliente real será contatado).`
       : '🔴 ENVIO REAL: as mensagens vão para os CLIENTES.';
-    const horas = (Math.ceil(n / 5) * 0.5).toFixed(1);
+    // Ritmo real vindo do backend (default: 2 a cada 80 min, gap 20 min)
+    const rit = plano.ritmo || {};
+    const bs = rit.batch_size ?? 2;
+    const bm = rit.batch_minutes ?? 80;
+    const gap = rit.gap_minutes ?? 20;
+    // Estimativa de término: msg i (0-based) sai em floor(i/bs)*bm + (i%bs)*gap
+    const ultimo = n - 1;
+    const minTotal = Math.floor(ultimo / bs) * bm + (ultimo % bs) * gap;
+    const horas = (minTotal / 60).toFixed(1);
+    const ritmoTxt = `Ritmo: ${bs} a cada ${bm} min (${gap} min entre elas), priorizando os que vencem hoje. Começa agora; leva ~${horas}h para enviar todas.`;
     const ok = window.confirm(
       `Executar automação de cobrança agora?\n\n` +
-        `${n} fatura(s) serão enfileiradas.\n` +
+        `${n} fatura(s) serão enfileiradas (${plano.d0 ?? 0} vencem hoje, ${plano.d3 ?? 0} em 3 dias).\n` +
         `${destinoTxt}\n\n` +
-        `Ritmo: 5 a cada 30 minutos (leva ~${horas}h para enviar todas).\n\n` +
+        `${ritmoTxt}\n\n` +
         `Confirmar?`,
     );
     if (!ok) {
       setAcao(null);
       return;
     }
-    // 2) Executa de verdade (enfileira; o worker dispara no ritmo)
+    // 2) Executa de verdade (enfileira; o worker dispara no ritmo, começando já)
     setAcao({ tipo: 'loading', msg: 'Enfileirando envios…' });
     try {
       const r = await fetch(`${API_BASE_URL}/api/automacao/boletos/run`, {
@@ -240,7 +249,7 @@ const AutomacaoFinanceiro = () => {
         throw new Error(res.error || j.message || 'Erro ao executar');
       setAcao({
         tipo: 'ok',
-        msg: `✅ Automação executada: ${res.selecionados ?? n} fatura(s) na fila. Serão enviadas 5 a cada 30 min${plano.modo_teste ? ' para o número de teste' : ' aos clientes'}. Acompanhe o log abaixo (atualiza sozinho a cada 30s).`,
+        msg: `✅ Automação iniciada: ${res.selecionados ?? n} fatura(s) na fila (vencem hoje primeiro). Serão enviadas ${bs} a cada ${bm} min${plano.modo_teste ? ' para o número de teste' : ' aos clientes'}, a partir de agora. Acompanhe o log abaixo (atualiza sozinho a cada 30s).`,
       });
       carregar(data);
     } catch (e) {
