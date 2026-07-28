@@ -33,6 +33,7 @@ const NotasFiscais = lazy(() => import('./pages/NotasFiscais'));
 const AniversariantesFranquia = lazy(
   () => import('./pages/AniversariantesFranquia'),
 );
+const PosVendasFranquia = lazy(() => import('./pages/PosVendasFranquia'));
 
 const MetasVarejo = lazy(() => import('./pages/MetasVarejo'));
 
@@ -194,6 +195,7 @@ const protectedRoutes = [
   { path: '/atividade-clientes', component: AtividadeClientes },
   { path: '/extratos-bancos', component: ExtratosBancos },
   { path: '/aniversariantes-franquia', component: AniversariantesFranquia },
+  { path: '/pos-vendas-franquia', component: PosVendasFranquia },
   { path: '/metas-varejo', component: MetasVarejo },
   { path: '/ranking-faturamento', component: RankingFaturamento },
   { path: '/ranking-compras-franquias', component: RankingComprasFranquias },

@@ -46,6 +46,7 @@ import {
   Cpu,
   ChartPieSlice,
   Cake,
+  Headset,
   Briefcase,
   IdentificationBadge,
 } from '@phosphor-icons/react';
@@ -660,6 +661,12 @@ const minhaFranquiaItem = {
       href: '/aniversariantes-franquia',
       icon: Cake,
       color: 'text-pink-600',
+    },
+    {
+      name: 'Pós-Vendas',
+      href: '/pos-vendas-franquia',
+      icon: Headset,
+      color: 'text-amber-600',
     },
   ],
 };
