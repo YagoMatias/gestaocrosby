@@ -47,6 +47,7 @@ import {
   ChartPieSlice,
   Cake,
   Briefcase,
+  IdentificationBadge,
 } from '@phosphor-icons/react';
 
 // Componentes de ícones modernos
@@ -89,6 +90,12 @@ const rh = [
     name: 'Vagas & Banco de Talentos',
     href: '/rh/vagas',
     icon: Briefcase,
+    color: 'text-blue-600',
+  },
+  {
+    name: 'Admissão — Documentos',
+    href: '/rh/documentos',
+    icon: IdentificationBadge,
     color: 'text-blue-600',
   },
 ];
@@ -351,6 +358,12 @@ const varejo = [
         href: '/clientes-bluecred',
         icon: ClipboardText,
         color: 'text-blue-700',
+      },
+      {
+        name: 'Top Clientes por Loja',
+        href: '/top-clientes-bluecred',
+        icon: Trophy,
+        color: 'text-amber-500',
       },
       {
         name: 'Antecipação',
