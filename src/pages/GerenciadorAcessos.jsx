@@ -259,6 +259,16 @@ const AVAILABLE_PAGES = [
     name: 'Aniversariantes',
     category: 'Minha Franquia',
   },
+  {
+    path: '/pos-vendas-franquia',
+    name: 'Pós-Vendas',
+    category: 'Minha Franquia',
+  },
+  {
+    path: '/clientes-cashback-franquia',
+    name: 'Clientes com Cashback',
+    category: 'Minha Franquia',
+  },
 
   // Antecipações
   {
