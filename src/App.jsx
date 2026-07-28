@@ -144,8 +144,11 @@ const AutomacaoFinanceiro = lazy(() => import('./pages/AutomacaoFinanceiro'));
 const RhVagas = lazy(() => import('./pages/rh/Vagas'));
 const RhVagaInscricoes = lazy(() => import('./pages/rh/VagaInscricoes'));
 const VagaPublica = lazy(() => import('./pages/rh/VagaPublica'));
-const RhDocumentosAdmissao = lazy(() => import('./pages/rh/DocumentosAdmissao'));
-const DocumentosPublico = lazy(() => import('./pages/rh/DocumentosPublico'));
+// TODO(RH Admissão — Yago): reativar quando DocumentosAdmissao.jsx e
+// DocumentosPublico.jsx forem commitados. Estavam quebrando o build do Vercel
+// (arquivos referenciados aqui mas não versionados). Arquivos seguem no disco.
+// const RhDocumentosAdmissao = lazy(() => import('./pages/rh/DocumentosAdmissao'));
+// const DocumentosPublico = lazy(() => import('./pages/rh/DocumentosPublico'));
 
 // Componente de fallback para loading
 const PageLoadingFallback = memo(() => (
@@ -268,7 +271,8 @@ const protectedRoutes = [
   // RH — Banco de Talentos
   { path: '/rh/vagas', component: RhVagas },
   { path: '/rh/inscricoes', component: RhVagaInscricoes },
-  { path: '/rh/documentos', component: RhDocumentosAdmissao },
+  // TODO(RH Admissão — Yago): reativar com o arquivo commitado
+  // { path: '/rh/documentos', component: RhDocumentosAdmissao },
 ];
 
 // Conteúdo interno do layout — acessa o TabContext
@@ -418,6 +422,7 @@ function App() {
           }
         />
         {/* Pública: Admissão — envio de documentos (pós-entrevista) */}
+        {/* TODO(RH Admissão — Yago): reativar quando DocumentosPublico.jsx for commitado
         <Route
           path="/admissao/documentos"
           element={
@@ -425,7 +430,7 @@ function App() {
               <DocumentosPublico />
             </Suspense>
           }
-        />
+        /> */}
         <Route element={<ProtectedLayout />}>
           {protectedRoutes.map(({ path, component: Component }) => (
             <Route key={path} path={path} element={<Component />} />
