@@ -39,6 +39,22 @@ const formatBRL = (v) =>
 const formatInt = (v) =>
   typeof v === 'number' ? v.toLocaleString('pt-BR') : '—';
 
+const formatTel = (t) => {
+  if (!t) return '—';
+  const d = String(t).replace(/\D/g, '');
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return t;
+};
+
+const formatData = (s) => {
+  if (!s) return '—';
+  const d = String(s).slice(0, 10);
+  const [y, m, dd] = d.split('-');
+  if (!y || !m || !dd) return d;
+  return `${dd}/${m}/${y}`;
+};
+
 export default function TopClientes() {
   const apiClient = useApiClient();
 
@@ -254,7 +270,11 @@ export default function TopClientes() {
       .sort((a, b) => {
         if (!sortField) return 0;
         const dir = sortAsc ? 1 : -1;
-        if (sortField === 'name' || sortField === 'code') {
+        if (
+          sortField === 'name' ||
+          sortField === 'code' ||
+          sortField === 'lastPurchase'
+        ) {
           return (
             dir *
             String(a[sortField] || '').localeCompare(String(b[sortField] || ''))
@@ -270,6 +290,8 @@ export default function TopClientes() {
     const headers = [
       'Código',
       'Nome',
+      'Telefone',
+      'Última Compra',
       'Compras',
       'Freq. Média (meses)',
       'Qtd. Itens',
@@ -280,6 +302,8 @@ export default function TopClientes() {
     const rows = clients.map((c) => [
       c.code,
       c.name,
+      c.telefone || '',
+      c.lastPurchase ? String(c.lastPurchase).slice(0, 10) : '',
       c.purchaseCount || 0,
       c.avgPurchaseIntervalMonths || 0,
       c.quantity,
@@ -1107,6 +1131,17 @@ export default function TopClientes() {
                               Nome <SortIcon field="name" />
                             </div>
                           </th>
+                          <th className="px-1 py-0.5 text-center text-[8px]">
+                            Telefone
+                          </th>
+                          <th
+                            className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                            onClick={() => handleSort('lastPurchase')}
+                          >
+                            <div className="flex items-center justify-center">
+                              Última compra <SortIcon field="lastPurchase" />
+                            </div>
+                          </th>
                           <th
                             className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                             onClick={() => handleSort('purchaseCount')}
@@ -1177,6 +1212,12 @@ export default function TopClientes() {
                             <td className="px-1 py-0.5 text-left font-semibold text-[#000638]">
                               {cliente.name}
                             </td>
+                            <td className="px-1 py-0.5 text-center font-mono text-gray-600">
+                              {formatTel(cliente.telefone)}
+                            </td>
+                            <td className="px-1 py-0.5 text-center text-gray-600">
+                              {formatData(cliente.lastPurchase)}
+                            </td>
                             <td className="px-1 py-0.5 text-center font-bold text-orange-700">
                               {cliente.purchaseCount || 0}
                             </td>
@@ -1204,7 +1245,7 @@ export default function TopClientes() {
                         {filteredClients.length === 0 && (
                           <tr>
                             <td
-                              colSpan={9}
+                              colSpan={11}
                               className="px-4 py-8 text-center text-gray-400 text-sm"
                             >
                               Nenhum cliente encontrado.

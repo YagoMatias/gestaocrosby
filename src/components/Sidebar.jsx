@@ -360,12 +360,6 @@ const varejo = [
         color: 'text-blue-700',
       },
       {
-        name: 'Top Clientes por Loja',
-        href: '/top-clientes-bluecred',
-        icon: Trophy,
-        color: 'text-amber-500',
-      },
-      {
         name: 'Antecipação',
         href: '/antecipacao-bluecred',
         icon: Barcode,
