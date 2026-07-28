@@ -47,6 +47,7 @@ import {
   ChartPieSlice,
   Cake,
   Headset,
+  Coins,
   Briefcase,
   IdentificationBadge,
 } from '@phosphor-icons/react';
@@ -667,6 +668,12 @@ const minhaFranquiaItem = {
       href: '/pos-vendas-franquia',
       icon: Headset,
       color: 'text-amber-600',
+    },
+    {
+      name: 'Clientes com Cashback',
+      href: '/clientes-cashback-franquia',
+      icon: Coins,
+      color: 'text-amber-500',
     },
   ],
 };
