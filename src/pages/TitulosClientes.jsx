@@ -29,9 +29,12 @@ import {
   MagnifyingGlass,
   X,
   FilePdf,
+  PaperPlaneRight,
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
+import ModalSolicitacaoBaixa from '../components/ModalSolicitacaoBaixa';
+import Notification from '../components/ui/Notification';
 
 const TitulosClientes = ({
   // Props opcionais para duplicar a página com filtros/labels diferentes
@@ -40,6 +43,9 @@ const TitulosClientes = ({
   hardcodedBranches = null,
   title = 'Portal de Títulos MTM',
   subtitle = 'Consulta de títulos dos nossos clientes',
+  // Exibe o botão "Baixa" em cada fatura em aberto, que envia o título para
+  // aprovação em /solicitacao-baixa (mesmo fluxo da Inadimplência MTM).
+  permiteSolicitacaoBaixa = true,
 } = {}) => {
   const apiClient = useApiClient();
   const [dados, setDados] = useState([]);
@@ -101,6 +107,10 @@ const TitulosClientes = ({
 
   // Estado para armazenar códigos das filiais (empresas próprias)
   const [filiaisCodigos, setFiliaisCodigos] = useState([]);
+
+  // Estados para solicitação de baixa
+  const [faturaBaixa, setFaturaBaixa] = useState(null);
+  const [notification, setNotification] = useState(null);
 
   const BaseURL = 'https://apigestaocrosby-bw2v.onrender.com/api/financial/';
   const FranchiseURL =
@@ -1337,6 +1347,15 @@ const TitulosClientes = ({
   const chaveTitulo = (item) =>
     `${item.cd_empresa}-${item.cd_cliente}-${item.nr_fat}-${item.nr_parcela}`;
 
+  // Título ainda em aberto (vencido ou a vencer) — só esses podem ser
+  // enviados para solicitação de baixa. Mesma regra do filtro de status.
+  const estaEmAberto = (item) => {
+    if (item.dt_liq) return false;
+    const valorFaturado = parseFloat(item.vl_fatura) || 0;
+    const valorPago = parseFloat(item.vl_pago) || 0;
+    return !(valorPago >= valorFaturado && valorFaturado > 0);
+  };
+
   // Toggle seleção de um título
   const toggleSelecionarTitulo = (item) => {
     setTitulosSelecionados((prev) => {
@@ -2209,6 +2228,13 @@ const TitulosClientes = ({
                         Detalhar
                       </div>
                     </th>
+                    {permiteSolicitacaoBaixa && (
+                      <th className="px-2 py-2 text-center">
+                        <div className="flex items-center justify-center">
+                          Baixa
+                        </div>
+                      </th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="bg-white">
@@ -2295,6 +2321,24 @@ const TitulosClientes = ({
                           Detalhar
                         </button>
                       </td>
+                      {permiteSolicitacaoBaixa && (
+                        <td className="text-center px-2 py-2">
+                          {estaEmAberto(item) ? (
+                            <button
+                              onClick={() => setFaturaBaixa(item)}
+                              className="flex items-center justify-center gap-1 px-3 py-1.5 bg-[#000638] text-white rounded hover:bg-[#fe0000] transition-colors text-xs mx-auto font-medium"
+                              title="Enviar para solicitação de baixa"
+                            >
+                              <PaperPlaneRight size={14} weight="bold" />
+                              Baixar
+                            </button>
+                          ) : (
+                            <span className="text-xs text-gray-400">
+                              Liquidada
+                            </span>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -3016,6 +3060,24 @@ const TitulosClientes = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal de solicitação de baixa */}
+      {permiteSolicitacaoBaixa && faturaBaixa && (
+        <ModalSolicitacaoBaixa
+          fatura={faturaBaixa}
+          onClose={() => setFaturaBaixa(null)}
+          onNotify={setNotification}
+        />
+      )}
+
+      {/* Notificação */}
+      {notification && (
+        <Notification
+          type={notification.type}
+          message={notification.message}
+          onClose={() => setNotification(null)}
+        />
       )}
     </div>
   );
