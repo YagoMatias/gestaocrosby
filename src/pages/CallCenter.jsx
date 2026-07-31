@@ -1,9 +1,15 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+} from 'react';
 import FiltroClientes from '../components/filters/FiltroClientes';
 import { useAuth } from '../components/AuthContext';
 import useCallCenter from '../hooks/useCallCenter';
 import PageTitle from '../components/ui/PageTitle';
-import { TotvsURL } from '../config/constants';
+import { TotvsURL, API_BASE_URL } from '../config/constants';
 import Notification from '../components/ui/Notification';
 import {
   Card,
@@ -31,6 +37,7 @@ import {
   Trash,
   MagnifyingGlass,
   X,
+  ChatText,
 } from '@phosphor-icons/react';
 
 // Resultados possíveis de uma ligação (o "status" do contato)
@@ -59,7 +66,248 @@ const STATUS_LIGACAO = [
   },
   { id: 'NEGOCIADO', label: 'Negociado', cor: 'bg-purple-100 text-purple-800' },
   { id: 'PAGO', label: 'Pagamento confirmado', cor: 'bg-green-100 text-green-800' },
+  { id: 'SMS_ENVIADO', label: 'SMS enviado', cor: 'bg-teal-100 text-teal-800' },
 ];
+
+// Modelo padrão do SMS de cobrança — usado tanto no envio avulso quanto no
+// disparo em massa (editável nos dois modais). Sem acentos: SMS usa GSM-7 e
+// caractere fora da tabela derruba o limite de 160 para 70.
+// {VALOR} é substituído pelo total vencido do cliente (só o número — o "R$"
+// já está escrito no texto).
+const MENSAGEM_SMS_PADRAO =
+  'Crosby: seu CNPJ tem R$ {VALOR} em faturas VENCIDAS, podendo adicionar ' +
+  'multa e juros,risco de PROTESTO. Renegocie no WhatsApp: ' +
+  'https://wa.me/5584991352193';
+
+// Teto rígido de 1 SMS: acima de 160 a operadora divide em 2 partes e cobra
+// 2 créditos por cliente. O envio é bloqueado em vez de dividir.
+const SMS_LIMITE = 160;
+
+// ============================================================
+// Modo ADIMPLENTES — dois níveis, por urgência, para não virar spam:
+//
+//   Vence HOJE ou AMANHÃ  → aviso + código de barras (prioridade URGENTE)
+//   Vence em 2 a 7 dias   → só um lembrete consolidado, SEM código de barras
+//                           (o boleto chega quando a fatura ficar urgente)
+//
+// Teto de 3 SMS por cliente por dia — o mesmo do backend. Na prática:
+// 1 aviso + até 2 códigos de barras.
+// ============================================================
+const DIAS_URGENTE = 1; // 0 = vence hoje, 1 = vence amanhã
+const TETO_SMS_CLIENTE = 3;
+
+// Placeholders: {NOME} {VALOR} {VENCIMENTO} {NOTA}. Sem NF, o trecho
+// ", ref. NF {NOTA}" some sozinho.
+const MENSAGEM_SMS_URGENTE =
+  'Crosby: Ola {NOME}! Sua fatura de R$ {VALOR} vence dia {VENCIMENTO}, ' +
+  'ref. NF {NOTA}. Segue o codigo de barras do boleto no proximo SMS.';
+
+// Usado quando o cliente tem mais de uma fatura vencendo hoje/amanhã
+const MENSAGEM_SMS_URGENTE_MULTI =
+  'Crosby: Ola {NOME}! Voce tem {QTD} faturas vencendo ({DATAS}), total ' +
+  'R$ {TOTAL}. Seguem os codigos de barras nos proximos SMS.';
+
+// Faturas de 2 a 7 dias: um único SMS, sem boleto.
+// Enxuto de propósito: com nome de 20 chars, 3 datas e valor de 7 dígitos
+// o texto resolvido bate 155 — ainda dentro dos 160 de 1 SMS.
+const MENSAGEM_SMS_LEMBRETE =
+  'Crosby: Ola {NOME}! {QTD} faturas a vencer ({DATAS}), total R$ {TOTAL}. ' +
+  'O boleto chega no dia do vencimento. wa.me/5584991352193';
+
+const dataCurtaSms = (isoDate) => {
+  const [, m, d] = String(isoDate || '').substring(0, 10).split('-');
+  return d && m ? `${d}/${m}` : '';
+};
+
+// Nome apresentável para o SMS. O TOTVS devolve fantasia bem irregular:
+// "53.065.997 FABIA MARCELA...", "F073 - CROSBY BEZERROS", ou vazio — sem
+// limpar, o cliente recebe "Ola 53.065.997 FABIA!".
+const nomeParaSms = (cliente) => {
+  const limpar = (s) =>
+    String(s || '')
+      .trim()
+      // CNPJ/CPF no começo ("53.065.997", "12.345.678/0001-99")
+      .replace(/^[\d.\-/]{5,}\s*/, '')
+      // código de loja no começo ("F073 - ", "MTM ")
+      .replace(/^[A-Z]{1,3}\d{2,4}\s*-\s*/i, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+
+  let nome = limpar(cliente?.nm_fantasia) || limpar(cliente?.nm_cliente);
+  // Sobrou só número/lixo? Cai para o primeiro nome da razão social
+  if (!/[A-Za-zÀ-ÿ]{3}/.test(nome)) {
+    nome = String(cliente?.nm_cliente || '')
+      .replace(/[\d.\-/]/g, ' ')
+      .trim()
+      .split(/\s+/)[0];
+  }
+  if (!nome) return 'cliente';
+
+  // Nome longo estoura os 160 chars do SMS — corta em 20, por palavra inteira
+  if (nome.length > 20) {
+    const corte = nome.lastIndexOf(' ', 20);
+    nome = nome.slice(0, corte > 8 ? corte : 20).trim();
+  }
+  return nome;
+};
+
+// Lista de datas de vencimento, sem repetir e em ordem
+const listarDatas = (faturas) => {
+  const datas = [
+    ...new Set((faturas || []).map((f) => f.dt_vencimento?.substring(0, 10))),
+  ]
+    .filter(Boolean)
+    .sort();
+  const curtas = datas.map(dataCurtaSms);
+  if (curtas.length <= 3) return curtas.join(', ');
+  return `${curtas.slice(0, 2).join(', ')} e mais ${curtas.length - 2}`;
+};
+
+const somaFaturas = (faturas) =>
+  (faturas || []).reduce((s, f) => s + (parseFloat(f.vl_fatura) || 0), 0);
+
+/**
+ * Resolve os placeholders. `fatura` é usado no modelo de fatura única;
+ * `faturas` alimenta {QTD} {DATAS} {TOTAL} nos modelos consolidados.
+ */
+const aplicarTemplateLembrete = (template, cliente, fatura, faturas = null) => {
+  let t = String(template || '');
+  const grupo = faturas || (fatura ? [fatura] : []);
+
+  t = t.replace(/\{nome\}/gi, nomeParaSms(cliente));
+  t = t.replace(/\{qtd\}/gi, String(grupo.length));
+  t = t.replace(/\{datas\}/gi, listarDatas(grupo));
+  t = t.replace(/\{total\}/gi, valorParaSms(somaFaturas(grupo)));
+  t = t.replace(/\{valor\}/gi, valorParaSms(fatura?.vl_fatura));
+  t = t.replace(/\{vencimento\}/gi, dataCurtaSms(fatura?.dt_vencimento));
+
+  const nf = fatura?.nr_nota_fiscal;
+  if (nf) {
+    t = t.replace(/\{nota\}/gi, String(nf));
+  } else {
+    // remove o trecho opcional da NF (com a pontuação que o precede)
+    t = t
+      .replace(/[,;]?\s*ref(erente)?\.?\s*(a\s*)?(NF|nota fiscal)\s*\{nota\}/gi, '')
+      .replace(/\{nota\}/gi, '');
+  }
+  return t
+    .replace(/\s{2,}/g, ' ')
+    // concordância quando {QTD} resolve para 1
+    .replace(/\b1 faturas\b/g, '1 fatura')
+    .trim();
+};
+
+// Faturas do cliente que têm boleto emitido (linha digitável disponível)
+const faturasComBoleto = (cliente) =>
+  (cliente?.faturas || []).filter(
+    (f) => String(f.linha_digitavel || '').replace(/\D/g, '').length >= 40,
+  );
+
+// Dias até o vencimento (0 = hoje, negativo = já venceu)
+const diasAteVencimento = (fatura) => {
+  const str = String(fatura?.dt_vencimento || '').substring(0, 10);
+  const [y, m, d] = str.split('-').map(Number);
+  if (!y || !m || !d) return null;
+  const venc = new Date(y, m - 1, d);
+  venc.setHours(0, 0, 0, 0);
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  return Math.round((venc - hoje) / 86400000);
+};
+
+/**
+ * Monta o plano de SMS de um cliente conforme a urgência das faturas.
+ * @returns {{tipo, mensagens, urgentes, futuras, excedentes}}
+ */
+const planoSmsCliente = (cliente, templates) => {
+  const vazio = {
+    tipo: 'NENHUM',
+    mensagens: [],
+    urgentes: [],
+    futuras: [],
+    excedentes: [],
+  };
+  if (!cliente) return vazio;
+
+  const urgentes = faturasComBoleto(cliente).filter((f) => {
+    const d = diasAteVencimento(f);
+    return d !== null && d <= DIAS_URGENTE;
+  });
+
+  // Vence hoje/amanhã → aviso + código de barras
+  if (urgentes.length > 0) {
+    const ordenadas = [...urgentes].sort(
+      (a, b) => (diasAteVencimento(a) ?? 0) - (diasAteVencimento(b) ?? 0),
+    );
+    // 1 aviso + N boletos, respeitando o teto por cliente
+    const cabem = ordenadas.slice(0, TETO_SMS_CLIENTE - 1);
+    const excedentes = ordenadas.slice(TETO_SMS_CLIENTE - 1);
+    const unica = cabem.length === 1;
+
+    const aviso = aplicarTemplateLembrete(
+      unica ? templates.urgente : templates.urgenteMulti,
+      cliente,
+      unica ? cabem[0] : null,
+      cabem,
+    );
+
+    return {
+      tipo: 'URGENTE',
+      urgentes: ordenadas,
+      futuras: [],
+      excedentes,
+      mensagens: [
+        { texto: aviso, prioridade: 'URGENTE', papel: 'AVISO' },
+        ...cabem.map((f) => ({
+          texto: String(f.linha_digitavel || '').replace(/\D/g, ''),
+          prioridade: 'URGENTE',
+          papel: 'BOLETO',
+          fatura: f,
+        })),
+      ],
+    };
+  }
+
+  // 2 a 7 dias → um único lembrete, sem boleto (boleto vai no vencimento)
+  const futuras = (cliente.faturas || []).filter((f) => {
+    const d = diasAteVencimento(f);
+    return d !== null && d > DIAS_URGENTE;
+  });
+  if (futuras.length === 0) return vazio;
+
+  return {
+    tipo: 'LEMBRETE',
+    urgentes: [],
+    futuras,
+    excedentes: [],
+    mensagens: [
+      {
+        texto: aplicarTemplateLembrete(
+          templates.lembrete,
+          cliente,
+          null,
+          futuras,
+        ),
+        prioridade: 'NORMAL',
+        papel: 'LEMBRETE',
+      },
+    ],
+  };
+};
+
+// Valor GSM-safe: o modo currency do toLocaleString insere NBSP entre "R$" e
+// o número, caractere que não existe na tabela GSM-7.
+const valorParaSms = (v) =>
+  (parseFloat(v) || 0).toLocaleString('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+const aplicarTemplateSms = (template, cliente) =>
+  String(template || '').replace(
+    /\{valor\}/gi,
+    valorParaSms(cliente?.valor_total),
+  );
 
 const statusInfo = (id) =>
   STATUS_LIGACAO.find((s) => s.id === id) || {
@@ -75,13 +323,26 @@ const CallCenter = () => {
     salvarContato,
     registrarLigacao,
     buscarLigacoes,
+    buscarUltimosSms,
     deletarLigacao,
   } = useCallCenter();
 
   const hojeStr = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
-  const [dados, setDados] = useState([]);
-  const [loading, setLoading] = useState(false);
+  // INADIMPLENTES = títulos vencidos (cobrança) | ADIMPLENTES = títulos a
+  // vencer de hoje até +7 dias (lembrete com código de barras)
+  const [modo, setModo] = useState('INADIMPLENTES');
+
+  // Cache por modo: trocar o toggle NÃO refaz a consulta TOTVS de um recorte
+  // que já foi carregado. { [modo]: { dados, valoresAVencer, carregadoEm,
+  // chaveFiltro } }. Só recarrega no botão "Carregar Fila" ou no 1º acesso.
+  const [cachePorModo, setCachePorModo] = useState({});
+  // Loading por modo — uma busca em andamento não trava a aba já carregada
+  const [carregandoModo, setCarregandoModo] = useState({});
+  // Trava síncrona: o `disabled` do botão só reage no próximo render, então um
+  // duplo-clique rápido dispararia duas consultas TOTVS de 12 páginas
+  const buscasEmVooRef = useRef(new Set());
+
   const [notification, setNotification] = useState(null);
 
   // Filtros de consulta (mesma base da Inadimplência MTM)
@@ -94,11 +355,10 @@ const CallCenter = () => {
   const [filtroSituacao, setFiltroSituacao] = useState('TODAS');
   const [filtroFila, setFiltroFila] = useState('TODOS');
 
-  // Valores a vencer por cliente
-  const [valoresAVencer, setValoresAVencer] = useState({});
-
   // Dados de call center vindos do Supabase
   const [contatos, setContatos] = useState({}); // { cd_cliente: { telefone, ultima_ligacao, ... } }
+  // Último SMS por cliente, derivado do histórico de ligações
+  const [ultimosSms, setUltimosSms] = useState({}); // { cd_cliente: { data_ligacao, data_criacao } }
   const [loadingContatos, setLoadingContatos] = useState(false);
 
   // Ordenação
@@ -129,6 +389,52 @@ const CallCenter = () => {
   // Modal de detalhes (títulos em aberto do cliente)
   const [modalTitulosAberto, setModalTitulosAberto] = useState(false);
   const [clienteTitulos, setClienteTitulos] = useState(null);
+
+  // SMS (DisparoPro via backend)
+  const [modalSmsAberto, setModalSmsAberto] = useState(false);
+  const [clienteSms, setClienteSms] = useState(null);
+  const [textoSms, setTextoSms] = useState(MENSAGEM_SMS_PADRAO);
+  const [enviandoSms, setEnviandoSms] = useState(false);
+  const [saldoSms, setSaldoSms] = useState(null);
+
+  // SMS em massa (seleção de clientes)
+  const [selecionados, setSelecionados] = useState(() => new Set());
+  const [modalSmsLoteAberto, setModalSmsLoteAberto] = useState(false);
+  const [textoSmsLote, setTextoSmsLote] = useState(MENSAGEM_SMS_PADRAO);
+  const [enviandoSmsLote, setEnviandoSmsLote] = useState(false);
+
+  // Modelos do modo adimplente (editáveis nos modais)
+  const [tplUrgente, setTplUrgente] = useState(MENSAGEM_SMS_URGENTE);
+  const [tplLembrete, setTplLembrete] = useState(MENSAGEM_SMS_LEMBRETE);
+  const templatesSms = useMemo(
+    () => ({
+      urgente: tplUrgente,
+      urgenteMulti: MENSAGEM_SMS_URGENTE_MULTI,
+      lembrete: tplLembrete,
+    }),
+    [tplUrgente, tplLembrete],
+  );
+
+  // ============================================================
+  // Cache por modo — tudo abaixo lê do bucket do modo ativo
+  // ============================================================
+  // Identifica o recorte carregado. ADIMPLENTES tem janela fixa (hoje..+7),
+  // então só o dia importa; INADIMPLENTES depende das datas escolhidas.
+  const chaveFiltroDe = (m) =>
+    m === 'ADIMPLENTES'
+      ? `ADIMPLENTES|${hojeStr}`
+      : `INADIMPLENTES|${filtroDataInicial}|${filtroDataFinal}`;
+
+  // Saldo vem como string pt-BR ("50,35" / "-3,35")
+  const saldoNegativo = String(saldoSms ?? '').trim().startsWith('-');
+
+  const cacheAtual = cachePorModo[modo];
+  const dados = cacheAtual?.dados || [];
+  const valoresAVencer = cacheAtual?.valoresAVencer || {};
+  const loading = !!carregandoModo[modo];
+  // Filtros mudaram depois que os dados foram carregados
+  const cacheDesatualizado =
+    !!cacheAtual && cacheAtual.chaveFiltro !== chaveFiltroDe(modo);
 
   const formatarMoeda = (valor) =>
     (parseFloat(valor) || 0).toLocaleString('pt-BR', {
@@ -185,23 +491,35 @@ const CallCenter = () => {
   // ============================================================
   const carregarContatos = useCallback(async () => {
     setLoadingContatos(true);
-    const { success, data } = await buscarContatos();
-    if (success) {
+    const [resContatos, resSms] = await Promise.all([
+      buscarContatos(),
+      buscarUltimosSms(),
+    ]);
+    if (resContatos.success) {
       const mapa = {};
-      (data || []).forEach((c) => {
+      (resContatos.data || []).forEach((c) => {
         mapa[String(c.cd_cliente)] = c;
       });
       setContatos(mapa);
     }
+    if (resSms.success) setUltimosSms(resSms.data || {});
     setLoadingContatos(false);
   }, []);
 
   // ============================================================
   // Buscar clientes inadimplentes multimarcas (mesma origem da MTM)
   // ============================================================
-  const fetchDados = async () => {
+  const fetchDados = async (modoAtual = modo, { forcar = false } = {}) => {
+    // Já em cache e sem pedido explícito de recarga → não gasta rota
+    if (!forcar && cachePorModo[modoAtual]) return;
+    // Busca já em andamento para este modo → evita disparo duplicado
+    if (buscasEmVooRef.current.has(modoAtual)) return;
+
+    const chaveFiltro = chaveFiltroDe(modoAtual);
+
     try {
-      setLoading(true);
+      buscasEmVooRef.current.add(modoAtual);
+      setCarregandoModo((prev) => ({ ...prev, [modoAtual]: true }));
 
       const dataIni = filtroDataInicial || '2024-01-01';
       const dataFim = filtroDataFinal || hojeStr;
@@ -227,8 +545,15 @@ const CallCenter = () => {
       const multimarcas = resultMultimarcas.data || [];
 
       if (multimarcas.length === 0) {
-        setDados([]);
-        setValoresAVencer({});
+        setCachePorModo((prev) => ({
+          ...prev,
+          [modoAtual]: {
+            dados: [],
+            valoresAVencer: {},
+            carregadoEm: new Date(),
+            chaveFiltro,
+          },
+        }));
         return;
       }
 
@@ -238,57 +563,91 @@ const CallCenter = () => {
       });
       const codigosMultimarcas = multimarcas.map((m) => m.code).join(',');
 
-      // PASSO 2: contas a receber (vencidas + a vencer)
-      const paramsVencidas = new URLSearchParams({
-        dt_inicio: dataIni,
-        dt_fim: dataFim,
-        modo: 'vencimento',
-        situacao: '1',
-        status: 'Vencido',
-        cd_cliente: codigosMultimarcas,
-      });
+      // PASSO 2: contas a receber conforme o modo
+      let vencidasFiltradas = [];
+      let aVencerFiltradas = [];
 
-      const paramsAVencer = new URLSearchParams({
-        dt_inicio: amanhaStr,
-        dt_fim: umAnoFrenteStr,
-        modo: 'vencimento',
-        situacao: '1',
-        status: 'Em Aberto',
-        cd_cliente: codigosMultimarcas,
-      });
+      if (modoAtual === 'ADIMPLENTES') {
+        // Títulos a vencer de hoje até +7 dias, com NF (expand_invoice) e
+        // linha digitável — tudo em uma única consulta
+        const seteDias = new Date();
+        seteDias.setDate(seteDias.getDate() + 7);
+        const seteDiasStr = seteDias.toISOString().split('T')[0];
 
-      const [responseVencidas, responseAVencer] = await Promise.all([
-        fetch(
-          `${TotvsURL}accounts-receivable/filter?${paramsVencidas.toString()}`,
-        ),
-        fetch(
-          `${TotvsURL}accounts-receivable/filter?${paramsAVencer.toString()}`,
-        ),
-      ]);
+        const paramsJanela = new URLSearchParams({
+          dt_inicio: hojeStr,
+          dt_fim: seteDiasStr,
+          modo: 'vencimento',
+          situacao: '1',
+          status: 'Em Aberto',
+          cd_cliente: codigosMultimarcas,
+          expand_invoice: '1',
+        });
 
-      if (!responseVencidas.ok) {
-        const errData = await responseVencidas.json().catch(() => ({}));
-        throw new Error(
-          errData.message || `Erro HTTP ${responseVencidas.status}`,
+        const respJanela = await fetch(
+          `${TotvsURL}accounts-receivable/filter?${paramsJanela.toString()}`,
+        );
+        if (!respJanela.ok) {
+          const errData = await respJanela.json().catch(() => ({}));
+          throw new Error(errData.message || `Erro HTTP ${respJanela.status}`);
+        }
+        const resultJanela = await respJanela.json();
+        vencidasFiltradas = (resultJanela.data?.items || []).filter(
+          (item) => item.tp_documento === 1 || item.tp_documento === '1',
+        );
+      } else {
+        // INADIMPLENTES: vencidas no período + a vencer (1 ano) p/ contexto
+        const paramsVencidas = new URLSearchParams({
+          dt_inicio: dataIni,
+          dt_fim: dataFim,
+          modo: 'vencimento',
+          situacao: '1',
+          status: 'Vencido',
+          cd_cliente: codigosMultimarcas,
+        });
+
+        const paramsAVencer = new URLSearchParams({
+          dt_inicio: amanhaStr,
+          dt_fim: umAnoFrenteStr,
+          modo: 'vencimento',
+          situacao: '1',
+          status: 'Em Aberto',
+          cd_cliente: codigosMultimarcas,
+        });
+
+        const [responseVencidas, responseAVencer] = await Promise.all([
+          fetch(
+            `${TotvsURL}accounts-receivable/filter?${paramsVencidas.toString()}`,
+          ),
+          fetch(
+            `${TotvsURL}accounts-receivable/filter?${paramsAVencer.toString()}`,
+          ),
+        ]);
+
+        if (!responseVencidas.ok) {
+          const errData = await responseVencidas.json().catch(() => ({}));
+          throw new Error(
+            errData.message || `Erro HTTP ${responseVencidas.status}`,
+          );
+        }
+
+        const resultVencidas = await responseVencidas.json();
+        const faturasVencidas = resultVencidas.data?.items || [];
+
+        let faturasAVencerTodas = [];
+        if (responseAVencer.ok) {
+          const resultAVencer = await responseAVencer.json();
+          faturasAVencerTodas = resultAVencer.data?.items || [];
+        }
+
+        // Apenas tipo documento FATURA
+        vencidasFiltradas = faturasVencidas.filter(
+          (item) => item.tp_documento === 1 || item.tp_documento === '1',
+        );
+        aVencerFiltradas = faturasAVencerTodas.filter(
+          (item) => item.tp_documento === 1 || item.tp_documento === '1',
         );
       }
-
-      const resultVencidas = await responseVencidas.json();
-      const faturasVencidas = resultVencidas.data?.items || [];
-
-      let faturasAVencerTodas = [];
-      if (responseAVencer.ok) {
-        const resultAVencer = await responseAVencer.json();
-        faturasAVencerTodas = resultAVencer.data?.items || [];
-      }
-
-      // Apenas tipo documento FATURA
-      const vencidasFiltradas = faturasVencidas.filter(
-        (item) => item.tp_documento === 1 || item.tp_documento === '1',
-      );
-      const aVencerFiltradas = faturasAVencerTodas.filter(
-        (item) => item.tp_documento === 1 || item.tp_documento === '1',
-      );
 
       // PASSO 3: enriquecer com telefone/UF
       const todosCodigosClientes = [
@@ -345,22 +704,55 @@ const CallCenter = () => {
           (aVencerMap[cd] || 0) + (parseFloat(item.vl_fatura) || 0);
       });
 
-      setValoresAVencer(aVencerMap);
-      setDados(dadosEnriquecidos);
+      setCachePorModo((prev) => ({
+        ...prev,
+        [modoAtual]: {
+          dados: dadosEnriquecidos,
+          valoresAVencer: aVencerMap,
+          carregadoEm: new Date(),
+          chaveFiltro,
+        },
+      }));
     } catch (error) {
       console.error('❌ Erro ao buscar clientes para o call center:', error);
-      setDados([]);
+      // Falha não apaga um cache bom que já existia para este modo
       notificar('error', `Erro ao carregar dados: ${error.message}`, 5000);
     } finally {
-      setLoading(false);
+      buscasEmVooRef.current.delete(modoAtual);
+      setCarregandoModo((prev) => ({ ...prev, [modoAtual]: false }));
     }
   };
+
+  // Saldo de créditos SMS (DisparoPro)
+  const carregarSaldoSms = useCallback(async () => {
+    try {
+      const resp = await fetch(`${API_BASE_URL}/api/sms/saldo`);
+      if (!resp.ok) return;
+      const json = await resp.json();
+      if (json?.data?.saldo != null) setSaldoSms(json.data.saldo);
+    } catch {
+      // saldo é informativo — falha silenciosa
+    }
+  }, []);
 
   useEffect(() => {
     fetchDados();
     carregarContatos();
+    carregarSaldoSms();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Troca de modo: os dados de cada aba ficam em cache, então voltar para uma
+  // aba já carregada é instantâneo — só busca no TOTVS no primeiro acesso.
+  const trocarModo = (novoModo) => {
+    if (novoModo === modo) return;
+    setModo(novoModo);
+    // A seleção é por cliente e as listas são disjuntas — limpar evita
+    // disparar SMS para quem nem está na aba visível
+    setSelecionados(new Set());
+    setFiltroSituacao('TODAS');
+    fetchDados(novoModo); // no-op se já houver cache
+  };
 
   // Filtro de cliente sobre as faturas
   const dadosFiltrados = useMemo(() => {
@@ -412,12 +804,27 @@ const CallCenter = () => {
         return dias === null ? max : Math.max(max, dias);
       }, 0);
 
+      // ADIMPLENTES: dias até o vencimento mais próximo (diffEmDias é
+      // negativo para datas futuras)
+      const diasParaVencer = (cliente.faturas || []).reduce((min, fatura) => {
+        const dias = diffEmDias(fatura.dt_vencimento);
+        if (dias === null) return min;
+        const paraVencer = Math.max(0, -dias);
+        return min === null ? paraVencer : Math.min(min, paraVencer);
+      }, null);
+
       const contato = contatos[String(cliente.cd_cliente)] || {};
 
       return {
         ...cliente,
         diasAtrasoMax,
-        situacao: diasAtrasoMax > 60 ? 'INADIMPLENTE' : 'VENCIDO',
+        diasParaVencer: diasParaVencer ?? 0,
+        situacao:
+          modo === 'ADIMPLENTES'
+            ? 'A VENCER'
+            : diasAtrasoMax > 60
+              ? 'INADIMPLENTE'
+              : 'VENCIDO',
         valor_a_vencer: valoresAVencer[cliente.cd_cliente] || 0,
         // Telefone salvo manualmente tem prioridade sobre o do TOTVS
         telefone: contato.telefone || cliente.nr_telefone || '',
@@ -428,9 +835,15 @@ const CallCenter = () => {
         dias_sem_contato: contato.ultima_ligacao
           ? diffEmDias(contato.ultima_ligacao)
           : null,
+        // A coluna em call_center_contatos tem prioridade: a leitura derivada
+        // do histórico é limitada a 1000 linhas pelo PostgREST
+        ultimo_sms:
+          contato.ultimo_sms ||
+          ultimosSms[String(cliente.cd_cliente)]?.data_ligacao ||
+          null,
       };
     });
-  }, [dadosFiltrados, contatos, valoresAVencer]);
+  }, [dadosFiltrados, contatos, valoresAVencer, ultimosSms, modo]);
 
   // Fila de ligações (busca + filtros + ordenação)
   const fila = useMemo(() => {
@@ -470,6 +883,12 @@ const CallCenter = () => {
           break;
         case 'SEM_TELEFONE':
           matchFila = !c.telefone;
+          break;
+        case 'SEM_SMS':
+          matchFila = !c.ultimo_sms;
+          break;
+        case 'SMS_HOJE':
+          matchFila = c.ultimo_sms === hojeStr;
           break;
         default:
           matchFila = true;
@@ -514,6 +933,11 @@ const CallCenter = () => {
           case 'status_contato':
             valorA = (a.status_contato || '').toLowerCase();
             valorB = (b.status_contato || '').toLowerCase();
+            break;
+          case 'ultimo_sms':
+            // Nunca enviado vai para o topo na ordem ascendente
+            valorA = a.ultimo_sms || '0000-00-00';
+            valorB = b.ultimo_sms || '0000-00-00';
             break;
           default:
             return 0;
@@ -584,6 +1008,47 @@ const CallCenter = () => {
       ...prev,
       [String(cdCliente)]: { ...(prev[String(cdCliente)] || {}), ...patch },
     }));
+  };
+
+  // Marca o SMS de hoje localmente e persiste em call_center_contatos.
+  // A gravação é best-effort: se a coluna ultimo_sms ainda não existir no
+  // Supabase, a data continua sendo derivada de call_center_ligacoes.
+  const marcarSmsEnviadoLocal = (clientesEnviados) => {
+    // No modo adimplente o mesmo cliente aparece uma vez por fatura —
+    // deduplica para não gravar o contato várias vezes
+    const unicos = [
+      ...new Map(
+        clientesEnviados.map((c) => [String(c.cd_cliente), c]),
+      ).values(),
+    ];
+
+    const agora = new Date().toISOString();
+    setUltimosSms((prev) => {
+      const novo = { ...prev };
+      unicos.forEach((c) => {
+        novo[String(c.cd_cliente)] = {
+          data_ligacao: hojeStr,
+          data_criacao: agora,
+        };
+      });
+      return novo;
+    });
+
+    unicos.forEach((c) => {
+      atualizarContatoLocal(c.cd_cliente, { ultimo_sms: hojeStr });
+      salvarContato({
+        cd_cliente: c.cd_cliente,
+        nm_cliente: c.nm_cliente,
+        ultimo_sms: hojeStr,
+        usuario: user?.email || user?.id || 'Usuário',
+      }).then(({ success, error }) => {
+        if (!success) {
+          console.warn(
+            `ultimo_sms não persistido (cliente ${c.cd_cliente}): ${error}. Rode o ALTER TABLE de database/schema-call-center.sql.`,
+          );
+        }
+      });
+    });
   };
 
   // ============================================================
@@ -787,6 +1252,484 @@ const CallCenter = () => {
   };
 
   // ============================================================
+  // Seleção de clientes para SMS em massa
+  // ============================================================
+  const toggleSelecionado = (cdCliente) => {
+    setSelecionados((prev) => {
+      const novo = new Set(prev);
+      const key = String(cdCliente);
+      if (novo.has(key)) novo.delete(key);
+      else novo.add(key);
+      return novo;
+    });
+  };
+
+  // Marca/desmarca todos os clientes visíveis na fila filtrada
+  const todosVisiveisSelecionados =
+    fila.length > 0 &&
+    fila.every((c) => selecionados.has(String(c.cd_cliente)));
+
+  const toggleTodosVisiveis = () => {
+    setSelecionados((prev) => {
+      const novo = new Set(prev);
+      if (todosVisiveisSelecionados) {
+        fila.forEach((c) => novo.delete(String(c.cd_cliente)));
+      } else {
+        fila.forEach((c) => novo.add(String(c.cd_cliente)));
+      }
+      return novo;
+    });
+  };
+
+  // Clientes selecionados (objetos completos, na ordem da lista agrupada)
+  const clientesSelecionados = useMemo(
+    () =>
+      clientesAgrupados.filter((c) => selecionados.has(String(c.cd_cliente))),
+    [clientesAgrupados, selecionados],
+  );
+
+  // ============================================================
+  // SMS de cobrança (DisparoPro via backend /api/sms)
+  // ============================================================
+  const abrirModalSms = (cliente, e) => {
+    e?.stopPropagation();
+    setClienteSms(cliente);
+    setTextoSms(
+      modo === 'ADIMPLENTES' ? MENSAGEM_SMS_URGENTE : MENSAGEM_SMS_PADRAO,
+    );
+    setTplLembrete(MENSAGEM_SMS_LEMBRETE);
+    setModalSmsAberto(true);
+  };
+
+  const fecharModalSms = () => {
+    setModalSmsAberto(false);
+    setClienteSms(null);
+  };
+
+  // Texto do SMS avulso já com {VALOR} resolvido para o cliente aberto
+  const textoSmsResolvido = useMemo(
+    () => aplicarTemplateSms(textoSms.trim(), clienteSms),
+    [textoSms, clienteSms],
+  );
+
+  // ADIMPLENTES: lembrete resolvido por fatura (cada uma vira 2 SMS:
+  // lembrete + linha digitável do boleto)
+  const previaLembrete = useMemo(() => {
+    const vazio = {
+      tipo: 'NENHUM',
+      mensagens: [],
+      urgentes: [],
+      futuras: [],
+      excedentes: [],
+      acimaDoLimite: 0,
+    };
+    if (modo !== 'ADIMPLENTES' || !clienteSms) return vazio;
+
+    const plano = planoSmsCliente(clienteSms, {
+      urgente: textoSms.trim(),
+      urgenteMulti: MENSAGEM_SMS_URGENTE_MULTI,
+      lembrete: tplLembrete.trim(),
+    });
+    return {
+      ...plano,
+      // Só os textos contam: a linha digitável tem 47 dígitos fixos
+      acimaDoLimite: plano.mensagens.filter(
+        (m) => m.papel !== 'BOLETO' && m.texto.length > SMS_LIMITE,
+      ).length,
+    };
+  }, [modo, clienteSms, textoSms, tplLembrete]);
+
+  // Envia um conjunto de mensagens e devolve { enviados, rejeitados }
+  const postarSms = async (mensagens) => {
+    const resp = await fetch(`${API_BASE_URL}/api/sms/enviar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mensagens }),
+    });
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok) {
+      // 409 = travas anti-spam recusaram tudo; 403 = fora da janela de horário
+      const motivo =
+        json?.details?.bloqueadas?.[0]?.motivo ||
+        json?.details?.invalidas?.[0]?.motivo ||
+        json?.message ||
+        `HTTP ${resp.status}`;
+      throw new Error(motivo);
+    }
+    return json?.data || { enviados: 0, rejeitados: [], bloqueadas: [] };
+  };
+
+  const enviarSms = async () => {
+    if (!clienteSms) return;
+
+    if (!clienteSms.telefone) {
+      notificar('error', 'Cliente sem telefone cadastrado.');
+      return;
+    }
+
+    const usuario = user?.email || user?.id || 'Usuário';
+    setEnviandoSms(true);
+    try {
+      if (modo === 'ADIMPLENTES') {
+        // ---- Plano por urgência: urgente (aviso + boletos) ou lembrete ----
+        const { tipo, mensagens: plano, acimaDoLimite } = previaLembrete;
+        if (plano.length === 0) {
+          throw new Error(
+            'Nenhuma fatura elegível: as urgentes precisam de boleto emitido.',
+          );
+        }
+        if (acimaDoLimite > 0) {
+          throw new Error(
+            `${acimaDoLimite} mensagem(ns) acima de ${SMS_LIMITE} caracteres — encurte o texto.`,
+          );
+        }
+
+        const {
+          enviados = 0,
+          rejeitados = [],
+          bloqueadas = [],
+        } = await postarSms(
+          plano.map((m) => ({
+            numero: clienteSms.telefone,
+            mensagem: m.texto,
+            prioridade: m.prioridade,
+            cd_cliente: clienteSms.cd_cliente,
+            parceiro_id: clienteSms.cd_cliente,
+          })),
+        );
+
+        if (enviados === 0) {
+          const det = rejeitados[0];
+          throw new Error(
+            bloqueadas[0]?.motivo ||
+              (det?.descricao_detalhe
+                ? `Operadora rejeitou: ${det.descricao_detalhe}`
+                : 'SMS não foi aceito pela plataforma'),
+          );
+        }
+
+        const faturasEnviadas =
+          tipo === 'URGENTE' ? previaLembrete.urgentes : previaLembrete.futuras;
+        await registrarLigacao({
+          cd_cliente: clienteSms.cd_cliente,
+          nm_cliente: clienteSms.nm_cliente,
+          telefone: clienteSms.telefone,
+          data_ligacao: hojeStr,
+          status_ligacao: 'SMS_ENVIADO',
+          observacao:
+            tipo === 'URGENTE'
+              ? `SMS vencimento: ${faturasEnviadas.length} fatura(s) + codigo(s) de barras (${enviados} SMS)`
+              : `SMS lembrete: ${faturasEnviadas.length} fatura(s) a vencer, sem boleto`,
+          valor_vencido: somaFaturas(faturasEnviadas),
+          usuario,
+        });
+
+        marcarSmsEnviadoLocal([clienteSms]);
+        fecharModalSms();
+        notificar(
+          rejeitados.length > 0 || bloqueadas.length > 0 ? 'warning' : 'success',
+          `${enviados} SMS enviado(s)${
+            bloqueadas.length ? `, ${bloqueadas.length} bloqueado(s) por trava` : ''
+          }${rejeitados.length ? `, ${rejeitados.length} rejeitado(s)` : ''}!`,
+          6000,
+        );
+        carregarSaldoSms();
+      } else {
+        // ---- Cobrança: 1 SMS ----
+        const texto = textoSmsResolvido;
+        if (!texto) throw new Error('A mensagem está vazia.');
+        if (texto.length > SMS_LIMITE) {
+          throw new Error(
+            `Mensagem com ${texto.length} caracteres (máx. ${SMS_LIMITE}).`,
+          );
+        }
+
+        const { enviados = 0, rejeitados = [] } = await postarSms([
+          {
+            numero: clienteSms.telefone,
+            mensagem: texto,
+            parceiro_id: clienteSms.cd_cliente,
+          },
+        ]);
+        if (enviados === 0) {
+          const det = rejeitados[0];
+          throw new Error(
+            det?.descricao_detalhe
+              ? `Operadora rejeitou: ${det.descricao_detalhe}`
+              : 'SMS não foi aceito pela plataforma',
+          );
+        }
+
+        await registrarLigacao({
+          cd_cliente: clienteSms.cd_cliente,
+          nm_cliente: clienteSms.nm_cliente,
+          telefone: clienteSms.telefone,
+          data_ligacao: hojeStr,
+          status_ligacao: 'SMS_ENVIADO',
+          observacao: `SMS: ${texto}`,
+          valor_vencido: clienteSms.valor_total,
+          usuario,
+        });
+
+        marcarSmsEnviadoLocal([clienteSms]);
+        fecharModalSms();
+        notificar('success', 'SMS enviado com sucesso!');
+        carregarSaldoSms();
+      }
+    } catch (err) {
+      notificar('error', `Erro ao enviar SMS: ${err.message}`, 5000);
+    } finally {
+      setEnviandoSms(false);
+    }
+  };
+
+  // ============================================================
+  // SMS em massa (mesmo template para todos os selecionados)
+  // ============================================================
+  const abrirModalSmsLote = () => {
+    setTextoSmsLote(
+      modo === 'ADIMPLENTES' ? MENSAGEM_SMS_LEMBRETE : MENSAGEM_SMS_PADRAO,
+    );
+    setTplUrgente(MENSAGEM_SMS_URGENTE);
+    setModalSmsLoteAberto(true);
+  };
+
+  const fecharModalSmsLote = () => setModalSmsLoteAberto(false);
+
+  // Prévia do lote: mensagens resolvidas por cliente + validação de tamanho
+  const previaLote = useMemo(() => {
+    const comTelefone = clientesSelecionados.filter((c) =>
+      telefoneParaDiscagem(c.telefone),
+    );
+    const semTelefone = clientesSelecionados.length - comTelefone.length;
+
+    if (modo === 'ADIMPLENTES') {
+      // Um plano por CLIENTE (não por fatura): urgente = aviso + boletos,
+      // futuro = 1 lembrete sem boleto. Teto de 3 SMS por cliente.
+      const planos = comTelefone
+        .map((c) => ({
+          cliente: c,
+          plano: planoSmsCliente(c, {
+            urgente: tplUrgente.trim(),
+            urgenteMulti: MENSAGEM_SMS_URGENTE_MULTI,
+            lembrete: textoSmsLote.trim(),
+          }),
+        }))
+        .filter((p) => p.plano.mensagens.length > 0);
+
+      const urgentes = planos.filter((p) => p.plano.tipo === 'URGENTE');
+      const lembretes = planos.filter((p) => p.plano.tipo === 'LEMBRETE');
+      const semNada = comTelefone.length - planos.length;
+      const totalSms = planos.reduce(
+        (s, p) => s + p.plano.mensagens.length,
+        0,
+      );
+
+      const textos = planos.flatMap((p) =>
+        p.plano.mensagens.filter((m) => m.papel !== 'BOLETO'),
+      );
+      const maisLonga = textos.reduce(
+        (max, m) => (m.texto.length > max.texto.length ? m : max),
+        { texto: '' },
+      );
+
+      return {
+        mensagens: planos,
+        semTelefone,
+        semBoleto: semNada,
+        qtdUrgentes: urgentes.length,
+        qtdLembretes: lembretes.length,
+        excedentes: planos.reduce(
+          (s, p) => s + p.plano.excedentes.length,
+          0,
+        ),
+        maisLonga,
+        acimaDoLimite: textos.filter((m) => m.texto.length > SMS_LIMITE).length,
+        totalSms,
+      };
+    }
+
+    const mensagens = comTelefone.map((c) => ({
+      cliente: c,
+      texto: aplicarTemplateSms(textoSmsLote.trim(), c),
+    }));
+    const maisLonga = mensagens.reduce(
+      (max, m) => (m.texto.length > max.texto.length ? m : max),
+      { texto: '' },
+    );
+    const acimaDoLimite = mensagens.filter(
+      (m) => m.texto.length > SMS_LIMITE,
+    ).length;
+    return {
+      mensagens,
+      semTelefone,
+      semBoleto: 0,
+      qtdUrgentes: 0,
+      qtdLembretes: 0,
+      excedentes: 0,
+      maisLonga,
+      acimaDoLimite,
+      totalSms: mensagens.length,
+    };
+  }, [clientesSelecionados, textoSmsLote, tplUrgente, modo]);
+
+  const enviarSmsLote = async () => {
+    const { mensagens, acimaDoLimite } = previaLote;
+
+    if (mensagens.length === 0) {
+      notificar(
+        'error',
+        modo === 'ADIMPLENTES'
+          ? 'Nenhuma fatura com boleto entre os selecionados.'
+          : 'Nenhum cliente selecionado com telefone válido.',
+      );
+      return;
+    }
+    if (acimaDoLimite > 0) {
+      notificar(
+        'error',
+        `${acimaDoLimite} mensagem(ns) acima de ${SMS_LIMITE} caracteres — encurte o texto.`,
+      );
+      return;
+    }
+
+    setEnviandoSmsLote(true);
+    const usuario = user?.email || user?.id || 'Usuário';
+    let totalEnviados = 0;
+    const falhas = [];
+    const enviadosClientes = [];
+
+    try {
+      // Backend aceita no máximo 50 mensagens por requisição. No modo
+      // adimplente cada cliente pode gerar até 3 SMS — 15 clientes por bloco
+      // garante que o plano de um cliente nunca é partido entre requisições.
+      const porBloco = modo === 'ADIMPLENTES' ? 15 : 50;
+
+      for (let i = 0; i < mensagens.length; i += porBloco) {
+        const bloco = mensagens.slice(i, i + porBloco);
+        const payload =
+          modo === 'ADIMPLENTES'
+            ? bloco.flatMap((p) =>
+                p.plano.mensagens.map((m) => ({
+                  numero: p.cliente.telefone,
+                  mensagem: m.texto,
+                  prioridade: m.prioridade,
+                  cd_cliente: p.cliente.cd_cliente,
+                  parceiro_id: p.cliente.cd_cliente,
+                })),
+              )
+            : bloco.map((m) => ({
+                numero: m.cliente.telefone,
+                mensagem: m.texto,
+                prioridade: 'NORMAL',
+                cd_cliente: m.cliente.cd_cliente,
+                parceiro_id: m.cliente.cd_cliente,
+              }));
+
+        let data;
+        try {
+          data = await postarSms(payload);
+        } catch (err) {
+          bloco.forEach((m) =>
+            falhas.push({ cliente: m.cliente, motivo: err.message }),
+          );
+          continue;
+        }
+
+        const detalhe = data?.detalhe || [];
+        const bloqueadas = data?.bloqueadas || [];
+        // Casa a resposta (numero normalizado 55...) com o item do bloco.
+        // Um mesmo número aparece várias vezes no modo adimplente — o
+        // sucesso é avaliado pelo conjunto de respostas daquele número.
+        const avaliar = (cliente) => {
+          const digitos = telefoneParaDiscagem(cliente.telefone).replace(
+            /\D/g,
+            '',
+          );
+          const dets = detalhe.filter((d) => String(d.numero) === digitos);
+          const trava = bloqueadas.find((b) => String(b.numero) === digitos);
+          const ok =
+            dets.length > 0 &&
+            dets.every((d) => ['02', '03'].includes(String(d.codigo_status)));
+          return { ok, dets, trava };
+        };
+
+        bloco.forEach((m) => {
+          const { ok, dets, trava } = avaliar(m.cliente);
+          if (ok) {
+            totalEnviados += 1;
+            enviadosClientes.push(m.cliente);
+          } else {
+            falhas.push({
+              cliente: m.cliente,
+              motivo:
+                trava?.motivo ||
+                dets.find(
+                  (d) => !['02', '03'].includes(String(d.codigo_status)),
+                )?.descricao_detalhe ||
+                'Rejeitado pela plataforma',
+            });
+          }
+        });
+
+        // Registrar histórico dos aceitos deste bloco
+        await Promise.all(
+          bloco
+            .filter((m) => avaliar(m.cliente).ok)
+            .map((m) => {
+              const faturas =
+                modo === 'ADIMPLENTES'
+                  ? m.plano.tipo === 'URGENTE'
+                    ? m.plano.urgentes
+                    : m.plano.futuras
+                  : [];
+              return registrarLigacao({
+                cd_cliente: m.cliente.cd_cliente,
+                nm_cliente: m.cliente.nm_cliente,
+                telefone: m.cliente.telefone,
+                data_ligacao: hojeStr,
+                status_ligacao: 'SMS_ENVIADO',
+                observacao:
+                  modo === 'ADIMPLENTES'
+                    ? m.plano.tipo === 'URGENTE'
+                      ? `SMS vencimento (lote): ${faturas.length} fatura(s) + codigo(s) de barras`
+                      : `SMS lembrete (lote): ${faturas.length} fatura(s) a vencer, sem boleto`
+                    : `SMS (lote): ${m.texto}`,
+                valor_vencido:
+                  modo === 'ADIMPLENTES'
+                    ? somaFaturas(faturas)
+                    : m.cliente.valor_total,
+                usuario,
+              });
+            }),
+        );
+      }
+
+      if (totalEnviados > 0) {
+        marcarSmsEnviadoLocal(enviadosClientes);
+        fecharModalSmsLote();
+        setSelecionados(new Set());
+        carregarSaldoSms();
+      }
+
+      const rotulo = modo === 'ADIMPLENTES' ? 'lembrete(s)' : 'SMS';
+      if (falhas.length === 0) {
+        notificar('success', `${totalEnviados} ${rotulo} enviados com sucesso!`);
+      } else {
+        notificar(
+          totalEnviados > 0 ? 'warning' : 'error',
+          `${totalEnviados} enviado(s), ${falhas.length} falha(s). Ex.: ${falhas[0].cliente.nm_cliente}: ${falhas[0].motivo}`,
+          8000,
+        );
+      }
+    } catch (err) {
+      notificar('error', `Erro no disparo em massa: ${err.message}`, 6000);
+    } finally {
+      setEnviandoSmsLote(false);
+    }
+  };
+
+  // ============================================================
   // Blocos reaproveitados pela tabela (desktop) e pelos cards (celular)
   // ============================================================
   const renderTelefone = (cliente) =>
@@ -881,6 +1824,43 @@ const CallCenter = () => {
     );
   };
 
+  // Botão SMS: abre o modal de disparo (DisparoPro). Cinza quando sem
+  // telefone — ou, no modo adimplente, sem boleto emitido.
+  const renderBotaoSms = (cliente, { full = false } = {}) => {
+    const temTelefone = !!telefoneParaDiscagem(cliente.telefone);
+    const temBoleto =
+      modo !== 'ADIMPLENTES' ||
+      planoSmsCliente(cliente, templatesSms).mensagens.length > 0;
+    const habilitado = temTelefone && temBoleto;
+    return (
+      <button
+        onClick={(e) =>
+          habilitado ? abrirModalSms(cliente, e) : e.stopPropagation()
+        }
+        disabled={!habilitado}
+        className={`text-white text-xs font-semibold px-3 py-2 rounded transition-colors flex items-center justify-center gap-1 ${
+          full ? 'flex-1' : ''
+        } ${
+          habilitado
+            ? 'bg-teal-600 hover:bg-teal-700 active:bg-teal-800'
+            : 'bg-gray-300 cursor-not-allowed'
+        }`}
+        title={
+          !temTelefone
+            ? 'Cliente sem telefone'
+            : !temBoleto
+              ? 'Nenhuma fatura elegível (vencendo hoje/amanhã precisa de boleto)'
+              : modo === 'ADIMPLENTES'
+                ? `Enviar lembrete + código de barras para ${formatarTelefone(cliente.telefone)}`
+                : `Enviar SMS de cobrança para ${formatarTelefone(cliente.telefone)}`
+        }
+      >
+        <ChatText size={14} weight="bold" />
+        SMS
+      </button>
+    );
+  };
+
   const renderUltimaLigacao = (cliente) => (
     <>
       <input
@@ -905,63 +1885,147 @@ const CallCenter = () => {
   const renderSituacao = (cliente) => (
     <span
       className={`text-xs font-semibold px-2 py-1 rounded ${
-        cliente.situacao === 'INADIMPLENTE'
-          ? 'bg-red-100 text-red-800'
-          : 'bg-yellow-100 text-yellow-800'
+        cliente.situacao === 'A VENCER'
+          ? 'bg-blue-100 text-blue-800'
+          : cliente.situacao === 'INADIMPLENTE'
+            ? 'bg-red-100 text-red-800'
+            : 'bg-yellow-100 text-yellow-800'
       }`}
     >
       {cliente.situacao}
     </span>
   );
 
+  // Data do último SMS enviado ao cliente (derivada do histórico)
+  const renderUltimoSms = (cliente) =>
+    cliente.ultimo_sms ? (
+      <div className="flex items-center gap-1">
+        <span className="text-xs font-semibold px-2 py-1 rounded bg-teal-100 text-teal-800">
+          {formatarData(cliente.ultimo_sms)}
+        </span>
+        {cliente.ultimo_sms === hojeStr && (
+          <span className="text-[10px] font-bold text-teal-700">hoje</span>
+        )}
+      </div>
+    ) : (
+      <span className="text-xs text-gray-400">nunca</span>
+    );
+
+  // Texto auxiliar sob a situação (atraso ou proximidade do vencimento)
+  const legendaSituacao = (cliente) =>
+    modo === 'ADIMPLENTES'
+      ? cliente.diasParaVencer === 0
+        ? 'vence hoje'
+        : `vence em ${cliente.diasParaVencer} dia${cliente.diasParaVencer !== 1 ? 's' : ''}`
+      : `${cliente.diasAtrasoMax} dia${cliente.diasAtrasoMax !== 1 ? 's' : ''} de atraso`;
+
   return (
     <div className="w-full max-w-[1600px] mx-auto py-4 px-3 sm:py-6 sm:px-4 space-y-4 sm:space-y-6">
       <PageTitle
         title="Call Center"
-        subtitle="Fila de ligações de cobrança dos clientes Multimarcas — registre a data e o resultado de cada contato"
+        subtitle="Cobrança de vencidos e lembretes de vencimento dos clientes Multimarcas — ligações e SMS em um só lugar"
         icon={Headset}
         iconColor="text-blue-600"
       />
+
+      {/* Toggle INADIMPLENTES / ADIMPLENTES */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {[
+          { id: 'INADIMPLENTES', label: 'Inadimplentes', Icone: Warning },
+          { id: 'ADIMPLENTES', label: 'Adimplentes', Icone: CalendarBlank },
+        ].map(({ id, label, Icone }) => (
+          <button
+            key={id}
+            onClick={() => trocarModo(id)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition-colors shadow-md ${
+              modo === id
+                ? 'bg-[#000638] text-white'
+                : 'bg-white text-[#000638] border border-[#000638]/30 hover:bg-gray-50'
+            }`}
+          >
+            {carregandoModo[id] ? (
+              <CircleNotch size={16} className="animate-spin" />
+            ) : (
+              <Icone size={16} weight="bold" />
+            )}
+            {label}
+            {/* Bolinha = aba já carregada, troca instantânea */}
+            {cachePorModo[id] && !carregandoModo[id] && (
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  modo === id ? 'bg-green-400' : 'bg-green-500'
+                }`}
+                title="Dados já carregados"
+              />
+            )}
+          </button>
+        ))}
+
+        {cacheAtual?.carregadoEm && (
+          <span className="text-[11px] text-gray-500 ml-1">
+            atualizado às{' '}
+            {cacheAtual.carregadoEm.toLocaleTimeString('pt-BR', {
+              hour: '2-digit',
+              minute: '2-digit',
+            })}
+          </span>
+        )}
+        {cacheDesatualizado && (
+          <span className="text-[11px] font-semibold text-orange-700 bg-orange-50 border border-orange-200 rounded px-2 py-0.5">
+            filtros alterados — clique em Carregar Fila
+          </span>
+        )}
+      </div>
 
       {/* Filtros de consulta */}
       <div className="bg-white p-4 sm:p-6 rounded-lg shadow-sm border">
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            fetchDados();
+            fetchDados(modo, { forcar: true });
           }}
         >
           <div className="text-sm font-semibold text-[#000638] mb-2">
             Configurações da fila de ligações
           </div>
           <span className="text-xs text-gray-500 mt-1">
-            Base de clientes com títulos vencidos (mesma origem da Inadimplência
-            Multimarcas)
+            {modo === 'ADIMPLENTES'
+              ? 'Clientes com faturas a vencer de hoje até 7 dias — lembrete com código de barras'
+              : 'Base de clientes com títulos vencidos (mesma origem da Inadimplência Multimarcas)'}
           </span>
 
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 mb-3 mt-4">
-            <div>
-              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
-                Data Inicial
-              </label>
-              <input
-                type="date"
-                value={filtroDataInicial}
-                onChange={(e) => setFiltroDataInicial(e.target.value)}
-                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
-                Data Final
-              </label>
-              <input
-                type="date"
-                value={filtroDataFinal}
-                onChange={(e) => setFiltroDataFinal(e.target.value)}
-                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
-              />
-            </div>
+            {modo === 'INADIMPLENTES' ? (
+              <>
+                <div>
+                  <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                    Data Inicial
+                  </label>
+                  <input
+                    type="date"
+                    value={filtroDataInicial}
+                    onChange={(e) => setFiltroDataInicial(e.target.value)}
+                    className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                    Data Final
+                  </label>
+                  <input
+                    type="date"
+                    value={filtroDataFinal}
+                    onChange={(e) => setFiltroDataFinal(e.target.value)}
+                    className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="col-span-2 flex items-center gap-2 text-xs text-[#000638] bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                <CalendarBlank size={14} weight="bold" />
+                Janela fixa: vencimentos de <b>hoje</b> até <b>+7 dias</b>
+              </div>
+            )}
             <div className="col-span-2 lg:col-span-1">
               <FiltroClientes
                 clientes={clientesDisponiveis}
@@ -994,7 +2058,7 @@ const CallCenter = () => {
       </div>
 
       {/* Cards de resumo */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 sm:gap-4">
         <Card className="shadow-lg rounded-xl bg-white">
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
@@ -1009,7 +2073,9 @@ const CallCenter = () => {
               {metricas.totalClientes}
             </div>
             <CardDescription className="text-xs text-gray-500">
-              Com títulos vencidos
+              {modo === 'ADIMPLENTES'
+                ? 'Com faturas a vencer (7 dias)'
+                : 'Com títulos vencidos'}
             </CardDescription>
           </CardContent>
         </Card>
@@ -1017,18 +2083,27 @@ const CallCenter = () => {
         <Card className="shadow-lg rounded-xl bg-white">
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
-              <CurrencyDollar size={18} className="text-red-600" />
+              <CurrencyDollar
+                size={18}
+                className={
+                  modo === 'ADIMPLENTES' ? 'text-orange-600' : 'text-red-600'
+                }
+              />
               <CardTitle className="text-sm font-bold text-[#000638]">
-                Valor Vencido
+                {modo === 'ADIMPLENTES' ? 'Valor a Vencer' : 'Valor Vencido'}
               </CardTitle>
             </div>
           </CardHeader>
           <CardContent className="pt-0 px-4 pb-4">
-            <div className="text-base font-extrabold text-red-600 mb-0.5">
+            <div
+              className={`text-base font-extrabold mb-0.5 ${
+                modo === 'ADIMPLENTES' ? 'text-orange-600' : 'text-red-600'
+              }`}
+            >
               {formatarMoeda(metricas.valorTotal)}
             </div>
             <CardDescription className="text-xs text-gray-500">
-              Total da fila
+              {modo === 'ADIMPLENTES' ? 'Próximos 7 dias' : 'Total da fila'}
             </CardDescription>
           </CardContent>
         </Card>
@@ -1098,6 +2173,41 @@ const CallCenter = () => {
             </CardDescription>
           </CardContent>
         </Card>
+
+        {/* Saldo DisparoPro (créditos de SMS) */}
+        <Card
+          className="shadow-lg rounded-xl bg-white cursor-pointer transition-all duration-200 hover:shadow-xl hover:-translate-y-1"
+          onClick={carregarSaldoSms}
+          title="Clique para atualizar o saldo"
+        >
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <ChatText
+                size={18}
+                className={saldoNegativo ? 'text-red-600' : 'text-teal-600'}
+              />
+              <CardTitle className="text-sm font-bold text-[#000638]">
+                Saldo SMS
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="pt-0 px-4 pb-4">
+            <div
+              className={`text-base font-extrabold mb-0.5 ${
+                saldoNegativo ? 'text-red-600' : 'text-teal-600'
+              }`}
+            >
+              {saldoSms != null ? `R$ ${saldoSms}` : '---'}
+            </div>
+            <CardDescription className="text-xs text-gray-500">
+              {saldoSms == null
+                ? 'DisparoPro indisponível'
+                : saldoNegativo
+                  ? 'Recarregue para enviar SMS'
+                  : 'Créditos DisparoPro'}
+            </CardDescription>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Tabela da fila */}
@@ -1112,6 +2222,18 @@ const CallCenter = () => {
               <span className="text-xs text-gray-500">
                 ({fila.length} cliente{fila.length !== 1 ? 's' : ''})
               </span>
+              {saldoSms != null && (
+                <span
+                  className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                    String(saldoSms).trim().startsWith('-')
+                      ? 'bg-red-100 text-red-700'
+                      : 'bg-teal-100 text-teal-700'
+                  }`}
+                  title="Saldo de créditos SMS (DisparoPro)"
+                >
+                  Saldo SMS: R$ {saldoSms}
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
@@ -1129,17 +2251,19 @@ const CallCenter = () => {
                 />
               </div>
 
-              <select
-                value={filtroSituacao}
-                onChange={(e) => setFiltroSituacao(e.target.value)}
-                className="border border-gray-300 rounded-lg px-2 py-2 text-xs flex-1 sm:flex-none focus:outline-none focus:ring-2 focus:ring-[#000638]"
-              >
-                <option value="TODAS">Todas as situações</option>
-                <option value="VENCIDO">Vencido (até 60 dias)</option>
-                <option value="INADIMPLENTE">
-                  Inadimplente (acima de 60 dias)
-                </option>
-              </select>
+              {modo === 'INADIMPLENTES' && (
+                <select
+                  value={filtroSituacao}
+                  onChange={(e) => setFiltroSituacao(e.target.value)}
+                  className="border border-gray-300 rounded-lg px-2 py-2 text-xs flex-1 sm:flex-none focus:outline-none focus:ring-2 focus:ring-[#000638]"
+                >
+                  <option value="TODAS">Todas as situações</option>
+                  <option value="VENCIDO">Vencido (até 60 dias)</option>
+                  <option value="INADIMPLENTE">
+                    Inadimplente (acima de 60 dias)
+                  </option>
+                </select>
+              )}
 
               <select
                 value={filtroFila}
@@ -1152,6 +2276,8 @@ const CallCenter = () => {
                 <option value="SEM_CONTATO_7">Sem contato há 7+ dias</option>
                 <option value="AGENDADOS_HOJE">Retornos pendentes</option>
                 <option value="SEM_TELEFONE">Sem telefone</option>
+                <option value="SEM_SMS">Nunca receberam SMS</option>
+                <option value="SMS_HOJE">SMS enviado hoje</option>
               </select>
 
               <button
@@ -1189,6 +2315,15 @@ const CallCenter = () => {
               <table className="w-full text-sm text-left">
                 <thead className="text-xs text-gray-700 uppercase bg-gray-50">
                   <tr>
+                    <th className="px-3 py-3 w-8">
+                      <input
+                        type="checkbox"
+                        checked={todosVisiveisSelecionados}
+                        onChange={toggleTodosVisiveis}
+                        className="w-4 h-4 accent-[#000638] cursor-pointer"
+                        title="Selecionar todos os clientes filtrados"
+                      />
+                    </th>
                     <th
                       className="px-3 py-3 cursor-pointer hover:bg-gray-100 select-none"
                       onClick={() => ordenarColuna('cd_cliente')}
@@ -1222,19 +2357,21 @@ const CallCenter = () => {
                       onClick={() => ordenarColuna('valor_total')}
                     >
                       <div className="flex items-center gap-1">
-                        Valor Vencido
+                        {modo === 'ADIMPLENTES' ? 'Valor a Vencer' : 'Valor Vencido'}
                         <SetaOrdenacao coluna="valor_total" />
                       </div>
                     </th>
-                    <th
-                      className="px-3 py-3 cursor-pointer hover:bg-gray-100 select-none"
-                      onClick={() => ordenarColuna('valor_a_vencer')}
-                    >
-                      <div className="flex items-center gap-1">
-                        A Vencer
-                        <SetaOrdenacao coluna="valor_a_vencer" />
-                      </div>
-                    </th>
+                    {modo === 'INADIMPLENTES' && (
+                      <th
+                        className="px-3 py-3 cursor-pointer hover:bg-gray-100 select-none"
+                        onClick={() => ordenarColuna('valor_a_vencer')}
+                      >
+                        <div className="flex items-center gap-1">
+                          A Vencer
+                          <SetaOrdenacao coluna="valor_a_vencer" />
+                        </div>
+                      </th>
+                    )}
                     <th
                       className="px-3 py-3 cursor-pointer hover:bg-gray-100 select-none"
                       onClick={() => ordenarColuna('situacao')}
@@ -1255,6 +2392,15 @@ const CallCenter = () => {
                     </th>
                     <th
                       className="px-3 py-3 cursor-pointer hover:bg-gray-100 select-none"
+                      onClick={() => ordenarColuna('ultimo_sms')}
+                    >
+                      <div className="flex items-center gap-1">
+                        Último SMS
+                        <SetaOrdenacao coluna="ultimo_sms" />
+                      </div>
+                    </th>
+                    <th
+                      className="px-3 py-3 cursor-pointer hover:bg-gray-100 select-none"
                       onClick={() => ordenarColuna('status_contato')}
                     >
                       <div className="flex items-center gap-1">
@@ -1270,7 +2416,7 @@ const CallCenter = () => {
                   {fila.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={11}
+                        colSpan={modo === 'INADIMPLENTES' ? 13 : 12}
                         className="px-4 py-8 text-center text-gray-500"
                       >
                         Nenhum cliente encontrado para os filtros selecionados
@@ -1283,6 +2429,17 @@ const CallCenter = () => {
                         className="bg-white border-b hover:bg-blue-50 cursor-pointer transition-colors"
                         onClick={() => abrirModalTitulos(cliente)}
                       >
+                        <td
+                          className="px-3 py-3"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selecionados.has(String(cliente.cd_cliente))}
+                            onChange={() => toggleSelecionado(cliente.cd_cliente)}
+                            className="w-4 h-4 accent-[#000638] cursor-pointer"
+                          />
+                        </td>
                         <td className="px-3 py-3 font-medium text-gray-900">
                           {cliente.cd_cliente}
                         </td>
@@ -1310,17 +2467,24 @@ const CallCenter = () => {
                             {cliente.ds_uf?.trim() || 'N/A'}
                           </span>
                         </td>
-                        <td className="px-3 py-3 font-medium text-red-600">
+                        <td
+                          className={`px-3 py-3 font-medium ${
+                            modo === 'ADIMPLENTES'
+                              ? 'text-orange-600'
+                              : 'text-red-600'
+                          }`}
+                        >
                           {formatarMoeda(cliente.valor_total)}
                         </td>
-                        <td className="px-3 py-3 font-medium text-orange-600">
-                          {formatarMoeda(cliente.valor_a_vencer)}
-                        </td>
+                        {modo === 'INADIMPLENTES' && (
+                          <td className="px-3 py-3 font-medium text-orange-600">
+                            {formatarMoeda(cliente.valor_a_vencer)}
+                          </td>
+                        )}
                         <td className="px-3 py-3">
                           {renderSituacao(cliente)}
                           <div className="text-[10px] text-gray-500 mt-0.5">
-                            {cliente.diasAtrasoMax} dia
-                            {cliente.diasAtrasoMax !== 1 ? 's' : ''} de atraso
+                            {legendaSituacao(cliente)}
                           </div>
                         </td>
 
@@ -1331,6 +2495,8 @@ const CallCenter = () => {
                         >
                           {renderUltimaLigacao(cliente)}
                         </td>
+
+                        <td className="px-3 py-3">{renderUltimoSms(cliente)}</td>
 
                         <td className="px-3 py-3">
                           {cliente.status_contato ? (
@@ -1368,6 +2534,7 @@ const CallCenter = () => {
                         >
                           <div className="flex items-center gap-1">
                             {renderBotaoLigar(cliente)}
+                            {renderBotaoSms(cliente)}
                             <button
                               onClick={(e) => abrirModalHistorico(cliente, e)}
                               className="bg-[#000638] hover:bg-[#fe0000] text-white text-xs font-medium px-2 py-2 rounded transition-colors"
@@ -1386,6 +2553,17 @@ const CallCenter = () => {
 
               {/* ---------- Cards (celular / tablet) ---------- */}
               <div className="lg:hidden space-y-3">
+                {fila.length > 0 && (
+                  <label className="flex items-center gap-2 text-xs font-semibold text-[#000638] px-1 py-1 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={todosVisiveisSelecionados}
+                      onChange={toggleTodosVisiveis}
+                      className="w-4 h-4 accent-[#000638]"
+                    />
+                    Selecionar todos ({fila.length})
+                  </label>
+                )}
                 {fila.length === 0 ? (
                   <div className="px-4 py-8 text-center text-gray-500 text-sm">
                     Nenhum cliente encontrado para os filtros selecionados
@@ -1401,7 +2579,14 @@ const CallCenter = () => {
                         className="flex justify-between items-start gap-2 cursor-pointer"
                         onClick={() => abrirModalTitulos(cliente)}
                       >
-                        <div className="min-w-0">
+                        <input
+                          type="checkbox"
+                          checked={selecionados.has(String(cliente.cd_cliente))}
+                          onChange={() => toggleSelecionado(cliente.cd_cliente)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-5 h-5 accent-[#000638] shrink-0 mt-0.5"
+                        />
+                        <div className="min-w-0 flex-1">
                           <div className="font-semibold text-sm text-gray-900 break-words">
                             {cliente.nm_cliente || 'N/A'}
                           </div>
@@ -1417,8 +2602,7 @@ const CallCenter = () => {
                         <div className="shrink-0 text-right">
                           {renderSituacao(cliente)}
                           <div className="text-[10px] text-gray-500 mt-0.5">
-                            {cliente.diasAtrasoMax} dia
-                            {cliente.diasAtrasoMax !== 1 ? 's' : ''} atraso
+                            {legendaSituacao(cliente)}
                           </div>
                         </div>
                       </div>
@@ -1428,22 +2612,48 @@ const CallCenter = () => {
                         className="grid grid-cols-2 gap-2 mt-3 cursor-pointer"
                         onClick={() => abrirModalTitulos(cliente)}
                       >
-                        <div className="bg-red-50 rounded-lg px-2 py-1.5">
-                          <div className="text-[10px] uppercase text-red-700 font-semibold">
-                            Vencido
-                          </div>
-                          <div className="text-sm font-bold text-red-600">
-                            {formatarMoeda(cliente.valor_total)}
-                          </div>
-                        </div>
-                        <div className="bg-orange-50 rounded-lg px-2 py-1.5">
-                          <div className="text-[10px] uppercase text-orange-700 font-semibold">
-                            A vencer
-                          </div>
-                          <div className="text-sm font-bold text-orange-600">
-                            {formatarMoeda(cliente.valor_a_vencer)}
-                          </div>
-                        </div>
+                        {modo === 'ADIMPLENTES' ? (
+                          <>
+                            <div className="bg-orange-50 rounded-lg px-2 py-1.5">
+                              <div className="text-[10px] uppercase text-orange-700 font-semibold">
+                                A vencer (7d)
+                              </div>
+                              <div className="text-sm font-bold text-orange-600">
+                                {formatarMoeda(cliente.valor_total)}
+                              </div>
+                            </div>
+                            <div className="bg-blue-50 rounded-lg px-2 py-1.5">
+                              <div className="text-[10px] uppercase text-blue-700 font-semibold">
+                                SMS previstos
+                              </div>
+                              <div className="text-sm font-bold text-blue-600">
+                                {
+                                  planoSmsCliente(cliente, templatesSms)
+                                    .mensagens.length
+                                }
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="bg-red-50 rounded-lg px-2 py-1.5">
+                              <div className="text-[10px] uppercase text-red-700 font-semibold">
+                                Vencido
+                              </div>
+                              <div className="text-sm font-bold text-red-600">
+                                {formatarMoeda(cliente.valor_total)}
+                              </div>
+                            </div>
+                            <div className="bg-orange-50 rounded-lg px-2 py-1.5">
+                              <div className="text-[10px] uppercase text-orange-700 font-semibold">
+                                A vencer
+                              </div>
+                              <div className="text-sm font-bold text-orange-600">
+                                {formatarMoeda(cliente.valor_a_vencer)}
+                              </div>
+                            </div>
+                          </>
+                        )}
                       </div>
 
                       {/* Telefone */}
@@ -1454,13 +2664,17 @@ const CallCenter = () => {
                         {renderTelefone(cliente)}
                       </div>
 
-                      {/* Última ligação + resultado */}
+                      {/* Última ligação + último SMS + resultado */}
                       <div className="grid grid-cols-2 gap-2 mt-3">
                         <div>
                           <div className="text-[10px] uppercase font-semibold text-gray-500 mb-1">
                             Última ligação
                           </div>
                           {renderUltimaLigacao(cliente)}
+                          <div className="text-[10px] uppercase font-semibold text-gray-500 mt-2 mb-1">
+                            Último SMS
+                          </div>
+                          {renderUltimoSms(cliente)}
                         </div>
                         <div>
                           <div className="text-[10px] uppercase font-semibold text-gray-500 mb-1">
@@ -1496,13 +2710,13 @@ const CallCenter = () => {
                       {/* Ações */}
                       <div className="flex items-stretch gap-2 mt-3">
                         {renderBotaoLigar(cliente, { full: true })}
+                        {renderBotaoSms(cliente, { full: true })}
                         <button
                           onClick={(e) => abrirModalHistorico(cliente, e)}
                           className="bg-[#000638] hover:bg-[#fe0000] text-white text-xs font-semibold px-3 py-2 rounded transition-colors flex items-center gap-1"
                           title="Histórico de ligações"
                         >
                           <ClockClockwise size={14} weight="bold" />
-                          Histórico
                         </button>
                       </div>
                     </div>
@@ -1557,13 +2771,18 @@ const CallCenter = () => {
                 </div>
               )}
               <div className="text-xs mt-2">
-                <span className="text-red-600 font-bold">
+                <span
+                  className={`font-bold ${
+                    modo === 'ADIMPLENTES' ? 'text-orange-600' : 'text-red-600'
+                  }`}
+                >
                   {formatarMoeda(clienteLigacao.valor_total)}
                 </span>{' '}
                 <span className="text-gray-500">
-                  vencido em {clienteLigacao.faturas.length} título
+                  {modo === 'ADIMPLENTES' ? 'a vencer' : 'vencido'} em{' '}
+                  {clienteLigacao.faturas.length} título
                   {clienteLigacao.faturas.length !== 1 ? 's' : ''} ·{' '}
-                  {clienteLigacao.diasAtrasoMax} dias de atraso
+                  {legendaSituacao(clienteLigacao)}
                 </span>
               </div>
             </div>
@@ -1674,6 +2893,456 @@ const CallCenter = () => {
         </div>
       )}
 
+      {/* Barra flutuante: disparo em massa */}
+      {selecionados.size > 0 && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 bg-[#000638] text-white rounded-full shadow-2xl px-4 py-2.5">
+          <span className="text-xs font-bold whitespace-nowrap">
+            {selecionados.size} selecionado{selecionados.size !== 1 ? 's' : ''}
+          </span>
+          {/* Previsão de consumo antes de abrir o modal */}
+          <span className="text-[11px] font-semibold text-white/80 whitespace-nowrap">
+            ≈ {previaLote.totalSms} crédito
+            {previaLote.totalSms !== 1 ? 's' : ''}
+          </span>
+          <button
+            onClick={abrirModalSmsLote}
+            className="bg-teal-500 hover:bg-teal-400 text-white text-xs font-bold px-4 py-1.5 rounded-full transition-colors flex items-center gap-1.5 whitespace-nowrap"
+          >
+            <ChatText size={14} weight="bold" />
+            Enviar SMS
+          </button>
+          <button
+            onClick={() => setSelecionados(new Set())}
+            className="text-white/70 hover:text-white transition-colors"
+            title="Limpar seleção"
+          >
+            <X size={16} weight="bold" />
+          </button>
+        </div>
+      )}
+
+      {/* Modal: SMS em massa */}
+      {modalSmsLoteAberto && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-lg p-4 sm:p-6 max-w-lg w-full max-h-[92vh] overflow-y-auto mx-2 sm:mx-4">
+            <div className="flex justify-between items-center mb-4">
+              <div className="flex items-center gap-2">
+                <ChatText size={24} weight="bold" className="text-teal-600" />
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900">
+                  SMS em Massa
+                </h3>
+              </div>
+              <button
+                onClick={fecharModalSmsLote}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X size={22} weight="bold" />
+              </button>
+            </div>
+
+            <div className="bg-gray-50 rounded-lg p-3 mb-4 text-xs text-gray-700 space-y-1">
+              {modo === 'ADIMPLENTES' ? (
+                <div>
+                  <span className="font-bold text-[#000638]">
+                    {previaLote.mensagens.length}
+                  </span>{' '}
+                  cliente{previaLote.mensagens.length !== 1 ? 's' : ''} ={' '}
+                  <span className="font-bold text-[#000638]">
+                    {previaLote.totalSms} crédito
+                    {previaLote.totalSms !== 1 ? 's' : ''}
+                  </span>
+                  <div className="mt-1 text-[11px] text-gray-600">
+                    {previaLote.qtdUrgentes} vencendo hoje/amanhã (aviso +
+                    código de barras) · {previaLote.qtdLembretes} só lembrete
+                    (2 a 7 dias, sem boleto)
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <span className="font-bold text-[#000638]">
+                    {previaLote.mensagens.length}
+                  </span>{' '}
+                  cliente{previaLote.mensagens.length !== 1 ? 's' : ''} com
+                  telefone recebera
+                  {previaLote.mensagens.length !== 1 ? 'ão' : ''} o SMS
+                </div>
+              )}
+              {previaLote.semTelefone > 0 && (
+                <div className="text-orange-700">
+                  ⚠ {previaLote.semTelefone} selecionado
+                  {previaLote.semTelefone !== 1 ? 's' : ''} sem telefone será
+                  {previaLote.semTelefone !== 1 ? 'ão' : ''} ignorado
+                  {previaLote.semTelefone !== 1 ? 's' : ''}
+                </div>
+              )}
+              {previaLote.semBoleto > 0 && (
+                <div className="text-orange-700">
+                  ⚠ {previaLote.semBoleto} cliente
+                  {previaLote.semBoleto !== 1 ? 's' : ''} sem fatura elegível
+                  será{previaLote.semBoleto !== 1 ? 'ão' : ''} ignorado
+                  {previaLote.semBoleto !== 1 ? 's' : ''}
+                </div>
+              )}
+              {previaLote.excedentes > 0 && (
+                <div className="text-orange-700">
+                  ⚠ {previaLote.excedentes} boleto
+                  {previaLote.excedentes !== 1 ? 's' : ''} além do teto de{' '}
+                  {TETO_SMS_CLIENTE} SMS/cliente — envie pelo WhatsApp
+                </div>
+              )}
+            </div>
+
+            {modo === 'ADIMPLENTES' && (
+              <>
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">
+                  Aviso de vencimento — hoje/amanhã (use {'{NOME}'},{' '}
+                  {'{VALOR}'}, {'{VENCIMENTO}'}, {'{NOTA}'})
+                </label>
+                <textarea
+                  value={tplUrgente}
+                  onChange={(e) => setTplUrgente(e.target.value)}
+                  rows={3}
+                  className="border border-gray-300 rounded-lg px-3 py-2 w-full text-sm focus:outline-none focus:ring-2 focus:ring-[#000638] resize-none mb-3"
+                />
+              </>
+            )}
+
+            <label className="block text-xs font-semibold mb-1 text-[#000638]">
+              {modo === 'ADIMPLENTES'
+                ? `Lembrete — 2 a 7 dias, sem boleto (use {NOME}, {QTD}, {DATAS}, {TOTAL})`
+                : 'Mensagem (use {VALOR} para o total vencido de cada cliente)'}
+            </label>
+            <textarea
+              value={textoSmsLote}
+              onChange={(e) => setTextoSmsLote(e.target.value)}
+              rows={4}
+              className="border border-gray-300 rounded-lg px-3 py-2 w-full text-sm focus:outline-none focus:ring-2 focus:ring-[#000638] resize-none"
+            />
+            <div
+              className={`text-[11px] mt-1 text-right font-semibold ${
+                previaLote.acimaDoLimite > 0 ? 'text-red-600' : 'text-gray-500'
+              }`}
+            >
+              {previaLote.acimaDoLimite > 0
+                ? `${previaLote.acimaDoLimite} mensagem(ns) passam de ${SMS_LIMITE} caracteres — encurte o texto`
+                : `maior mensagem: ${previaLote.maisLonga.texto.length}/${SMS_LIMITE} caracteres · ${previaLote.totalSms} crédito${previaLote.totalSms !== 1 ? 's' : ''}`}
+            </div>
+            <p className="text-[11px] text-gray-500 mt-1">
+              Máximo de {SMS_LIMITE} caracteres por SMS. Evite acentos: fora do
+              padrão GSM eles reduzem o limite para 70.
+              {modo === 'ADIMPLENTES' &&
+                ' Se a fatura não tiver NF, o trecho "ref. NF {NOTA}" é removido automaticamente.'}
+            </p>
+
+            {previaLote.mensagens.length > 0 && (
+              <div className="mt-3">
+                <div className="text-xs font-semibold text-[#000638] mb-1">
+                  Prévia ({previaLote.mensagens[0].cliente.nm_cliente}):
+                </div>
+                {modo === 'ADIMPLENTES' ? (
+                  previaLote.mensagens[0].plano.mensagens.map((m, idx) => (
+                    <div
+                      key={idx}
+                      className={`bg-teal-50 border border-teal-200 rounded-lg px-3 py-2 text-xs text-gray-800 ${
+                        idx > 0 ? 'mt-1' : ''
+                      } ${m.papel === 'BOLETO' ? 'break-all' : 'whitespace-pre-wrap'}`}
+                    >
+                      <span className="font-bold text-teal-700">
+                        SMS {idx + 1}
+                        {m.papel === 'BOLETO' ? ' (boleto)' : ''}:
+                      </span>{' '}
+                      {m.texto}
+                    </div>
+                  ))
+                ) : (
+                  <div className="bg-teal-50 border border-teal-200 rounded-lg px-3 py-2 text-xs text-gray-800 whitespace-pre-wrap">
+                    {previaLote.mensagens[0].texto}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 mt-4">
+              <button
+                onClick={fecharModalSmsLote}
+                className="px-4 py-2 text-sm rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={enviarSmsLote}
+                disabled={
+                  enviandoSmsLote ||
+                  previaLote.mensagens.length === 0 ||
+                  previaLote.acimaDoLimite > 0 ||
+                  !textoSmsLote.trim()
+                }
+                className="px-4 py-2 text-sm rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {enviandoSmsLote ? (
+                  <>
+                    <CircleNotch size={16} className="animate-spin" />
+                    Enviando...
+                  </>
+                ) : (
+                  <>
+                    <ChatText size={16} weight="bold" />
+                    {modo === 'ADIMPLENTES'
+                      ? `Enviar ${previaLote.totalSms} SMS`
+                      : `Enviar para ${previaLote.mensagens.length} cliente${previaLote.mensagens.length !== 1 ? 's' : ''}`}
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Enviar SMS */}
+      {modalSmsAberto && clienteSms && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-lg p-4 sm:p-6 max-w-lg w-full max-h-[92vh] overflow-y-auto mx-2 sm:mx-4">
+            <div className="flex justify-between items-center mb-4">
+              <div className="flex items-center gap-2">
+                <ChatText size={24} weight="bold" className="text-teal-600" />
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900">
+                  {modo === 'ADIMPLENTES'
+                    ? 'Enviar Lembrete de Vencimento'
+                    : 'Enviar SMS de Cobrança'}
+                </h3>
+              </div>
+              <button
+                onClick={fecharModalSms}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X size={22} weight="bold" />
+              </button>
+            </div>
+
+            <div className="bg-gray-50 rounded-lg p-3 mb-4">
+              <div className="text-sm font-semibold text-[#000638]">
+                {clienteSms.nm_cliente}
+              </div>
+              <div className="text-xs text-gray-600 mt-1 flex items-center gap-1">
+                <Phone size={12} />
+                {formatarTelefone(clienteSms.telefone)}
+              </div>
+              <div className="text-xs mt-1">
+                <span
+                  className={`font-bold ${
+                    modo === 'ADIMPLENTES' ? 'text-orange-600' : 'text-red-600'
+                  }`}
+                >
+                  {formatarMoeda(clienteSms.valor_total)}
+                </span>{' '}
+                <span className="text-gray-500">
+                  {modo === 'ADIMPLENTES'
+                    ? `a vencer · ${legendaSituacao(clienteSms)}`
+                    : `vencido · ${clienteSms.diasAtrasoMax} dias de atraso`}
+                </span>
+              </div>
+              {String(clienteSms.telefone || '').replace(/\D/g, '').length !==
+                11 && (
+                <div className="text-[11px] text-orange-700 bg-orange-50 border border-orange-200 rounded px-2 py-1 mt-2">
+                  ⚠ Este número pode não ser um celular — SMS só chega em
+                  celulares.
+                </div>
+              )}
+            </div>
+
+            {modo === 'ADIMPLENTES' && (
+              <div
+                className={`mb-3 rounded-lg border px-3 py-2 text-xs ${
+                  previaLembrete.tipo === 'URGENTE'
+                    ? 'bg-red-50 border-red-200 text-red-800'
+                    : previaLembrete.tipo === 'LEMBRETE'
+                      ? 'bg-blue-50 border-blue-200 text-blue-800'
+                      : 'bg-gray-50 border-gray-200 text-gray-600'
+                }`}
+              >
+                {previaLembrete.tipo === 'URGENTE' && (
+                  <>
+                    <b>Vence hoje/amanhã</b> — vai aviso + código de barras (
+                    {previaLembrete.mensagens.length} SMS)
+                  </>
+                )}
+                {previaLembrete.tipo === 'LEMBRETE' && (
+                  <>
+                    <b>Vence em 2 a 7 dias</b> — vai só o lembrete, sem código
+                    de barras (1 SMS). O boleto sai quando faltar 1 dia.
+                  </>
+                )}
+                {previaLembrete.tipo === 'NENHUM' &&
+                  'Nenhuma fatura elegível: as que vencem hoje/amanhã precisam de boleto emitido.'}
+              </div>
+            )}
+
+            <label className="block text-xs font-semibold mb-1 text-[#000638]">
+              {modo === 'ADIMPLENTES'
+                ? previaLembrete.tipo === 'LEMBRETE'
+                  ? 'Lembrete (use {NOME}, {QTD}, {DATAS} e {TOTAL})'
+                  : 'Aviso de vencimento (use {NOME}, {VALOR}, {VENCIMENTO} e {NOTA})'
+                : 'Mensagem (use {VALOR} para o total vencido)'}
+            </label>
+            <textarea
+              value={
+                modo === 'ADIMPLENTES' && previaLembrete.tipo === 'LEMBRETE'
+                  ? tplLembrete
+                  : textoSms
+              }
+              onChange={(e) =>
+                modo === 'ADIMPLENTES' && previaLembrete.tipo === 'LEMBRETE'
+                  ? setTplLembrete(e.target.value)
+                  : setTextoSms(e.target.value)
+              }
+              rows={4}
+              className="border border-gray-300 rounded-lg px-3 py-2 w-full text-sm focus:outline-none focus:ring-2 focus:ring-[#000638] resize-none"
+            />
+            {modo === 'ADIMPLENTES' ? (
+              <div
+                className={`text-[11px] mt-1 text-right font-semibold ${
+                  previaLembrete.acimaDoLimite > 0
+                    ? 'text-red-600'
+                    : 'text-gray-500'
+                }`}
+              >
+                {previaLembrete.acimaDoLimite > 0
+                  ? `mensagem passa de ${SMS_LIMITE} caracteres — encurte`
+                  : `${previaLembrete.mensagens.length} SMS = ${previaLembrete.mensagens.length} crédito${previaLembrete.mensagens.length !== 1 ? 's' : ''}`}
+              </div>
+            ) : (
+              <div
+                className={`text-[11px] mt-1 text-right font-semibold ${
+                  textoSmsResolvido.length > SMS_LIMITE
+                    ? 'text-red-600'
+                    : 'text-gray-500'
+                }`}
+              >
+                {textoSmsResolvido.length}/{SMS_LIMITE} caracteres
+              </div>
+            )}
+            <p className="text-[11px] text-gray-500 mt-1">
+              Máximo de {SMS_LIMITE} caracteres (1 SMS). Evite acentos: fora do
+              padrão GSM eles reduzem o limite para 70.
+              {modo === 'ADIMPLENTES' &&
+                ' Se a fatura não tiver NF, o trecho "ref. NF {NOTA}" é removido automaticamente.'}
+            </p>
+
+            {modo === 'ADIMPLENTES' ? (
+              <>
+                {/* Faturas contempladas */}
+                <div className="mt-3">
+                  <div className="text-xs font-semibold text-[#000638] mb-1">
+                    {previaLembrete.tipo === 'URGENTE'
+                      ? `Faturas vencendo (${previaLembrete.urgentes.length}):`
+                      : `Faturas a vencer (${previaLembrete.futuras.length}):`}
+                  </div>
+                  <div className="space-y-1 max-h-32 overflow-y-auto">
+                    {(previaLembrete.tipo === 'URGENTE'
+                      ? previaLembrete.urgentes
+                      : previaLembrete.futuras
+                    ).map((f, idx) => (
+                      <div
+                        key={idx}
+                        className="flex items-center justify-between text-xs bg-gray-50 border border-gray-200 rounded px-2 py-1"
+                      >
+                        <span className="font-semibold text-[#000638]">
+                          Fat {f.nr_fat || f.nr_fatura}
+                          {f.nr_nota_fiscal
+                            ? ` · NF ${f.nr_nota_fiscal}`
+                            : ' · sem NF'}
+                        </span>
+                        <span className="text-gray-600">
+                          {formatarMoeda(f.vl_fatura)} · vence{' '}
+                          {dataCurtaSms(f.dt_vencimento)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  {previaLembrete.excedentes.length > 0 && (
+                    <div className="text-[11px] text-orange-700 mt-1">
+                      ⚠ {previaLembrete.excedentes.length} boleto
+                      {previaLembrete.excedentes.length !== 1 ? 's' : ''} não
+                      cabe{previaLembrete.excedentes.length !== 1 ? 'm' : ''} no
+                      teto de {TETO_SMS_CLIENTE} SMS/dia — envie pelo WhatsApp
+                    </div>
+                  )}
+                </div>
+
+                {/* Prévia de cada SMS do plano */}
+                {previaLembrete.mensagens.length > 0 && (
+                  <div className="mt-3">
+                    <div className="text-xs font-semibold text-[#000638] mb-1">
+                      Prévia:
+                    </div>
+                    {previaLembrete.mensagens.map((m, idx) => (
+                      <div
+                        key={idx}
+                        className={`bg-teal-50 border border-teal-200 rounded-lg px-3 py-2 text-xs text-gray-800 ${
+                          idx > 0 ? 'mt-1' : ''
+                        } ${m.papel === 'BOLETO' ? 'break-all' : 'whitespace-pre-wrap'}`}
+                      >
+                        <span className="font-bold text-teal-700">
+                          SMS {idx + 1}
+                          {m.papel === 'BOLETO' ? ' (boleto)' : ''}:
+                        </span>{' '}
+                        {m.texto}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              textoSmsResolvido && (
+                <div className="mt-3">
+                  <div className="text-xs font-semibold text-[#000638] mb-1">
+                    Prévia:
+                  </div>
+                  <div className="bg-teal-50 border border-teal-200 rounded-lg px-3 py-2 text-xs text-gray-800 whitespace-pre-wrap">
+                    {textoSmsResolvido}
+                  </div>
+                </div>
+              )
+            )}
+
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 mt-4">
+              <button
+                onClick={fecharModalSms}
+                className="px-4 py-2 text-sm rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={enviarSms}
+                disabled={
+                  enviandoSms ||
+                  (modo === 'ADIMPLENTES'
+                    ? previaLembrete.mensagens.length === 0 ||
+                      previaLembrete.acimaDoLimite > 0
+                    : !textoSmsResolvido ||
+                      textoSmsResolvido.length > SMS_LIMITE)
+                }
+                className="px-4 py-2 text-sm rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {enviandoSms ? (
+                  <>
+                    <CircleNotch size={16} className="animate-spin" />
+                    Enviando...
+                  </>
+                ) : (
+                  <>
+                    <ChatText size={16} weight="bold" />
+                    {modo === 'ADIMPLENTES'
+                      ? `Enviar ${previaLembrete.mensagens.length} SMS`
+                      : 'Enviar SMS'}
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal: Histórico de Ligações */}
       {modalHistoricoAberto && clienteHistorico && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
@@ -1697,10 +3366,45 @@ const CallCenter = () => {
               </button>
             </div>
 
-            <p className="text-sm text-gray-600 mb-4">
+            <p className="text-sm text-gray-600 mb-2">
               Cliente: {clienteHistorico.cd_cliente} | Valor vencido:{' '}
               {formatarMoeda(clienteHistorico.valor_total)}
             </p>
+
+            {/* Resumo: ligações x SMS, com a data do último SMS */}
+            {!loadingHistorico && historicoLigacoes.length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-3 text-xs">
+                <span className="bg-blue-50 text-blue-800 border border-blue-200 rounded px-2 py-1 font-semibold flex items-center gap-1">
+                  <PhoneCall size={12} weight="bold" />
+                  {
+                    historicoLigacoes.filter(
+                      (l) => l.status_ligacao !== 'SMS_ENVIADO',
+                    ).length
+                  }{' '}
+                  ligação(ões)
+                </span>
+                <span className="bg-teal-50 text-teal-800 border border-teal-200 rounded px-2 py-1 font-semibold flex items-center gap-1">
+                  <ChatText size={12} weight="bold" />
+                  {
+                    historicoLigacoes.filter(
+                      (l) => l.status_ligacao === 'SMS_ENVIADO',
+                    ).length
+                  }{' '}
+                  SMS
+                </span>
+                {(() => {
+                  // Histórico já vem ordenado por data desc
+                  const ultimo = historicoLigacoes.find(
+                    (l) => l.status_ligacao === 'SMS_ENVIADO',
+                  );
+                  return ultimo ? (
+                    <span className="bg-gray-100 text-gray-700 border border-gray-200 rounded px-2 py-1 font-semibold">
+                      último SMS em {formatarData(ultimo.data_ligacao)}
+                    </span>
+                  ) : null;
+                })()}
+              </div>
+            )}
 
             <div className="flex-1 overflow-y-auto bg-gray-50 rounded-lg p-4 min-h-[240px] max-h-[420px]">
               {loadingHistorico ? (
@@ -1713,7 +3417,7 @@ const CallCenter = () => {
               ) : historicoLigacoes.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
                   <PhoneSlash size={48} className="mx-auto mb-2 opacity-50" />
-                  <p>Nenhuma ligação registrada para este cliente</p>
+                  <p>Nenhum contato registrado para este cliente</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -1725,15 +3429,31 @@ const CallCenter = () => {
                       <div className="flex justify-between items-start mb-2 gap-2">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span
-                            className={`text-xs font-semibold px-2 py-1 rounded ${
+                            className={`text-xs font-semibold px-2 py-1 rounded flex items-center gap-1 ${
                               statusInfo(lig.status_ligacao).cor
                             }`}
                           >
+                            {lig.status_ligacao === 'SMS_ENVIADO' ? (
+                              <ChatText size={12} weight="bold" />
+                            ) : (
+                              <PhoneCall size={12} weight="bold" />
+                            )}
                             {statusInfo(lig.status_ligacao).label}
                           </span>
                           <span className="text-xs text-gray-600 flex items-center gap-1">
                             <CalendarBlank size={12} />
                             {formatarData(lig.data_ligacao)}
+                            {/* SMS pode ter vários no mesmo dia — mostra a hora */}
+                            {lig.status_ligacao === 'SMS_ENVIADO' &&
+                              lig.data_criacao && (
+                                <span className="text-gray-500">
+                                  às{' '}
+                                  {new Date(lig.data_criacao).toLocaleTimeString(
+                                    'pt-BR',
+                                    { hour: '2-digit', minute: '2-digit' },
+                                  )}
+                                </span>
+                              )}
                           </span>
                           {lig.proximo_contato && (
                             <span className="text-xs text-purple-700 bg-purple-50 px-2 py-0.5 rounded">
@@ -1810,17 +3530,25 @@ const CallCenter = () => {
                 </span>
               </div>
               <div>
-                <span className="text-gray-500">Vencido:</span>{' '}
-                <span className="font-semibold text-red-600">
+                <span className="text-gray-500">
+                  {modo === 'ADIMPLENTES' ? 'A vencer (7d):' : 'Vencido:'}
+                </span>{' '}
+                <span
+                  className={`font-semibold ${
+                    modo === 'ADIMPLENTES' ? 'text-orange-600' : 'text-red-600'
+                  }`}
+                >
                   {formatarMoeda(clienteTitulos.valor_total)}
                 </span>
               </div>
-              <div>
-                <span className="text-gray-500">A vencer:</span>{' '}
-                <span className="font-semibold text-orange-600">
-                  {formatarMoeda(clienteTitulos.valor_a_vencer)}
-                </span>
-              </div>
+              {modo === 'INADIMPLENTES' && (
+                <div>
+                  <span className="text-gray-500">A vencer:</span>{' '}
+                  <span className="font-semibold text-orange-600">
+                    {formatarMoeda(clienteTitulos.valor_a_vencer)}
+                  </span>
+                </div>
+              )}
             </div>
 
             <div className="overflow-x-auto">
@@ -1828,20 +3556,36 @@ const CallCenter = () => {
                 <thead className="text-xs text-gray-700 uppercase bg-gray-50">
                   <tr>
                     <th className="px-3 py-2">Fatura</th>
+                    {modo === 'ADIMPLENTES' && (
+                      <th className="px-3 py-2">NF</th>
+                    )}
                     <th className="px-3 py-2">Emissão</th>
                     <th className="px-3 py-2">Vencimento</th>
-                    <th className="px-3 py-2">Atraso</th>
+                    <th className="px-3 py-2">
+                      {modo === 'ADIMPLENTES' ? 'Vence em' : 'Atraso'}
+                    </th>
+                    {modo === 'ADIMPLENTES' && (
+                      <th className="px-3 py-2">Boleto</th>
+                    )}
                     <th className="px-3 py-2 text-right">Valor</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(clienteTitulos.faturas || []).map((fatura, idx) => {
                     const dias = diffEmDias(fatura.dt_vencimento);
+                    const temBoleto =
+                      String(fatura.linha_digitavel || '').replace(/\D/g, '')
+                        .length >= 40;
                     return (
                       <tr key={idx} className="border-b">
                         <td className="px-3 py-2 font-medium">
                           {fatura.nr_fat || fatura.nr_fatura || 'N/A'}
                         </td>
+                        {modo === 'ADIMPLENTES' && (
+                          <td className="px-3 py-2">
+                            {fatura.nr_nota_fiscal || '---'}
+                          </td>
+                        )}
                         <td className="px-3 py-2">
                           {formatarData(fatura.dt_emissao)}
                         </td>
@@ -1849,17 +3593,44 @@ const CallCenter = () => {
                           {formatarData(fatura.dt_vencimento)}
                         </td>
                         <td className="px-3 py-2">
-                          <span
-                            className={`text-xs font-semibold px-2 py-1 rounded ${
-                              dias > 60
-                                ? 'bg-red-100 text-red-800'
-                                : 'bg-yellow-100 text-yellow-800'
-                            }`}
-                          >
-                            {dias ?? 0} dias
-                          </span>
+                          {modo === 'ADIMPLENTES' ? (
+                            <span className="text-xs font-semibold px-2 py-1 rounded bg-blue-100 text-blue-800">
+                              {Math.max(0, -(dias ?? 0)) === 0
+                                ? 'hoje'
+                                : `${Math.max(0, -(dias ?? 0))} dia${Math.max(0, -(dias ?? 0)) !== 1 ? 's' : ''}`}
+                            </span>
+                          ) : (
+                            <span
+                              className={`text-xs font-semibold px-2 py-1 rounded ${
+                                dias > 60
+                                  ? 'bg-red-100 text-red-800'
+                                  : 'bg-yellow-100 text-yellow-800'
+                              }`}
+                            >
+                              {dias ?? 0} dias
+                            </span>
+                          )}
                         </td>
-                        <td className="px-3 py-2 text-right font-semibold text-red-600">
+                        {modo === 'ADIMPLENTES' && (
+                          <td className="px-3 py-2">
+                            {temBoleto ? (
+                              <span className="text-xs font-semibold px-2 py-1 rounded bg-green-100 text-green-800">
+                                emitido
+                              </span>
+                            ) : (
+                              <span className="text-xs font-semibold px-2 py-1 rounded bg-gray-100 text-gray-600">
+                                sem boleto
+                              </span>
+                            )}
+                          </td>
+                        )}
+                        <td
+                          className={`px-3 py-2 text-right font-semibold ${
+                            modo === 'ADIMPLENTES'
+                              ? 'text-orange-600'
+                              : 'text-red-600'
+                          }`}
+                        >
                           {formatarMoeda(fatura.vl_fatura)}
                         </td>
                       </tr>
@@ -1868,10 +3639,19 @@ const CallCenter = () => {
                 </tbody>
                 <tfoot>
                   <tr className="bg-gray-50 border-t-2 border-gray-300">
-                    <td colSpan={4} className="px-3 py-2 font-bold">
-                      TOTAL VENCIDO
+                    <td
+                      colSpan={modo === 'ADIMPLENTES' ? 6 : 4}
+                      className="px-3 py-2 font-bold"
+                    >
+                      {modo === 'ADIMPLENTES' ? 'TOTAL A VENCER' : 'TOTAL VENCIDO'}
                     </td>
-                    <td className="px-3 py-2 text-right font-extrabold text-red-700">
+                    <td
+                      className={`px-3 py-2 text-right font-extrabold ${
+                        modo === 'ADIMPLENTES'
+                          ? 'text-orange-700'
+                          : 'text-red-700'
+                      }`}
+                    >
                       {formatarMoeda(clienteTitulos.valor_total)}
                     </td>
                   </tr>

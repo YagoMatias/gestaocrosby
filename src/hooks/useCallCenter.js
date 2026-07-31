@@ -59,6 +59,7 @@ export const useCallCenter = () => {
         'nm_cliente',
         'telefone',
         'ultima_ligacao',
+        'ultimo_sms',
         'proximo_contato',
         'status_contato',
         'observacao',
@@ -160,6 +161,41 @@ export const useCallCenter = () => {
   };
 
   /**
+   * Último SMS enviado por cliente (derivado do histórico, sem coluna extra)
+   * @returns {Object} - { success, data: { [cd_cliente]: { data_ligacao, data_criacao } } }
+   */
+  const buscarUltimosSms = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const { data, error: fetchError } = await supabase
+        .from('call_center_ligacoes')
+        .select('cd_cliente, data_ligacao, data_criacao')
+        .eq('status_ligacao', 'SMS_ENVIADO')
+        .order('data_ligacao', { ascending: false })
+        .order('data_criacao', { ascending: false });
+
+      if (fetchError) throw fetchError;
+
+      // Já vem ordenado desc — o primeiro de cada cliente é o mais recente
+      const mapa = {};
+      (data || []).forEach((row) => {
+        const key = String(row.cd_cliente);
+        if (!mapa[key]) mapa[key] = row;
+      });
+
+      return { success: true, data: mapa };
+    } catch (err) {
+      console.error('Erro ao buscar últimos SMS:', err);
+      setError(err.message);
+      return { success: false, error: err.message, data: {} };
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  /**
    * Excluir uma ligação do histórico
    * @param {number} id - ID da ligação
    * @returns {Object} - { success }
@@ -193,6 +229,7 @@ export const useCallCenter = () => {
     salvarContato,
     registrarLigacao,
     buscarLigacoes,
+    buscarUltimosSms,
     deletarLigacao,
   };
 };
