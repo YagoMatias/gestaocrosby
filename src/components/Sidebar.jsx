@@ -204,6 +204,13 @@ const financeiro = [
         roles: ['owner', 'admin', 'manager', 'user'],
       },
       {
+        name: 'Call Center',
+        href: '/call-center',
+        icon: Headset,
+        color: 'text-blue-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
         name: 'Dashboard PMR',
         href: '/pmr',
         icon: Clock,
@@ -414,12 +421,6 @@ const multimarcas = [
     href: '/inadimplentes-multimarcas',
     icon: ChartBar,
     color: 'text-purple-600',
-  },
-  {
-    name: 'Call Center',
-    href: '/call-center',
-    icon: Headset,
-    color: 'text-blue-600',
   },
   {
     name: 'Minhas Solicit. Baixa',
@@ -702,12 +703,6 @@ const recuperacaoCredito = [
     href: '/inadimplentes-multimarcas',
     icon: Buildings,
     color: 'text-purple-600',
-  },
-  {
-    name: 'Call Center',
-    href: '/call-center',
-    icon: Headset,
-    color: 'text-blue-600',
   },
   {
     name: 'Inadimplência Franquias',
