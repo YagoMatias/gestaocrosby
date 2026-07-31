@@ -118,6 +118,51 @@ const MENSAGEM_SMS_LEMBRETE =
   'Crosby: Ola {NOME}! {QTD} faturas a vencer ({DATAS}), total R$ {TOTAL}. ' +
   `O boleto chega no dia do vencimento. wa.me/${WHATSAPP_COBRANCA}`;
 
+/**
+ * Normaliza um telefone para 55 + DDD + 9 dígitos (celular).
+ *
+ * Precisa espelhar exatamente a normalizarNumero do backend
+ * (routes/sms.routes.js): é por este número que as respostas da DisparoPro
+ * são casadas com o cliente. Se as duas divergirem, a tela reporta falha em
+ * SMS que na verdade saiu.
+ *
+ * Muito cadastro do TOTVS ainda tem celular de 8 dígitos, anterior ao nono
+ * dígito — daí a reposição do 9.
+ *
+ * @returns {{numero: string|null, motivo: string|null, fixo: boolean}}
+ */
+const normalizarCelularSms = (telefone) => {
+  const d = String(telefone || '').replace(/\D/g, '');
+  if (!d) return { numero: null, motivo: 'Sem telefone', fixo: false };
+
+  let nacional = d;
+  if (d.length >= 12 && d.startsWith('55')) nacional = d.slice(2);
+
+  if (nacional.length < 10 || nacional.length > 11) {
+    return { numero: null, motivo: 'Telefone incompleto', fixo: false };
+  }
+
+  const ddd = nacional.slice(0, 2);
+  let assinante = nacional.slice(2);
+
+  if (Number(ddd) < 11) {
+    return { numero: null, motivo: `DDD inválido (${ddd})`, fixo: false };
+  }
+
+  if (assinante.length === 8) {
+    if (/^[2-5]/.test(assinante)) {
+      return { numero: null, motivo: 'Fixo não recebe SMS', fixo: true };
+    }
+    assinante = `9${assinante}`; // repõe o nono dígito
+  }
+
+  if (assinante.length !== 9 || !assinante.startsWith('9')) {
+    return { numero: null, motivo: 'Não parece celular', fixo: false };
+  }
+
+  return { numero: `55${ddd}${assinante}`, motivo: null, fixo: false };
+};
+
 const dataCurtaSms = (isoDate) => {
   const [, m, d] = String(isoDate || '').substring(0, 10).split('-');
   return d && m ? `${d}/${m}` : '';
@@ -407,6 +452,13 @@ const CallCenter = () => {
   const [textoSmsLote, setTextoSmsLote] = useState(MENSAGEM_SMS_PADRAO);
   const [enviandoSmsLote, setEnviandoSmsLote] = useState(false);
 
+  // Painel de falhas de SMS (vem de sms_enviados via backend)
+  const [modalFalhasAberto, setModalFalhasAberto] = useState(false);
+  const [falhasSms, setFalhasSms] = useState([]);
+  const [resumoFalhas, setResumoFalhas] = useState({});
+  const [loadingFalhas, setLoadingFalhas] = useState(false);
+  const [erroFalhas, setErroFalhas] = useState(null);
+
   // Modelos do modo adimplente (editáveis nos modais)
   const [tplUrgente, setTplUrgente] = useState(MENSAGEM_SMS_URGENTE);
   const [tplLembrete, setTplLembrete] = useState(MENSAGEM_SMS_LEMBRETE);
@@ -464,16 +516,23 @@ const CallCenter = () => {
     return telefone;
   };
 
-  // Número no formato aceito pelo discador do celular (tel:)
+  // Número para o discador (tel:). Diferente do SMS, aqui fixo serve — dá
+  // para ligar normalmente. Celular de 8 dígitos ganha o 9, senão a chamada
+  // não completa.
   const telefoneParaDiscagem = (telefone) => {
+    const cel = normalizarCelularSms(telefone);
+    if (cel.numero) return `+${cel.numero}`;
+
     const num = String(telefone || '').replace(/\D/g, '');
     if (!num) return '';
-    // 10 dígitos = fixo com DDD, 11 = celular com DDD → prefixa o país
     if (num.length === 10 || num.length === 11) return `+55${num}`;
     if ((num.length === 12 || num.length === 13) && num.startsWith('55'))
       return `+${num}`;
     return num;
   };
+
+  // Número que a DisparoPro vai usar — base do casamento das respostas
+  const numeroSms = (telefone) => normalizarCelularSms(telefone).numero;
 
   const notificar = (type, message, duracao = 3000) => {
     setNotification({ type, message });
@@ -727,6 +786,30 @@ const CallCenter = () => {
     }
   };
 
+  // Falhas de SMS dos últimos 7 dias, com o motivo de cada uma
+  const carregarFalhas = useCallback(async () => {
+    setLoadingFalhas(true);
+    setErroFalhas(null);
+    try {
+      const resp = await fetch(`${API_BASE_URL}/api/sms/falhas?dias=7`);
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(json?.message || `HTTP ${resp.status}`);
+      setFalhasSms(json?.data?.falhas || []);
+      setResumoFalhas(json?.data?.porMotivo || {});
+    } catch (err) {
+      setFalhasSms([]);
+      setResumoFalhas({});
+      setErroFalhas(err.message);
+    } finally {
+      setLoadingFalhas(false);
+    }
+  }, []);
+
+  const abrirModalFalhas = () => {
+    setModalFalhasAberto(true);
+    carregarFalhas();
+  };
+
   // Saldo de créditos SMS (DisparoPro)
   const carregarSaldoSms = useCallback(async () => {
     try {
@@ -887,6 +970,10 @@ const CallCenter = () => {
           break;
         case 'SEM_TELEFONE':
           matchFila = !c.telefone;
+          break;
+        case 'SEM_SMS_POSSIVEL':
+          // tem telefone cadastrado, mas a operadora não entrega SMS nele
+          matchFila = !!c.telefone && !numeroSms(c.telefone);
           break;
         case 'SEM_SMS':
           matchFila = !c.ultimo_sms;
@@ -1398,6 +1485,7 @@ const CallCenter = () => {
             mensagem: m.texto,
             prioridade: m.prioridade,
             cd_cliente: clienteSms.cd_cliente,
+            nm_cliente: clienteSms.nm_cliente,
             parceiro_id: clienteSms.cd_cliente,
           })),
         );
@@ -1452,6 +1540,9 @@ const CallCenter = () => {
           {
             numero: clienteSms.telefone,
             mensagem: texto,
+            prioridade: 'NORMAL',
+            cd_cliente: clienteSms.cd_cliente,
+            nm_cliente: clienteSms.nm_cliente,
             parceiro_id: clienteSms.cd_cliente,
           },
         ]);
@@ -1502,9 +1593,9 @@ const CallCenter = () => {
 
   // Prévia do lote: mensagens resolvidas por cliente + validação de tamanho
   const previaLote = useMemo(() => {
-    const comTelefone = clientesSelecionados.filter((c) =>
-      telefoneParaDiscagem(c.telefone),
-    );
+    // Só entram números que a DisparoPro aceita: fixo e telefone incompleto
+    // são barrados aqui, antes de gastar crédito
+    const comTelefone = clientesSelecionados.filter((c) => numeroSms(c.telefone));
     const semTelefone = clientesSelecionados.length - comTelefone.length;
 
     if (modo === 'ADIMPLENTES') {
@@ -1619,6 +1710,7 @@ const CallCenter = () => {
                   mensagem: m.texto,
                   prioridade: m.prioridade,
                   cd_cliente: p.cliente.cd_cliente,
+                  nm_cliente: p.cliente.nm_cliente,
                   parceiro_id: p.cliente.cd_cliente,
                 })),
               )
@@ -1627,6 +1719,7 @@ const CallCenter = () => {
                 mensagem: m.texto,
                 prioridade: 'NORMAL',
                 cd_cliente: m.cliente.cd_cliente,
+                nm_cliente: m.cliente.nm_cliente,
                 parceiro_id: m.cliente.cd_cliente,
               }));
 
@@ -1646,10 +1739,7 @@ const CallCenter = () => {
         // Um mesmo número aparece várias vezes no modo adimplente — o
         // sucesso é avaliado pelo conjunto de respostas daquele número.
         const avaliar = (cliente) => {
-          const digitos = telefoneParaDiscagem(cliente.telefone).replace(
-            /\D/g,
-            '',
-          );
+          const digitos = numeroSms(cliente.telefone) || '';
           const dets = detalhe.filter((d) => String(d.numero) === digitos);
           const trava = bloqueadas.find((b) => String(b.numero) === digitos);
           const ok =
@@ -1771,10 +1861,20 @@ const CallCenter = () => {
           className={`text-xs font-semibold ${
             cliente.telefone ? 'text-gray-800' : 'text-gray-400 italic'
           }`}
+          title={
+            cliente.telefone && !numeroSms(cliente.telefone)
+              ? normalizarCelularSms(cliente.telefone).motivo
+              : undefined
+          }
         >
           {cliente.telefone
             ? formatarTelefone(cliente.telefone)
             : 'sem telefone'}
+          {cliente.telefone && !numeroSms(cliente.telefone) && (
+            <span className="ml-1 text-orange-600" title="Não recebe SMS">
+              ⚠
+            </span>
+          )}
         </span>
         {cliente.telefone && (
           <button
@@ -1831,7 +1931,8 @@ const CallCenter = () => {
   // Botão SMS: abre o modal de disparo (DisparoPro). Cinza quando sem
   // telefone — ou, no modo adimplente, sem boleto emitido.
   const renderBotaoSms = (cliente, { full = false } = {}) => {
-    const temTelefone = !!telefoneParaDiscagem(cliente.telefone);
+    const cel = normalizarCelularSms(cliente.telefone);
+    const temTelefone = !!cel.numero;
     const temBoleto =
       modo !== 'ADIMPLENTES' ||
       planoSmsCliente(cliente, templatesSms).mensagens.length > 0;
@@ -1851,7 +1952,7 @@ const CallCenter = () => {
         }`}
         title={
           !temTelefone
-            ? 'Cliente sem telefone'
+            ? `Não recebe SMS: ${cel.motivo}`
             : !temBoleto
               ? 'Nenhuma fatura elegível (vencendo hoje/amanhã precisa de boleto)'
               : modo === 'ADIMPLENTES'
@@ -2280,10 +2381,19 @@ const CallCenter = () => {
                 <option value="SEM_CONTATO_7">Sem contato há 7+ dias</option>
                 <option value="AGENDADOS_HOJE">Retornos pendentes</option>
                 <option value="SEM_TELEFONE">Sem telefone</option>
+                <option value="SEM_SMS_POSSIVEL">Telefone não recebe SMS</option>
                 <option value="SEM_SMS">Nunca receberam SMS</option>
                 <option value="SMS_HOJE">SMS enviado hoje</option>
               </select>
 
+              <button
+                onClick={abrirModalFalhas}
+                className="inline-flex items-center justify-center gap-1 px-3 py-2 bg-orange-600 text-white text-xs font-medium rounded hover:bg-orange-700 transition-colors"
+                title="SMS que não chegaram e o motivo"
+              >
+                <Warning size={14} weight="bold" />
+                Falhas SMS
+              </button>
               <button
                 onClick={carregarContatos}
                 disabled={loadingContatos}
@@ -2922,6 +3032,142 @@ const CallCenter = () => {
           >
             <X size={16} weight="bold" />
           </button>
+        </div>
+      )}
+
+      {/* Modal: Falhas de SMS */}
+      {modalFalhasAberto && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
+          <div className="bg-white rounded-lg p-4 sm:p-6 max-w-4xl w-full max-h-[92vh] overflow-hidden mx-2 sm:mx-4 flex flex-col">
+            <div className="flex justify-between items-center mb-3">
+              <div className="flex items-center gap-2">
+                <Warning size={24} weight="bold" className="text-orange-600" />
+                <h3 className="text-base sm:text-lg font-semibold text-gray-900">
+                  SMS que não chegaram — últimos 7 dias
+                </h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={carregarFalhas}
+                  disabled={loadingFalhas}
+                  className="text-gray-400 hover:text-[#000638] transition-colors disabled:opacity-50"
+                  title="Recarregar"
+                >
+                  <ClockClockwise size={18} weight="bold" />
+                </button>
+                <button
+                  onClick={() => setModalFalhasAberto(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X size={22} weight="bold" />
+                </button>
+              </div>
+            </div>
+
+            {/* Resumo por motivo */}
+            {Object.keys(resumoFalhas).length > 0 && (
+              <div className="flex flex-wrap gap-2 mb-3">
+                {Object.entries(resumoFalhas)
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([motivo, qtd]) => (
+                    <span
+                      key={motivo}
+                      className="text-xs font-semibold bg-orange-50 text-orange-800 border border-orange-200 rounded px-2 py-1"
+                    >
+                      {qtd}× {motivo}
+                    </span>
+                  ))}
+              </div>
+            )}
+
+            <div className="flex-1 overflow-y-auto bg-gray-50 rounded-lg p-3 min-h-[240px]">
+              {loadingFalhas ? (
+                <div className="flex justify-center items-center py-8">
+                  <CircleNotch
+                    size={32}
+                    className="animate-spin text-[#000638]"
+                  />
+                </div>
+              ) : erroFalhas ? (
+                <div className="text-center py-8 text-sm text-red-700">
+                  <Warning size={40} className="mx-auto mb-2 opacity-60" />
+                  {erroFalhas}
+                </div>
+              ) : falhasSms.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <CheckCircle size={44} className="mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">
+                    Nenhuma falha registrada nos últimos 7 dias
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead className="text-gray-700 uppercase bg-gray-100">
+                      <tr>
+                        <th className="px-2 py-2">Quando</th>
+                        <th className="px-2 py-2">Cliente</th>
+                        <th className="px-2 py-2">Número</th>
+                        <th className="px-2 py-2">Tipo</th>
+                        <th className="px-2 py-2">Motivo</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {falhasSms.map((f) => (
+                        <tr key={f.id} className="border-b bg-white">
+                          <td className="px-2 py-2 whitespace-nowrap text-gray-600">
+                            {new Date(f.enviado_em).toLocaleString('pt-BR', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </td>
+                          <td className="px-2 py-2">
+                            <div className="font-semibold text-[#000638]">
+                              {f.nm_cliente || '---'}
+                            </div>
+                            {f.cd_cliente && (
+                              <div className="text-[10px] text-gray-500">
+                                #{f.cd_cliente}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-2 py-2 whitespace-nowrap">
+                            {formatarTelefone(
+                              String(f.numero || '').replace(/^55/, ''),
+                            )}
+                          </td>
+                          <td className="px-2 py-2">
+                            <span
+                              className={`font-semibold px-1.5 py-0.5 rounded ${
+                                f.status === 'INVALIDO'
+                                  ? 'bg-orange-100 text-orange-800'
+                                  : f.status === 'BLOQUEADO'
+                                    ? 'bg-purple-100 text-purple-800'
+                                    : 'bg-red-100 text-red-800'
+                              }`}
+                            >
+                              {f.status}
+                            </span>
+                          </td>
+                          <td className="px-2 py-2 text-gray-700">
+                            {f.motivo || '---'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <p className="text-[11px] text-gray-500 mt-2">
+              <b>INVALIDO</b>: número recusado antes de sair (não gasta
+              crédito). <b>BLOQUEADO</b>: barrado pelo teto diário ou cooldown.{' '}
+              <b>REJEITADO</b>: a operadora não aceitou.
+            </p>
+          </div>
         </div>
       )}
 
