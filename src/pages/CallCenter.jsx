@@ -69,6 +69,10 @@ const STATUS_LIGACAO = [
   { id: 'SMS_ENVIADO', label: 'SMS enviado', cor: 'bg-teal-100 text-teal-800' },
 ];
 
+// WhatsApp de atendimento divulgado nos SMS. Só dígitos com DDI, no formato
+// que o wa.me espera — mudar aqui reflete em todos os modelos.
+const WHATSAPP_COBRANCA = '5571991003428';
+
 // Modelo padrão do SMS de cobrança — usado tanto no envio avulso quanto no
 // disparo em massa (editável nos dois modais). Sem acentos: SMS usa GSM-7 e
 // caractere fora da tabela derruba o limite de 160 para 70.
@@ -77,7 +81,7 @@ const STATUS_LIGACAO = [
 const MENSAGEM_SMS_PADRAO =
   'Crosby: seu CNPJ tem R$ {VALOR} em faturas VENCIDAS, podendo adicionar ' +
   'multa e juros,risco de PROTESTO. Renegocie no WhatsApp: ' +
-  'https://wa.me/5584991352193';
+  `https://wa.me/${WHATSAPP_COBRANCA}`;
 
 // Teto rígido de 1 SMS: acima de 160 a operadora divide em 2 partes e cobra
 // 2 créditos por cliente. O envio é bloqueado em vez de dividir.
@@ -112,7 +116,7 @@ const MENSAGEM_SMS_URGENTE_MULTI =
 // o texto resolvido bate 155 — ainda dentro dos 160 de 1 SMS.
 const MENSAGEM_SMS_LEMBRETE =
   'Crosby: Ola {NOME}! {QTD} faturas a vencer ({DATAS}), total R$ {TOTAL}. ' +
-  'O boleto chega no dia do vencimento. wa.me/5584991352193';
+  `O boleto chega no dia do vencimento. wa.me/${WHATSAPP_COBRANCA}`;
 
 const dataCurtaSms = (isoDate) => {
   const [, m, d] = String(isoDate || '').substring(0, 10).split('-');
