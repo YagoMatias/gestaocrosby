@@ -412,9 +412,23 @@ const SolicitacoesCrosby = () => {
     // Pagamento/Reembolso: constrói a partir das colunas da solicitação.
     // Dados extras do financeiro (bearerCode etc.) ficam em payload_totvs.installments
     const saved = sol.payload_totvs || {};
-    const savedInst = Array.isArray(saved.installments)
-      ? saved.installments[0]
-      : {};
+    const savedList = Array.isArray(saved.installments)
+      ? saved.installments
+      : [];
+    // Parcelado: o payload salvo (com todas as parcelas) é a fonte da verdade.
+    if (savedList.length > 1) {
+      return {
+        branchCnpj: onlyDig(sol.branch_cnpj) || saved.branchCnpj || '',
+        supplierCpfCnpj:
+          onlyDig(sol.supplier_cpf_cnpj) || saved.supplierCpfCnpj || '',
+        duplicateCode:
+          sol.duplicate_code != null
+            ? parseInt(sol.duplicate_code)
+            : (saved.duplicateCode ?? null),
+        installments: savedList,
+      };
+    }
+    const savedInst = savedList[0];
     return {
       branchCnpj: onlyDig(sol.branch_cnpj) || saved.branchCnpj || '',
       supplierCpfCnpj:
@@ -596,7 +610,10 @@ const SolicitacoesCrosby = () => {
       while (tentativas < MAX_RETRIES) {
         tentativas++;
         const payload = mergePayloadTotvs(solAtual);
-        console.log('📤 Enviando payload TOTVS:', JSON.stringify(payload, null, 2));
+        console.log(
+          '📤 Enviando payload TOTVS:',
+          JSON.stringify(payload, null, 2),
+        );
         const resp = await fetch(
           `${API_BASE_URL}/api/totvs/accounts-payable/duplicates/create`,
           {
@@ -606,10 +623,16 @@ const SolicitacoesCrosby = () => {
           },
         );
         const result = await resp.json().catch(() => ({}));
-        console.log('📥 Resposta TOTVS (HTTP', resp.status, '):', JSON.stringify(result, null, 2));
+        console.log(
+          '📥 Resposta TOTVS (HTTP',
+          resp.status,
+          '):',
+          JSON.stringify(result, null, 2),
+        );
 
         if (!resp.ok || result?.success === false) {
-          const msg = result?.message || `Falha no envio TOTVS (HTTP ${resp.status})`;
+          const msg =
+            result?.message || `Falha no envio TOTVS (HTTP ${resp.status})`;
           const detailMsgs = Array.isArray(result?.details)
             ? result.details.map((d) => d?.message || '').join(' ')
             : '';
@@ -619,11 +642,24 @@ const SolicitacoesCrosby = () => {
               .from('solicitacoes_crosby')
               .update({
                 duplicate_code: novoCodigo,
-                payload_totvs: { ...solAtual.payload_totvs, duplicateCode: parseInt(novoCodigo) },
+                payload_totvs: {
+                  ...solAtual.payload_totvs,
+                  duplicateCode: parseInt(novoCodigo),
+                },
               })
               .eq('id', sol.id);
-            solAtual = { ...solAtual, duplicate_code: novoCodigo, payload_totvs: { ...solAtual.payload_totvs, duplicateCode: parseInt(novoCodigo) } };
-            notify('error', `Código duplicado no TOTVS. Tentando novo código: ${novoCodigo}...`);
+            solAtual = {
+              ...solAtual,
+              duplicate_code: novoCodigo,
+              payload_totvs: {
+                ...solAtual.payload_totvs,
+                duplicateCode: parseInt(novoCodigo),
+              },
+            };
+            notify(
+              'error',
+              `Código duplicado no TOTVS. Tentando novo código: ${novoCodigo}...`,
+            );
             continue;
           }
           await supabaseAdmin
@@ -672,7 +708,10 @@ const SolicitacoesCrosby = () => {
       while (tentativas < MAX_RETRIES) {
         tentativas++;
         const payload = mergePayloadTotvs(solAtual);
-        console.log('📤 Reenviando payload TOTVS:', JSON.stringify(payload, null, 2));
+        console.log(
+          '📤 Reenviando payload TOTVS:',
+          JSON.stringify(payload, null, 2),
+        );
         const resp = await fetch(
           `${API_BASE_URL}/api/totvs/accounts-payable/duplicates/create`,
           {
@@ -682,9 +721,15 @@ const SolicitacoesCrosby = () => {
           },
         );
         const result = await resp.json().catch(() => ({}));
-        console.log('📥 Resposta TOTVS reenvio (HTTP', resp.status, '):', JSON.stringify(result, null, 2));
+        console.log(
+          '📥 Resposta TOTVS reenvio (HTTP',
+          resp.status,
+          '):',
+          JSON.stringify(result, null, 2),
+        );
         if (!resp.ok || result?.success === false) {
-          const msg = result?.message || `Falha no envio TOTVS (HTTP ${resp.status})`;
+          const msg =
+            result?.message || `Falha no envio TOTVS (HTTP ${resp.status})`;
           const detailMsgs = Array.isArray(result?.details)
             ? result.details.map((d) => d?.message || '').join(' ')
             : '';
@@ -694,11 +739,24 @@ const SolicitacoesCrosby = () => {
               .from('solicitacoes_crosby')
               .update({
                 duplicate_code: novoCodigo,
-                payload_totvs: { ...solAtual.payload_totvs, duplicateCode: parseInt(novoCodigo) },
+                payload_totvs: {
+                  ...solAtual.payload_totvs,
+                  duplicateCode: parseInt(novoCodigo),
+                },
               })
               .eq('id', sol.id);
-            solAtual = { ...solAtual, duplicate_code: novoCodigo, payload_totvs: { ...solAtual.payload_totvs, duplicateCode: parseInt(novoCodigo) } };
-            notify('error', `Código duplicado no TOTVS. Tentando novo código: ${novoCodigo}...`);
+            solAtual = {
+              ...solAtual,
+              duplicate_code: novoCodigo,
+              payload_totvs: {
+                ...solAtual.payload_totvs,
+                duplicateCode: parseInt(novoCodigo),
+              },
+            };
+            notify(
+              'error',
+              `Código duplicado no TOTVS. Tentando novo código: ${novoCodigo}...`,
+            );
             continue;
           }
           await supabaseAdmin
@@ -841,7 +899,9 @@ const SolicitacoesCrosby = () => {
 
     try {
       const nrDup = sol.duplicate_code ? String(sol.duplicate_code) : null;
-      const dtVenc = sol.dt_vencimento ? String(sol.dt_vencimento).slice(0, 10) : null;
+      const dtVenc = sol.dt_vencimento
+        ? String(sol.dt_vencimento).slice(0, 10)
+        : null;
       const vlDup = Number(sol.valor_total || 0);
       const nmForn = sol.supplier_name || null;
 
@@ -857,7 +917,10 @@ const SolicitacoesCrosby = () => {
       qry = qry.eq('vl_duplicata', vlDup);
       const { count: jaExiste } = await qry;
       if (jaExiste > 0) {
-        notify('error', `Duplicata ${nrDup || '--'} do fornecedor ${nmForn || '--'} (venc. ${dtVenc || '--'}, R$ ${vlDup.toFixed(2)}) já existe na Liberação de Pagamento.`);
+        notify(
+          'error',
+          `Duplicata ${nrDup || '--'} do fornecedor ${nmForn || '--'} (venc. ${dtVenc || '--'}, R$ ${vlDup.toFixed(2)}) já existe na Liberação de Pagamento.`,
+        );
         return;
       }
 
@@ -1134,16 +1197,29 @@ const SolicitacoesCrosby = () => {
               const detailMsgs = Array.isArray(result?.details)
                 ? result.details.map((d) => d?.message || '').join(' ')
                 : '';
-              if (isDuplicateCodeError(msg) || isDuplicateCodeError(detailMsgs)) {
+              if (
+                isDuplicateCodeError(msg) ||
+                isDuplicateCodeError(detailMsgs)
+              ) {
                 const novoCodigo = gerarNovoCodigoNumerico();
                 await supabaseAdmin
                   .from('solicitacoes_crosby')
                   .update({
                     duplicate_code: novoCodigo,
-                    payload_totvs: { ...solAtual.payload_totvs, duplicateCode: parseInt(novoCodigo) },
+                    payload_totvs: {
+                      ...solAtual.payload_totvs,
+                      duplicateCode: parseInt(novoCodigo),
+                    },
                   })
                   .eq('id', sol.id);
-                solAtual = { ...solAtual, duplicate_code: novoCodigo, payload_totvs: { ...solAtual.payload_totvs, duplicateCode: parseInt(novoCodigo) } };
+                solAtual = {
+                  ...solAtual,
+                  duplicate_code: novoCodigo,
+                  payload_totvs: {
+                    ...solAtual.payload_totvs,
+                    duplicateCode: parseInt(novoCodigo),
+                  },
+                };
                 continue;
               }
               await supabaseAdmin
@@ -1211,7 +1287,9 @@ const SolicitacoesCrosby = () => {
       return;
 
     setExecutandoMassa(true);
-    let okCount = 0, dupCount = 0, errCount = 0;
+    let okCount = 0,
+      dupCount = 0,
+      errCount = 0;
     try {
       for (const sol of candidatas) {
         try {
@@ -1233,14 +1311,22 @@ const SolicitacoesCrosby = () => {
           else qry = qry.is('dt_vencimento', null);
           qry = qry.eq('vl_duplicata', vlDup);
           const { count: jaExiste } = await qry;
-          if (jaExiste > 0) { dupCount++; continue; }
+          if (jaExiste > 0) {
+            dupCount++;
+            continue;
+          }
 
           const fp = (sol.forma_pagamento || '').toLowerCase();
           const formaUpper =
-            fp === 'pix' ? 'PIX' :
-            fp === 'boleto' ? 'BOLETO' :
-            fp === 'debito' ? 'DEBITO' :
-            fp.startsWith('credito') ? 'CREDITO' : null;
+            fp === 'pix'
+              ? 'PIX'
+              : fp === 'boleto'
+                ? 'BOLETO'
+                : fp === 'debito'
+                  ? 'DEBITO'
+                  : fp.startsWith('credito')
+                    ? 'CREDITO'
+                    : null;
 
           const linkPgto =
             sol.dados_completos?.pix_qrcode_payload ||
@@ -1254,11 +1340,17 @@ const SolicitacoesCrosby = () => {
             nm_fornecedor: nmForn,
             cd_fornecedor: null,
             nr_duplicata: nrDup,
-            dt_emissao: sol.dt_emissao ? String(sol.dt_emissao).slice(0, 10) : null,
+            dt_emissao: sol.dt_emissao
+              ? String(sol.dt_emissao).slice(0, 10)
+              : null,
             dt_vencimento: dtVenc,
             vl_duplicata: vlDup,
-            ds_despesaitem: sol.despesa_code ? getDespesaNome(sol.despesa_code) : null,
-            cd_ccusto: sol.cost_center_code ? String(sol.cost_center_code) : null,
+            ds_despesaitem: sol.despesa_code
+              ? getDespesaNome(sol.despesa_code)
+              : null,
+            cd_ccusto: sol.cost_center_code
+              ? String(sol.cost_center_code)
+              : null,
             forma_pagamento: formaUpper,
             chave_pix: sol.chave_pix || null,
             codigo_barras: sol.codigo_barras || null,
@@ -1324,9 +1416,7 @@ const SolicitacoesCrosby = () => {
 
   // ----- gerar códigos de duplicata em massa -----
   const gerarCodigosDuplicataEmMassa = async () => {
-    const semCodigo = solicitacoesGerais.filter(
-      (s) => !s.duplicate_code,
-    );
+    const semCodigo = solicitacoesGerais.filter((s) => !s.duplicate_code);
     if (semCodigo.length === 0) {
       notify('error', 'Todas as solicitações já possuem código de duplicata.');
       return;
@@ -1343,7 +1433,11 @@ const SolicitacoesCrosby = () => {
       const codigosUsados = {};
       solicitacoesGerais.forEach((s) => {
         if (s.duplicate_code) {
-          const chave = (s.supplier_cpf_cnpj || s.supplier_name || '').toLowerCase();
+          const chave = (
+            s.supplier_cpf_cnpj ||
+            s.supplier_name ||
+            ''
+          ).toLowerCase();
           if (!codigosUsados[chave]) codigosUsados[chave] = new Set();
           codigosUsados[chave].add(String(s.duplicate_code));
         }
@@ -1358,17 +1452,25 @@ const SolicitacoesCrosby = () => {
           tentativas++;
         } while (usados.has(codigo) && tentativas < 1000);
         usados.add(codigo);
-        if (!codigosUsados[fornecedorKey]) codigosUsados[fornecedorKey] = usados;
+        if (!codigosUsados[fornecedorKey])
+          codigosUsados[fornecedorKey] = usados;
         return codigo;
       };
 
       let okCount = 0;
       for (const sol of semCodigo) {
-        const chave = (sol.supplier_cpf_cnpj || sol.supplier_name || '').toLowerCase();
+        const chave = (
+          sol.supplier_cpf_cnpj ||
+          sol.supplier_name ||
+          ''
+        ).toLowerCase();
         const novoCodigo = gerarCodigo(chave);
 
         const payloadAtual = sol.payload_totvs || {};
-        const novoPayload = { ...payloadAtual, duplicateCode: parseInt(novoCodigo) };
+        const novoPayload = {
+          ...payloadAtual,
+          duplicateCode: parseInt(novoCodigo),
+        };
 
         const { error } = await supabaseAdmin
           .from('solicitacoes_crosby')
@@ -1670,9 +1772,7 @@ const SolicitacoesCrosby = () => {
             disabled={executandoMassa}
             className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 disabled:opacity-50 rounded-lg transition-colors"
           >
-            {executandoMassa && (
-              <Spinner size={11} className="animate-spin" />
-            )}
+            {executandoMassa && <Spinner size={11} className="animate-spin" />}
             <Receipt size={14} weight="bold" />
             Gerar Cd Duplicata
           </button>
@@ -3588,8 +3688,19 @@ const ModalEdicao = ({
       // estados editáveis (dtVencimento, despesaCode, etc.) + bearerCode da
       // primeira parcela se preenchido pelo financeiro.
       const buildPayloadPagSimples = () => {
-        const bearerRaw = parcelas[0]?.bearerCode;
-        const bearer = bearerRaw ? parseInt(bearerRaw) : null;
+        // Despesa/CC/rateio dos campos simplificados como fallback por parcela
+        const expensesFallback = despesaCode
+          ? [
+              {
+                expenseCode: parseInt(despesaCode),
+                costCenterCode: costCenterCode
+                  ? parseInt(costCenterCode)
+                  : null,
+                proratedPercentage: parseFloat(rateioPercentual) || 100,
+              },
+            ]
+          : [];
+        const lista = parcelas.length > 0 ? parcelas : [{}];
         return {
           branchCnpj: onlyDigits(sol.branch_cnpj) || '',
           supplierCpfCnpj:
@@ -3601,27 +3712,32 @@ const ModalEdicao = ({
             : sol.duplicate_code
               ? parseInt(sol.duplicate_code)
               : null,
-          installments: [
-            {
-              installmentCode: 1,
-              bearerCode: bearer,
+          installments: lista.map((par, i) => {
+            const own = (par.expenses || [])
+              .filter((e) => e.expenseCode)
+              .map((e) => ({
+                expenseCode: parseInt(e.expenseCode),
+                costCenterCode: e.costCenterCode
+                  ? parseInt(e.costCenterCode)
+                  : null,
+                proratedPercentage: parseFloat(e.proratedPercentage) || 100,
+              }));
+            return {
+              installmentCode: par.installmentCode ?? i + 1,
+              bearerCode: par.bearerCode ? parseInt(par.bearerCode) : null,
               issueDate: dtEmissao ? `${dtEmissao}T15:00:00.000Z` : null,
-              dueDate: dtVencimento ? `${dtVencimento}T15:00:00.000Z` : null,
+              dueDate: par.dueDate
+                ? `${par.dueDate}T15:00:00.000Z`
+                : i === 0 && dtVencimento
+                  ? `${dtVencimento}T15:00:00.000Z`
+                  : null,
               arrivalDate: null,
-              duplicateValue: parseFloat(valorUnico) || null,
-              expenses: despesaCode
-                ? [
-                    {
-                      expenseCode: parseInt(despesaCode),
-                      costCenterCode: costCenterCode
-                        ? parseInt(costCenterCode)
-                        : null,
-                      proratedPercentage: parseFloat(rateioPercentual) || 100,
-                    },
-                  ]
-                : [],
-            },
-          ],
+              duplicateValue:
+                parseFloat(par.duplicateValue) ||
+                (i === 0 ? parseFloat(valorUnico) || null : null),
+              expenses: own.length ? own : expensesFallback,
+            };
+          }),
         };
       };
       const newPayload = exigeFluxoSimplesLocal
@@ -3652,7 +3768,9 @@ const ModalEdicao = ({
         supplier_name: supplierName.trim() || sol.supplier_name,
         duplicate_code: duplicateCode || sol.duplicate_code,
         valor_total: exigeFluxoSimples
-          ? parseFloat(valorUnico) || null
+          ? parcelas.length > 1
+            ? valorTotal || parseFloat(valorUnico) || null
+            : parseFloat(valorUnico) || null
           : valorTotal || sol.valor_total,
         payload_totvs: newPayload,
         comprovante_url: tipo === 'reembolso' ? novoComprovanteUrl : null,
@@ -3679,7 +3797,11 @@ const ModalEdicao = ({
         }),
         ...(exigeFluxoSimples && {
           dt_emissao: toIso(dtEmissao),
-          dt_vencimento: toIso(dtVencimento),
+          dt_vencimento: toIso(
+            parcelas.length > 1
+              ? parcelas[0]?.dueDate || dtVencimento
+              : dtVencimento,
+          ),
           despesa_code: despesaCode ? parseInt(despesaCode) : null,
           cost_center_code: costCenterCode ? parseInt(costCenterCode) : null,
           rateio_percentual: rateioPercentual
