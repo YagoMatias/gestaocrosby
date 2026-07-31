@@ -26,6 +26,21 @@ export const formatarData = (data) => {
   return data;
 };
 
+// Formatar CNPJ (14 dígitos) ou CPF (11 dígitos); outros tamanhos ficam como vieram
+export const formatarCpfCnpj = (doc) => {
+  const digitos = String(doc || '').replace(/\D/g, '');
+  if (digitos.length === 14) {
+    return digitos.replace(
+      /^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,
+      '$1.$2.$3/$4-$5',
+    );
+  }
+  if (digitos.length === 11) {
+    return digitos.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
+  }
+  return digitos;
+};
+
 // Determinar status da conta baseado nos dados
 export const getStatusFromData = (item) => {
   if (item.dt_liq) {

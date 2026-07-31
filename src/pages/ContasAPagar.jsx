@@ -25,6 +25,7 @@ import {
   getStatusFromData,
   aplicarFiltroMensal,
   agruparDadosIdenticos,
+  formatarCpfCnpj,
 } from '../components/ContasAPagar';
 
 const ContasAPagar = (props) => {
@@ -650,6 +651,8 @@ const ContasAPagar = (props) => {
         Aceite: grupo.item.in_aceite || '',
         Observação: grupo.item.ds_observacao || '',
         Previsão: grupo.item.tp_previsaoreal || '',
+        'CNPJ Fornecedor': formatarCpfCnpj(grupo.item.nr_cpfcnpj_fornecedor),
+        'Razão Social': grupo.item.nm_razaosocial_fornecedor || '',
       };
     });
     const wb = XLSX.utils.book_new();
@@ -681,6 +684,8 @@ const ContasAPagar = (props) => {
       { wch: 10 },
       { wch: 30 },
       { wch: 10 },
+      { wch: 20 },
+      { wch: 32 },
     ];
     XLSX.utils.book_append_sheet(wb, ws, 'Detalhamento');
     const fileName = `detalhamento_contas_${new Date().toISOString().split('T')[0]}.xlsx`;
