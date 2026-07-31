@@ -564,9 +564,18 @@ const CallCenter = () => {
         mapa[String(c.cd_cliente)] = c;
       });
       setContatos(mapa);
+    } else {
+      // Erro de leitura precisa aparecer: com RLS mal configurada a consulta
+      // volta vazia e a tela parecia apenas "sem registros"
+      notificar(
+        'error',
+        `Não foi possível ler os registros de contato: ${resContatos.error}`,
+        8000,
+      );
     }
     if (resSms.success) setUltimosSms(resSms.data || {});
     setLoadingContatos(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ============================================================
@@ -1430,6 +1439,20 @@ const CallCenter = () => {
     };
   }, [modo, clienteSms, textoSms, tplLembrete]);
 
+  // Grava no histórico avisando na tela se o Supabase recusar. Antes o erro
+  // era engolido: a tabela ficou vazia por RLS e ninguém percebeu.
+  const registrarNoHistorico = async (dados) => {
+    const { success, error } = await registrarLigacao(dados);
+    if (!success) {
+      notificar(
+        'warning',
+        `SMS enviado, mas o histórico não foi gravado: ${error}`,
+        8000,
+      );
+    }
+    return success;
+  };
+
   // Envia um conjunto de mensagens e devolve { enviados, rejeitados }
   const postarSms = async (mensagens) => {
     const resp = await fetch(`${API_BASE_URL}/api/sms/enviar`, {
@@ -1502,7 +1525,7 @@ const CallCenter = () => {
 
         const faturasEnviadas =
           tipo === 'URGENTE' ? previaLembrete.urgentes : previaLembrete.futuras;
-        await registrarLigacao({
+        await registrarNoHistorico({
           cd_cliente: clienteSms.cd_cliente,
           nm_cliente: clienteSms.nm_cliente,
           telefone: clienteSms.telefone,
@@ -1555,7 +1578,7 @@ const CallCenter = () => {
           );
         }
 
-        await registrarLigacao({
+        await registrarNoHistorico({
           cd_cliente: clienteSms.cd_cliente,
           nm_cliente: clienteSms.nm_cliente,
           telefone: clienteSms.telefone,
@@ -1777,7 +1800,7 @@ const CallCenter = () => {
                     ? m.plano.urgentes
                     : m.plano.futuras
                   : [];
-              return registrarLigacao({
+              return registrarNoHistorico({
                 cd_cliente: m.cliente.cd_cliente,
                 nm_cliente: m.cliente.nm_cliente,
                 telefone: m.cliente.telefone,
