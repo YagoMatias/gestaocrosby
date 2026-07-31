@@ -59,6 +59,7 @@ const DashboardVarejo = lazy(() => import('./pages/DashboardVarejo'));
 const InadimplentesMultimarcas = lazy(
   () => import('./pages/InadimplentesMultimarcas'),
 );
+const CallCenter = lazy(() => import('./pages/CallCenter'));
 const InadimplentesRevenda = lazy(() => import('./pages/InadimplentesRevenda'));
 const InadimplentesFranquias = lazy(
   () => import('./pages/InadimplentesFranquias'),
@@ -214,6 +215,7 @@ const protectedRoutes = [
   { path: '/compras-franquias', component: ComprasFranquias },
   { path: '/credev-varejo', component: CredevVarejo },
   { path: '/inadimplentes-multimarcas', component: InadimplentesMultimarcas },
+  { path: '/call-center', component: CallCenter },
   { path: '/inadimplentes-revenda', component: InadimplentesRevenda },
   { path: '/inadimplentes-franquias', component: InadimplentesFranquias },
   { path: '/recuperacao-credito', component: RecuperacaoCredito },

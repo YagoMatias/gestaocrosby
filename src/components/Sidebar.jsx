@@ -416,6 +416,12 @@ const multimarcas = [
     color: 'text-purple-600',
   },
   {
+    name: 'Call Center',
+    href: '/call-center',
+    icon: Headset,
+    color: 'text-blue-600',
+  },
+  {
     name: 'Minhas Solicit. Baixa',
     href: '/minhas-solicitacoes-baixa',
     icon: ClipboardText,
@@ -696,6 +702,12 @@ const recuperacaoCredito = [
     href: '/inadimplentes-multimarcas',
     icon: Buildings,
     color: 'text-purple-600',
+  },
+  {
+    name: 'Call Center',
+    href: '/call-center',
+    icon: Headset,
+    color: 'text-blue-600',
   },
   {
     name: 'Inadimplência Franquias',
