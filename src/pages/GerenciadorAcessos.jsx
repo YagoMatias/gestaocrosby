@@ -143,6 +143,11 @@ const AVAILABLE_PAGES = [
   { path: '/credev-varejo', name: 'CREDEV Varejo', category: 'Varejo' },
   { path: '/top-clientes', name: 'Top Clientes', category: 'Varejo' },
   {
+    path: '/dashboard-bluecred',
+    name: 'Dashboard Bluecred',
+    category: 'Varejo',
+  },
+  {
     path: '/documento-bluecred',
     name: 'Documento Bluecred',
     category: 'Varejo',

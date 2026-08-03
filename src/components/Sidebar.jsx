@@ -350,6 +350,12 @@ const varejo = [
     color: 'text-blue-600',
     children: [
       {
+        name: 'Dashboard',
+        href: '/dashboard-bluecred',
+        icon: ChartBar,
+        color: 'text-blue-600',
+      },
+      {
         name: 'Documentos Bluecred',
         href: '/documento-bluecred',
         icon: FileText,
