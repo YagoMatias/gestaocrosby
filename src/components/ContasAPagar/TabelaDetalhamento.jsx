@@ -10,6 +10,7 @@ import {
 } from '@phosphor-icons/react';
 import {
   formatarData,
+  formatarCpfCnpj,
   TABLE_CLASSES,
   TABLE_HEADER_CLASSES,
   getStickyColStyle,
@@ -108,6 +109,14 @@ const COLUNAS = [
     noFilter: true,
   },
   { key: 'tp_previsaoreal', label: 'Previsão', type: 'text' },
+  {
+    key: 'nr_cpfcnpj_fornecedor',
+    label: 'CNPJ Fornecedor',
+    type: 'doc',
+    truncate: true,
+    maxW: 'max-w-48',
+    minW: 'min-w-32',
+  },
 ];
 
 const TabelaDetalhamento = React.memo(
@@ -239,6 +248,18 @@ const TabelaDetalhamento = React.memo(
             : item.cd_empresa || '';
         case 'obs':
           return item.ds_observacao || '';
+        case 'doc': {
+          // CNPJ/CPF do fornecedor; sem documento, mostra a razão social
+          const doc = formatarCpfCnpj(item.nr_cpfcnpj_fornecedor);
+          if (doc) return doc;
+          const razao =
+            item.nm_razaosocial_fornecedor || item.nm_fornecedor || '';
+          return razao ? (
+            <span className="text-gray-500 italic">{razao}</span>
+          ) : (
+            ''
+          );
+        }
         default:
           return item[dataKey] || '';
       }
@@ -562,14 +583,22 @@ const TabelaDetalhamento = React.memo(
                                 .join(' ');
 
                               const dataKey = col.dataKey || col.key;
-                              const titleAttr = col.truncate
-                                ? grupo.item[dataKey]
-                                : col.type === 'obs'
-                                  ? grupo.item.ds_observacao
-                                  : col.type === 'rateio' &&
-                                      grupo.rateios?.length > 0
-                                    ? grupo.rateios.join(' | ')
-                                    : undefined;
+                              const titleAttr =
+                                col.type === 'doc'
+                                  ? formatarCpfCnpj(
+                                      grupo.item.nr_cpfcnpj_fornecedor,
+                                    ) ||
+                                    grupo.item.nm_razaosocial_fornecedor ||
+                                    grupo.item.nm_fornecedor ||
+                                    undefined
+                                  : col.truncate
+                                    ? grupo.item[dataKey]
+                                    : col.type === 'obs'
+                                      ? grupo.item.ds_observacao
+                                      : col.type === 'rateio' &&
+                                          grupo.rateios?.length > 0
+                                        ? grupo.rateios.join(' | ')
+                                        : undefined;
 
                               return (
                                 <td

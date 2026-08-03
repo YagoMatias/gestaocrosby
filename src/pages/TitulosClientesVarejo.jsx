@@ -17,6 +17,7 @@ export default function TitulosClientesVarejo() {
       hardcodedBranches={VAREJO_BRANCHES}
       title="Portal de Títulos Varejo"
       subtitle="Consulta de títulos dos clientes das lojas próprias"
+      permiteSolicitacaoBaixa={false}
     />
   );
 }

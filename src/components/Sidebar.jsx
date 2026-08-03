@@ -204,6 +204,13 @@ const financeiro = [
         roles: ['owner', 'admin', 'manager', 'user'],
       },
       {
+        name: 'Call Center',
+        href: '/call-center',
+        icon: Headset,
+        color: 'text-blue-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
         name: 'Dashboard PMR',
         href: '/pmr',
         icon: Clock,

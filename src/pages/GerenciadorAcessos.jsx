@@ -196,6 +196,11 @@ const AVAILABLE_PAGES = [
     category: 'Multimarcas',
   },
   {
+    path: '/call-center',
+    name: 'Call Center',
+    category: 'Financeiro',
+  },
+  {
     path: '/minhas-solicitacoes-baixa',
     name: 'Minhas Solicitações de Baixa',
     category: 'Multimarcas',

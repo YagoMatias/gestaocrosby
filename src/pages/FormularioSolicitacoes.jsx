@@ -111,6 +111,29 @@ const FORMAS_PAGAMENTO = [
 
 const STORAGE_BUCKET = 'solicitacoes-crosby';
 
+// =====================================================================
+// GERADOR EM LOTE — solicitações repetitivas (execução judicial)
+// Aparece apenas quando a URL tem ?lote=1
+// (ex.: /formulario-solicitacoes?lote=1). Gera N solicitações de
+// pagamento idênticas, variando somente o valor.
+// =====================================================================
+const LOTE_PRESET = {
+  cdEmpresa: 1, // 1 - CROSBY MATRIZ
+  solicitante: 'YAGO MATIAS',
+  setor: 'FINANCEIRO',
+  fornecedorCnpj: '00000000490695', // BANCO DO BRASIL
+  fornecedorNomeFallback: 'BANCO DO BRASIL',
+  formaPagamento: 'pix',
+  chavePix: '00000000490695',
+  dtEmissao: '2026-07-21',
+  dtVencimento: '2026-07-31',
+  despesaCode: '6019', // DESPESAS LEGAIS E JUDICIAIS
+  centroCusto: '10', // MATRIZ
+  rateio: 100,
+  descricao: 'EXECUÇÃO DE CLIENTES INADIMPLENTES',
+  valores: ['177.25', '177.25', '126.25', '126.25', '126.25', '126.25', '126.25'],
+};
+
 // Tipos de documento — enum TOTVS DocumentType
 const DOCUMENT_TYPES = [
   { value: 'Duplicate', label: 'Duplicata' },
@@ -450,6 +473,10 @@ const FormularioSolicitacoes = () => {
   const [centroCustoUnico, setCentroCustoUnico] = useState('');
   const [rateioUnico, setRateioUnico] = useState('100');
   const [valorUnico, setValorUnico] = useState('');
+  // Parcelamento opcional (pagamento/reembolso): lista de { dueDate, valor }.
+  // Vazio = à vista (1 parcela com dtVencimentoUnica/valorUnico).
+  const [parcelasSimples, setParcelasSimples] = useState([]);
+  const [numParcelasSimples, setNumParcelasSimples] = useState('');
   const [comprovanteGestorFile, setComprovanteGestorFile] = useState(null);
   const [comprovanteGestorPreview, setComprovanteGestorPreview] = useState('');
   const [comprovanteFabioFile, setComprovanteFabioFile] = useState(null);
@@ -463,6 +490,29 @@ const FormularioSolicitacoes = () => {
   const [uploading, setUploading] = useState(false);
   const [origemCotacao, setOrigemCotacao] = useState(null);
 
+  // === Gerador em lote (ativado por ?lote=1 na URL) ===
+  const [loteAtivo] = useState(() => {
+    try {
+      return new URLSearchParams(window.location.search).has('lote');
+    } catch {
+      return false;
+    }
+  });
+  const [loteAberto, setLoteAberto] = useState(false);
+  const [loteValores, setLoteValores] = useState([...LOTE_PRESET.valores]);
+  const [loteEmissao, setLoteEmissao] = useState(LOTE_PRESET.dtEmissao);
+  const [loteVencimento, setLoteVencimento] = useState(LOTE_PRESET.dtVencimento);
+  const [loteCentroCusto, setLoteCentroCusto] = useState(
+    LOTE_PRESET.centroCusto,
+  );
+  const [loteChavePix, setLoteChavePix] = useState(LOTE_PRESET.chavePix);
+  const [loteDescricao, setLoteDescricao] = useState(LOTE_PRESET.descricao);
+  const [lotePrintFile, setLotePrintFile] = useState(null);
+  const [lotePrintPreview, setLotePrintPreview] = useState('');
+  const [loteEnviando, setLoteEnviando] = useState(false);
+  const [loteErro, setLoteErro] = useState(null);
+  const [loteResultado, setLoteResultado] = useState(null);
+
   // Pré-preenchimento vindo da Cotação de Compras (botão "Solicitar Pagamento").
   // Lê query params da URL e monta a solicitação de pagamento já com os dados.
   useEffect(() => {
@@ -475,11 +525,17 @@ const FormularioSolicitacoes = () => {
       if (p.get('descricao')) setDescricao(p.get('descricao'));
       const obsPartes = [];
       if (p.get('link')) obsPartes.push(`Link: ${p.get('link')}`);
-      if (p.get('cotacao_id')) obsPartes.push(`Cotação #${p.get('cotacao_id')}`);
+      if (p.get('cotacao_id'))
+        obsPartes.push(`Cotação #${p.get('cotacao_id')}`);
       if (obsPartes.length) setObservacao(obsPartes.join(' · '));
       if (p.get('link')) setLinkExemplo(p.get('link'));
-      setOrigemCotacao({ id: p.get('cotacao_id'), produto: p.get('descricao') });
-    } catch { /* ignora */ }
+      setOrigemCotacao({
+        id: p.get('cotacao_id'),
+        produto: p.get('descricao'),
+      });
+    } catch {
+      /* ignora */
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -653,6 +709,62 @@ const FormularioSolicitacoes = () => {
     setNumParcelasInput('');
   };
 
+  // ── Parcelamento simples (pagamento/reembolso) ──────────────────────
+  const gerarParcelasSimples = (n) => {
+    const num = parseInt(n);
+    if (!num || num < 1 || num > 120) return;
+    if (num === 1) {
+      setParcelasSimples([]);
+      setNumParcelasSimples('');
+      return;
+    }
+    const total = parseFloat(valorUnico) || 0;
+    const valorBase = total > 0 ? Math.floor((total / num) * 100) / 100 : 0;
+    const ultimo =
+      total > 0 ? parseFloat((total - valorBase * (num - 1)).toFixed(2)) : 0;
+    const baseDueDate = dtVencimentoUnica || todayISO();
+    const addMonths = (yyyymmdd, months) => {
+      const d = new Date(`${yyyymmdd}T12:00:00Z`);
+      d.setUTCMonth(d.getUTCMonth() + months);
+      return d.toISOString().slice(0, 10);
+    };
+    setParcelasSimples(
+      Array.from({ length: num }, (_, i) => ({
+        dueDate: addMonths(baseDueDate, i),
+        valor: String(i === num - 1 ? ultimo : valorBase),
+      })),
+    );
+  };
+
+  const updateParcelaSimples = (idx, patch) =>
+    setParcelasSimples((prev) =>
+      prev.map((p, i) => (i === idx ? { ...p, ...patch } : p)),
+    );
+
+  const removeParcelaSimples = (idx) =>
+    setParcelasSimples((prev) => {
+      const next = prev.filter((_, i) => i !== idx);
+      return next.length > 1 ? next : [];
+    });
+
+  const addParcelaSimples = () =>
+    setParcelasSimples((prev) => {
+      const last = prev[prev.length - 1];
+      let nextDate = '';
+      if (last?.dueDate) {
+        const d = new Date(`${last.dueDate}T12:00:00Z`);
+        d.setUTCMonth(d.getUTCMonth() + 1);
+        nextDate = d.toISOString().slice(0, 10);
+      }
+      return [...prev, { dueDate: nextDate, valor: '' }];
+    });
+
+  const somaParcelasSimples = useMemo(
+    () =>
+      parcelasSimples.reduce((acc, p) => acc + (parseFloat(p.valor) || 0), 0),
+    [parcelasSimples],
+  );
+
   const buscarFornecedor = async () => {
     const digits = onlyDigits(fornecedorCpfCnpj);
     if (digits.length !== 11 && digits.length !== 14) return;
@@ -706,6 +818,8 @@ const FormularioSolicitacoes = () => {
     setLinkExemplo('');
     setImagensExemploFiles([]);
     setContatosPrestadores([{ nome: '', telefone: '', observacao: '' }]);
+    setParcelasSimples([]);
+    setNumParcelasSimples('');
     setDtVencimentoUnica('');
     setDtEmissaoUnica('');
     setDespesaUnicaCode('');
@@ -814,6 +928,146 @@ const FormularioSolicitacoes = () => {
     return data.publicUrl;
   };
 
+  // ── Gerador em lote ────────────────────────────────────────────────
+  const loteTotal = useMemo(
+    () =>
+      loteValores.reduce(
+        (acc, v) => acc + (parseFloat(String(v).replace(',', '.')) || 0),
+        0,
+      ),
+    [loteValores],
+  );
+
+  const updateLoteValor = (idx, valor) =>
+    setLoteValores((prev) => prev.map((v, i) => (i === idx ? valor : v)));
+
+  const addLoteValor = () => setLoteValores((prev) => [...prev, '']);
+
+  const removeLoteValor = (idx) =>
+    setLoteValores((prev) => prev.filter((_, i) => i !== idx));
+
+  const handleLotePrintChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      setLoteErro('Print muito grande (máx. 10MB).');
+      return;
+    }
+    setLoteErro(null);
+    setLotePrintFile(file);
+    setLotePrintPreview(
+      file.type.startsWith('image/') ? URL.createObjectURL(file) : '',
+    );
+  };
+
+  // Gera uma solicitação de pagamento por valor da lista, todas com os
+  // mesmos dados fixos do preset e o mesmo print nas duas aprovações.
+  const gerarLote = async () => {
+    setLoteErro(null);
+    setLoteResultado(null);
+
+    const valores = loteValores.map((v) =>
+      parseFloat(String(v).replace(',', '.')),
+    );
+    if (!valores.length || valores.some((v) => isNaN(v) || v <= 0)) {
+      setLoteErro('Todos os valores devem ser números maiores que zero.');
+      return;
+    }
+    if (!lotePrintFile) {
+      setLoteErro('Anexe o print de aprovação (gestor + Fábio).');
+      return;
+    }
+    if (!loteVencimento || loteVencimento <= todayISO()) {
+      setLoteErro('A data de vencimento deve ser posterior a hoje.');
+      return;
+    }
+    if (!loteDescricao.trim()) {
+      setLoteErro('Informe a descrição da solicitação.');
+      return;
+    }
+    const empresa = empresas.find(
+      (e) => parseInt(e.cd_empresa) === LOTE_PRESET.cdEmpresa,
+    );
+    if (!empresa?.cnpj) {
+      setLoteErro(
+        'Filial 1 (Crosby Matriz) não encontrada ou sem CNPJ. Aguarde as lojas carregarem.',
+      );
+      return;
+    }
+
+    setLoteEnviando(true);
+    try {
+      // Nome do fornecedor no TOTVS (mesma busca do formulário manual)
+      let supplierName = LOTE_PRESET.fornecedorNomeFallback;
+      try {
+        const resp = await fetch(
+          `${API_BASE_URL}/api/totvs/supplier/search?cpfCnpj=${LOTE_PRESET.fornecedorCnpj}`,
+        );
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data?.data?.name) supplierName = data.data.name;
+        }
+      } catch {
+        /* mantém o fallback */
+      }
+
+      // Upload único do print — reutilizado nas duas aprovações
+      const printUrl = await uploadArquivo(lotePrintFile, 'comprovantes-gestor');
+
+      const agora = new Date().toISOString();
+      const rows = valores.map((valor, i) => ({
+        cd_empresa: LOTE_PRESET.cdEmpresa,
+        nm_empresa: empresa.nm_grupoempresa || null,
+        solicitante: LOTE_PRESET.solicitante,
+        solicitante_email: null,
+        setor: LOTE_PRESET.setor,
+        tipo_solicitacao: 'pagamento',
+        nivel_urgencia: 'normal',
+        descricao: loteDescricao.trim(),
+        observacao: `Lote execução judicial ${i + 1}/${valores.length}`,
+        status: 'pendente',
+        data_solicitacao: agora,
+        branch_cnpj: onlyDigits(empresa.cnpj),
+        supplier_cpf_cnpj: LOTE_PRESET.fornecedorCnpj,
+        supplier_name: supplierName,
+        forma_pagamento: LOTE_PRESET.formaPagamento,
+        chave_pix: loteChavePix.trim() || null,
+        codigo_barras: null,
+        comprovante_url: null,
+        comprovante_gestor_url: printUrl,
+        comprovante_fabio_url: printUrl,
+        link_exemplo: null,
+        imagens_exemplo_urls: [],
+        contatos_prestadores: [],
+        dt_emissao: loteEmissao ? toIsoDateTime(loteEmissao) : null,
+        dt_vencimento: toIsoDateTime(loteVencimento),
+        despesa_code: parseInt(LOTE_PRESET.despesaCode),
+        cost_center_code: parseInt(loteCentroCusto),
+        rateio_percentual: LOTE_PRESET.rateio,
+        valor_total: valor,
+        marca_modelo: null,
+        recomendacao_fornecedores: null,
+      }));
+
+      const { error } = await supabaseAdmin
+        .from('solicitacoes_crosby')
+        .insert(rows);
+      if (error) throw error;
+
+      setLoteResultado({
+        quantidade: rows.length,
+        total: valores.reduce((a, b) => a + b, 0),
+      });
+    } catch (err) {
+      console.error('Erro ao gerar solicitações em lote:', err);
+      setLoteErro(
+        err?.message || 'Erro ao gerar as solicitações. Tente novamente.',
+      );
+    } finally {
+      setLoteEnviando(false);
+    }
+  };
+
   // Helpers contatos prestadores
   const addContatoPrestador = () =>
     setContatosPrestadores((prev) => [
@@ -876,6 +1130,19 @@ const FormularioSolicitacoes = () => {
         return 'Informe o rateio (1–100%).';
       if (!valorUnico || parseFloat(valorUnico) <= 0)
         return 'Informe o valor da solicitação.';
+      if (parcelasSimples.length > 1) {
+        for (let i = 0; i < parcelasSimples.length; i++) {
+          const p = parcelasSimples[i];
+          const prefixo = `Parcela ${i + 1}: `;
+          if (!p.dueDate) return prefixo + 'informe a data de vencimento.';
+          if (p.dueDate <= todayISO())
+            return prefixo + 'a data de vencimento deve ser posterior a hoje.';
+          if (!p.valor || parseFloat(p.valor) <= 0)
+            return prefixo + 'informe um valor maior que zero.';
+        }
+        if (Math.abs(somaParcelasSimples - parseFloat(valorUnico)) > 0.01)
+          return `A soma das parcelas (R$ ${somaParcelasSimples.toFixed(2)}) deve ser igual ao valor total (R$ ${parseFloat(valorUnico).toFixed(2)}).`;
+      }
       if (!comprovanteGestorFile)
         return 'Anexe o comprovante de aprovação do gestor.';
       if (!comprovanteFabioFile)
@@ -1072,6 +1339,36 @@ const FormularioSolicitacoes = () => {
         if (tipo === 'pagamento' && imagensUrls.length) {
           insertData.imagens_exemplo_urls = imagensUrls; // reusa coluna para NFs
         }
+        // Parcelado: grava todas as parcelas em payload_totvs.installments
+        // (duplicateCode fica null — o financeiro gera depois).
+        if (parcelasSimples.length > 1) {
+          const expenses =
+            despesaUnicaCode && parseInt(despesaUnicaCode)
+              ? [
+                  {
+                    expenseCode: parseInt(despesaUnicaCode),
+                    costCenterCode: parseInt(centroCustoUnico) || null,
+                    proratedPercentage: parseFloat(rateioUnico) || 100,
+                  },
+                ]
+              : [];
+          insertData.dt_vencimento = toIsoDateTime(parcelasSimples[0].dueDate);
+          insertData.valor_total = somaParcelasSimples;
+          insertData.payload_totvs = {
+            branchCnpj: onlyDigits(empresaSelecionada.cnpj),
+            supplierCpfCnpj: onlyDigits(fornecedorCpfCnpj),
+            duplicateCode: null,
+            installments: parcelasSimples.map((p, i) => ({
+              installmentCode: i + 1,
+              bearerCode: null,
+              issueDate: dtEmissaoUnica ? toIsoDateTime(dtEmissaoUnica) : null,
+              dueDate: toIsoDateTime(p.dueDate),
+              arrivalDate: null,
+              duplicateValue: parseFloat(p.valor) || 0,
+              expenses,
+            })),
+          };
+        }
       }
 
       // ============ Compra / Manutenção ============
@@ -1166,6 +1463,252 @@ const FormularioSolicitacoes = () => {
           </p>
         </div>
 
+        {/* ===== GERADOR EM LOTE (?lote=1) ===== */}
+        {loteAtivo && (
+          <div className="mb-6 bg-white rounded-2xl shadow-lg border-2 border-amber-300 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setLoteAberto((o) => !o)}
+              className="w-full flex items-center justify-between gap-2 px-5 py-3.5 bg-amber-50 hover:bg-amber-100 transition-colors"
+            >
+              <span className="flex items-center gap-2 text-sm font-bold text-[#000638]">
+                <CurrencyCircleDollar size={18} weight="fill" />
+                Gerador em lote — Execução judicial (Banco do Brasil)
+              </span>
+              {loteAberto ? <CaretUp size={16} /> : <CaretDown size={16} />}
+            </button>
+
+            {loteAberto && (
+              <div className="p-5 space-y-4">
+                {loteResultado && (
+                  <div className="flex items-start gap-2 bg-green-50 border border-green-200 text-green-800 rounded-lg p-3 text-sm">
+                    <CheckCircle
+                      size={18}
+                      weight="fill"
+                      className="flex-shrink-0 mt-0.5"
+                    />
+                    <span>
+                      <b>{loteResultado.quantidade} solicitações criadas</b> —
+                      total{' '}
+                      {loteResultado.total.toLocaleString('pt-BR', {
+                        style: 'currency',
+                        currency: 'BRL',
+                      })}
+                      . Elas já aparecem em Solicitações Crosby como pendentes.
+                    </span>
+                  </div>
+                )}
+                {loteErro && (
+                  <div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm">
+                    <Warning
+                      size={18}
+                      weight="bold"
+                      className="flex-shrink-0 mt-0.5"
+                    />
+                    <span>{loteErro}</span>
+                  </div>
+                )}
+
+                {/* Dados fixos do preset */}
+                <div className="bg-gray-50 border rounded-lg p-3 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-gray-600">
+                  <span>
+                    Filial: <b className="text-[#000638]">1 - CROSBY MATRIZ</b>
+                  </span>
+                  <span>
+                    Solicitante:{' '}
+                    <b className="text-[#000638]">{LOTE_PRESET.solicitante}</b>
+                  </span>
+                  <span>
+                    Setor:{' '}
+                    <b className="text-[#000638]">{LOTE_PRESET.setor}</b>
+                  </span>
+                  <span>
+                    Tipo:{' '}
+                    <b className="text-[#000638]">Solicitação de Pagamento</b>
+                  </span>
+                  <span>
+                    Fornecedor:{' '}
+                    <b className="font-mono text-[#000638]">
+                      {formatCnpjCpf(LOTE_PRESET.fornecedorCnpj)}
+                    </b>
+                  </span>
+                  <span>
+                    Forma de pagamento: <b className="text-[#000638]">PIX</b>
+                  </span>
+                  <span>
+                    Despesa:{' '}
+                    <b className="text-[#000638]">
+                      {LOTE_PRESET.despesaCode} —{' '}
+                      {DESPESAS_JSON[LOTE_PRESET.despesaCode]}
+                    </b>
+                  </span>
+                  <span>
+                    Rateio:{' '}
+                    <b className="text-[#000638]">{LOTE_PRESET.rateio}%</b>
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Field label="Data de Emissão">
+                    <input
+                      type="date"
+                      value={loteEmissao}
+                      max={todayISO()}
+                      onChange={(e) => setLoteEmissao(e.target.value)}
+                      className={inputCls}
+                    />
+                  </Field>
+                  <Field label="Data de Vencimento" hint="posterior a hoje">
+                    <input
+                      type="date"
+                      value={loteVencimento}
+                      min={todayISO()}
+                      onChange={(e) => setLoteVencimento(e.target.value)}
+                      className={inputCls}
+                    />
+                  </Field>
+                  <Field label="Centro de Custo">
+                    <select
+                      value={loteCentroCusto}
+                      onChange={(e) => setLoteCentroCusto(e.target.value)}
+                      className={inputCls}
+                    >
+                      {CENTROS_CUSTO_OPTIONS.map(([code, name]) => (
+                        <option key={code} value={code}>
+                          {code} — {name}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Chave PIX">
+                    <input
+                      type="text"
+                      value={loteChavePix}
+                      onChange={(e) => setLoteChavePix(e.target.value)}
+                      maxLength={140}
+                      className={inputCls}
+                    />
+                  </Field>
+                </div>
+
+                <Field label="Descrição (usada em todas)">
+                  <input
+                    type="text"
+                    value={loteDescricao}
+                    onChange={(e) => setLoteDescricao(e.target.value)}
+                    maxLength={200}
+                    className={inputCls}
+                  />
+                </Field>
+
+                {/* Print de aprovação (gestor + Fábio) */}
+                <div>
+                  <label className="text-[11px] font-bold text-[#000638] flex items-center gap-1 mb-1">
+                    <UploadSimple size={13} weight="bold" />
+                    Print de aprovação (usado no gestor e no Fábio) *
+                  </label>
+                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-lg p-4 cursor-pointer hover:border-[#000638] transition-colors bg-gray-50/40">
+                    <UploadSimple size={22} className="text-gray-400 mb-1" />
+                    <span className="text-xs font-bold text-[#000638] text-center">
+                      {lotePrintFile
+                        ? lotePrintFile.name
+                        : 'Anexar print da aprovação'}
+                    </span>
+                    <span className="text-[10px] text-gray-500 mt-0.5">
+                      máx. 10MB · JPG, PNG, PDF
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      onChange={handleLotePrintChange}
+                      className="hidden"
+                    />
+                  </label>
+                  {lotePrintPreview && (
+                    <img
+                      src={lotePrintPreview}
+                      alt="Pré-visualização do print"
+                      className="mt-2 max-h-32 rounded-lg border mx-auto"
+                    />
+                  )}
+                </div>
+
+                {/* Valores — uma solicitação por valor */}
+                <div className="border-2 border-gray-200 rounded-xl overflow-hidden">
+                  <div className="bg-gray-100 px-4 py-2.5 flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase text-gray-600">
+                      Valores ({loteValores.length} solicitações)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={addLoteValor}
+                      className="flex items-center gap-1 text-xs font-bold text-[#000638] hover:text-[#fe0000]"
+                    >
+                      <Plus size={13} weight="bold" /> Adicionar
+                    </button>
+                  </div>
+                  <div className="p-3 space-y-2">
+                    {loteValores.map((v, i) => (
+                      <div
+                        key={i}
+                        className="grid grid-cols-[auto_1fr_auto] gap-2 items-center"
+                      >
+                        <span className="text-xs font-bold text-gray-500 w-10">
+                          {i + 1}/{loteValores.length}
+                        </span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          value={v}
+                          placeholder="0,00"
+                          onChange={(e) => updateLoteValor(i, e.target.value)}
+                          className={inputCls}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeLoteValor(i)}
+                          className="text-red-500 hover:text-red-700 p-1.5"
+                        >
+                          <Trash size={14} />
+                        </button>
+                      </div>
+                    ))}
+                    <p className="text-[11px] text-gray-500 mt-1">
+                      Total do lote:{' '}
+                      <strong className="text-[#000638]">
+                        {loteTotal.toLocaleString('pt-BR', {
+                          style: 'currency',
+                          currency: 'BRL',
+                        })}
+                      </strong>
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={gerarLote}
+                  disabled={loteEnviando || empresasLoading}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[#000638] text-white rounded-lg font-bold hover:bg-[#fe0000] transition-colors disabled:opacity-40 disabled:cursor-not-allowed text-sm"
+                >
+                  {loteEnviando ? (
+                    <>
+                      <Spinner size={16} className="animate-spin" />
+                      Gerando...
+                    </>
+                  ) : (
+                    <>
+                      <PaperPlaneTilt size={16} weight="bold" />
+                      Gerar {loteValores.length} solicitações
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         <form
           onSubmit={handleEnviar}
           className="bg-white rounded-2xl shadow-lg border p-6 md:p-8 space-y-7"
@@ -1174,9 +1717,15 @@ const FormularioSolicitacoes = () => {
             <div className="flex items-start gap-2 bg-indigo-50 border border-indigo-200 text-indigo-800 rounded-lg p-3 text-sm">
               <span className="mt-0.5">🧾</span>
               <div>
-                <b>Solicitação gerada da Cotação de Compras{origemCotacao.id ? ` #${origemCotacao.id}` : ''}.</b>
-                {origemCotacao.produto ? ` Produto: ${origemCotacao.produto}.` : ''} Fornecedor e valor já preenchidos —
-                confira o CNPJ, a data de vencimento e a despesa antes de enviar.
+                <b>
+                  Solicitação gerada da Cotação de Compras
+                  {origemCotacao.id ? ` #${origemCotacao.id}` : ''}.
+                </b>
+                {origemCotacao.produto
+                  ? ` Produto: ${origemCotacao.produto}.`
+                  : ''}{' '}
+                Fornecedor e valor já preenchidos — confira o CNPJ, a data de
+                vencimento e a despesa antes de enviar.
               </div>
             </div>
           )}
@@ -1600,7 +2149,106 @@ const FormularioSolicitacoes = () => {
                     className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#000638] transition-colors"
                   />
                 </div>
+                <div>
+                  <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
+                    <Hash size={14} weight="bold" />
+                    Parcelamento
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      max="120"
+                      value={numParcelasSimples}
+                      onChange={(e) => setNumParcelasSimples(e.target.value)}
+                      placeholder="1"
+                      className="w-20 border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#000638] transition-colors"
+                    />
+                    <span className="text-xs text-gray-500">parcela(s)</span>
+                    <button
+                      type="button"
+                      onClick={() => gerarParcelasSimples(numParcelasSimples)}
+                      className="flex items-center gap-1 text-xs font-bold text-white bg-[#000638] hover:bg-[#fe0000] rounded-lg px-3 py-2 transition-colors"
+                    >
+                      Gerar parcelas
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-gray-500 mt-1">
+                    Deixe em branco (ou 1) para pagamento à vista.
+                  </p>
+                </div>
               </div>
+
+              {/* Parcelas geradas (vencimento + valor por parcela) */}
+              {parcelasSimples.length > 1 && (
+                <div className="border-2 border-gray-200 rounded-xl overflow-hidden">
+                  <div className="bg-gray-100 px-4 py-2.5 flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase text-gray-600">
+                      Parcelas ({parcelasSimples.length}x)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={addParcelaSimples}
+                      className="flex items-center gap-1 text-xs font-bold text-[#000638] hover:text-[#fe0000]"
+                    >
+                      <Plus size={13} weight="bold" /> Adicionar
+                    </button>
+                  </div>
+                  <div className="p-3 space-y-2">
+                    {parcelasSimples.map((p, i) => (
+                      <div
+                        key={i}
+                        className="grid grid-cols-[auto_1fr_1fr_auto] gap-2 items-center"
+                      >
+                        <span className="text-xs font-bold text-gray-500 w-8">
+                          {i + 1}/{parcelasSimples.length}
+                        </span>
+                        <input
+                          type="date"
+                          value={p.dueDate}
+                          min={todayISO()}
+                          onChange={(e) =>
+                            updateParcelaSimples(i, { dueDate: e.target.value })
+                          }
+                          className="border-2 border-gray-200 rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:border-[#000638] transition-colors"
+                        />
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          value={p.valor}
+                          placeholder="0,00"
+                          onChange={(e) =>
+                            updateParcelaSimples(i, { valor: e.target.value })
+                          }
+                          className="border-2 border-gray-200 rounded-lg px-2.5 py-2 text-sm focus:outline-none focus:border-[#000638] transition-colors"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeParcelaSimples(i)}
+                          className="text-red-500 hover:text-red-700 p-1.5"
+                        >
+                          <Trash size={14} />
+                        </button>
+                      </div>
+                    ))}
+                    <p
+                      className={`text-[11px] mt-1 ${Math.abs(somaParcelasSimples - (parseFloat(valorUnico) || 0)) > 0.01 ? 'text-red-600 font-bold' : 'text-gray-500'}`}
+                    >
+                      Soma das parcelas:{' '}
+                      {somaParcelasSimples.toLocaleString('pt-BR', {
+                        style: 'currency',
+                        currency: 'BRL',
+                      })}{' '}
+                      · Valor total informado:{' '}
+                      {(parseFloat(valorUnico) || 0).toLocaleString('pt-BR', {
+                        style: 'currency',
+                        currency: 'BRL',
+                      })}
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Rateio com sincronismo % ↔ R$ */}
               <div>
