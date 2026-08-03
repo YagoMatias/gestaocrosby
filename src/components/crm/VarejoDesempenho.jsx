@@ -15,6 +15,7 @@ import {
   Buildings,
   Crown,
   Medal,
+  DownloadSimple,
 } from '@phosphor-icons/react';
 import {
   Card,
@@ -25,6 +26,8 @@ import {
 } from '../ui/cards';
 import { API_BASE_URL } from '../../config/constants';
 import { supabase } from '../../lib/supabase';
+import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
 
 const formatBRL = (v) =>
   typeof v === 'number'
@@ -341,6 +344,38 @@ export default function VarejoDesempenho() {
     };
   }, [data, todasVendedoras.length, comissaoPct]);
 
+  // Exporta o ranking COMPLETO (todas as vendedoras, ordenadas) para Excel.
+  const exportarExcel = useCallback(() => {
+    const lista = [...todasVendedoras].sort(
+      (a, b) => Number(b[ordenarPor] || 0) - Number(a[ordenarPor] || 0),
+    );
+    if (lista.length === 0) return;
+    const num = (v) => Math.round((Number(v) || 0) * 100) / 100;
+    const linhas = lista.map((v, i) => ({
+      'Posição': i + 1,
+      'Vendedora': v.seller_name || '',
+      'Loja': v.branch_name || v.branch_short || '',
+      'Faturamento': num(v.invoice_value),
+      'Meta Semana': num(v.meta_semana),
+      '% Meta Semana': v.meta_semana > 0 ? num(v.pct_meta_semana) : '',
+      'Meta Mês': num(v.meta_mes),
+      '% Meta Mês': v.meta_mes > 0 ? num(v.pct_meta_mes) : '',
+      [`Comissão (${comissaoPct}%)`]: num(v.comissao),
+      'Ticket Médio': num(v.tm),
+      'PA': num(v.pa),
+      'PMPV': num(v.pmpv),
+      'Atendimentos': Number(v.invoice_qty || 0),
+    }));
+    const ws = XLSX.utils.json_to_sheet(linhas);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Desempenho');
+    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([buf], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    saveAs(blob, `desempenho-vendedoras-${startDate}-a-${endDate}.xlsx`);
+  }, [todasVendedoras, ordenarPor, comissaoPct, startDate, endDate]);
+
   return (
     <div className="w-full flex flex-col items-stretch justify-start py-1 font-barlow">
       {/* ── FILTROS ────────────────────────────────────── */}
@@ -585,6 +620,15 @@ export default function VarejoDesempenho() {
               <span className="ml-auto text-[10px] sm:text-xs text-gray-400 font-barlow hidden sm:inline">
                 Ordenado por <strong>{ORDENAR_POR.find((o) => o.id === ordenarPor)?.label}</strong>
               </span>
+              <button
+                onClick={exportarExcel}
+                disabled={todasVendedoras.length === 0}
+                title="Exportar ranking completo para Excel"
+                className="ml-auto sm:ml-3 flex items-center gap-1 bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-2.5 py-1 rounded-lg text-[10px] sm:text-xs font-bold transition-colors font-barlow"
+              >
+                <DownloadSimple size={13} weight="bold" />
+                Excel
+              </button>
             </div>
 
             {/* Header desktop */}
