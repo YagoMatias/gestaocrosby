@@ -563,16 +563,26 @@ const ContasAPagar = (props) => {
         }));
 
       if (chaves.length > 0) {
-        const { data: jaExistentes } = await supabase
-          .from('pagamentos_liberacao')
-          .select(
-            'nr_duplicata, cd_empresa, nr_parcela, status, cd_fornecedor, dt_vencimento',
-          )
-          .in(
-            'nr_duplicata',
-            chaves.map((c) => c.nr_duplicata),
-          )
-          .not('status', 'eq', 'CANCELADO');
+        // Supabase corta cada consulta em 1000 linhas — pagina até o fim, senão
+        // um conflito real pode passar despercebido e o título ser duplicado.
+        const PAGE = 1000;
+        const jaExistentes = [];
+        for (let from = 0; ; from += PAGE) {
+          const { data: pagina } = await supabase
+            .from('pagamentos_liberacao')
+            .select(
+              'nr_duplicata, cd_empresa, nr_parcela, status, cd_fornecedor, dt_vencimento',
+            )
+            .in(
+              'nr_duplicata',
+              chaves.map((c) => c.nr_duplicata),
+            )
+            .not('status', 'eq', 'CANCELADO')
+            .order('id', { ascending: true })
+            .range(from, from + PAGE - 1);
+          jaExistentes.push(...(pagina || []));
+          if (!pagina || pagina.length < PAGE) break;
+        }
 
         if (jaExistentes && jaExistentes.length > 0) {
           const conflitos = jaExistentes.filter((ex) =>

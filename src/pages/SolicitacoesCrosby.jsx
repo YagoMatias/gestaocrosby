@@ -370,12 +370,22 @@ const SolicitacoesCrosby = () => {
   const carregarSolicitacoes = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabaseAdmin
-        .from('solicitacoes_crosby')
-        .select('*')
-        .order('data_solicitacao', { ascending: false });
-      if (error) throw error;
-      setSolicitacoes(data || []);
+      // O Supabase limita cada consulta a 1000 linhas — busca em páginas até o fim
+      // para as solicitações antigas não sumirem quando a tabela crescer.
+      const PAGE = 1000;
+      const todas = [];
+      for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabaseAdmin
+          .from('solicitacoes_crosby')
+          .select('*')
+          .order('data_solicitacao', { ascending: false })
+          .order('id', { ascending: true })
+          .range(from, from + PAGE - 1);
+        if (error) throw error;
+        todas.push(...(data || []));
+        if (!data || data.length < PAGE) break;
+      }
+      setSolicitacoes(todas);
     } catch (err) {
       console.error('Erro ao carregar solicitações:', err);
       notify('error', 'Erro ao carregar solicitações.');
