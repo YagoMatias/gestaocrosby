@@ -915,18 +915,26 @@ const SolicitacoesCrosby = () => {
       const vlDup = Number(sol.valor_total || 0);
       const nmForn = sol.supplier_name || null;
 
+      // Busca candidatos pela duplicata + vencimento (ignorando cancelados) e
+      // considera conflito se o valor OU o nome do fornecedor baterem — a linha
+      // enviada pelo Contas a Pagar usa o nome do TOTVS, que pode diferir do
+      // digitado no formulário.
       let qry = supabaseAdmin
         .from('pagamentos_liberacao')
-        .select('id', { count: 'exact', head: true });
+        .select('id, nm_fornecedor, vl_duplicata, status')
+        .not('status', 'eq', 'CANCELADO');
       if (nrDup) qry = qry.eq('nr_duplicata', nrDup);
       else qry = qry.is('nr_duplicata', null);
-      if (nmForn) qry = qry.eq('nm_fornecedor', nmForn);
-      else qry = qry.is('nm_fornecedor', null);
       if (dtVenc) qry = qry.eq('dt_vencimento', dtVenc);
       else qry = qry.is('dt_vencimento', null);
-      qry = qry.eq('vl_duplicata', vlDup);
-      const { count: jaExiste } = await qry;
-      if (jaExiste > 0) {
+      const { data: candidatos } = await qry;
+      const norm = (s) => String(s || '').trim().toUpperCase();
+      const jaExiste = (candidatos || []).some(
+        (ex) =>
+          Math.abs(Number(ex.vl_duplicata || 0) - vlDup) < 0.005 ||
+          (nmForn && norm(ex.nm_fornecedor) === norm(nmForn)),
+      );
+      if (jaExiste) {
         notify(
           'error',
           `Duplicata ${nrDup || '--'} do fornecedor ${nmForn || '--'} (venc. ${dtVenc || '--'}, R$ ${vlDup.toFixed(2)}) já existe na Liberação de Pagamento.`,
