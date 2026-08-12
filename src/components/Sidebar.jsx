@@ -153,6 +153,13 @@ const financeiro = [
         roles: ['owner', 'admin', 'manager', 'user'],
       },
       {
+        name: 'Renegociações',
+        href: '/renegociacoes',
+        icon: Handshake,
+        color: 'text-red-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
         name: 'Liberação de Pagamento',
         href: '/liberacao-pagamento',
         icon: CheckCircle,
@@ -200,6 +207,13 @@ const financeiro = [
         name: 'Dashboard Inadimplência',
         href: '/dash-inadimplencia',
         icon: ChartBar,
+        color: 'text-red-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
+        name: 'Metas Inadimplência',
+        href: '/metas-inadimplencia',
+        icon: Target,
         color: 'text-red-600',
         roles: ['owner', 'admin', 'manager', 'user'],
       },
@@ -702,6 +716,12 @@ const recuperacaoCredito = [
     name: 'Dashboard Inadimplência',
     href: '/dash-inadimplencia',
     icon: ChartBar,
+    color: 'text-red-600',
+  },
+  {
+    name: 'Metas Inadimplência',
+    href: '/metas-inadimplencia',
+    icon: Target,
     color: 'text-red-600',
   },
   {
