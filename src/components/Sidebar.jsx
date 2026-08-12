@@ -50,6 +50,7 @@ import {
   Coins,
   Briefcase,
   IdentificationBadge,
+  Gavel,
 } from '@phosphor-icons/react';
 
 // Componentes de ícones modernos
@@ -735,6 +736,12 @@ const recuperacaoCredito = [
     href: '/inadimplentes-franquias',
     icon: Users,
     color: 'text-amber-600',
+  },
+  {
+    name: 'Esteira de Protesto',
+    href: '/esteira-protesto',
+    icon: Gavel,
+    color: 'text-red-700',
   },
 ];
 

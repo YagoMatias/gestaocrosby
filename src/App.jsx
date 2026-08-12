@@ -57,6 +57,7 @@ const DashContasAReceber = lazy(() => import('./pages/DashContasAReceber'));
 const DashContasAPagar = lazy(() => import('./pages/DashContasAPagar'));
 const DashInadimplencia = lazy(() => import('./pages/DashInadimplencia'));
 const MetasInadimplencia = lazy(() => import('./pages/MetasInadimplencia'));
+const EsteiraProtesto = lazy(() => import('./pages/EsteiraProtesto'));
 const DashboardVarejo = lazy(() => import('./pages/DashboardVarejo'));
 const InadimplentesMultimarcas = lazy(
   () => import('./pages/InadimplentesMultimarcas'),
@@ -184,6 +185,7 @@ const protectedRoutes = [
   { path: '/dash-contas-a-receber', component: DashContasAReceber },
   { path: '/dash-inadimplencia', component: DashInadimplencia },
   { path: '/metas-inadimplencia', component: MetasInadimplencia },
+  { path: '/esteira-protesto', component: EsteiraProtesto },
   { path: '/pmr', component: PMR },
   { path: '/home', component: Home },
   { path: '/contas-a-pagar', component: ContasAPagar },

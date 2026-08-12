@@ -63,6 +63,7 @@ import {
   Image,
   X,
   Spinner,
+  Gavel,
 } from '@phosphor-icons/react';
 
 // Registrar componentes do Chart.js
@@ -150,6 +151,11 @@ const InadimplentesMultimarcas = () => {
 
   // Estado para alternar entre LISTA e DASHBOARD
   const [viewMode, setViewMode] = useState('lista');
+
+  // Títulos já enviados para a Esteira de Protesto
+  const [protestos, setProtestos] = useState([]);
+  const [modalProtestosAberto, setModalProtestosAberto] = useState(false);
+  const [clienteProtestos, setClienteProtestos] = useState(null);
 
   // Estados para timeline (evolução)
   const [timeline, setTimeline] = useState([]);
@@ -1768,6 +1774,178 @@ Crosby`;
     setDadosCartaoBaixa({ bandeira: '', autorizacao: '', nsu: '' });
   };
 
+  // === Esteira de Protesto ===
+  // Envia a fatura para a página /esteira-protesto (tabela esteira_protesto).
+  // A unique (cd_empresa, nr_fat, nr_parcela) barra envio duplicado.
+  const [enviandoProtesto, setEnviandoProtesto] = useState(null);
+
+  // Chave única do título. Normaliza para número porque o TOTVS devolve
+  // nr_fat como number e o Supabase pode devolver o NUMERIC como string.
+  const chaveProtesto = (cdEmpresa, nrFat, nrParcela) =>
+    `${Number(cdEmpresa)}-${Number(nrFat)}-${Number(nrParcela || 1)}`;
+
+  const chaveFatura = (fatura) =>
+    chaveProtesto(
+      fatura.cd_empresa,
+      fatura.nr_fat || fatura.nr_fatura,
+      fatura.nr_parcela,
+    );
+
+  // Títulos já enviados para a esteira, para travar o botão e marcar
+  // os clientes que têm protesto na tabela principal.
+  const carregarProtestos = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('esteira_protesto')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      setProtestos(data || []);
+    } catch (err) {
+      console.error('Erro ao carregar protestos:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    carregarProtestos();
+  }, [carregarProtestos]);
+
+  const faturasProtestadas = useMemo(
+    () =>
+      new Set(
+        protestos.map((p) =>
+          chaveProtesto(p.cd_empresa, p.nr_fat, p.nr_parcela),
+        ),
+      ),
+    [protestos],
+  );
+
+  const protestosPorCliente = useMemo(() => {
+    const mapa = {};
+    protestos.forEach((p) => {
+      const key = String(p.cd_cliente);
+      if (!mapa[key]) mapa[key] = [];
+      mapa[key].push(p);
+    });
+    return mapa;
+  }, [protestos]);
+
+  // Regras de protesto: só título do portador SICREDI (748) e vencido
+  // há mais de 29 dias (ou seja, a partir de 30 dias de atraso).
+  const PORTADOR_PROTESTO = 748;
+  const DIAS_MIN_PROTESTO = 29;
+
+  const diasAtrasoFatura = (dtVencimento) => {
+    if (!dtVencimento) return 0;
+    const [datePart] = String(dtVencimento).split('T');
+    const [y, m, d] = datePart.split('-').map((n) => parseInt(n, 10));
+    if (!y || !m || !d) return 0;
+    const venc = new Date(y, m - 1, d);
+    venc.setHours(0, 0, 0, 0);
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    return Math.floor((hoje - venc) / (1000 * 60 * 60 * 24));
+  };
+
+  const elegibilidadeProtesto = (fatura) => {
+    if (faturasProtestadas.has(chaveFatura(fatura))) {
+      return { protestado: true, ok: false, motivo: 'Título já protestado' };
+    }
+    if (Number(fatura.cd_portador) !== PORTADOR_PROTESTO) {
+      return {
+        protestado: false,
+        ok: false,
+        motivo: `Só é possível protestar títulos do portador SICREDI (${PORTADOR_PROTESTO}). Este está em ${fatura.nm_portador || fatura.cd_portador || 'portador não informado'}.`,
+      };
+    }
+    const atraso = diasAtrasoFatura(fatura.dt_vencimento);
+    if (atraso <= DIAS_MIN_PROTESTO) {
+      return {
+        protestado: false,
+        ok: false,
+        motivo:
+          atraso > 0
+            ? `Vencido há ${atraso} dia(s) — o protesto exige mais de ${DIAS_MIN_PROTESTO} dias de atraso.`
+            : `Título ainda não vencido — o protesto exige mais de ${DIAS_MIN_PROTESTO} dias de atraso.`,
+      };
+    }
+    return { protestado: false, ok: true, motivo: '' };
+  };
+
+  const abrirModalProtestos = (cliente, e) => {
+    e.stopPropagation();
+    setClienteProtestos(cliente);
+    setModalProtestosAberto(true);
+  };
+
+  const fecharModalProtestos = () => {
+    setModalProtestosAberto(false);
+    setClienteProtestos(null);
+  };
+
+  const enviarParaProtesto = async (fatura) => {
+    const chave = chaveFatura(fatura);
+    setEnviandoProtesto(chave);
+    try {
+      const { error } = await supabaseAdmin.from('esteira_protesto').insert({
+        cd_empresa: fatura.cd_empresa,
+        cd_cliente: String(fatura.cd_cliente),
+        nm_cliente:
+          clienteSelecionado?.nm_cliente || fatura.nm_cliente || '',
+        // Documento vem do próprio título (customerCpfCnpj do TOTVS);
+        // é o que o operador usa para protestar no banco.
+        nr_cpfcnpj: fatura.nr_cpfcnpj || null,
+        nr_fat: fatura.nr_fat || fatura.nr_fatura,
+        nr_parcela: fatura.nr_parcela || 1,
+        vl_fatura: parseFloat(fatura.vl_fatura) || 0,
+        vl_juros: parseFloat(fatura.vl_juros) || 0,
+        dt_vencimento: fatura.dt_vencimento
+          ? String(fatura.dt_vencimento).split('T')[0]
+          : null,
+        dt_emissao: fatura.dt_emissao
+          ? String(fatura.dt_emissao).split('T')[0]
+          : null,
+        cd_portador: fatura.cd_portador || null,
+        nm_portador: fatura.nm_portador || null,
+        // Identificador do título no banco — vai no aviso ao cliente
+        nosso_numero: fatura.nosso_numero || null,
+        status: 'pendente',
+        user_id: user?.id || null,
+        user_nome: user?.name || 'Usuário',
+        user_email: user?.email || '',
+      });
+
+      if (error) {
+        // 23505 = violação da unique — a fatura já está na esteira
+        if (error.code === '23505') {
+          setNotification({
+            type: 'error',
+            message: 'Esta fatura já está na Esteira de Protesto.',
+          });
+        } else {
+          throw new Error(error.message);
+        }
+      } else {
+        setNotification({
+          type: 'success',
+          message: 'Fatura enviada para a Esteira de Protesto!',
+        });
+      }
+      // Recarrega para travar o botão e marcar o cliente com "P"
+      await carregarProtestos();
+      setTimeout(() => setNotification(null), 4000);
+    } catch (error) {
+      console.error('Erro ao enviar para protesto:', error);
+      setNotification({
+        type: 'error',
+        message: `Erro ao enviar para protesto: ${error.message}`,
+      });
+      setTimeout(() => setNotification(null), 5000);
+    } finally {
+      setEnviandoProtesto(null);
+    }
+  };
+
   const handleComprovanteChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -2657,7 +2835,7 @@ Crosby`;
                             )}
                           </div>
                         </th>
-                        <th className="px-4 py-3">Observações</th>
+                        <th className="px-4 py-3">Protesto</th>
                         <th className="px-4 py-3">Contato</th>
                       </tr>
                     </thead>
@@ -2752,19 +2930,29 @@ Crosby`;
                                 </span>
                               )}
                             </td>
-                            {/* Coluna Observações */}
+                            {/* Coluna Protesto: só aparece para quem tem
+                                título na Esteira de Protesto */}
                             <td
                               className="px-4 py-3"
                               onClick={(e) => e.stopPropagation()}
                             >
-                              <button
-                                onClick={(e) =>
-                                  abrirModalObservacoes(cliente, e)
-                                }
-                                className="bg-[#000638] hover:bg-[#fe0000] text-white text-xs font-medium px-3 py-1 rounded transition-colors"
-                              >
-                                OBS
-                              </button>
+                              {(protestosPorCliente[
+                                String(cliente.cd_cliente)
+                              ]?.length || 0) > 0 ? (
+                                <button
+                                  onClick={(e) =>
+                                    abrirModalProtestos(cliente, e)
+                                  }
+                                  className="bg-green-600 hover:bg-green-700 text-white text-xs font-bold w-7 h-7 rounded-full transition-colors"
+                                  title={`${protestosPorCliente[String(cliente.cd_cliente)].length} título(s) em protesto — clique para ver`}
+                                >
+                                  P
+                                </button>
+                              ) : (
+                                <span className="text-xs text-gray-300">
+                                  --
+                                </span>
+                              )}
                             </td>
                             {/* Coluna Contato */}
                             <td
@@ -2895,7 +3083,122 @@ Crosby`;
         </div>
       )}
 
-      {/* Modal de Observações */}
+      {/* Modal de Títulos em Protesto do cliente */}
+      {modalProtestosAberto && clienteProtestos && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-lg max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center gap-2">
+                <Gavel size={22} className="text-green-600" weight="bold" />
+                <div>
+                  <h3 className="text-lg font-bold text-[#000638]">
+                    Títulos em Protesto
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    {clienteProtestos.nm_cliente} · Cód.{' '}
+                    {clienteProtestos.cd_cliente}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={fecharModalProtestos}
+                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"
+                aria-label="Fechar"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Lista */}
+            <div className="flex-1 overflow-auto px-6 py-4">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="text-xs text-white uppercase bg-green-600">
+                    <tr>
+                      <th className="px-4 py-3">Empresa</th>
+                      <th className="px-4 py-3">Fatura</th>
+                      <th className="px-4 py-3">Emissão</th>
+                      <th className="px-4 py-3">Vencimento</th>
+                      <th className="px-4 py-3">Atraso</th>
+                      <th className="px-4 py-3">Valor</th>
+                      <th className="px-4 py-3">Portador</th>
+                      <th className="px-4 py-3">Enviado por</th>
+                      <th className="px-4 py-3">Enviado em</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(
+                      protestosPorCliente[
+                        String(clienteProtestos.cd_cliente)
+                      ] || []
+                    ).map((p) => (
+                      <tr
+                        key={p.id}
+                        className="border-b border-gray-100 hover:bg-gray-50"
+                      >
+                        <td className="px-4 py-3">{p.cd_empresa}</td>
+                        <td className="px-4 py-3 font-semibold text-[#000638]">
+                          {p.nr_fat}/{p.nr_parcela}
+                        </td>
+                        <td className="px-4 py-3">
+                          {formatarData(p.dt_emissao)}
+                        </td>
+                        <td className="px-4 py-3">
+                          {formatarData(p.dt_vencimento)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="bg-red-100 text-red-800 text-xs font-medium px-2 py-1 rounded">
+                            {diasAtrasoFatura(p.dt_vencimento)} dias
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 font-semibold">
+                          {formatarMoeda(parseFloat(p.vl_fatura) || 0)}
+                        </td>
+                        <td className="px-4 py-3 text-xs">
+                          <span className="bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded font-medium">
+                            {p.nm_portador || p.cd_portador || '--'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-600">
+                          {p.user_nome || p.user_email || '--'}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-600">
+                          {p.created_at
+                            ? new Date(p.created_at).toLocaleDateString('pt-BR')
+                            : '--'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Rodapé */}
+            <div className="px-6 py-4 border-t border-gray-200 flex justify-between items-center">
+              <span className="text-sm font-bold text-[#000638]">
+                Total:{' '}
+                {formatarMoeda(
+                  (
+                    protestosPorCliente[String(clienteProtestos.cd_cliente)] ||
+                    []
+                  ).reduce((a, p) => a + (parseFloat(p.vl_fatura) || 0), 0),
+                )}
+              </span>
+              <button
+                onClick={fecharModalProtestos}
+                className="px-4 py-2 bg-[#000638] text-white rounded hover:bg-[#fe0000] transition-colors"
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Observações — sem gatilho na tela desde que o botão OBS
+          foi trocado pelo "P" de protesto. Mantido para reaproveitamento. */}
       {modalObservacoesAberto && clienteObservacoes && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
           <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-hidden mx-4 flex flex-col">
@@ -3265,17 +3568,62 @@ Crosby`;
                             </span>
                           </td>
                           <td className="px-4 py-3 text-center">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                abrirModalBaixa(fatura);
-                              }}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-[#000638] hover:bg-[#fe0000] rounded-lg transition-colors"
-                              title="Enviar para solicitação de baixa"
-                            >
-                              <PaperPlaneRight size={12} weight="bold" />
-                              Baixa
-                            </button>
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  abrirModalBaixa(fatura);
+                                }}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-[#000638] hover:bg-[#fe0000] rounded-lg transition-colors"
+                                title="Enviar para solicitação de baixa"
+                              >
+                                <PaperPlaneRight size={12} weight="bold" />
+                                Baixa
+                              </button>
+                              {(() => {
+                                const eleg = elegibilidadeProtesto(fatura);
+                                const enviando =
+                                  enviandoProtesto === chaveFatura(fatura);
+
+                                if (eleg.protestado) {
+                                  return (
+                                    <span
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-green-800 bg-green-100 border border-green-300 rounded-lg cursor-default"
+                                      title="Título já enviado para a Esteira de Protesto"
+                                    >
+                                      <CheckCircle size={12} weight="bold" />
+                                      PROTESTADO
+                                    </span>
+                                  );
+                                }
+
+                                return (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      enviarParaProtesto(fatura);
+                                    }}
+                                    disabled={enviando || !eleg.ok}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-white bg-red-700 hover:bg-red-800 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed rounded-lg transition-colors"
+                                    title={
+                                      eleg.ok
+                                        ? 'Enviar para a Esteira de Protesto'
+                                        : eleg.motivo
+                                    }
+                                  >
+                                    {enviando ? (
+                                      <CircleNotch
+                                        size={12}
+                                        className="animate-spin"
+                                      />
+                                    ) : (
+                                      <Gavel size={12} weight="bold" />
+                                    )}
+                                    Protestar
+                                  </button>
+                                );
+                              })()}
+                            </div>
                           </td>
                         </tr>
                       ))
@@ -3405,6 +3753,8 @@ Crosby`;
                               </span>
                             </td>
                             <td className="px-4 py-3 text-center">
+                              {/* Sem "Protestar" aqui: título a vencer nunca
+                                  atende a regra de +29 dias de atraso */}
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();

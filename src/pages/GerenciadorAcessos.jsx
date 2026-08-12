@@ -131,6 +131,11 @@ const AVAILABLE_PAGES = [
     name: 'Metas Inadimplência',
     category: 'Financeiro',
   },
+  {
+    path: '/esteira-protesto',
+    name: 'Esteira de Protesto',
+    category: 'Financeiro',
+  },
   { path: '/pmr', name: 'PMR', category: 'Financeiro' },
   {
     path: '/solicitacao-baixa',
