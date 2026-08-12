@@ -1,16 +1,16 @@
-import React, { useEffect, useState, useMemo, memo, useCallback } from 'react';
-import * as XLSX from 'xlsx';
-import { saveAs } from 'file-saver';
-import { supabase } from '../lib/supabase';
-import { TotvsURL } from '../config/constants';
+import React, { useEffect, useState, useMemo, memo, useCallback } from "react";
+import * as XLSX from "xlsx";
+import { saveAs } from "file-saver";
+import { supabase } from "../lib/supabase";
+import { TotvsURL } from "../config/constants";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '../components/ui/cards';
-import PageTitle from '../components/ui/PageTitle';
+} from "../components/ui/cards";
+import PageTitle from "../components/ui/PageTitle";
 import {
   Warning,
   ChartBar,
@@ -30,7 +30,7 @@ import {
   ArrowDown,
   WhatsappLogo,
   Clock,
-} from '@phosphor-icons/react';
+} from "@phosphor-icons/react";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -43,9 +43,9 @@ import {
   PointElement,
   LineElement,
   Filler,
-} from 'chart.js';
-import ChartDataLabels from 'chartjs-plugin-datalabels';
-import { Bar, Doughnut, Line } from 'react-chartjs-2';
+} from "chart.js";
+import ChartDataLabels from "chartjs-plugin-datalabels";
+import { Bar, Doughnut, Line } from "react-chartjs-2";
 
 ChartJS.register(
   CategoryScale,
@@ -62,11 +62,29 @@ ChartJS.register(
 );
 
 const formatCurrency = (value) =>
-  (value || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  (value || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+// Cliente com linha própria na matriz de canais (não entra em Franquia/MTM/Outro)
+const CLIENTE_LINHA_PROPRIA = {
+  codigo: "29541",
+  label: "Crosby Shopping Recife",
+};
+
+const ORDEM_CANAIS = ["Franquia", "MTM", CLIENTE_LINHA_PROPRIA.label, "Outro"];
+
+// Define em qual linha da matriz o título entra
+const getCanalLinha = (item) => {
+  if (String(item.cd_cliente).trim() === CLIENTE_LINHA_PROPRIA.codigo) {
+    return CLIENTE_LINHA_PROPRIA.label;
+  }
+  if (item.canal === "FRQ") return "Franquia";
+  if (item.canal === "MTM") return "MTM";
+  return "Outro";
+};
 
 const getCarteiraEfetiva = (item) => {
-  const portador = (item.nm_portador || '').toUpperCase();
-  if (portador.includes('SAFRA') || portador.includes('DALILA')) return 2;
+  const portador = (item.nm_portador || "").toUpperCase();
+  if (portador.includes("SAFRA") || portador.includes("DALILA")) return 2;
   return parseInt(item.tp_cobranca) || 0;
 };
 
@@ -74,7 +92,7 @@ const parseDateNoTZ = (isoDate) => {
   if (!isoDate) return null;
   try {
     const str = String(isoDate).substring(0, 10);
-    const [y, m, d] = str.split('-').map(Number);
+    const [y, m, d] = str.split("-").map(Number);
     return new Date(y, m - 1, d);
   } catch {
     return null;
@@ -87,26 +105,26 @@ const isTituloPago = (item) => {
 };
 
 const CORES = [
-  '#000638',
-  '#fe0000',
-  '#3b82f6',
-  '#10b981',
-  '#f59e0b',
-  '#8b5cf6',
-  '#ec4899',
-  '#06b6d4',
-  '#84cc16',
-  '#f97316',
-  '#6366f1',
-  '#14b8a6',
-  '#e11d48',
-  '#0ea5e9',
-  '#a855f7',
-  '#22c55e',
-  '#facc15',
-  '#be185d',
-  '#0d9488',
-  '#7c3aed',
+  "#000638",
+  "#fe0000",
+  "#3b82f6",
+  "#10b981",
+  "#f59e0b",
+  "#8b5cf6",
+  "#ec4899",
+  "#06b6d4",
+  "#84cc16",
+  "#f97316",
+  "#6366f1",
+  "#14b8a6",
+  "#e11d48",
+  "#0ea5e9",
+  "#a855f7",
+  "#22c55e",
+  "#facc15",
+  "#be185d",
+  "#0d9488",
+  "#7c3aed",
 ];
 
 const DashInadimplencia = memo(() => {
@@ -124,15 +142,15 @@ const DashInadimplencia = memo(() => {
     setLoadingTimeline(true);
     try {
       const { data, error } = await supabase
-        .from('inadimplencia_timeline')
+        .from("inadimplencia_timeline")
         .select(
-          'data, valor_total, qtd_titulos, qtd_clientes, valor_multimarcas, valor_franquias, qtd_titulos_multimarcas, qtd_titulos_franquias, qtd_clientes_multimarcas, qtd_clientes_franquias',
+          "data, valor_total, qtd_titulos, qtd_clientes, valor_multimarcas, valor_franquias, qtd_titulos_multimarcas, qtd_titulos_franquias, qtd_clientes_multimarcas, qtd_clientes_franquias",
         )
-        .order('data', { ascending: true });
+        .order("data", { ascending: true });
       if (error) throw error;
       setTimeline(data || []);
     } catch (err) {
-      console.error('Erro ao carregar timeline:', err);
+      console.error("Erro ao carregar timeline:", err);
     } finally {
       setLoadingTimeline(false);
     }
@@ -141,8 +159,8 @@ const DashInadimplencia = memo(() => {
   const salvarTimelineHoje = useCallback(
     async (valorTotal, qtdTitulos, qtdClientes, extras = {}) => {
       try {
-        const hoje = new Date().toISOString().split('T')[0];
-        const { error } = await supabase.from('inadimplencia_timeline').upsert(
+        const hoje = new Date().toISOString().split("T")[0];
+        const { error } = await supabase.from("inadimplencia_timeline").upsert(
           {
             data: hoje,
             valor_total: valorTotal,
@@ -156,13 +174,13 @@ const DashInadimplencia = memo(() => {
             qtd_clientes_franquias: extras.qtdClientesFranquias || 0,
             updated_at: new Date().toISOString(),
           },
-          { onConflict: 'data' },
+          { onConflict: "data" },
         );
         if (error) throw error;
-        console.log('✅ Timeline salva para', hoje);
+        console.log("✅ Timeline salva para", hoje);
         await carregarTimeline();
       } catch (err) {
-        console.error('Erro ao salvar timeline:', err);
+        console.error("Erro ao salvar timeline:", err);
       }
     },
     [carregarTimeline],
@@ -172,13 +190,13 @@ const DashInadimplencia = memo(() => {
   const buscarDados = useCallback(async () => {
     setLoading(true);
     try {
-      const dataIni = '2024-04-01';
-      const dataFim = new Date().toISOString().split('T')[0];
+      const dataIni = "2024-04-01";
+      const dataFim = new Date().toISOString().split("T")[0];
 
       // ============================================================
       // PASSO 1: Buscar clientes MULTIMARCAS e FRANQUIAS em paralelo
       // ============================================================
-      console.log('🔍 Buscando clientes multimarcas e franquias...');
+      console.log("🔍 Buscando clientes multimarcas e franquias...");
       const [respMultimarcas, respFranquias] = await Promise.all([
         fetch(`${TotvsURL}multibrand-clients`),
         fetch(`${TotvsURL}franchise-clients`),
@@ -190,7 +208,7 @@ const DashInadimplencia = memo(() => {
         const resultMtm = await respMultimarcas.json();
         const multimarcas = resultMtm.data || [];
         multimarcas.forEach((m) => {
-          clientesMap[String(m.code)] = { ...m, canal: 'MTM' };
+          clientesMap[String(m.code)] = { ...m, canal: "MTM" };
         });
         console.log(`📋 ${multimarcas.length} clientes multimarcas`);
       }
@@ -199,20 +217,20 @@ const DashInadimplencia = memo(() => {
         const resultFrq = await respFranquias.json();
         const franquias = resultFrq.data || [];
         franquias.forEach((f) => {
-          clientesMap[String(f.code)] = { ...f, canal: 'FRQ' };
+          clientesMap[String(f.code)] = { ...f, canal: "FRQ" };
         });
         console.log(`📋 ${franquias.length} clientes franquias`);
       }
 
       const todosCodigosCanais = Object.keys(clientesMap);
       if (todosCodigosCanais.length === 0) {
-        console.warn('⚠️ Nenhum cliente multimarcas/franquia encontrado.');
+        console.warn("⚠️ Nenhum cliente multimarcas/franquia encontrado.");
         setDados([]);
         setDadosCarregados(true);
         return;
       }
 
-      const codigosParam = todosCodigosCanais.join(',');
+      const codigosParam = todosCodigosCanais.join(",");
       console.log(
         `📋 Total: ${todosCodigosCanais.length} clientes (MTM + FRQ)`,
       );
@@ -223,13 +241,13 @@ const DashInadimplencia = memo(() => {
       const params = new URLSearchParams({
         dt_inicio: dataIni,
         dt_fim: dataFim,
-        modo: 'vencimento',
-        situacao: '1',
-        status: 'Vencido',
+        modo: "vencimento",
+        situacao: "1",
+        status: "Vencido",
         cd_cliente: codigosParam,
       });
 
-      console.log('🔍 Buscando inadimplentes (MTM + FRQ) via TOTVS...');
+      console.log("🔍 Buscando inadimplentes (MTM + FRQ) via TOTVS...");
       const response = await fetch(
         `${TotvsURL}accounts-receivable/filter?${params.toString()}`,
       );
@@ -240,7 +258,7 @@ const DashInadimplencia = memo(() => {
 
       // Filtrar apenas tp_documento = 1 (FATURA)
       const faturasFiltradas = items.filter(
-        (item) => item.tp_documento === 1 || item.tp_documento === '1',
+        (item) => item.tp_documento === 1 || item.tp_documento === "1",
       );
       console.log(
         `📊 Faturas vencidas: ${items.length}, após filtro FATURA: ${faturasFiltradas.length}`,
@@ -260,8 +278,8 @@ const DashInadimplencia = memo(() => {
           for (let i = 0; i < codigosClientes.length; i += batchSize) {
             const batch = codigosClientes.slice(i, i + batchSize);
             const resp = await fetch(`${TotvsURL}persons/batch-lookup`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ personCodes: batch }),
             });
             if (resp.ok) {
@@ -276,7 +294,7 @@ const DashInadimplencia = memo(() => {
             `👤 ${Object.keys(pessoasMap).length} clientes enriquecidos`,
           );
         } catch (err) {
-          console.warn('⚠️ Erro ao buscar dados de pessoas:', err.message);
+          console.warn("⚠️ Erro ao buscar dados de pessoas:", err.message);
         }
       }
 
@@ -295,10 +313,10 @@ const DashInadimplencia = memo(() => {
             pessoa.fantasyName ||
             canalInfo.fantasyName ||
             item.nm_fantasia ||
-            '',
-          nr_telefone: pessoa.phone || '',
-          ds_uf: pessoa.uf || item.ds_uf || '',
-          canal: canalInfo.canal || '',
+            "",
+          nr_telefone: pessoa.phone || "",
+          ds_uf: pessoa.uf || item.ds_uf || "",
+          canal: canalInfo.canal || "",
         };
       });
 
@@ -324,8 +342,8 @@ const DashInadimplencia = memo(() => {
           const clientes = new Set(itens.map((i) => i.cd_cliente)).size;
           return { valor, titulos, clientes };
         };
-        const mtm = calcCanal('MTM');
-        const frq = calcCanal('FRQ');
+        const mtm = calcCanal("MTM");
+        const frq = calcCanal("FRQ");
         const totalInadimplencia = dadosEnriquecidos
           .filter((i) => !isTituloPago(i))
           .reduce(
@@ -352,7 +370,7 @@ const DashInadimplencia = memo(() => {
         );
       }
     } catch (err) {
-      console.error('Erro ao buscar dados:', err);
+      console.error("Erro ao buscar dados:", err);
       alert(`Erro ao buscar dados: ${err.message}`);
       setDados([]);
       setDadosCarregados(false);
@@ -394,14 +412,14 @@ const DashInadimplencia = memo(() => {
     let carteiraDescontada = { qtd: 0, valor: 0 };
     let vencidosRecentes = { qtd: 0, valor: 0 };
     const faixaMap = {
-      '1-15 dias': 0,
-      '16-30 dias': 0,
-      '31-60 dias': 0,
-      '61-90 dias': 0,
-      '91-120 dias': 0,
-      '121-180 dias': 0,
-      '181-360 dias': 0,
-      '360+ dias': 0,
+      "1-15 dias": 0,
+      "16-30 dias": 0,
+      "31-60 dias": 0,
+      "61-90 dias": 0,
+      "91-120 dias": 0,
+      "121-180 dias": 0,
+      "181-360 dias": 0,
+      "360+ dias": 0,
     };
 
     dados.forEach((item) => {
@@ -431,7 +449,7 @@ const DashInadimplencia = memo(() => {
           nm_cliente: item.nm_fantasia || item.nm_cliente || `Cliente ${cd}`,
           valor: 0,
           qtd: 0,
-          ds_uf: item.ds_uf || '',
+          ds_uf: item.ds_uf || "",
         };
       }
       clienteMap[cd].valor += saldo;
@@ -439,7 +457,7 @@ const DashInadimplencia = memo(() => {
 
       // Por portador
       const portadorNome =
-        item.nm_portador || `Portador ${item.cd_portador || 'N/I'}`;
+        item.nm_portador || `Portador ${item.cd_portador || "N/I"}`;
       if (!portadorMap[portadorNome])
         portadorMap[portadorNome] = { valor: 0, qtd: 0 };
       portadorMap[portadorNome].valor += saldo;
@@ -458,14 +476,14 @@ const DashInadimplencia = memo(() => {
       // Faixa de dias
       if (dv) {
         const diff = Math.floor((hoje - dv) / (1000 * 60 * 60 * 24));
-        if (diff <= 15) faixaMap['1-15 dias'] += saldo;
-        else if (diff <= 30) faixaMap['16-30 dias'] += saldo;
-        else if (diff <= 60) faixaMap['31-60 dias'] += saldo;
-        else if (diff <= 90) faixaMap['61-90 dias'] += saldo;
-        else if (diff <= 120) faixaMap['91-120 dias'] += saldo;
-        else if (diff <= 180) faixaMap['121-180 dias'] += saldo;
-        else if (diff <= 360) faixaMap['181-360 dias'] += saldo;
-        else faixaMap['360+ dias'] += saldo;
+        if (diff <= 15) faixaMap["1-15 dias"] += saldo;
+        else if (diff <= 30) faixaMap["16-30 dias"] += saldo;
+        else if (diff <= 60) faixaMap["31-60 dias"] += saldo;
+        else if (diff <= 90) faixaMap["61-90 dias"] += saldo;
+        else if (diff <= 120) faixaMap["91-120 dias"] += saldo;
+        else if (diff <= 180) faixaMap["121-180 dias"] += saldo;
+        else if (diff <= 360) faixaMap["181-360 dias"] += saldo;
+        else faixaMap["360+ dias"] += saldo;
       }
     });
 
@@ -518,7 +536,7 @@ const DashInadimplencia = memo(() => {
         agrupado[cd] = {
           cd_cliente: cd,
           nm_cliente: item.nm_fantasia || item.nm_cliente || `Cliente ${cd}`,
-          nr_telefone: item.nr_telefone || '',
+          nr_telefone: item.nr_telefone || "",
           valor_total: 0,
           faturas: [],
         };
@@ -544,30 +562,30 @@ const DashInadimplencia = memo(() => {
 
   // Handler WhatsApp
   const abrirWhatsApp = useCallback((cliente) => {
-    const telefone = cliente.nr_telefone || '';
+    const telefone = cliente.nr_telefone || "";
     if (!telefone) {
-      alert('Telefone não encontrado para este cliente');
+      alert("Telefone não encontrado para este cliente");
       return;
     }
-    const telefoneClean = telefone.replace(/\D/g, '');
+    const telefoneClean = telefone.replace(/\D/g, "");
     if (!telefoneClean) {
-      alert('Telefone não encontrado para este cliente');
+      alert("Telefone não encontrado para este cliente");
       return;
     }
     const listaFaturas = (cliente.faturas || [])
       .map((fatura) => {
-        const numeroFatura = fatura.nr_fatura || 'N/A';
+        const numeroFatura = fatura.nr_fatura || "N/A";
         const vencimento = parseDateNoTZ(fatura.dt_vencimento);
         const vencStr = vencimento
-          ? vencimento.toLocaleDateString('pt-BR')
-          : 'N/A';
+          ? vencimento.toLocaleDateString("pt-BR")
+          : "N/A";
         const valor = formatCurrency(parseFloat(fatura.vl_fatura) || 0);
         return `*Fatura:* ${numeroFatura}\n*Vencimento:* ${vencStr}\n*Valor:* ${valor}`;
       })
-      .join('\n\n');
+      .join("\n\n");
     const mensagem = `Olá, tudo bem? *${cliente.nm_cliente}*\nSomos da área de Recuperação de Créditos da Crosby.\nConsta em nosso sistema a existência de pendências financeiras em aberto em seu cadastro.\nEntramos em contato para alinhar e verificar a melhor forma de regularização.\n\nSegue a lista dos títulos em aberto:\n\n${listaFaturas}\n\n*Observação:* Caso os pagamentos já tenham sido realizados, pedimos gentilmente que desconsidere esta mensagem e se possível nos envie o comprovante para atualização em nosso sistema.\n\nAtenciosamente,\nCrosby`;
     const url = `https://wa.me/55${telefoneClean}?text=${encodeURIComponent(mensagem)}`;
-    window.open(url, '_blank');
+    window.open(url, "_blank");
   }, []);
 
   // Títulos detalhados do portador selecionado
@@ -576,7 +594,7 @@ const DashInadimplencia = memo(() => {
     return dados
       .filter((item) => {
         const portadorNome =
-          item.nm_portador || `Portador ${item.cd_portador || 'N/I'}`;
+          item.nm_portador || `Portador ${item.cd_portador || "N/I"}`;
         if (portadorNome !== portadorSelecionado) return false;
         if (isTituloPago(item)) return false;
         const saldo =
@@ -595,14 +613,14 @@ const DashInadimplencia = memo(() => {
     return {
       labels: metricas.topClientes.map((c) =>
         c.nm_cliente.length > 25
-          ? c.nm_cliente.substring(0, 25) + '…'
+          ? c.nm_cliente.substring(0, 25) + "…"
           : c.nm_cliente,
       ),
       datasets: [
         {
-          label: 'Saldo Inadimplente',
+          label: "Saldo Inadimplente",
           data: metricas.topClientes.map((c) => c.valor),
-          backgroundColor: '#fe0000',
+          backgroundColor: "#fe0000",
           borderRadius: 6,
           borderSkipped: false,
         },
@@ -617,17 +635,17 @@ const DashInadimplencia = memo(() => {
       labels: entries.map(([f]) => f),
       datasets: [
         {
-          label: 'Valor Inadimplente',
+          label: "Valor Inadimplente",
           data: entries.map(([, v]) => v),
           backgroundColor: [
-            '#10b981',
-            '#3b82f6',
-            '#f59e0b',
-            '#f97316',
-            '#ef4444',
-            '#dc2626',
-            '#b91c1c',
-            '#7f1d1d',
+            "#10b981",
+            "#3b82f6",
+            "#f59e0b",
+            "#f97316",
+            "#ef4444",
+            "#dc2626",
+            "#b91c1c",
+            "#7f1d1d",
           ],
           borderRadius: 6,
           borderSkipped: false,
@@ -643,7 +661,7 @@ const DashInadimplencia = memo(() => {
       labels: top10.map((p) => p.nome),
       datasets: [
         {
-          label: 'Valor',
+          label: "Valor",
           data: top10.map((p) => p.valor),
           backgroundColor: CORES.slice(0, top10.length),
           borderRadius: 6,
@@ -657,16 +675,16 @@ const DashInadimplencia = memo(() => {
     if (!metricas.carteiraSimples.valor && !metricas.carteiraDescontada.valor)
       return null;
     return {
-      labels: ['Simples', 'Descontada'],
+      labels: ["Simples", "Descontada"],
       datasets: [
         {
           data: [
             metricas.carteiraSimples.valor,
             metricas.carteiraDescontada.valor,
           ],
-          backgroundColor: ['#3b82f6', '#8b5cf6'],
+          backgroundColor: ["#3b82f6", "#8b5cf6"],
           borderWidth: 2,
-          borderColor: '#fff',
+          borderColor: "#fff",
         },
       ],
     };
@@ -678,20 +696,20 @@ const DashInadimplencia = memo(() => {
       labels: timeline.map((t) => {
         const d = parseDateNoTZ(t.data);
         return d
-          ? d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+          ? d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })
           : t.data;
       }),
       datasets: [
         {
-          label: 'Inadimplência Total',
+          label: "Inadimplência Total",
           data: timeline.map((t) => parseFloat(t.valor_total) || 0),
-          borderColor: '#fe0000',
-          backgroundColor: 'rgba(254, 0, 0, 0.1)',
+          borderColor: "#fe0000",
+          backgroundColor: "rgba(254, 0, 0, 0.1)",
           fill: true,
           tension: 0.3,
           pointRadius: 4,
-          pointBackgroundColor: '#fe0000',
-          pointBorderColor: '#fff',
+          pointBackgroundColor: "#fe0000",
+          pointBorderColor: "#fff",
           pointBorderWidth: 2,
           pointHoverRadius: 7,
         },
@@ -712,33 +730,33 @@ const DashInadimplencia = memo(() => {
       labels: canalData.map((t) => {
         const d = parseDateNoTZ(t.data);
         return d
-          ? d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+          ? d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })
           : t.data;
       }),
       datasets: [
         {
-          label: 'Multimarcas',
+          label: "Multimarcas",
           data: canalData.map((t) => parseFloat(t.valor_multimarcas) || 0),
-          borderColor: '#3b82f6',
-          backgroundColor: 'rgba(59, 130, 246, 0.1)',
+          borderColor: "#3b82f6",
+          backgroundColor: "rgba(59, 130, 246, 0.1)",
           fill: true,
           tension: 0.3,
           pointRadius: 4,
-          pointBackgroundColor: '#3b82f6',
-          pointBorderColor: '#fff',
+          pointBackgroundColor: "#3b82f6",
+          pointBorderColor: "#fff",
           pointBorderWidth: 2,
           pointHoverRadius: 7,
         },
         {
-          label: 'Franquias',
+          label: "Franquias",
           data: canalData.map((t) => parseFloat(t.valor_franquias) || 0),
-          borderColor: '#10b981',
-          backgroundColor: 'rgba(16, 185, 129, 0.1)',
+          borderColor: "#10b981",
+          backgroundColor: "rgba(16, 185, 129, 0.1)",
           fill: true,
           tension: 0.3,
           pointRadius: 4,
-          pointBackgroundColor: '#10b981',
-          pointBorderColor: '#fff',
+          pointBackgroundColor: "#10b981",
+          pointBorderColor: "#fff",
           pointBorderWidth: 2,
           pointHoverRadius: 7,
         },
@@ -750,29 +768,29 @@ const DashInadimplencia = memo(() => {
   const barOptions = (title) => ({
     responsive: true,
     maintainAspectRatio: false,
-    indexAxis: 'y',
+    indexAxis: "y",
     plugins: {
       legend: { display: false },
       datalabels: {
         display: (ctx) => ctx.dataset.data[ctx.dataIndex] > 0,
-        color: '#fff',
-        font: { weight: 'bold', size: 9 },
+        color: "#fff",
+        font: { weight: "bold", size: 9 },
         formatter: (v) => formatCurrency(v),
-        anchor: 'center',
-        align: 'center',
+        anchor: "center",
+        align: "center",
         clip: true,
       },
       tooltip: {
         callbacks: {
           label: (ctx) =>
-            `${ctx.dataset.label || ''}: ${formatCurrency(ctx.raw)}`,
+            `${ctx.dataset.label || ""}: ${formatCurrency(ctx.raw)}`,
         },
       },
     },
     scales: {
       x: {
         ticks: { font: { size: 9 }, callback: (v) => formatCurrency(v) },
-        grid: { color: 'rgba(0,0,0,0.05)' },
+        grid: { color: "rgba(0,0,0,0.05)" },
       },
       y: {
         ticks: { font: { size: 9 } },
@@ -788,11 +806,11 @@ const DashInadimplencia = memo(() => {
       legend: { display: false },
       datalabels: {
         display: (ctx) => ctx.dataset.data[ctx.dataIndex] > 0,
-        color: '#fff',
-        font: { weight: 'bold', size: 9 },
+        color: "#fff",
+        font: { weight: "bold", size: 9 },
         formatter: (v) => formatCurrency(v),
-        anchor: 'center',
-        align: 'center',
+        anchor: "center",
+        align: "center",
         clip: true,
       },
       tooltip: {
@@ -808,7 +826,7 @@ const DashInadimplencia = memo(() => {
       },
       y: {
         ticks: { font: { size: 9 }, callback: (v) => formatCurrency(v) },
-        grid: { color: 'rgba(0,0,0,0.05)' },
+        grid: { color: "rgba(0,0,0,0.05)" },
       },
     },
   };
@@ -818,16 +836,16 @@ const DashInadimplencia = memo(() => {
     maintainAspectRatio: false,
     plugins: {
       legend: {
-        position: 'right',
+        position: "right",
         labels: { font: { size: 11 }, boxWidth: 14, padding: 10 },
       },
       datalabels: {
-        color: '#fff',
-        font: { weight: 'bold', size: 11 },
+        color: "#fff",
+        font: { weight: "bold", size: 11 },
         formatter: (v, ctx) => {
           const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
           const pct = ((v / total) * 100).toFixed(1);
-          return pct > 3 ? `${pct}%` : '';
+          return pct > 3 ? `${pct}%` : "";
         },
       },
       tooltip: {
@@ -845,11 +863,11 @@ const DashInadimplencia = memo(() => {
       legend: { display: false },
       datalabels: {
         display: true,
-        color: '#000638',
-        font: { weight: 'bold', size: 10 },
+        color: "#000638",
+        font: { weight: "bold", size: 10 },
         formatter: (v) => formatCurrency(v),
-        anchor: 'end',
-        align: 'top',
+        anchor: "end",
+        align: "top",
         offset: 4,
       },
       tooltip: {
@@ -865,7 +883,7 @@ const DashInadimplencia = memo(() => {
       },
       y: {
         ticks: { font: { size: 10 }, callback: (v) => formatCurrency(v) },
-        grid: { color: 'rgba(0,0,0,0.05)' },
+        grid: { color: "rgba(0,0,0,0.05)" },
       },
     },
   };
@@ -876,16 +894,16 @@ const DashInadimplencia = memo(() => {
     plugins: {
       legend: {
         display: true,
-        position: 'top',
+        position: "top",
         labels: { font: { size: 11 }, boxWidth: 14, padding: 12 },
       },
       datalabels: {
         display: true,
-        color: (ctx) => (ctx.datasetIndex === 0 ? '#3b82f6' : '#10b981'),
-        font: { weight: 'bold', size: 9 },
+        color: (ctx) => (ctx.datasetIndex === 0 ? "#3b82f6" : "#10b981"),
+        font: { weight: "bold", size: 9 },
         formatter: (v) => formatCurrency(v),
-        anchor: 'end',
-        align: 'top',
+        anchor: "end",
+        align: "top",
         offset: 4,
       },
       tooltip: {
@@ -901,10 +919,117 @@ const DashInadimplencia = memo(() => {
       },
       y: {
         ticks: { font: { size: 10 }, callback: (v) => formatCurrency(v) },
-        grid: { color: 'rgba(0,0,0,0.05)' },
+        grid: { color: "rgba(0,0,0,0.05)" },
       },
     },
   };
+
+  // ======================== MATRIZ CANAL x ANO ========================
+  // Saldo em aberto por canal (Franquia / MTM) e ano (emissão ou vencimento)
+  const [tipoDataMatriz, setTipoDataMatriz] = useState("vencimento");
+  const [canalMatrizSelecionado, setCanalMatrizSelecionado] = useState(null);
+  const [clienteMatrizSelecionado, setClienteMatrizSelecionado] =
+    useState(null);
+
+  const matrizCanalAno = useMemo(() => {
+    const linhas = {};
+    const anosSet = new Set();
+    dados.forEach((item) => {
+      if (isTituloPago(item)) return;
+      const saldo =
+        (parseFloat(item.vl_fatura) || 0) - (parseFloat(item.vl_pago) || 0);
+      if (saldo <= 0) return;
+      const dv = parseDateNoTZ(
+        tipoDataMatriz === "emissao" ? item.dt_emissao : item.dt_vencimento,
+      );
+      if (!dv) return;
+      const ano = dv.getFullYear();
+      anosSet.add(ano);
+      const canal = getCanalLinha(item);
+      if (!linhas[canal]) linhas[canal] = {};
+      linhas[canal][ano] = (linhas[canal][ano] || 0) + saldo;
+    });
+    const anos = [...anosSet].sort((a, b) => a - b);
+    const ordemCanais = ORDEM_CANAIS.filter((c) => linhas[c]);
+    const rows = ordemCanais.map((canal) => {
+      const valores = anos.map((ano) => linhas[canal][ano] || 0);
+      return {
+        canal,
+        valores,
+        total: valores.reduce((a, v) => a + v, 0),
+      };
+    });
+    const totaisAno = anos.map((_, idx) =>
+      rows.reduce((a, r) => a + r.valores[idx], 0),
+    );
+    const totalGeral = totaisAno.reduce((a, v) => a + v, 0);
+    return { anos, rows, totaisAno, totalGeral };
+  }, [dados, tipoDataMatriz]);
+
+  // Clientes do canal selecionado (drill-down nível 1)
+  const clientesCanalSelecionado = useMemo(() => {
+    if (!canalMatrizSelecionado) return [];
+    const map = {};
+    dados.forEach((item) => {
+      if (isTituloPago(item)) return;
+      if (getCanalLinha(item) !== canalMatrizSelecionado) return;
+      const saldo =
+        (parseFloat(item.vl_fatura) || 0) - (parseFloat(item.vl_pago) || 0);
+      if (saldo <= 0) return;
+      const dv = parseDateNoTZ(
+        tipoDataMatriz === "emissao" ? item.dt_emissao : item.dt_vencimento,
+      );
+      if (!dv) return;
+      const key = String(item.cd_cliente).trim();
+      if (!map[key]) {
+        map[key] = {
+          cd_cliente: item.cd_cliente,
+          nm_cliente: item.nm_fantasia || item.nm_cliente || `Cliente ${key}`,
+          ds_uf: item.ds_uf || "",
+          valor: 0,
+          qtd: 0,
+        };
+      }
+      map[key].valor += saldo;
+      map[key].qtd += 1;
+    });
+    return Object.values(map).sort((a, b) => b.valor - a.valor);
+  }, [dados, canalMatrizSelecionado, tipoDataMatriz]);
+
+  // Faturas do cliente selecionado agrupadas por ano (drill-down nível 2)
+  const faturasClienteSelecionado = useMemo(() => {
+    if (!clienteMatrizSelecionado) return [];
+    const porAno = {};
+    dados.forEach((item) => {
+      if (isTituloPago(item)) return;
+      if (
+        String(item.cd_cliente).trim() !==
+        String(clienteMatrizSelecionado.cd_cliente).trim()
+      )
+        return;
+      const saldo =
+        (parseFloat(item.vl_fatura) || 0) - (parseFloat(item.vl_pago) || 0);
+      if (saldo <= 0) return;
+      const dv = parseDateNoTZ(
+        tipoDataMatriz === "emissao" ? item.dt_emissao : item.dt_vencimento,
+      );
+      if (!dv) return;
+      const ano = dv.getFullYear();
+      if (!porAno[ano]) porAno[ano] = { ano, titulos: [], total: 0 };
+      porAno[ano].titulos.push(item);
+      porAno[ano].total += saldo;
+    });
+    return Object.values(porAno)
+      .sort((a, b) => a.ano - b.ano)
+      .map((g) => ({
+        ...g,
+        titulos: g.titulos.sort((a, b) => {
+          const da = parseDateNoTZ(a.dt_vencimento);
+          const db = parseDateNoTZ(b.dt_vencimento);
+          return (da?.getTime() || 0) - (db?.getTime() || 0);
+        }),
+      }));
+  }, [dados, clienteMatrizSelecionado, tipoDataMatriz]);
 
   // ======================== EXPORT EXCEL ========================
   const exportarExcel = useCallback(() => {
@@ -925,29 +1050,33 @@ const DashInadimplencia = memo(() => {
           : 0;
         const dt = (d) => {
           const p = parseDateNoTZ(d);
-          return p ? p.toLocaleDateString('pt-BR') : '';
+          return p ? p.toLocaleDateString("pt-BR") : "";
         };
         return {
           Empresa: t.cd_empresa,
-          'Cód. Cliente': t.cd_cliente,
-          Cliente: t.nm_fantasia || t.nm_cliente || '',
-          UF: t.ds_uf || '',
+          "Cód. Cliente": t.cd_cliente,
+          Cliente: t.nm_fantasia || t.nm_cliente || "",
+          Canal:
+            getCanalLinha(t) === "Outro"
+              ? "Não identificado"
+              : getCanalLinha(t),
+          UF: t.ds_uf || "",
           Fatura: t.nr_fatura,
-          Parcela: t.nr_parcela || '',
+          Parcela: t.nr_parcela || "",
           Vencimento: dt(t.dt_vencimento),
-          'Dias Atraso': diasAtraso,
-          Portador: t.nm_portador || '',
-          Carteira: getCarteiraEfetiva(t) === 2 ? 'Descontada' : 'Simples',
-          'Valor Fatura': vlFat,
-          'Valor Pago': vlPg,
+          "Dias Atraso": diasAtraso,
+          Portador: t.nm_portador || "",
+          Carteira: getCarteiraEfetiva(t) === 2 ? "Descontada" : "Simples",
+          "Valor Fatura": vlFat,
+          "Valor Pago": vlPg,
           Saldo: vlFat - vlPg,
         };
       });
-    const ws = XLSX.utils.json_to_sheet(dadosExport);
-    ws['!cols'] = [
+    const colWidths = [
       { wch: 8 },
       { wch: 12 },
       { wch: 35 },
+      { wch: 14 },
       { wch: 5 },
       { wch: 12 },
       { wch: 8 },
@@ -959,14 +1088,30 @@ const DashInadimplencia = memo(() => {
       { wch: 14 },
       { wch: 14 },
     ];
+    const ws = XLSX.utils.json_to_sheet(dadosExport);
+    ws["!cols"] = colWidths;
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Inadimplência');
-    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    XLSX.utils.book_append_sheet(wb, ws, "Inadimplência");
+
+    // Abas separadas por canal
+    const exportMTM = dadosExport.filter((r) => r.Canal === "MTM");
+    if (exportMTM.length > 0) {
+      const wsMTM = XLSX.utils.json_to_sheet(exportMTM);
+      wsMTM["!cols"] = colWidths;
+      XLSX.utils.book_append_sheet(wb, wsMTM, "MTM");
+    }
+    const exportFRQ = dadosExport.filter((r) => r.Canal === "Franquia");
+    if (exportFRQ.length > 0) {
+      const wsFRQ = XLSX.utils.json_to_sheet(exportFRQ);
+      wsFRQ["!cols"] = colWidths;
+      XLSX.utils.book_append_sheet(wb, wsFRQ, "Franquia");
+    }
+    const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
     saveAs(
       new Blob([buf], {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       }),
-      `Inadimplencia_${new Date().toISOString().split('T')[0]}.xlsx`,
+      `Inadimplencia_${new Date().toISOString().split("T")[0]}.xlsx`,
     );
   }, [dados]);
 
@@ -1062,11 +1207,11 @@ const DashInadimplencia = memo(() => {
               </CardHeader>
               <CardContent className="pt-0 px-3 pb-3">
                 <div className="text-lg font-extrabold text-blue-600">
-                  {metricas.qtdTitulos.toLocaleString('pt-BR')}
+                  {metricas.qtdTitulos.toLocaleString("pt-BR")}
                 </div>
                 {variacaoDiaria.titulos !== null && (
                   <div
-                    className={`flex items-center gap-1 text-xs font-semibold ${variacaoDiaria.titulos > 0 ? 'text-red-500' : variacaoDiaria.titulos < 0 ? 'text-green-500' : 'text-gray-400'}`}
+                    className={`flex items-center gap-1 text-xs font-semibold ${variacaoDiaria.titulos > 0 ? "text-red-500" : variacaoDiaria.titulos < 0 ? "text-green-500" : "text-gray-400"}`}
                   >
                     {variacaoDiaria.titulos > 0 ? (
                       <ArrowUp size={12} weight="bold" />
@@ -1074,8 +1219,8 @@ const DashInadimplencia = memo(() => {
                       <ArrowDown size={12} weight="bold" />
                     ) : null}
                     {variacaoDiaria.titulos !== 0
-                      ? `${variacaoDiaria.titulos > 0 ? '+' : ''}${variacaoDiaria.titulos} vs dia anterior`
-                      : 'Sem variação'}
+                      ? `${variacaoDiaria.titulos > 0 ? "+" : ""}${variacaoDiaria.titulos} vs dia anterior`
+                      : "Sem variação"}
                   </div>
                 )}
                 <CardDescription className="text-xs text-gray-500">
@@ -1095,11 +1240,11 @@ const DashInadimplencia = memo(() => {
               </CardHeader>
               <CardContent className="pt-0 px-3 pb-3">
                 <div className="text-lg font-extrabold text-orange-600">
-                  {metricas.qtdClientes.toLocaleString('pt-BR')}
+                  {metricas.qtdClientes.toLocaleString("pt-BR")}
                 </div>
                 {variacaoDiaria.clientes !== null && (
                   <div
-                    className={`flex items-center gap-1 text-xs font-semibold ${variacaoDiaria.clientes > 0 ? 'text-red-500' : variacaoDiaria.clientes < 0 ? 'text-green-500' : 'text-gray-400'}`}
+                    className={`flex items-center gap-1 text-xs font-semibold ${variacaoDiaria.clientes > 0 ? "text-red-500" : variacaoDiaria.clientes < 0 ? "text-green-500" : "text-gray-400"}`}
                   >
                     {variacaoDiaria.clientes > 0 ? (
                       <ArrowUp size={12} weight="bold" />
@@ -1107,8 +1252,8 @@ const DashInadimplencia = memo(() => {
                       <ArrowDown size={12} weight="bold" />
                     ) : null}
                     {variacaoDiaria.clientes !== 0
-                      ? `${variacaoDiaria.clientes > 0 ? '+' : ''}${variacaoDiaria.clientes} vs dia anterior`
-                      : 'Sem variação'}
+                      ? `${variacaoDiaria.clientes > 0 ? "+" : ""}${variacaoDiaria.clientes} vs dia anterior`
+                      : "Sem variação"}
                   </div>
                 )}
                 <CardDescription className="text-xs text-gray-500">
@@ -1150,7 +1295,7 @@ const DashInadimplencia = memo(() => {
               </CardHeader>
               <CardContent className="pt-0 px-3 pb-3">
                 <div className="text-lg font-extrabold text-amber-600">
-                  {metricas.vencidosRecentes.qtd.toLocaleString('pt-BR')}{' '}
+                  {metricas.vencidosRecentes.qtd.toLocaleString("pt-BR")}{" "}
                   títulos
                 </div>
                 <div className="text-sm font-bold text-amber-500">
@@ -1162,6 +1307,363 @@ const DashInadimplencia = memo(() => {
               </CardContent>
             </Card>
           </div>
+
+          {/* ---- MATRIZ CANAL x ANO ---- */}
+          {matrizCanalAno.rows.length > 0 && (
+            <div className="grid grid-cols-1 gap-3 mb-6">
+              <Card className="shadow-lg rounded-xl bg-white">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <ChartBar size={16} className="text-[#000638]" />
+                      <CardTitle className="text-sm font-bold text-[#000638]">
+                        Inadimplência por Canal e Ano de{" "}
+                        {tipoDataMatriz === "emissao"
+                          ? "Emissão"
+                          : "Vencimento"}
+                      </CardTitle>
+                    </div>
+                    <div className="flex gap-1">
+                      {[
+                        { key: "vencimento", label: "VENCIMENTO" },
+                        { key: "emissao", label: "EMISSÃO" },
+                      ].map((opcao) => (
+                        <button
+                          key={opcao.key}
+                          onClick={() => setTipoDataMatriz(opcao.key)}
+                          className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition-colors ${
+                            tipoDataMatriz === opcao.key
+                              ? "bg-[#000638] text-white shadow-md"
+                              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                          }`}
+                        >
+                          {opcao.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="pt-0 px-3 pb-3">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-[#000638] text-white">
+                          <th className="text-left px-3 py-2 font-semibold rounded-tl-lg">
+                            Canal
+                          </th>
+                          {matrizCanalAno.anos.map((ano) => (
+                            <th
+                              key={ano}
+                              className="text-right px-3 py-2 font-semibold"
+                            >
+                              {ano}
+                            </th>
+                          ))}
+                          <th className="text-right px-3 py-2 font-semibold rounded-tr-lg">
+                            Total Geral
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {matrizCanalAno.rows.map((row) => (
+                          <tr
+                            key={row.canal}
+                            className="border-b border-gray-100 hover:bg-blue-50 cursor-pointer transition-colors"
+                            onClick={() => {
+                              setClienteMatrizSelecionado(null);
+                              setCanalMatrizSelecionado(row.canal);
+                            }}
+                            title="Clique para ver os clientes"
+                          >
+                            <td className="px-3 py-2 font-bold text-gray-800">
+                              {row.canal}
+                            </td>
+                            {row.valores.map((v, i) => (
+                              <td
+                                key={i}
+                                className="text-right px-3 py-2 text-gray-700"
+                              >
+                                {formatCurrency(v)}
+                              </td>
+                            ))}
+                            <td className="text-right px-3 py-2 font-bold text-red-600">
+                              {formatCurrency(row.total)}
+                            </td>
+                          </tr>
+                        ))}
+                        <tr className="bg-gray-100 font-bold">
+                          <td className="px-3 py-2 text-gray-800">
+                            Total Geral
+                          </td>
+                          {matrizCanalAno.totaisAno.map((v, i) => (
+                            <td
+                              key={i}
+                              className="text-right px-3 py-2 text-gray-800"
+                            >
+                              {formatCurrency(v)}
+                            </td>
+                          ))}
+                          <td className="text-right px-3 py-2 text-red-700">
+                            {formatCurrency(matrizCanalAno.totalGeral)}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* ---- MODAL DRILL-DOWN: Canal → Clientes → Faturas por Ano ---- */}
+          {canalMatrizSelecionado && (
+            <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-[95vw] max-h-[95vh] flex flex-col overflow-hidden">
+                {/* Header */}
+                <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
+                  <div className="flex items-center gap-2">
+                    <Users size={20} className="text-[#000638]" />
+                    <h2 className="text-lg font-bold text-[#000638]">
+                      {clienteMatrizSelecionado
+                        ? `${clienteMatrizSelecionado.cd_cliente} - ${clienteMatrizSelecionado.nm_cliente}`
+                        : canalMatrizSelecionado}
+                    </h2>
+                    <span className="text-sm text-gray-500 ml-2">
+                      {clienteMatrizSelecionado
+                        ? `${faturasClienteSelecionado.reduce((a, g) => a + g.titulos.length, 0)} fatura(s) em aberto`
+                        : `${clientesCanalSelecionado.length} cliente(s) — ${formatCurrency(
+                            clientesCanalSelecionado.reduce(
+                              (a, c) => a + c.valor,
+                              0,
+                            ),
+                          )}`}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {clienteMatrizSelecionado && (
+                      <button
+                        onClick={() => setClienteMatrizSelecionado(null)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors text-xs font-bold"
+                      >
+                        Voltar
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        setCanalMatrizSelecionado(null);
+                        setClienteMatrizSelecionado(null);
+                      }}
+                      className="p-2 rounded-lg hover:bg-gray-100 text-gray-500 hover:text-red-600 transition-colors"
+                      title="Fechar"
+                    >
+                      <X size={20} weight="bold" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Conteúdo */}
+                <div className="flex-1 overflow-auto p-4">
+                  {!clienteMatrizSelecionado ? (
+                    /* ---- NÍVEL 1: Clientes do canal ---- */
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          <th className="text-left px-3 py-2 font-semibold text-gray-700">
+                            Cliente
+                          </th>
+                          <th className="text-center px-3 py-2 font-semibold text-gray-700">
+                            UF
+                          </th>
+                          <th className="text-center px-3 py-2 font-semibold text-gray-700">
+                            Títulos
+                          </th>
+                          <th className="text-right px-3 py-2 font-semibold text-gray-700">
+                            Valor Vencido
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {clientesCanalSelecionado.map((c) => (
+                          <tr
+                            key={c.cd_cliente}
+                            className="border-b border-gray-100 hover:bg-blue-50 cursor-pointer transition-colors"
+                            onClick={() => setClienteMatrizSelecionado(c)}
+                            title="Clique para ver as faturas por ano"
+                          >
+                            <td className="px-3 py-2 text-gray-800">
+                              <span className="font-medium">
+                                {c.cd_cliente}
+                              </span>
+                              {" - "}
+                              {c.nm_cliente}
+                            </td>
+                            <td className="text-center px-3 py-2 text-gray-600">
+                              {c.ds_uf || "-"}
+                            </td>
+                            <td className="text-center px-3 py-2 text-gray-600">
+                              {c.qtd}
+                            </td>
+                            <td className="text-right px-3 py-2 font-semibold text-red-600">
+                              {formatCurrency(c.valor)}
+                            </td>
+                          </tr>
+                        ))}
+                        <tr className="bg-gray-100 font-bold">
+                          <td className="px-3 py-2 text-gray-800">TOTAL</td>
+                          <td />
+                          <td className="text-center px-3 py-2 text-gray-800">
+                            {clientesCanalSelecionado.reduce(
+                              (a, c) => a + c.qtd,
+                              0,
+                            )}
+                          </td>
+                          <td className="text-right px-3 py-2 text-red-700">
+                            {formatCurrency(
+                              clientesCanalSelecionado.reduce(
+                                (a, c) => a + c.valor,
+                                0,
+                              ),
+                            )}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  ) : (
+                    /* ---- NÍVEL 2: Faturas do cliente por ano ---- */
+                    <div className="space-y-5">
+                      {faturasClienteSelecionado.map((grupo) => (
+                        <div
+                          key={grupo.ano}
+                          className="bg-gray-50 rounded-xl p-4"
+                        >
+                          <div className="flex items-center justify-between mb-3">
+                            <h3 className="text-sm font-bold text-[#000638]">
+                              {grupo.ano}
+                              <span className="ml-2 text-xs font-normal text-gray-500">
+                                {grupo.titulos.length} fatura(s)
+                              </span>
+                            </h3>
+                            <span className="text-xs font-bold text-red-600">
+                              Total: {formatCurrency(grupo.total)}
+                            </span>
+                          </div>
+                          <table className="w-full text-xs">
+                            <thead className="bg-white">
+                              <tr>
+                                <th className="text-left px-3 py-2 font-semibold text-gray-700">
+                                  Empresa
+                                </th>
+                                <th className="text-center px-3 py-2 font-semibold text-gray-700">
+                                  Fatura
+                                </th>
+                                <th className="text-center px-3 py-2 font-semibold text-gray-700">
+                                  Parcela
+                                </th>
+                                <th className="text-center px-3 py-2 font-semibold text-gray-700">
+                                  Emissão
+                                </th>
+                                <th className="text-center px-3 py-2 font-semibold text-gray-700">
+                                  Vencimento
+                                </th>
+                                <th className="text-center px-3 py-2 font-semibold text-gray-700">
+                                  Dias Atraso
+                                </th>
+                                <th className="text-left px-3 py-2 font-semibold text-gray-700">
+                                  Portador
+                                </th>
+                                <th className="text-right px-3 py-2 font-semibold text-gray-700">
+                                  Valor Fatura
+                                </th>
+                                <th className="text-right px-3 py-2 font-semibold text-gray-700">
+                                  Saldo
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {grupo.titulos.map((t, i) => {
+                                const vlFat = parseFloat(t.vl_fatura) || 0;
+                                const vlPg = parseFloat(t.vl_pago) || 0;
+                                const dv = parseDateNoTZ(t.dt_vencimento);
+                                const diasAtraso = dv
+                                  ? Math.floor(
+                                      (new Date() - dv) / (1000 * 60 * 60 * 24),
+                                    )
+                                  : 0;
+                                const fmt = (d) => {
+                                  const p = parseDateNoTZ(d);
+                                  return p
+                                    ? p.toLocaleDateString("pt-BR")
+                                    : "-";
+                                };
+                                return (
+                                  <tr
+                                    key={i}
+                                    className="border-b border-gray-200 hover:bg-white"
+                                  >
+                                    <td className="px-3 py-2 text-gray-700">
+                                      {t.cd_empresa}
+                                    </td>
+                                    <td className="text-center px-3 py-2 text-gray-700">
+                                      {t.nr_fatura}
+                                    </td>
+                                    <td className="text-center px-3 py-2 text-gray-700">
+                                      {t.nr_parcela || "-"}
+                                    </td>
+                                    <td className="text-center px-3 py-2 text-gray-600">
+                                      {fmt(t.dt_emissao)}
+                                    </td>
+                                    <td className="text-center px-3 py-2 text-gray-600">
+                                      {fmt(t.dt_vencimento)}
+                                    </td>
+                                    <td className="text-center px-3 py-2">
+                                      <span
+                                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                          diasAtraso > 90
+                                            ? "bg-red-100 text-red-700"
+                                            : diasAtraso > 30
+                                              ? "bg-orange-100 text-orange-700"
+                                              : "bg-amber-100 text-amber-700"
+                                        }`}
+                                      >
+                                        {diasAtraso} dias
+                                      </span>
+                                    </td>
+                                    <td className="px-3 py-2 text-gray-600">
+                                      {t.nm_portador || "-"}
+                                    </td>
+                                    <td className="text-right px-3 py-2 text-gray-800">
+                                      {formatCurrency(vlFat)}
+                                    </td>
+                                    <td className="text-right px-3 py-2 font-semibold text-red-600">
+                                      {formatCurrency(vlFat - vlPg)}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      ))}
+                      {/* Total do cliente */}
+                      <div className="flex items-center justify-between px-4 py-3 rounded-lg bg-[#000638] text-white">
+                        <span className="text-sm font-bold">
+                          TOTAL DO CLIENTE
+                        </span>
+                        <span className="text-base font-extrabold">
+                          {formatCurrency(
+                            faturasClienteSelecionado.reduce(
+                              (a, g) => a + g.total,
+                              0,
+                            ),
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* ---- TIMELINE ---- */}
           <div className="grid grid-cols-1 gap-3 mb-6">
@@ -1238,7 +1740,7 @@ const DashInadimplencia = memo(() => {
                   <div>
                     <div className="text-xs text-gray-500 mb-1">Quantidade</div>
                     <div className="text-2xl font-extrabold text-blue-600">
-                      {metricas.carteiraSimples.qtd.toLocaleString('pt-BR')}
+                      {metricas.carteiraSimples.qtd.toLocaleString("pt-BR")}
                     </div>
                   </div>
                   <div>
@@ -1267,7 +1769,7 @@ const DashInadimplencia = memo(() => {
                   <div>
                     <div className="text-xs text-gray-500 mb-1">Quantidade</div>
                     <div className="text-2xl font-extrabold text-purple-600">
-                      {metricas.carteiraDescontada.qtd.toLocaleString('pt-BR')}
+                      {metricas.carteiraDescontada.qtd.toLocaleString("pt-BR")}
                     </div>
                   </div>
                   <div>
@@ -1300,7 +1802,7 @@ const DashInadimplencia = memo(() => {
                     <div style={{ height: 500 }}>
                       <Bar
                         data={chartTopClientes}
-                        options={barOptions('Top Clientes')}
+                        options={barOptions("Top Clientes")}
                       />
                     </div>
                   ) : (
@@ -1363,7 +1865,7 @@ const DashInadimplencia = memo(() => {
                               <td className="px-2 py-1 text-gray-800">
                                 <span className="font-medium">
                                   {c.cd_cliente}
-                                </span>{' '}
+                                </span>{" "}
                                 - {c.nm_cliente}
                               </td>
                               <td className="text-center px-2 py-1 text-gray-600">
@@ -1477,7 +1979,7 @@ const DashInadimplencia = memo(() => {
                                 {p.nome}
                               </td>
                               <td className="text-center px-2 py-1 text-gray-600">
-                                {p.qtd.toLocaleString('pt-BR')}
+                                {p.qtd.toLocaleString("pt-BR")}
                               </td>
                               <td className="text-right px-2 py-1 font-semibold text-teal-600">
                                 {formatCurrency(p.valor)}
@@ -1489,7 +1991,7 @@ const DashInadimplencia = memo(() => {
                             <td className="text-center px-2 py-1.5 text-gray-800">
                               {metricas.porPortador
                                 .reduce((a, p) => a + p.qtd, 0)
-                                .toLocaleString('pt-BR')}
+                                .toLocaleString("pt-BR")}
                             </td>
                             <td className="text-right px-2 py-1.5 text-teal-700">
                               {formatCurrency(
@@ -1542,24 +2044,24 @@ const DashInadimplencia = memo(() => {
                               : 0;
                             const dt = (d) => {
                               const p = parseDateNoTZ(d);
-                              return p ? p.toLocaleDateString('pt-BR') : '';
+                              return p ? p.toLocaleDateString("pt-BR") : "";
                             };
                             return {
                               Empresa: t.cd_empresa,
-                              'Cód. Cliente': t.cd_cliente,
-                              Cliente: t.nm_fantasia || t.nm_cliente || '',
+                              "Cód. Cliente": t.cd_cliente,
+                              Cliente: t.nm_fantasia || t.nm_cliente || "",
                               Fatura: t.nr_fatura,
                               Vencimento: dt(t.dt_vencimento),
-                              'Dias Atraso': diasAtraso,
-                              Portador: t.nm_portador || '',
-                              'Valor Fatura': vlFat,
-                              'Valor Pago': vlPg,
+                              "Dias Atraso": diasAtraso,
+                              Portador: t.nm_portador || "",
+                              "Valor Fatura": vlFat,
+                              "Valor Pago": vlPg,
                               Saldo: vlFat - vlPg,
                             };
                           },
                         );
                         const ws = XLSX.utils.json_to_sheet(dadosExport);
-                        ws['!cols'] = [
+                        ws["!cols"] = [
                           { wch: 8 },
                           { wch: 12 },
                           { wch: 35 },
@@ -1572,16 +2074,16 @@ const DashInadimplencia = memo(() => {
                           { wch: 14 },
                         ];
                         const wb = XLSX.utils.book_new();
-                        XLSX.utils.book_append_sheet(wb, ws, 'Títulos');
+                        XLSX.utils.book_append_sheet(wb, ws, "Títulos");
                         const buf = XLSX.write(wb, {
-                          bookType: 'xlsx',
-                          type: 'array',
+                          bookType: "xlsx",
+                          type: "array",
                         });
                         saveAs(
                           new Blob([buf], {
-                            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                            type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                           }),
-                          `Portador_${portadorSelecionado.replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`,
+                          `Portador_${portadorSelecionado.replace(/[^a-zA-Z0-9]/g, "_")}_${new Date().toISOString().split("T")[0]}.xlsx`,
                         );
                       }}
                       className="flex items-center gap-1.5 px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-xs font-bold shadow-md"
@@ -1656,23 +2158,23 @@ const DashInadimplencia = memo(() => {
                                 <span className="font-medium">
                                   {t.cd_cliente}
                                 </span>
-                                {' - '}
+                                {" - "}
                                 {t.nm_fantasia || t.nm_cliente}
                               </td>
                               <td className="text-center px-2 py-1.5 text-gray-700">
                                 {t.nr_fatura}
                               </td>
                               <td className="text-center px-2 py-1.5 text-gray-600">
-                                {dv ? dv.toLocaleDateString('pt-BR') : '-'}
+                                {dv ? dv.toLocaleDateString("pt-BR") : "-"}
                               </td>
                               <td className="text-center px-2 py-1.5">
                                 <span
                                   className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                                     diasAtraso > 90
-                                      ? 'bg-red-100 text-red-700'
+                                      ? "bg-red-100 text-red-700"
                                       : diasAtraso > 30
-                                        ? 'bg-orange-100 text-orange-700'
-                                        : 'bg-yellow-100 text-yellow-700'
+                                        ? "bg-orange-100 text-orange-700"
+                                        : "bg-yellow-100 text-yellow-700"
                                   }`}
                                 >
                                   {diasAtraso}d
@@ -1682,13 +2184,13 @@ const DashInadimplencia = memo(() => {
                                 <span
                                   className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                                     getCarteiraEfetiva(t) === 2
-                                      ? 'bg-purple-100 text-purple-700'
-                                      : 'bg-blue-100 text-blue-700'
+                                      ? "bg-purple-100 text-purple-700"
+                                      : "bg-blue-100 text-blue-700"
                                   }`}
                                 >
                                   {getCarteiraEfetiva(t) === 2
-                                    ? 'DESC'
-                                    : 'SIMPL'}
+                                    ? "DESC"
+                                    : "SIMPL"}
                                 </span>
                               </td>
                               <td className="text-right px-2 py-1.5 text-gray-800">
@@ -1698,7 +2200,7 @@ const DashInadimplencia = memo(() => {
                                 {formatCurrency(vlPg)}
                               </td>
                               <td
-                                className={`text-right px-2 py-1.5 font-semibold ${saldo > 0 ? 'text-red-600' : 'text-gray-500'}`}
+                                className={`text-right px-2 py-1.5 font-semibold ${saldo > 0 ? "text-red-600" : "text-gray-500"}`}
                               >
                                 {formatCurrency(saldo)}
                               </td>
@@ -1772,7 +2274,7 @@ const DashInadimplencia = memo(() => {
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full">
                     <div>
                       {chartPortador ? (
-                        <div style={{ height: 'calc(85vh - 100px)' }}>
+                        <div style={{ height: "calc(85vh - 100px)" }}>
                           <Bar
                             data={chartPortador}
                             options={barVerticalOptions}
@@ -1785,7 +2287,7 @@ const DashInadimplencia = memo(() => {
                       )}
                     </div>
                     <div
-                      style={{ maxHeight: 'calc(85vh - 100px)' }}
+                      style={{ maxHeight: "calc(85vh - 100px)" }}
                       className="overflow-y-auto"
                     >
                       {metricas.porPortador.length > 0 ? (
@@ -1820,7 +2322,7 @@ const DashInadimplencia = memo(() => {
                                   {p.nome}
                                 </td>
                                 <td className="text-center px-3 py-2 text-gray-600">
-                                  {p.qtd.toLocaleString('pt-BR')}
+                                  {p.qtd.toLocaleString("pt-BR")}
                                 </td>
                                 <td className="text-right px-3 py-2 font-semibold text-teal-600">
                                   {formatCurrency(p.valor)}
@@ -1832,7 +2334,7 @@ const DashInadimplencia = memo(() => {
                               <td className="text-center px-3 py-2 text-gray-800">
                                 {metricas.porPortador
                                   .reduce((a, p) => a + p.qtd, 0)
-                                  .toLocaleString('pt-BR')}
+                                  .toLocaleString("pt-BR")}
                               </td>
                               <td className="text-right px-3 py-2 text-teal-700">
                                 {formatCurrency(
@@ -1868,8 +2370,8 @@ const DashInadimplencia = memo(() => {
                       Faturas Vencidas nos Últimos 3 Dias
                     </h2>
                     <span className="text-sm text-gray-500 ml-2">
-                      {vencidosRecentesLista.length} cliente(s) —{' '}
-                      {metricas.vencidosRecentes.qtd} título(s) —{' '}
+                      {vencidosRecentesLista.length} cliente(s) —{" "}
+                      {metricas.vencidosRecentes.qtd} título(s) —{" "}
                       {formatCurrency(metricas.vencidosRecentes.valor)}
                     </span>
                   </div>
@@ -1895,7 +2397,7 @@ const DashInadimplencia = memo(() => {
                                 {cliente.cd_cliente} - {cliente.nm_cliente}
                               </div>
                               <div className="text-xs text-gray-500">
-                                {cliente.faturas.length} fatura(s) — Total:{' '}
+                                {cliente.faturas.length} fatura(s) — Total:{" "}
                                 {formatCurrency(cliente.valor_total)}
                               </div>
                             </div>
@@ -1954,8 +2456,8 @@ const DashInadimplencia = memo(() => {
                                     </td>
                                     <td className="text-center px-2 py-1.5 text-gray-600">
                                       {dv
-                                        ? dv.toLocaleDateString('pt-BR')
-                                        : '-'}
+                                        ? dv.toLocaleDateString("pt-BR")
+                                        : "-"}
                                     </td>
                                     <td className="text-center px-2 py-1.5">
                                       <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">
@@ -1994,5 +2496,5 @@ const DashInadimplencia = memo(() => {
   );
 });
 
-DashInadimplencia.displayName = 'DashInadimplencia';
+DashInadimplencia.displayName = "DashInadimplencia";
 export default DashInadimplencia;

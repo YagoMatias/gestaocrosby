@@ -164,6 +164,43 @@ const formatPmr = (pmrDias) => {
   return `${pmrDias.toFixed(1).replace('.', ',')} dias`;
 };
 
+// ======================== ANÁLISE DE PAGAMENTO DO CLIENTE ========================
+// Classifica a chance do cliente pagar o boleto com base no person-statistics:
+// SIM    → comprou muito e não tem parcela vencida
+// NÃO    → valor vencido alto (>= ANALISE_VENCIDO_ALTO)
+// TALVEZ → tem vencidas de valor baixo, ou histórico de compras curto
+const ANALISE_VENCIDO_ALTO = 5000; // R$ em atraso a partir do qual classifica NÃO
+const ANALISE_MIN_COMPRAS = 5; // mínimo de compras para considerar "comprou muito"
+
+const classificarCliente = (stats) => {
+  const vencidoValor = parseFloat(stats?.totalInstallmentsDelayed) || 0;
+  const vencidoQtd = parseInt(stats?.quantityInstallmentsDelayed) || 0;
+  const comprasQtd = parseInt(stats?.purchaseQuantity) || 0;
+
+  if (vencidoValor >= ANALISE_VENCIDO_ALTO) {
+    return {
+      classificacao: 'NÃO',
+      motivo: `Vencido alto: ${formatCurrency(vencidoValor)} em ${vencidoQtd} parcela(s)`,
+    };
+  }
+  if (vencidoQtd > 0) {
+    return {
+      classificacao: 'TALVEZ',
+      motivo: `${vencidoQtd} parcela(s) vencida(s) de valor baixo (${formatCurrency(vencidoValor)})`,
+    };
+  }
+  if (comprasQtd >= ANALISE_MIN_COMPRAS) {
+    return {
+      classificacao: 'SIM',
+      motivo: `${comprasQtd} compras e nenhuma parcela vencida`,
+    };
+  }
+  return {
+    classificacao: 'TALVEZ',
+    motivo: `Histórico curto (${comprasQtd} compra(s)), sem vencidas`,
+  };
+};
+
 const CORES = [
   '#000638',
   '#fe0000',
@@ -202,6 +239,12 @@ const DashContasAReceber = memo(() => {
   const [formaPagSelecionada, setFormaPagSelecionada] = useState(null);
   const [grupoEmpresaSelecionado, setGrupoEmpresaSelecionado] = useState(null);
   const [filtroStatusFormaPag, setFiltroStatusFormaPag] = useState('TODOS');
+  const [analiseClientes, setAnaliseClientes] = useState({});
+  const [analisandoClientes, setAnalisandoClientes] = useState(false);
+  const [progressoAnalise, setProgressoAnalise] = useState({
+    feito: 0,
+    total: 0,
+  });
 
   // Lista estática de formas de pagamento (disponível antes da busca)
   const dadosFormasPagamento = useMemo(
@@ -682,6 +725,84 @@ const DashContasAReceber = memo(() => {
     filtroStatusPortador,
     filtroMesPortador,
   ]);
+
+  // Resumo da análise: soma do saldo dos títulos por classificação
+  const resumoAnalisePortador = useMemo(() => {
+    const resumo = {
+      SIM: { qtd: 0, valor: 0 },
+      TALVEZ: { qtd: 0, valor: 0 },
+      'NÃO': { qtd: 0, valor: 0 },
+    };
+    let temAnalise = false;
+    titulosPortadorSelecionado.forEach((t) => {
+      const analise = analiseClientes[parseInt(t.cd_cliente)];
+      if (!analise || !resumo[analise.classificacao]) return;
+      temAnalise = true;
+      const saldo =
+        (parseFloat(t.vl_fatura) || 0) - (parseFloat(t.vl_pago) || 0);
+      resumo[analise.classificacao].qtd += 1;
+      resumo[analise.classificacao].valor += saldo;
+    });
+    return { ...resumo, temAnalise };
+  }, [titulosPortadorSelecionado, analiseClientes]);
+
+  // Analisar clientes dos títulos do portador via person-statistics
+  const analisarClientesPortador = async () => {
+    const codigos = [
+      ...new Set(
+        titulosPortadorSelecionado
+          .map((t) => parseInt(t.cd_cliente))
+          .filter((c) => c > 0),
+      ),
+    ].filter((c) => !analiseClientes[c]);
+    if (codigos.length === 0 || analisandoClientes) return;
+
+    setAnalisandoClientes(true);
+    setProgressoAnalise({ feito: 0, total: codigos.length });
+    try {
+      const CONCORRENCIA = 5;
+      for (let i = 0; i < codigos.length; i += CONCORRENCIA) {
+        const lote = codigos.slice(i, i + CONCORRENCIA);
+        const resultados = await Promise.all(
+          lote.map(async (personCode) => {
+            try {
+              const resp = await fetch(`${TotvsURL}person-statistics`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ personCode }),
+              });
+              const json = await resp.json();
+              if (json.success && json.data) {
+                return [personCode, classificarCliente(json.data)];
+              }
+            } catch {
+              // falha individual não interrompe o restante
+            }
+            return [
+              personCode,
+              {
+                classificacao: 'ERRO',
+                motivo: 'Falha ao consultar estatísticas do cliente',
+              },
+            ];
+          }),
+        );
+        setAnaliseClientes((prev) => {
+          const novo = { ...prev };
+          resultados.forEach(([codigo, analise]) => {
+            novo[codigo] = analise;
+          });
+          return novo;
+        });
+        setProgressoAnalise((p) => ({
+          ...p,
+          feito: Math.min(p.total, i + lote.length),
+        }));
+      }
+    } finally {
+      setAnalisandoClientes(false);
+    }
+  };
 
   // Formas de pagamento agrupadas por grupo de empresa
   const formaPagPorEmpresa = useMemo(() => {
@@ -2198,6 +2319,25 @@ const DashContasAReceber = memo(() => {
                   </div>
                   <div className="flex items-center gap-2">
                     <button
+                      onClick={analisarClientesPortador}
+                      disabled={analisandoClientes}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors text-xs font-bold shadow-md"
+                      title="Analisar histórico de pagamento dos clientes (SIM / NÃO / TALVEZ)"
+                    >
+                      {analisandoClientes ? (
+                        <>
+                          <Spinner size={16} className="animate-spin" />
+                          Analisando {progressoAnalise.feito}/
+                          {progressoAnalise.total}...
+                        </>
+                      ) : (
+                        <>
+                          <Users size={16} />
+                          Analisar Clientes
+                        </>
+                      )}
+                    </button>
+                    <button
                       onClick={() => {
                         const dadosExport = titulosPortadorSelecionado.map(
                           (t) => {
@@ -2219,6 +2359,9 @@ const DashContasAReceber = memo(() => {
                               'Forma Pgto': getFormaPagamentoLabel(t),
                               Portador: t.nm_portador || '',
                               Status: getStatus(t),
+                              Análise:
+                                analiseClientes[parseInt(t.cd_cliente)]
+                                  ?.classificacao || '',
                               'Valor Fatura': vlFat,
                               'Valor Pago': vlPg,
                               Saldo: vlFat - vlPg,
@@ -2238,6 +2381,7 @@ const DashContasAReceber = memo(() => {
                           { wch: 12 },
                           { wch: 15 },
                           { wch: 20 },
+                          { wch: 10 },
                           { wch: 10 },
                           { wch: 14 },
                           { wch: 14 },
@@ -2304,6 +2448,9 @@ const DashContasAReceber = memo(() => {
                           </th>
                           <th className="text-center px-2 py-2 font-semibold text-gray-700">
                             Status
+                          </th>
+                          <th className="text-center px-2 py-2 font-semibold text-gray-700">
+                            Análise
                           </th>
                           <th className="text-right px-2 py-2 font-semibold text-gray-700">
                             Valor Fatura
@@ -2372,6 +2519,32 @@ const DashContasAReceber = memo(() => {
                                   {status}
                                 </span>
                               </td>
+                              <td className="text-center px-2 py-1.5">
+                                {(() => {
+                                  const analise =
+                                    analiseClientes[parseInt(t.cd_cliente)];
+                                  if (!analise)
+                                    return (
+                                      <span className="text-gray-300 text-[10px]">
+                                        -
+                                      </span>
+                                    );
+                                  const coresAnalise = {
+                                    SIM: 'bg-green-100 text-green-700',
+                                    'NÃO': 'bg-red-100 text-red-700',
+                                    TALVEZ: 'bg-amber-100 text-amber-700',
+                                    ERRO: 'bg-gray-100 text-gray-500',
+                                  };
+                                  return (
+                                    <span
+                                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold cursor-help ${coresAnalise[analise.classificacao] || 'bg-gray-100 text-gray-500'}`}
+                                      title={analise.motivo}
+                                    >
+                                      {analise.classificacao}
+                                    </span>
+                                  );
+                                })()}
+                              </td>
                               <td className="text-right px-2 py-1.5 text-gray-800">
                                 {formatCurrency(vlFat)}
                               </td>
@@ -2388,7 +2561,7 @@ const DashContasAReceber = memo(() => {
                         })}
                         {/* Totalizador */}
                         <tr className="bg-gray-100 font-bold">
-                          <td colSpan={9} className="px-2 py-2 text-gray-800">
+                          <td colSpan={10} className="px-2 py-2 text-gray-800">
                             TOTAL
                           </td>
                           <td className="text-right px-2 py-2 text-gray-800">
@@ -2427,6 +2600,37 @@ const DashContasAReceber = memo(() => {
                     </div>
                   )}
                 </div>
+                {/* Resumo da análise de clientes */}
+                {resumoAnalisePortador.temAnalise && (
+                  <div className="px-5 py-3 border-t border-gray-200 bg-gray-50">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="flex items-center justify-between px-4 py-2.5 rounded-lg bg-green-100 border border-green-200">
+                        <span className="text-xs font-bold text-green-700">
+                          SIM ({resumoAnalisePortador.SIM.qtd} título(s))
+                        </span>
+                        <span className="text-sm font-extrabold text-green-700">
+                          {formatCurrency(resumoAnalisePortador.SIM.valor)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between px-4 py-2.5 rounded-lg bg-amber-100 border border-amber-200">
+                        <span className="text-xs font-bold text-amber-700">
+                          TALVEZ ({resumoAnalisePortador.TALVEZ.qtd} título(s))
+                        </span>
+                        <span className="text-sm font-extrabold text-amber-700">
+                          {formatCurrency(resumoAnalisePortador.TALVEZ.valor)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between px-4 py-2.5 rounded-lg bg-red-100 border border-red-200">
+                        <span className="text-xs font-bold text-red-700">
+                          NÃO ({resumoAnalisePortador['NÃO'].qtd} título(s))
+                        </span>
+                        <span className="text-sm font-extrabold text-red-700">
+                          {formatCurrency(resumoAnalisePortador['NÃO'].valor)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
