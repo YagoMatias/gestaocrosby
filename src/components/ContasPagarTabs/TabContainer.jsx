@@ -9,6 +9,7 @@ const PAGE_COMPONENTS = {
   '/despesa-filial': lazy(() => import('../../pages/DespesaFilial')),
   '/despesas-fixas': lazy(() => import('../../pages/DespesasFixas')),
   '/despesas-industria': lazy(() => import('../../pages/DespesasIndustria')),
+  '/renegociacoes': lazy(() => import('../../pages/Renegociacoes')),
   '/liberacao-pagamento': lazy(() => import('../../pages/LiberacaoPagamento')),
   '/pagamentos-fabricas': lazy(() => import('../../pages/PagamentosFabricas')),
 };

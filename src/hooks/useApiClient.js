@@ -757,6 +757,51 @@ const useApiClient = () => {
     salePanelSellers: (body) =>
       apiMutate('/api/totvs/sale-panel/sellers', 'POST', body),
 
+    /**
+     * Faturamento por vendedor (contas a receber — réplica da query SQL do ERP)
+     * @param {Object} body - { filtroempresa?: number[], datemin: string, datemax: string }
+     */
+    salePanelFaturamentoVendedor: (body) =>
+      apiMutate(
+        '/api/totvs/sale-panel/faturamento-vendedor',
+        'POST',
+        body,
+        {},
+        { timeout: 600000 },
+      ),
+
+    /**
+     * Drill-down: vendas (faturas) de um vendedor no período
+     * @param {Object} body - { seller_code: number, datemin: string, datemax: string, filtroempresa?: number[] }
+     */
+    salePanelFaturamentoVendedorDetalhe: (body) =>
+      apiMutate(
+        '/api/totvs/sale-panel/faturamento-vendedor-detalhe',
+        'POST',
+        body,
+        {},
+        { timeout: 600000 },
+      ),
+
+    /**
+     * Faturamento por vendedor quebrado por semana do mês (New Forecast)
+     * @param {Object} body - { datemin, datemax, semanas?: [{s, datemin, datemax}] }
+     */
+    salePanelFaturamentoVendedorSemanal: (body) =>
+      apiMutate(
+        '/api/totvs/sale-panel/faturamento-vendedor-semanal',
+        'POST',
+        body,
+        {},
+        { timeout: 600000 },
+      ),
+
+    /** Configuração persistida do New Forecast (semanas, metas, overrides) */
+    newForecastConfigGet: (datemin, datemax) =>
+      apiCall('/api/totvs/new-forecast/config', { datemin, datemax }),
+    newForecastConfigSave: (body) =>
+      apiMutate('/api/totvs/new-forecast/config', 'POST', body),
+
     sellerPanelTopCustomers: (body) =>
       apiMutate(
         '/api/totvs/seller-panel/top-customers',

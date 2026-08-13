@@ -50,6 +50,7 @@ import {
   Coins,
   Briefcase,
   IdentificationBadge,
+  Gavel,
 } from '@phosphor-icons/react';
 
 // Componentes de ícones modernos
@@ -153,6 +154,13 @@ const financeiro = [
         roles: ['owner', 'admin', 'manager', 'user'],
       },
       {
+        name: 'Renegociações',
+        href: '/renegociacoes',
+        icon: Handshake,
+        color: 'text-red-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
         name: 'Liberação de Pagamento',
         href: '/liberacao-pagamento',
         icon: CheckCircle,
@@ -201,6 +209,20 @@ const financeiro = [
         href: '/dash-inadimplencia',
         icon: ChartBar,
         color: 'text-red-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
+        name: 'Metas Inadimplência',
+        href: '/metas-inadimplencia',
+        icon: Target,
+        color: 'text-red-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
+        name: 'Esteira de Protesto',
+        href: '/esteira-protesto',
+        icon: Gavel,
+        color: 'text-red-700',
         roles: ['owner', 'admin', 'manager', 'user'],
       },
       {
@@ -697,24 +719,6 @@ const recuperacaoCredito = [
     href: '/recuperacao-credito',
     icon: Handshake,
     color: 'text-red-600',
-  },
-  {
-    name: 'Dashboard Inadimplência',
-    href: '/dash-inadimplencia',
-    icon: ChartBar,
-    color: 'text-red-600',
-  },
-  {
-    name: 'Inadimplência Multimarcas',
-    href: '/inadimplentes-multimarcas',
-    icon: Buildings,
-    color: 'text-purple-600',
-  },
-  {
-    name: 'Inadimplência Franquias',
-    href: '/inadimplentes-franquias',
-    icon: Users,
-    color: 'text-amber-600',
   },
 ];
 

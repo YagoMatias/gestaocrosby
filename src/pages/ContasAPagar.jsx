@@ -560,34 +560,65 @@ const ContasAPagar = (props) => {
           nr_parcela: r.nr_parcela,
           cd_fornecedor: r.cd_fornecedor,
           dt_vencimento: r.dt_vencimento,
+          vl_duplicata: r.vl_duplicata,
         }));
 
       if (chaves.length > 0) {
-        const { data: jaExistentes } = await supabase
-          .from('pagamentos_liberacao')
-          .select(
-            'nr_duplicata, cd_empresa, nr_parcela, status, cd_fornecedor, dt_vencimento',
-          )
-          .in(
-            'nr_duplicata',
-            chaves.map((c) => c.nr_duplicata),
-          )
-          .not('status', 'eq', 'CANCELADO');
+        // Supabase corta cada consulta em 1000 linhas — pagina até o fim, senão
+        // um conflito real pode passar despercebido e o título ser duplicado.
+        const PAGE = 1000;
+        const jaExistentes = [];
+        for (let from = 0; ; from += PAGE) {
+          const { data: pagina } = await supabase
+            .from('pagamentos_liberacao')
+            .select(
+              'nr_duplicata, cd_empresa, nr_parcela, status, cd_fornecedor, dt_vencimento, vl_duplicata',
+            )
+            .in(
+              'nr_duplicata',
+              chaves.map((c) => c.nr_duplicata),
+            )
+            .not('status', 'eq', 'CANCELADO')
+            .order('id', { ascending: true })
+            .range(from, from + PAGE - 1);
+          jaExistentes.push(...(pagina || []));
+          if (!pagina || pagina.length < PAGE) break;
+        }
 
         if (jaExistentes && jaExistentes.length > 0) {
-          const conflitos = jaExistentes.filter((ex) =>
-            chaves.some(
-              (c) =>
-                c.nr_duplicata === ex.nr_duplicata &&
-                c.cd_fornecedor === ex.cd_fornecedor &&
-                c.cd_empresa === ex.cd_empresa &&
-                (c.nr_parcela || null) === (ex.nr_parcela || null) &&
-                (c.dt_vencimento || null) ===
-                  (ex.dt_vencimento
-                    ? String(ex.dt_vencimento).split('T')[0]
-                    : null),
-            ),
-          );
+          // Linhas criadas pela Solicitação Crosby não têm cd_fornecedor/nr_parcela —
+          // nesses casos o conflito é detectado por duplicata + empresa + vencimento + valor.
+          const conflitos = jaExistentes.filter((ex) => {
+            const exVenc = ex.dt_vencimento
+              ? String(ex.dt_vencimento).split('T')[0]
+              : null;
+            return chaves.some((c) => {
+              if (c.nr_duplicata !== ex.nr_duplicata) return false;
+              if ((c.dt_vencimento || null) !== exVenc) return false;
+              if (
+                c.cd_empresa != null &&
+                ex.cd_empresa != null &&
+                String(c.cd_empresa) !== String(ex.cd_empresa)
+              )
+                return false;
+              const temFornecedor =
+                c.cd_fornecedor != null && ex.cd_fornecedor != null;
+              const temParcela = c.nr_parcela != null && ex.nr_parcela != null;
+              if (temFornecedor && c.cd_fornecedor !== ex.cd_fornecedor)
+                return false;
+              if (
+                temParcela &&
+                String(c.nr_parcela) !== String(ex.nr_parcela)
+              )
+                return false;
+              if (temFornecedor && temParcela) return true;
+              return (
+                Math.abs(
+                  Number(c.vl_duplicata || 0) - Number(ex.vl_duplicata || 0),
+                ) < 0.005
+              );
+            });
+          });
 
           if (conflitos.length > 0) {
             const msgs = conflitos

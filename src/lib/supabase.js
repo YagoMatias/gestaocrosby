@@ -41,13 +41,16 @@ const sessionStorageAdapter = {
   },
 };
 
+const STORAGE_KEY_LOCAL = 'sb-dorztqiunewggydvkjnf-auth-local';
+const STORAGE_KEY_SESSION = 'sb-dorztqiunewggydvkjnf-auth-session';
+
 // Cliente persistente (localStorage)
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: true,
-    storageKey: 'sb-dorztqiunewggydvkjnf-auth-local',
+    storageKey: STORAGE_KEY_LOCAL,
   },
   db: { schema: 'public' },
 });
@@ -59,10 +62,28 @@ export const supabaseSession = createClient(supabaseUrl, supabaseAnonKey, {
     persistSession: true,
     detectSessionInUrl: true,
     storage: sessionStorageAdapter,
-    storageKey: 'sb-dorztqiunewggydvkjnf-auth-session',
+    storageKey: STORAGE_KEY_SESSION,
   },
   db: { schema: 'public' },
 });
+
+/**
+ * Devolve o cliente anon que realmente carrega a sessão do usuário.
+ *
+ * O login usa `supabase` (localStorage) quando "lembrar-me" está marcado e
+ * `supabaseSession` (sessionStorage) quando não está — ver AuthContext.login().
+ * Quem escreve em tabela com RLS precisa usar o cliente certo: no outro o
+ * request sai como `anon` e o Postgres devolve
+ * "new row violates row-level security policy".
+ *
+ * Prefere a sessão da aba, que é a mais recente quando as duas existem.
+ */
+export const getSupabaseAuth = () => {
+  try {
+    if (sessionStorage.getItem(STORAGE_KEY_SESSION)) return supabaseSession;
+  } catch {}
+  return supabase;
+};
 
 // Cliente admin (para operações administrativas - NUNCA exponha no frontend!)
 export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {

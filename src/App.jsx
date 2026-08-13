@@ -22,6 +22,7 @@ const Emprestimos = lazy(() => import('./pages/Emprestimos'));
 const DespesaFilial = lazy(() => import('./pages/DespesaFilial'));
 const DespesasFixas = lazy(() => import('./pages/DespesasFixas'));
 const DespesasIndustria = lazy(() => import('./pages/DespesasIndustria'));
+const Renegociacoes = lazy(() => import('./pages/Renegociacoes'));
 const LiberacaoPagamento = lazy(() => import('./pages/LiberacaoPagamento'));
 const ContasAReceber = lazy(() => import('./pages/ContasAReceber'));
 const BatidaCarteira = lazy(() => import('./pages/BatidaCarteira'));
@@ -55,6 +56,8 @@ const PMR = lazy(() => import('./pages/DashboardPMR'));
 const DashContasAReceber = lazy(() => import('./pages/DashContasAReceber'));
 const DashContasAPagar = lazy(() => import('./pages/DashContasAPagar'));
 const DashInadimplencia = lazy(() => import('./pages/DashInadimplencia'));
+const MetasInadimplencia = lazy(() => import('./pages/MetasInadimplencia'));
+const EsteiraProtesto = lazy(() => import('./pages/EsteiraProtesto'));
 const DashboardVarejo = lazy(() => import('./pages/DashboardVarejo'));
 const InadimplentesMultimarcas = lazy(
   () => import('./pages/InadimplentesMultimarcas'),
@@ -181,6 +184,8 @@ const protectedRoutes = [
 
   { path: '/dash-contas-a-receber', component: DashContasAReceber },
   { path: '/dash-inadimplencia', component: DashInadimplencia },
+  { path: '/metas-inadimplencia', component: MetasInadimplencia },
+  { path: '/esteira-protesto', component: EsteiraProtesto },
   { path: '/pmr', component: PMR },
   { path: '/home', component: Home },
   { path: '/contas-a-pagar', component: ContasAPagar },
@@ -191,6 +196,7 @@ const protectedRoutes = [
   { path: '/despesa-filial', component: DespesaFilial },
   { path: '/despesas-fixas', component: DespesasFixas },
   { path: '/despesas-industria', component: DespesasIndustria },
+  { path: '/renegociacoes', component: Renegociacoes },
   { path: '/liberacao-pagamento', component: LiberacaoPagamento },
   { path: '/contas-a-receber', component: ContasAReceber },
   { path: '/batida-carteira', component: BatidaCarteira },

@@ -2722,13 +2722,28 @@ const LiberacaoPagamento = () => {
   const carregar = useCallback(async () => {
     setLoading(true);
     setErro(null);
-    const { data, error } = await supabase
-      .from('pagamentos_liberacao')
-      .select('*')
-      .order('dt_vencimento', { ascending: true })
-      .order('created_at', { ascending: false });
-    if (error) setErro(error.message);
-    else setTitulos(data || []);
+    // O Supabase limita cada consulta a 1000 linhas — busca em páginas até o fim,
+    // senão os títulos com vencimento mais distante ficam de fora da tela.
+    const PAGE = 1000;
+    const todas = [];
+    let erroMsg = null;
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await supabase
+        .from('pagamentos_liberacao')
+        .select('*')
+        .order('dt_vencimento', { ascending: true })
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) {
+        erroMsg = error.message;
+        break;
+      }
+      todas.push(...(data || []));
+      if (!data || data.length < PAGE) break;
+    }
+    if (erroMsg) setErro(erroMsg);
+    else setTitulos(todas);
     setLoading(false);
   }, []);
 

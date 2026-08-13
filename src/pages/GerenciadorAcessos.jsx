@@ -81,6 +81,11 @@ const AVAILABLE_PAGES = [
     category: 'Financeiro',
   },
   {
+    path: '/renegociacoes',
+    name: 'Renegociações',
+    category: 'Financeiro',
+  },
+  {
     path: '/liberacao-pagamento',
     name: 'Liberação de Pagamento',
     category: 'Financeiro',
@@ -119,6 +124,16 @@ const AVAILABLE_PAGES = [
   {
     path: '/dash-inadimplencia',
     name: 'Dash Inadimplência',
+    category: 'Financeiro',
+  },
+  {
+    path: '/metas-inadimplencia',
+    name: 'Metas Inadimplência',
+    category: 'Financeiro',
+  },
+  {
+    path: '/esteira-protesto',
+    name: 'Esteira de Protesto',
     category: 'Financeiro',
   },
   { path: '/pmr', name: 'PMR', category: 'Financeiro' },
