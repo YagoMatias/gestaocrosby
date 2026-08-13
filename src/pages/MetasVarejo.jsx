@@ -2992,10 +2992,69 @@ const MetasVarejo = () => {
     }
   };
 
-  // TODO: Rota de ranking de vendedores será reimplementada futuramente
-  const buscarDadosVendedores = async () => {
-    setDadosVendedores([]);
-    setDadosVendedor([]);
+  // Carrega a lista de vendedoras do varejo (para permitir definir meta por
+  // vendedor). Fonte: /api/crm/sellers-totals (modulo=varejo) — mesma do
+  // ranking de Desempenho. Popula dadosVendedores (ranking) e dadosVendedor
+  // (seletor do modal de metas).
+  const buscarDadosVendedores = async (inicio, fim) => {
+    try {
+      const di = inicio || filtros.dt_inicio;
+      const df = fim || filtros.dt_fim;
+      if (!di || !df) {
+        setDadosVendedores([]);
+        setDadosVendedor([]);
+        return;
+      }
+      const resp = await fetch(`${API_BASE_URL}/api/crm/sellers-totals`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(API_KEY ? { 'x-api-key': API_KEY } : {}),
+        },
+        body: JSON.stringify({ modulo: 'varejo', datemin: di, datemax: df }),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const json = await resp.json();
+      const payload = json?.data || json || {};
+      // O endpoint pode devolver dataRow (flat) ou branches[].dataRow.
+      let ps = Array.isArray(payload.dataRow) ? payload.dataRow : [];
+      if (ps.length === 0 && Array.isArray(payload.branches)) {
+        ps = payload.branches.flatMap((b) =>
+          (b.dataRow || []).map((s) => ({
+            ...s,
+            branch_name: s.branch_name || b.branch_name,
+          })),
+        );
+      }
+      // Dedup por código, monta objetos compatíveis com FiltroVendedor e com
+      // o salvamento (que lê nome_vendedor/nm_vendedor/cd_vendedor).
+      const map = new Map();
+      for (const v of ps) {
+        const cod = v.seller_code ?? v.cd_vendedor ?? null;
+        const nome = v.seller_name ?? v.nome_vendedor ?? v.nome ?? '';
+        if (!nome) continue;
+        const key = cod ?? nome;
+        if (!map.has(key)) {
+          map.set(key, {
+            cd_vendedor: cod,
+            nome_vendedor: nome,
+            nm_vendedor: nome,
+            nome,
+            nm_loja: v.branch_name || v.branch_short || '',
+            faturamento: Number(v.invoice_value || 0),
+          });
+        }
+      }
+      const lista = [...map.values()].sort((a, b) =>
+        (a.nome_vendedor || '').localeCompare(b.nome_vendedor || ''),
+      );
+      setDadosVendedores(lista);
+      setDadosVendedor(lista);
+    } catch (error) {
+      console.error('Erro ao buscar dados de vendedores:', error);
+      setDadosVendedores([]);
+      setDadosVendedor([]);
+    }
   };
 
   const handleOrdenacao = (campo) => {
