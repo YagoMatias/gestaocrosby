@@ -56,6 +56,7 @@ const CATEGORIAS_DOCUMENTOS = [
   { key: "score_socios", label: "Score SPC/Serasa Sócios" },
   { key: "doc_retirada_rastreio", label: "Doc. Retirada / Rastreio / Taxista" },
   { key: "declaracao_fiador", label: "Declaração Resp. e Fiador" },
+  { key: "nf_outros_fornecedores", label: "NFs de Outros Fornecedores" },
   { key: "notas_fiscais", label: "Notas Fiscais" },
 ];
 

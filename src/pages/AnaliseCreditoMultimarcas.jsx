@@ -135,6 +135,9 @@ export default function AnaliseCreditoMultimarcas() {
   const [buscaJaExecutada, setBuscaJaExecutada] = useState(false);
   const [obsSolicitacao, setObsSolicitacao] = useState('');
   const [clientesJaSolicitados, setClientesJaSolicitados] = useState({}); // {person_code: id|status}
+  // Modal de solicitação (observação da análise)
+  const [modalSolicitar, setModalSolicitar] = useState(null); // cliente selecionado
+  const [enviandoSolicitacao, setEnviandoSolicitacao] = useState(false);
 
   // Modal perfil
   const [perfilModalAberto, setPerfilModalAberto] = useState(false);
@@ -145,8 +148,12 @@ export default function AnaliseCreditoMultimarcas() {
   const [loadingPendentes, setLoadingPendentes] = useState(false);
   const [analiseAberta, setAnaliseAberta] = useState(null); // solicitação selecionada
   const [limiteInput, setLimiteInput] = useState('');
-  const [branchCodeInput, setBranchCodeInput] = useState('2'); // filial padrão para aplicar o limite no TOTVS
+  const [branchCodeInput, setBranchCodeInput] = useState('2'); // filial usada quando NÃO for aplicar em todas
+  // O TOTVS guarda limite por filial: gravar só numa deixa o PDV das outras
+  // lojas travado. Padrão = todas as filiais próprias (igual crediário BlueCard).
+  const [aplicarTodasFiliais, setAplicarTodasFiliais] = useState(true);
   const [obsAnalise, setObsAnalise] = useState('');
+  const [modalConclusao, setModalConclusao] = useState(null); // 'aprovada' | 'rejeitada'
   const [salvandoAnalise, setSalvandoAnalise] = useState(false);
   const [dadosClienteAnalise, setDadosClienteAnalise] = useState(null);
   const [loadingDadosCliente, setLoadingDadosCliente] = useState(false);
@@ -284,8 +291,9 @@ export default function AnaliseCreditoMultimarcas() {
   // ──────────────────────────────────────────────────────────────────────────
   // Solicitar análise (aba Solicitar)
   // ──────────────────────────────────────────────────────────────────────────
-  const solicitarAnalise = useCallback(
-    async (cliente) => {
+  // Abre o modal onde o solicitante escreve a observação da análise
+  const abrirModalSolicitar = useCallback(
+    (cliente) => {
       if (!cliente) return;
       const personCode = cliente.code || cliente.personCode;
       if (!personCode) {
@@ -296,42 +304,47 @@ export default function AnaliseCreditoMultimarcas() {
         alert('Já existe uma análise pendente para este cliente.');
         return;
       }
-      const confirmar = confirm(
-        `Confirmar solicitação de análise de crédito para:\n\n${cliente.name}\n${formatCpfCnpj(cliente.cnpj || cliente.cpf)}?`,
-      );
-      if (!confirmar) return;
-      try {
-        const payload = {
-          person_code: personCode,
-          cliente_nome: cliente.name || null,
-          cliente_cpf_cnpj: cliente.cnpj || cliente.cpf || null,
-          cliente_uf: cliente.state || cliente.uf || null,
-          solicitado_por: user?.id || null,
-          solicitado_por_nome:
-            user?.user_metadata?.full_name ||
-            user?.user_metadata?.name ||
-            user?.email ||
-            null,
-          solicitado_por_email: user?.email || null,
-          observacoes_solicitacao: obsSolicitacao.trim() || null,
-          status: 'pendente',
-        };
-        const { error } = await supabase
-          .from('analises_credito')
-          .insert(payload);
-        if (error) throw error;
-        setObsSolicitacao('');
-        await carregarSolicitadosMap();
-        alert(
-          'Solicitação enviada com sucesso. Aguarde a análise do financeiro.',
-        );
-      } catch (e) {
-        console.error('Erro ao solicitar:', e);
-        alert(`Erro ao solicitar análise: ${e.message}`);
-      }
+      setObsSolicitacao('');
+      setModalSolicitar({ ...cliente, code: personCode });
     },
-    [user, obsSolicitacao, clientesJaSolicitados, carregarSolicitadosMap],
+    [clientesJaSolicitados],
   );
+
+  const confirmarSolicitacao = useCallback(async () => {
+    const cliente = modalSolicitar;
+    if (!cliente) return;
+    setEnviandoSolicitacao(true);
+    try {
+      const payload = {
+        person_code: cliente.code,
+        cliente_nome: cliente.name || null,
+        cliente_cpf_cnpj: cliente.cnpj || cliente.cpf || null,
+        cliente_uf: cliente.state || cliente.uf || null,
+        solicitado_por: user?.id || null,
+        solicitado_por_nome:
+          user?.user_metadata?.full_name ||
+          user?.user_metadata?.name ||
+          user?.email ||
+          null,
+        solicitado_por_email: user?.email || null,
+        observacoes_solicitacao: obsSolicitacao.trim() || null,
+        status: 'pendente',
+      };
+      const { error } = await supabase.from('analises_credito').insert(payload);
+      if (error) throw error;
+      setModalSolicitar(null);
+      setObsSolicitacao('');
+      await carregarSolicitadosMap();
+      alert(
+        'Solicitação enviada com sucesso. Aguarde a análise do financeiro.',
+      );
+    } catch (e) {
+      console.error('Erro ao solicitar:', e);
+      alert(`Erro ao solicitar análise: ${e.message}`);
+    } finally {
+      setEnviandoSolicitacao(false);
+    }
+  }, [modalSolicitar, user, obsSolicitacao, carregarSolicitadosMap]);
 
   // ──────────────────────────────────────────────────────────────────────────
   // Abrir detalhes da análise (carrega dados extras TOTVS + Supabase)
@@ -396,6 +409,8 @@ export default function AnaliseCreditoMultimarcas() {
     setAnaliseAberta(null);
     setLimiteInput('');
     setBranchCodeInput('2');
+    setAplicarTodasFiliais(true);
+    setModalConclusao(null);
     setObsAnalise('');
     setDadosClienteAnalise(null);
     setDocsAnalise([]);
@@ -405,6 +420,41 @@ export default function AnaliseCreditoMultimarcas() {
   // ──────────────────────────────────────────────────────────────────────────
   // Concluir análise (aprovar/rejeitar)
   // ──────────────────────────────────────────────────────────────────────────
+  // Valida os campos e abre o modal de conclusão (onde o financeiro escreve
+  // os motivos da decisão antes de confirmar)
+  const abrirModalConclusao = useCallback(
+    (decisao) => {
+      if (!analiseAberta || !podeAnalisar) return;
+      if (decisao === 'aprovada') {
+        const limite = parseFloat(String(limiteInput).replace(',', '.'));
+        if (!limite || limite <= 0) {
+          alert('Informe um limite válido (maior que zero) para aprovar.');
+          return;
+        }
+        if (!aplicarTodasFiliais) {
+          const branchCode = parseInt(
+            String(branchCodeInput).replace(/\D/g, ''),
+            10,
+          );
+          if (!branchCode) {
+            alert(
+              'Informe a filial (branchCode) para aplicar o limite no TOTVS.',
+            );
+            return;
+          }
+        }
+      }
+      setModalConclusao(decisao);
+    },
+    [
+      analiseAberta,
+      podeAnalisar,
+      limiteInput,
+      branchCodeInput,
+      aplicarTodasFiliais,
+    ],
+  );
+
   const concluirAnalise = useCallback(
     async (decisao) => {
       if (!analiseAberta || !podeAnalisar) return;
@@ -417,7 +467,7 @@ export default function AnaliseCreditoMultimarcas() {
           return;
         }
         branchCode = parseInt(String(branchCodeInput).replace(/\D/g, ''), 10);
-        if (!branchCode) {
+        if (!aplicarTodasFiliais && !branchCode) {
           alert(
             'Informe a filial (branchCode) para aplicar o limite no TOTVS.',
           );
@@ -448,26 +498,29 @@ export default function AnaliseCreditoMultimarcas() {
                 personType: isPJ ? 'PJ' : 'PF',
                 [isPJ ? 'cnpj' : 'cpf']: cpfCnpjDigits,
                 name: analiseAberta.cliente_nome,
-                branchInsertCode: branchCode,
-                branchCode: branchCode,
+                // Limite no TOTVS é por filial: por padrão grava em todas as
+                // filiais próprias, senão o PDV das outras lojas não enxerga.
+                ...(aplicarTodasFiliais
+                  ? { applyAllBranches: true }
+                  : { branchInsertCode: branchCode, branchCode }),
                 saleLimitValue: limite,
                 monthlyLimitValue: limite,
                 financialLimitValue: limite,
               }),
             });
             const data = await resp.json().catch(() => ({}));
-            if (!resp.ok) {
+            if (!resp.ok || data?.success === false) {
               totvsStatus = 'erro';
               totvsMsg =
                 data?.message ||
                 data?.error ||
                 `HTTP ${resp.status} ao atualizar TOTVS`;
-            } else if (data?.limitePendente) {
-              totvsStatus = 'sincronizado';
-              totvsMsg = data.message;
             } else {
               totvsStatus = 'sincronizado';
               totvsMsg = data?.message || 'Limite atualizado no TOTVS';
+              if (data?.branchesAplicadas) {
+                branchCode = data.branchCodes?.[0] || branchCode || null;
+              }
             }
           } catch (e) {
             totvsStatus = 'erro';
@@ -499,13 +552,12 @@ export default function AnaliseCreditoMultimarcas() {
           .update(payload)
           .eq('id', analiseAberta.id);
         if (error) throw error;
+        setModalConclusao(null);
         fecharAnalise();
         await carregarPendentes();
         if (decisao === 'aprovada') {
           if (totvsStatus === 'sincronizado') {
-            alert(
-              'Análise aprovada e limite sincronizado com o TOTVS com sucesso.',
-            );
+            alert(`Análise aprovada.\n\n${totvsMsg}`);
           } else {
             alert(
               `Análise aprovada, mas houve falha ao sincronizar com o TOTVS:\n\n${totvsMsg}\n\nO limite foi registrado no Supabase. Verifique manualmente o cadastro no TOTVS.`,
@@ -526,6 +578,7 @@ export default function AnaliseCreditoMultimarcas() {
       podeAnalisar,
       limiteInput,
       branchCodeInput,
+      aplicarTodasFiliais,
       obsAnalise,
       user,
       fecharAnalise,
@@ -572,8 +625,13 @@ export default function AnaliseCreditoMultimarcas() {
         );
         return;
       }
-      const branchCode = analise.branch_code || 2;
       const limite = parseFloat(analise.limite_aprovado) || 0;
+      if (limite <= 0) {
+        alert(
+          'Esta análise não tem limite aprovado válido. Reabra a análise e informe o limite antes de reenviar ao TOTVS.',
+        );
+        return;
+      }
       let totvsStatus = null;
       let totvsMsg = null;
       try {
@@ -584,20 +642,16 @@ export default function AnaliseCreditoMultimarcas() {
             personType: isPJ ? 'PJ' : 'PF',
             [isPJ ? 'cnpj' : 'cpf']: cpfCnpjDigits,
             name: analise.cliente_nome,
-            branchInsertCode: branchCode,
-            branchCode: branchCode,
+            applyAllBranches: true,
             saleLimitValue: limite,
             monthlyLimitValue: limite,
             financialLimitValue: limite,
           }),
         });
         const data = await resp.json().catch(() => ({}));
-        if (!resp.ok) {
+        if (!resp.ok || data?.success === false) {
           totvsStatus = 'erro';
           totvsMsg = data?.message || data?.error || `HTTP ${resp.status}`;
-        } else if (data?.limitePendente) {
-          totvsStatus = 'sincronizado';
-          totvsMsg = data.message;
         } else {
           totvsStatus = 'sincronizado';
           totvsMsg = data?.message || 'Sincronizado com sucesso';
@@ -720,8 +774,8 @@ export default function AnaliseCreditoMultimarcas() {
       {/* ─── Aba SOLICITAR ─────────────────────────────────────────────── */}
       {tabAtiva === 'solicitar' && (
         <div className="space-y-3">
-          <div className="bg-white border border-gray-200 rounded-lg p-3 flex flex-col md:flex-row gap-2 items-center justify-between md:items-end">
-            <div className="w-full md:w-44">
+          <div className="bg-white border border-gray-200 rounded-lg p-3 flex flex-col md:flex-row gap-2 justify-between ">
+            <div className="w-full md:w-56">
               <label className="text-[10px] font-bold text-gray-600 uppercase tracking-wide">
                 Buscar por
               </label>
@@ -740,10 +794,10 @@ export default function AnaliseCreditoMultimarcas() {
               <label className="text-[10px] font-bold text-gray-600 uppercase tracking-wide">
                 Pesquisar cliente
               </label>
-              <div className="relative mt-1">
+              <div className="w-full relative mt-1">
                 <MagnifyingGlass
                   size={14}
-                  className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400"
+                  className="absolute left-2 top-1/3 -translate-y-1/2 text-gray-400"
                 />
                 <input
                   type="text"
@@ -768,23 +822,11 @@ export default function AnaliseCreditoMultimarcas() {
                 />
               </div>
             </div>
-            <div className="flex-1 w-full">
-              <label className="text-[10px] font-bold text-gray-600 uppercase tracking-wide">
-                Observação (opcional)
-              </label>
-              <input
-                type="text"
-                className={`${inputCls} mt-1`}
-                placeholder="Motivo da análise, urgência, etc."
-                value={obsSolicitacao}
-                onChange={(e) => setObsSolicitacao(e.target.value)}
-              />
-            </div>
             <button
               type="button"
               onClick={buscarClientes}
               disabled={loadingClientes || !busca.trim()}
-              className="px-3 py-1.5 text-xs font-semibold rounded bg-[#000638] text-white hover:bg-[#001A6B] flex items-center gap-1 disabled:opacity-50"
+              className="w-20 h-10 justify-center mt-6 text-xs font-semibold rounded bg-[#000638] text-white hover:bg-[#001A6B] flex items-center gap-1 disabled:opacity-50"
             >
               <MagnifyingGlass size={14} />
               Buscar
@@ -893,7 +935,7 @@ export default function AnaliseCreditoMultimarcas() {
                               </button>
                               <button
                                 onClick={() =>
-                                  solicitarAnalise({
+                                  abrirModalSolicitar({
                                     ...c,
                                     code: personCode,
                                   })
@@ -948,11 +990,13 @@ export default function AnaliseCreditoMultimarcas() {
               setLimiteInput={setLimiteInput}
               branchCodeInput={branchCodeInput}
               setBranchCodeInput={setBranchCodeInput}
+              aplicarTodasFiliais={aplicarTodasFiliais}
+              setAplicarTodasFiliais={setAplicarTodasFiliais}
               obsAnalise={obsAnalise}
               setObsAnalise={setObsAnalise}
               salvando={salvandoAnalise}
               podeAnalisar={podeAnalisar}
-              onConcluir={concluirAnalise}
+              onConcluir={abrirModalConclusao}
               onFechar={fecharAnalise}
               onExcluir={(id, nome) => excluirAnalise(id, nome)}
               onVerPerfilCompleto={() => {
@@ -995,6 +1039,37 @@ export default function AnaliseCreditoMultimarcas() {
         />
       )}
 
+      {/* ─── Modal: solicitar análise (observação) ────────────────────── */}
+      {modalSolicitar && (
+        <ModalSolicitarAnalise
+          cliente={modalSolicitar}
+          observacao={obsSolicitacao}
+          setObservacao={setObsSolicitacao}
+          enviando={enviandoSolicitacao}
+          onCancelar={() => {
+            setModalSolicitar(null);
+            setObsSolicitacao('');
+          }}
+          onConfirmar={confirmarSolicitacao}
+        />
+      )}
+
+      {/* ─── Modal: concluir análise (motivos da decisão) ──────────────── */}
+      {modalConclusao && analiseAberta && (
+        <ModalConcluirAnalise
+          decisao={modalConclusao}
+          solicitacao={analiseAberta}
+          limite={parseFloat(String(limiteInput).replace(',', '.')) || 0}
+          aplicarTodasFiliais={aplicarTodasFiliais}
+          branchCodeInput={branchCodeInput}
+          observacao={obsAnalise}
+          setObservacao={setObsAnalise}
+          salvando={salvandoAnalise}
+          onCancelar={() => setModalConclusao(null)}
+          onConfirmar={() => concluirAnalise(modalConclusao)}
+        />
+      )}
+
       {/* Modal perfil cliente (reutilizado de Clientes MTM) */}
       <ClientePerfilModal
         isOpen={perfilModalAberto}
@@ -1013,6 +1088,219 @@ export default function AnaliseCreditoMultimarcas() {
 // ════════════════════════════════════════════════════════════════════════════
 // Subcomponentes
 // ════════════════════════════════════════════════════════════════════════════
+
+// Modal onde quem solicita escreve a observação que o financeiro vai ler
+function ModalSolicitarAnalise({
+  cliente,
+  observacao,
+  setObservacao,
+  enviando,
+  onCancelar,
+  onConfirmar,
+}) {
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+        <div className="flex items-center justify-between px-4 py-3 bg-[#000638] text-white rounded-t-lg">
+          <h3 className="text-sm font-bold flex items-center gap-2">
+            <PaperPlaneTilt size={16} weight="bold" /> Solicitar análise de
+            crédito
+          </h3>
+          <button
+            onClick={onCancelar}
+            disabled={enviando}
+            className="text-white hover:bg-white/10 p-1 rounded"
+          >
+            <XCircle size={18} />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-3">
+          <div className="bg-gray-50 border border-gray-200 rounded p-2 text-xs">
+            <div className="font-semibold text-gray-800">
+              {cliente.name || '—'}
+            </div>
+            <div className="text-[10px] text-gray-500 font-mono">
+              #{cliente.code} · {formatCpfCnpj(cliente.cnpj || cliente.cpf)}
+              {cliente.state || cliente.uf
+                ? ` · ${cliente.state || cliente.uf}`
+                : ''}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold text-gray-600 uppercase tracking-wide">
+              Observação para o financeiro
+            </label>
+            <textarea
+              rows={4}
+              autoFocus
+              className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 mt-1 focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
+              placeholder="Motivo da análise, urgência, valor pretendido, histórico do cliente..."
+              value={observacao}
+              onChange={(e) => setObservacao(e.target.value)}
+              disabled={enviando}
+            />
+            <p className="text-[9px] text-gray-500 mt-0.5">
+              Essa observação aparece para quem for analisar a solicitação.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-gray-200 bg-gray-50 rounded-b-lg">
+          <button
+            onClick={onCancelar}
+            disabled={enviando}
+            className="px-3 py-1.5 text-xs font-semibold rounded border border-gray-300 bg-white hover:bg-gray-100 text-gray-700 disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={onConfirmar}
+            disabled={enviando}
+            className="px-3 py-1.5 text-xs font-semibold rounded bg-[#000638] text-white hover:bg-[#001A6B] disabled:opacity-50 flex items-center gap-1"
+          >
+            {enviando ? (
+              <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <PaperPlaneTilt size={12} weight="bold" />
+            )}
+            Enviar solicitação
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Modal de conclusão: o financeiro registra os motivos da decisão
+function ModalConcluirAnalise({
+  decisao,
+  solicitacao: s,
+  limite,
+  aplicarTodasFiliais,
+  branchCodeInput,
+  observacao,
+  setObservacao,
+  salvando,
+  onCancelar,
+  onConfirmar,
+}) {
+  const aprovando = decisao === 'aprovada';
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
+        <div
+          className={`flex items-center justify-between px-4 py-3 text-white rounded-t-lg ${
+            aprovando ? 'bg-green-700' : 'bg-red-700'
+          }`}
+        >
+          <h3 className="text-sm font-bold flex items-center gap-2">
+            {aprovando ? (
+              <CheckCircle size={16} weight="bold" />
+            ) : (
+              <XCircle size={16} weight="bold" />
+            )}
+            {aprovando ? 'Aprovar limite' : 'Rejeitar análise'}
+          </h3>
+          <button
+            onClick={onCancelar}
+            disabled={salvando}
+            className="text-white hover:bg-white/10 p-1 rounded"
+          >
+            <XCircle size={18} />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-3">
+          <div className="bg-gray-50 border border-gray-200 rounded p-2 text-xs">
+            <div className="font-semibold text-gray-800">{s.cliente_nome}</div>
+            <div className="text-[10px] text-gray-500 font-mono">
+              #{s.person_code} · {formatCpfCnpj(s.cliente_cpf_cnpj)}
+            </div>
+            {aprovando && (
+              <div className="mt-2 pt-2 border-t border-gray-200 space-y-0.5">
+                <div>
+                  <span className="text-gray-500">Limite:</span>{' '}
+                  <strong className="text-[#000638]">{fmtMoeda(limite)}</strong>
+                </div>
+                <div className="text-[10px] text-gray-600">
+                  {aplicarTodasFiliais
+                    ? 'Aplicado em todas as filiais próprias no TOTVS'
+                    : `Aplicado somente na filial ${branchCodeInput}`}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {s.observacoes_solicitacao && (
+            <div className="border border-amber-200 bg-amber-50 rounded p-2">
+              <p className="text-[9px] font-bold uppercase text-amber-700 mb-0.5">
+                Observação de quem solicitou
+              </p>
+              <p className="text-xs text-amber-900 whitespace-pre-wrap">
+                {s.observacoes_solicitacao}
+              </p>
+            </div>
+          )}
+
+          <div>
+            <label className="text-[10px] font-bold text-gray-600 uppercase tracking-wide">
+              Observação da análise{' '}
+              <span className="text-gray-400 normal-case font-normal">
+                (motivos da decisão)
+              </span>
+            </label>
+            <textarea
+              rows={4}
+              autoFocus
+              className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 mt-1 focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
+              placeholder={
+                aprovando
+                  ? 'Motivos da aprovação, condições, ressalvas...'
+                  : 'Motivos da rejeição...'
+              }
+              value={observacao}
+              onChange={(e) => setObservacao(e.target.value)}
+              disabled={salvando}
+            />
+            <p className="text-[9px] text-gray-500 mt-0.5">
+              Fica registrada na análise e visível na aba “Clientes analisados”.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-gray-200 bg-gray-50 rounded-b-lg">
+          <button
+            onClick={onCancelar}
+            disabled={salvando}
+            className="px-3 py-1.5 text-xs font-semibold rounded border border-gray-300 bg-white hover:bg-gray-100 text-gray-700 disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={onConfirmar}
+            disabled={salvando}
+            className={`px-3 py-1.5 text-xs font-semibold rounded text-white disabled:opacity-50 flex items-center gap-1 ${
+              aprovando
+                ? 'bg-green-600 hover:bg-green-700'
+                : 'bg-red-600 hover:bg-red-700'
+            }`}
+          >
+            {salvando ? (
+              <span className="inline-block w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : aprovando ? (
+              <CheckCircle size={12} weight="bold" />
+            ) : (
+              <XCircle size={12} weight="bold" />
+            )}
+            {aprovando ? 'Confirmar aprovação' : 'Confirmar rejeição'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function ListaPendentes({ loading, pendentes, onAbrir, onExcluir, onRefresh }) {
   return (
@@ -1125,6 +1413,8 @@ function DetalheAnalise({
   setLimiteInput,
   branchCodeInput,
   setBranchCodeInput,
+  aplicarTodasFiliais,
+  setAplicarTodasFiliais,
   obsAnalise,
   setObsAnalise,
   salvando,
@@ -1188,13 +1478,22 @@ function DetalheAnalise({
                     <span className="text-gray-500">Em:</span>{' '}
                     <strong>{fmtData(s.solicitado_em)}</strong>
                   </div>
-                  {s.observacoes_solicitacao && (
-                    <div className="col-span-2">
-                      <span className="text-gray-500">Observação:</span>{' '}
-                      <em>{s.observacoes_solicitacao}</em>
-                    </div>
-                  )}
                 </div>
+                {s.observacoes_solicitacao ? (
+                  <div className="mt-2 border-l-4 border-amber-400 bg-amber-50 rounded-r p-2">
+                    <p className="text-[9px] font-bold uppercase text-amber-700 mb-0.5 flex items-center gap-1">
+                      <ClipboardText size={11} weight="bold" /> Observação do
+                      solicitante
+                    </p>
+                    <p className="text-xs text-amber-900 whitespace-pre-wrap">
+                      {s.observacoes_solicitacao}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-[10px] text-gray-400 italic">
+                    Sem observação do solicitante.
+                  </p>
+                )}
               </div>
 
               {/* Estatísticas TOTVS */}
@@ -1404,24 +1703,45 @@ function DetalheAnalise({
                   disabled={!podeAnalisar || salvando}
                 />
               </div>
-              <div>
-                <label className="text-[10px] font-bold text-gray-600 uppercase">
-                  Filial (branchCode) — aplicar limite no TOTVS
+              <div className="border border-gray-200 rounded p-2 bg-white">
+                <label className="flex items-start gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={aplicarTodasFiliais}
+                    onChange={(e) => setAplicarTodasFiliais(e.target.checked)}
+                    disabled={!podeAnalisar || salvando}
+                  />
+                  <span>
+                    <span className="text-[10px] font-bold text-gray-700 uppercase">
+                      Aplicar em todas as filiais
+                    </span>
+                    <span className="block text-[9px] text-gray-500">
+                      O TOTVS guarda o limite por filial. Se gravar em apenas
+                      uma, o PDV das outras lojas continua bloqueado.
+                    </span>
+                  </span>
                 </label>
-                <input
-                  type="number"
-                  step="1"
-                  min="1"
-                  className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 mt-1 focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
-                  placeholder="Ex.: 2"
-                  value={branchCodeInput}
-                  onChange={(e) => setBranchCodeInput(e.target.value)}
-                  disabled={!podeAnalisar || salvando}
-                />
-                <p className="text-[9px] text-gray-500 mt-0.5">
-                  Filial usada como <code>branchCode</code> e{' '}
-                  <code>branchInsertCode</code> no payload TOTVS.
-                </p>
+                {!aplicarTodasFiliais && (
+                  <div className="mt-2">
+                    <label className="text-[10px] font-bold text-gray-600 uppercase">
+                      Filial (branchCode)
+                    </label>
+                    <input
+                      type="number"
+                      step="1"
+                      min="1"
+                      className="w-full text-xs border border-gray-300 rounded px-2 py-1.5 mt-1 focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
+                      placeholder="Ex.: 2"
+                      value={branchCodeInput}
+                      onChange={(e) => setBranchCodeInput(e.target.value)}
+                      disabled={!podeAnalisar || salvando}
+                    />
+                    <p className="text-[9px] text-amber-700 mt-0.5">
+                      O limite vale só nesta filial.
+                    </p>
+                  </div>
+                )}
               </div>
               <div>
                 <label className="text-[10px] font-bold text-gray-600 uppercase">
@@ -1435,6 +1755,10 @@ function DetalheAnalise({
                   onChange={(e) => setObsAnalise(e.target.value)}
                   disabled={!podeAnalisar || salvando}
                 />
+                <p className="text-[9px] text-gray-500 mt-0.5">
+                  Você pode revisar/editar esta observação ao confirmar a
+                  decisão.
+                </p>
               </div>
 
               <button
@@ -1571,6 +1895,9 @@ function ListaAnalisadas({
                     TOTVS
                   </th>
                   <th className="text-left px-3 py-2 font-semibold text-gray-600">
+                    Observações
+                  </th>
+                  <th className="text-left px-3 py-2 font-semibold text-gray-600">
                     Aprovado por
                   </th>
                   <th className="text-left px-3 py-2 font-semibold text-gray-600">
@@ -1614,6 +1941,26 @@ function ListaAnalisadas({
                         />
                       ) : (
                         <span className="text-[10px] text-gray-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-gray-600 max-w-[220px]">
+                      {a.observacoes_analise ? (
+                        <span
+                          className="block truncate"
+                          title={a.observacoes_analise}
+                        >
+                          {a.observacoes_analise}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                      {a.observacoes_solicitacao && (
+                        <span
+                          className="block truncate text-[10px] text-amber-700"
+                          title={a.observacoes_solicitacao}
+                        >
+                          Solicitação: {a.observacoes_solicitacao}
+                        </span>
                       )}
                     </td>
                     <td className="px-3 py-2 text-gray-700">

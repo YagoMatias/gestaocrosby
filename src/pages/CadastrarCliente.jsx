@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import PageTitle from '../components/ui/PageTitle';
 import { useAuth } from '../components/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -22,9 +22,11 @@ import {
   Users,
   CreditCard,
   Note,
-  FileArrowUp,
   FileText,
   FolderOpen,
+  FolderSimple,
+  FolderPlus,
+  CaretDown,
   Truck,
   MagnifyingGlass,
   Spinner,
@@ -44,6 +46,7 @@ const CATEGORIAS_DOCUMENTOS = [
   { key: 'doc_retirada_rastreio', label: 'Doc. Retirada / Rastreio / Taxista' },
   { key: 'declaracao_fiador', label: 'Declaração Resp. e Fiador' },
   { key: 'nf_outros_fornecedores', label: 'NFs de Outros Fornecedores' },
+  { key: 'notas_fiscais', label: 'Notas Fiscais' },
 ];
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -595,10 +598,15 @@ export default function CadastrarCliente() {
   const [enviando, setEnviando] = useState(false);
   const [resultado, setResultado] = useState(null); // { ok, message, data? }
   // Documentos extras (mesmas categorias do módulo Clientes MTM)
-  // { [categoria]: File } — selecionados localmente antes do submit
+  // { [categoria]: File[] } — selecionados localmente antes do submit
   const [documentosPendentes, setDocumentosPendentes] = useState({});
-  const [uploadStatus, setUploadStatus] = useState({}); // { [categoria]: 'ok'|'err'|'enviando' }
+  // { [categoria]: { estado: 'enviando'|'ok'|'parcial'|'err', ok, err } }
+  const [uploadStatus, setUploadStatus] = useState({});
   const [uploadingDocs, setUploadingDocs] = useState(false);
+  const [catExpandida, setCatExpandida] = useState(null);
+  const [catDragAtiva, setCatDragAtiva] = useState(null);
+  const docInputRef = useRef(null);
+  const catUploadRef = useRef(null);
   const [buscandoCnpj, setBuscandoCnpj] = useState(false);
   const [cnpjBuscaErro, setCnpjBuscaErro] = useState(null);
 
@@ -1009,47 +1017,98 @@ export default function CadastrarCliente() {
   }, [state, tipoPessoa, buildPayload, documentosPendentes]);
 
   // ─── Upload de documentos extras no Supabase ──────────────────────────────
+  const adicionarArquivos = useCallback((categoria, arquivos) => {
+    const novos = Array.from(arquivos || []);
+    if (!novos.length) return;
+    setDocumentosPendentes((prev) => {
+      const atuais = prev[categoria] || [];
+      const chaves = new Set(atuais.map((f) => `${f.name}_${f.size}`));
+      const ineditos = novos.filter((f) => !chaves.has(`${f.name}_${f.size}`));
+      return { ...prev, [categoria]: [...atuais, ...ineditos] };
+    });
+    setUploadStatus((prev) => {
+      const next = { ...prev };
+      delete next[categoria];
+      return next;
+    });
+    setCatExpandida(categoria);
+  }, []);
+
+  const removerArquivoPendente = useCallback((categoria, index) => {
+    setDocumentosPendentes((prev) => {
+      const restantes = (prev[categoria] || []).filter((_, i) => i !== index);
+      const next = { ...prev };
+      if (restantes.length) next[categoria] = restantes;
+      else delete next[categoria];
+      return next;
+    });
+  }, []);
+
+  const abrirSeletorArquivos = useCallback((categoria) => {
+    catUploadRef.current = categoria;
+    docInputRef.current?.click();
+  }, []);
+
+  const handleDropArquivos = useCallback(
+    (e, categoria) => {
+      e.preventDefault();
+      setCatDragAtiva(null);
+      adicionarArquivos(categoria, e.dataTransfer?.files);
+    },
+    [adicionarArquivos],
+  );
+
   const uploadDocumentosSupabase = useCallback(
     async (personCode) => {
       setUploadingDocs(true);
       let ok = 0;
       let err = 0;
       const novoStatus = { ...uploadStatus };
-      for (const [categoria, file] of Object.entries(documentosPendentes)) {
-        if (!file) continue;
-        novoStatus[categoria] = 'enviando';
+      for (const [categoria, arquivos] of Object.entries(documentosPendentes)) {
+        const files = arquivos || [];
+        if (!files.length) continue;
+        novoStatus[categoria] = { estado: 'enviando', ok: 0, err: 0 };
         setUploadStatus({ ...novoStatus });
-        try {
-          const uid =
-            (typeof crypto !== 'undefined' && crypto.randomUUID?.()) ||
-            String(Date.now());
-          const safeName = file.name
-            .normalize('NFD')
-            .replace(/[\u0300-\u036f]/g, '')
-            .replace(/[^a-zA-Z0-9._-]/g, '_');
-          const path = `documentos/${personCode}/${categoria}/${uid}_${safeName}`;
-          const { error: upErr } = await supabase.storage
-            .from(BUCKET_DOCS)
-            .upload(path, file, { upsert: false });
-          if (upErr) throw upErr;
-          const { error: insErr } = await supabase
-            .from('clientes_confianca_documentos')
-            .insert({
-              person_code: personCode,
-              nome_arquivo: file.name,
-              file_path: path,
-              tipo: file.type,
-              uploaded_by: user?.id || null,
-              categoria,
-            });
-          if (insErr) throw insErr;
-          novoStatus[categoria] = 'ok';
-          ok += 1;
-        } catch (e) {
-          console.error('Erro upload doc', categoria, e);
-          novoStatus[categoria] = 'err';
-          err += 1;
+        let okCat = 0;
+        let errCat = 0;
+        for (const file of files) {
+          try {
+            const uid =
+              (typeof crypto !== 'undefined' && crypto.randomUUID?.()) ||
+              `${Date.now()}_${okCat + errCat}`;
+            const safeName = file.name
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .replace(/[^a-zA-Z0-9._-]/g, '_');
+            const path = `documentos/${personCode}/${categoria}/${uid}_${safeName}`;
+            const { error: upErr } = await supabase.storage
+              .from(BUCKET_DOCS)
+              .upload(path, file, { upsert: false });
+            if (upErr) throw upErr;
+            const { error: insErr } = await supabase
+              .from('clientes_confianca_documentos')
+              .insert({
+                person_code: personCode,
+                nome_arquivo: file.name,
+                file_path: path,
+                tipo: file.type,
+                uploaded_by: user?.id || null,
+                categoria,
+              });
+            if (insErr) throw insErr;
+            okCat += 1;
+          } catch (e) {
+            console.error('Erro upload doc', categoria, file.name, e);
+            errCat += 1;
+          }
         }
+        ok += okCat;
+        err += errCat;
+        novoStatus[categoria] = {
+          estado: errCat === 0 ? 'ok' : okCat > 0 ? 'parcial' : 'err',
+          ok: okCat,
+          err: errCat,
+        };
         setUploadStatus({ ...novoStatus });
       }
       setUploadingDocs(false);
@@ -3264,94 +3323,180 @@ export default function CadastrarCliente() {
             icon={FolderOpen}
           >
             <p className="text-xs text-gray-600 mb-3">
-              Anexe os documentos abaixo para enriquecer o perfil do cliente.
-              Após o cadastro ser confirmado na TOTVS, os arquivos serão
-              enviados ao Supabase (bucket <code>{BUCKET_DOCS}</code>) e ficarão
-              disponíveis no módulo <strong>Clientes MTM</strong>.
+              Clique na pasta (ou arraste e solte os arquivos sobre ela) para
+              anexar <strong>vários documentos de uma vez</strong> em cada
+              categoria. Após o cadastro ser confirmado na TOTVS, os arquivos
+              serão enviados ao Supabase (bucket <code>{BUCKET_DOCS}</code>) e
+              ficarão disponíveis no módulo <strong>Clientes MTM</strong>.
             </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {/* Input único de upload (multiplo) */}
+            <input
+              ref={docInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              accept="image/*,application/pdf"
+              onChange={(e) => {
+                adicionarArquivos(catUploadRef.current, e.target.files);
+                e.target.value = '';
+              }}
+            />
+
+            {/* Listagem vertical de categorias (pastas) */}
+            <div className="space-y-2">
               {CATEGORIAS_DOCUMENTOS.filter(
                 (c) => !(c.onlyPJ && tipoPessoa !== 'PJ'),
               ).map((cat) => {
-                const file = documentosPendentes[cat.key];
+                const files = documentosPendentes[cat.key] || [];
                 const status = uploadStatus[cat.key];
+                const temFiles = files.length > 0;
+                const expandida = catExpandida === cat.key;
+                const arrastando = catDragAtiva === cat.key;
                 return (
                   <div
                     key={cat.key}
-                    className="border rounded-lg p-3 bg-gray-50 flex flex-col gap-2"
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setCatDragAtiva(cat.key);
+                    }}
+                    onDragLeave={() => setCatDragAtiva(null)}
+                    onDrop={(e) => handleDropArquivos(e, cat.key)}
+                    className={`border rounded-lg overflow-hidden transition-colors ${
+                      arrastando
+                        ? 'border-blue-500 bg-blue-50'
+                        : expandida
+                          ? 'border-blue-200 bg-white'
+                          : 'border-gray-200 bg-white hover:border-gray-300'
+                    }`}
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <FileText size={16} className="text-gray-600" />
-                        <span className="text-xs font-semibold text-gray-800">
+                    {/* Linha da pasta */}
+                    <div className="flex items-center gap-2 px-3 py-2.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setCatExpandida(expandida ? null : cat.key)
+                        }
+                        className="flex items-center gap-2 flex-1 min-w-0 text-left"
+                      >
+                        <CaretDown
+                          size={12}
+                          weight="bold"
+                          className={`flex-shrink-0 text-gray-400 transition-transform ${
+                            expandida ? '' : '-rotate-90'
+                          }`}
+                        />
+                        {expandida ? (
+                          <FolderOpen
+                            size={18}
+                            weight="fill"
+                            className={`flex-shrink-0 ${temFiles ? 'text-blue-600' : 'text-gray-300'}`}
+                          />
+                        ) : (
+                          <FolderSimple
+                            size={18}
+                            weight="fill"
+                            className={`flex-shrink-0 ${temFiles ? 'text-blue-500' : 'text-gray-300'}`}
+                          />
+                        )}
+                        <span className="text-xs font-semibold text-gray-800 truncate">
                           {cat.label}
                         </span>
-                      </div>
-                      {status === 'ok' && (
-                        <span className="text-[10px] font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded">
-                          ENVIADO
-                        </span>
-                      )}
-                      {status === 'enviando' && (
-                        <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded">
-                          ENVIANDO...
-                        </span>
-                      )}
-                      {status === 'err' && (
-                        <span className="text-[10px] font-bold text-red-700 bg-red-100 px-2 py-0.5 rounded">
-                          ERRO
-                        </span>
-                      )}
-                    </div>
-                    {file ? (
-                      <div className="flex items-center justify-between gap-2 bg-white border rounded px-2 py-1">
                         <span
-                          className="text-xs text-gray-700 truncate"
-                          title={file.name}
+                          className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[9px] font-bold ${
+                            temFiles
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-gray-100 text-gray-400'
+                          }`}
                         >
-                          {file.name}{' '}
-                          <span className="text-gray-400">
-                            ({(file.size / 1024).toFixed(1)} KB)
-                          </span>
+                          {files.length}
                         </span>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setDocumentosPendentes((prev) => {
-                              const next = { ...prev };
-                              delete next[cat.key];
-                              return next;
-                            })
-                          }
-                          className="text-red-600 hover:text-red-800"
-                          title="Remover seleção"
-                        >
-                          <Trash size={14} />
-                        </button>
+                        {status?.estado === 'enviando' && (
+                          <span className="text-[10px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded">
+                            ENVIANDO...
+                          </span>
+                        )}
+                        {status?.estado === 'ok' && (
+                          <span className="text-[10px] font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded">
+                            {status.ok} ENVIADO(S)
+                          </span>
+                        )}
+                        {status?.estado === 'parcial' && (
+                          <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">
+                            {status.ok} OK / {status.err} ERRO
+                          </span>
+                        )}
+                        {status?.estado === 'err' && (
+                          <span className="text-[10px] font-bold text-red-700 bg-red-100 px-2 py-0.5 rounded">
+                            ERRO
+                          </span>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => abrirSeletorArquivos(cat.key)}
+                        disabled={uploadingDocs}
+                        title="Adicionar arquivos nesta pasta"
+                        className="flex items-center gap-1 px-2 py-1 rounded-lg text-blue-600 hover:bg-blue-50 disabled:opacity-40 transition-colors"
+                      >
+                        <FolderPlus size={18} weight="bold" />
+                        <span className="text-[10px] font-semibold">
+                          Anexar
+                        </span>
+                      </button>
+                    </div>
+
+                    {/* Arquivos selecionados */}
+                    {expandida && (
+                      <div className="border-t border-gray-100 px-3 py-2 bg-gray-50/60">
+                        {files.length === 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => abrirSeletorArquivos(cat.key)}
+                            className="w-full flex flex-col items-center justify-center gap-1 py-4 text-gray-400 hover:text-blue-500 transition-colors"
+                          >
+                            <FolderPlus size={22} />
+                            <span className="text-[10px]">
+                              Nenhum arquivo · clique ou arraste para anexar
+                            </span>
+                          </button>
+                        ) : (
+                          <div className="space-y-1.5">
+                            {files.map((file, idx) => (
+                              <div
+                                key={`${file.name}_${file.size}_${idx}`}
+                                className="flex items-center justify-between gap-2 bg-white border border-gray-100 rounded-lg px-3 py-2"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <FileText
+                                    size={16}
+                                    className="text-blue-500 flex-shrink-0"
+                                  />
+                                  <span
+                                    className="text-xs text-gray-700 truncate"
+                                    title={file.name}
+                                  >
+                                    {file.name}{' '}
+                                    <span className="text-gray-400">
+                                      ({(file.size / 1024).toFixed(1)} KB)
+                                    </span>
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    removerArquivoPendente(cat.key, idx)
+                                  }
+                                  disabled={uploadingDocs}
+                                  className="p-1 text-red-600 hover:bg-red-50 rounded disabled:opacity-40"
+                                  title="Remover seleção"
+                                >
+                                  <Trash size={14} />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                    ) : (
-                      <label className="flex items-center gap-2 px-2 py-1.5 bg-white border border-dashed border-gray-300 rounded cursor-pointer hover:bg-blue-50 text-xs text-gray-600">
-                        <FileArrowUp size={14} />
-                        <span>Selecionar arquivo...</span>
-                        <input
-                          type="file"
-                          className="hidden"
-                          accept="image/*,application/pdf"
-                          onChange={(e) => {
-                            const f = e.target.files?.[0];
-                            if (!f) return;
-                            setDocumentosPendentes((prev) => ({
-                              ...prev,
-                              [cat.key]: f,
-                            }));
-                            setUploadStatus((prev) => {
-                              const next = { ...prev };
-                              delete next[cat.key];
-                              return next;
-                            });
-                          }}
-                        />
-                      </label>
                     )}
                   </div>
                 );
