@@ -516,9 +516,14 @@ const EsteiraProtesto = () => {
     setEnviandoSms(true);
     setResultadoSms(null);
     try {
+      // URGENTE pula o cooldown de 3 dias no backend (rota /api/sms/enviar).
+      // A esteira é o último aviso antes do cartório, então não faz sentido
+      // um lembrete de cobrança de 2 dias atrás bloquear justamente ela.
+      // O teto de 3 SMS por número por dia continua valendo.
       const mensagens = smsValidos.map((d) => ({
         numero: d.numero,
         mensagem: texto,
+        prioridade: 'URGENTE',
         cd_cliente: d.cd_cliente,
         nm_cliente: d.nm_cliente,
       }));
@@ -1293,8 +1298,8 @@ const EsteiraProtesto = () => {
 
             <div className="px-5 py-3 border-t border-gray-200 flex justify-between items-center">
               <span className="text-[11px] text-gray-500">
-                O backend aplica janela de horário, teto diário e cooldown por
-                número.
+                Sem cooldown nesta tela. Continuam valendo a janela de horário
+                e o teto de 3 SMS por número por dia.
               </span>
               <div className="flex gap-2">
                 <button
