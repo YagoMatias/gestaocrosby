@@ -86,6 +86,11 @@ const AVAILABLE_PAGES = [
     category: 'Financeiro',
   },
   {
+    path: '/cto',
+    name: 'CTO (Custos Operacionais)',
+    category: 'Financeiro',
+  },
+  {
     path: '/liberacao-pagamento',
     name: 'Liberação de Pagamento',
     category: 'Financeiro',

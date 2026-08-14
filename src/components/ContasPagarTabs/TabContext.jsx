@@ -8,6 +8,7 @@ const CONTAS_PAGAR_PAGES = {
   '/despesas-fixas': 'Despesas Fixas',
   '/despesas-industria': 'Despesas de Indústria',
   '/renegociacoes': 'Renegociações',
+  '/cto': 'CTO',
   '/liberacao-pagamento': 'Liberação de Pagamento',
   '/pagamentos-fabricas': 'Pagamentos Fábricas',
 };
