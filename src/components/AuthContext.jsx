@@ -8,6 +8,7 @@ import React, {
 import { supabase, supabaseSession } from '../lib/supabase';
 import { getUserPermissions } from '../services/permissionsService';
 import { getUserCompanies } from '../services/userCompaniesService';
+import { FINANCEIRO_TABS_STORAGE_KEY } from '../utils/financeiroTabs';
 
 // Roles disponíveis no sistema (ordenados por hierarquia)
 const ROLES = [
@@ -291,6 +292,12 @@ export const AuthProvider = ({ children }) => {
       await supabase.auth.signOut();
       await supabaseSession.auth.signOut();
       updateUser(null);
+      // Abas do Financeiro não podem vazar para o próximo usuário da sessão
+      try {
+        sessionStorage.removeItem(FINANCEIRO_TABS_STORAGE_KEY);
+      } catch {
+        // storage indisponível — nada a limpar
+      }
       // Limpar cache
       permissionsCache.current = {};
       loadingPermissions.current.clear();

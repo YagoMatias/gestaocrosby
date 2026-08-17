@@ -12,9 +12,12 @@ import LoadingSpinner from './components/LoadingSpinner';
 import ErrorBoundary from './components/ui/ErrorBoundary';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
-import { TabProvider, useTabContext } from './components/ContasPagarTabs/TabContext';
-import TabBar from './components/ContasPagarTabs/TabBar';
-import TabContainer from './components/ContasPagarTabs/TabContainer';
+import {
+  TabProvider,
+  useTabContext,
+} from './components/FinanceiroTabs/TabContext';
+import TabBar from './components/FinanceiroTabs/TabBar';
+import TabContainer from './components/FinanceiroTabs/TabContainer';
 // Lazy loading de todas as páginas para otimizar bundle
 const Home = lazy(() => import('./pages/Home'));
 const ContasAPagar = lazy(() => import('./pages/ContasAPagar'));
@@ -292,10 +295,13 @@ const ProtectedLayoutInner = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const handleToggleSidebar = useCallback(() => setSidebarOpen((o) => !o), []);
   const handleCloseSidebar = useCallback(() => setSidebarOpen(false), []);
-  const { isTabMode, activeTab, isContasPagarPath } = useTabContext();
+  const { isTabMode, isFinanceiroPath } = useTabContext();
   const { pathname } = useLocation();
 
-  const showTabContent = isTabMode && isContasPagarPath(pathname);
+  // Páginas do Financeiro são sempre renderizadas pelo TabContainer.
+  // O Outlet cuida apenas do resto do sistema — assim a página não é
+  // montada duas vezes (uma na rota, outra na aba).
+  const showTabContent = isFinanceiroPath(pathname);
 
   return (
     <div className="h-screen ">
@@ -323,18 +329,24 @@ const ProtectedLayoutInner = () => {
         >
           <ErrorBoundary>
             <PrivateRoute>
-              {/* Abas do Contas a Pagar — sempre montadas quando existem */}
+              {/* Abas do Financeiro — sempre montadas quando existem,
+                  para preservar filtros e resultados ao alternar */}
               {isTabMode && (
-                <div style={{ display: showTabContent ? 'flex' : 'none' }} className="flex-1 flex flex-col min-h-0">
+                <div
+                  style={{ display: showTabContent ? 'flex' : 'none' }}
+                  className="flex-1 flex flex-col min-h-0"
+                >
                   <TabContainer />
                 </div>
               )}
-              {/* Outlet normal — páginas fora das abas */}
-              <div style={{ display: showTabContent ? 'none' : 'flex' }} className="flex-1 flex flex-col min-h-0">
-                <Suspense fallback={<PageLoadingFallback />}>
-                  <Outlet />
-                </Suspense>
-              </div>
+              {/* Outlet normal — páginas fora do Financeiro */}
+              {!showTabContent && (
+                <div className="flex-1 flex flex-col min-h-0">
+                  <Suspense fallback={<PageLoadingFallback />}>
+                    <Outlet />
+                  </Suspense>
+                </div>
+              )}
             </PrivateRoute>
           </ErrorBoundary>
         </main>
