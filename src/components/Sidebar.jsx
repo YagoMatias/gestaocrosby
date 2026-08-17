@@ -1,7 +1,7 @@
 import React, { useState, useCallback, memo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
-import { useTabContext } from './ContasPagarTabs/TabContext';
+import { useTabContext } from './AppTabs/TabContext';
 import {
   UserGear,
   X,
@@ -934,7 +934,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
       onClose();
       if (external) {
         window.open(href, '_blank');
-      } else if (tabCtx && tabCtx.isContasPagarPath(href)) {
+      } else if (tabCtx && tabCtx.isTabbedPath(href)) {
         tabCtx.openTab(href);
         navigate(href);
       } else {
