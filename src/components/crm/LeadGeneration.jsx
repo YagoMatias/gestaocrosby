@@ -42,15 +42,21 @@ async function apiPost(endpoint, body) {
     headers: { 'Content-Type': 'application/json', 'x-api-key': API_KEY },
     body: JSON.stringify(body),
   });
-  const json = await r.json();
-  return json.data ?? json;
+  const json = await r.json().catch(() => null);
+  if (!r.ok) {
+    throw new Error((json && (json.message || json.error)) || `Erro ${r.status}`);
+  }
+  return json?.data ?? json;
 }
 async function apiGet(endpoint) {
   const r = await fetch(`${API_BASE_URL}${endpoint}`, {
     headers: { 'x-api-key': API_KEY },
   });
-  const json = await r.json();
-  return json.data ?? json;
+  const json = await r.json().catch(() => null);
+  if (!r.ok) {
+    throw new Error((json && (json.message || json.error)) || `Erro ${r.status}`);
+  }
+  return json?.data ?? json;
 }
 
 // ─── Categorias ───────────────────────────────────────────────────────────
@@ -83,7 +89,12 @@ const fmtData = (iso) => {
 
 const fmtDataSimples = (iso) => {
   if (!iso) return '—';
-  const d = new Date(iso);
+  const s = String(iso);
+  // Data-only (YYYY-MM-DD): formata direto, sem passar por Date, que
+  // interpretaria como UTC e deslocaria o dia em fusos negativos (BRT).
+  const dateOnly = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnly) return `${dateOnly[3]}/${dateOnly[2]}/${dateOnly[1]}`;
+  const d = new Date(s);
   if (isNaN(d.getTime())) return '—';
   return d.toLocaleDateString('pt-BR');
 };
@@ -719,38 +730,44 @@ function LigacoesAtendidasChart({ modulo, vendedoresDoModulo, refreshKey }) {
     };
   }, [modulo, days, refreshKey]);
 
-  // Agrega: data → { date, [vendedorNome]: count, total }
+  // Agrega: data → { _date, [vendedorCode]: count, total }
+  // Chaveia por CÓDIGO do vendedor (não pelo primeiro nome, que colide quando
+  // dois vendedores têm o mesmo nome).
   const { rows, vendedoresAtivos } = useMemo(() => {
     const byDate = new Map();
     const seenVendCodes = new Set();
 
-    // Inicializa série vazia pros últimos N dias
+    // Chave de data LOCAL (YYYY-MM-DD) — evita o desencontro entre buckets e
+    // calls quando data_contato vem em UTC (ligação de 22h vira dia seguinte).
+    const dateKeyLocal = (d) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+        d.getDate(),
+      ).padStart(2, '0')}`;
+
+    // Inicializa série vazia pros últimos N dias (datas locais)
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     for (let i = days - 1; i >= 0; i--) {
       const d = new Date(today);
       d.setDate(d.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
+      const key = dateKeyLocal(d);
       byDate.set(key, { _date: key, total: 0 });
     }
 
-    // Mapa code → nome (do modulo)
-    const codeToName = new Map(
-      vendedoresDoModulo.map((v) => [v.code, v.name.split(' ')[0]]),
-    );
+    const codeSet = new Set(vendedoresDoModulo.map((v) => v.code));
 
     for (const c of calls) {
-      const dateKey = String(c.data_contato || '').slice(0, 10);
+      // data_contato é ISO (UTC) — converte para a data LOCAL do contato.
+      const dt = new Date(c.data_contato);
+      if (isNaN(dt.getTime())) continue;
+      const dateKey = dateKeyLocal(dt);
       if (!byDate.has(dateKey)) continue;
       const code = Number(c.vendedor_code);
       // Mostra só vendedores do módulo atual
-      if (codeToName.size > 0 && !codeToName.has(code)) continue;
-      const nome =
-        codeToName.get(code) ||
-        (c.vendedor_nome ? c.vendedor_nome.split(' ')[0] : `V${code}`);
+      if (codeSet.size > 0 && !codeSet.has(code)) continue;
       seenVendCodes.add(code);
       const row = byDate.get(dateKey);
-      row[nome] = (row[nome] || 0) + 1;
+      row[code] = (row[code] || 0) + 1;
       row.total += 1;
     }
 
@@ -860,20 +877,18 @@ function LigacoesAtendidasChart({ modulo, vendedoresDoModulo, refreshKey }) {
                 iconSize={8}
                 wrapperStyle={{ fontSize: 10, paddingTop: 4 }}
               />
-              {vendedoresAtivos.map((v, i) => {
-                const nome = v.name.split(' ')[0];
-                return (
-                  <Line
-                    key={v.code}
-                    type="monotone"
-                    dataKey={nome}
-                    stroke={PALETA[i % PALETA.length]}
-                    strokeWidth={2}
-                    dot={{ r: 3 }}
-                    activeDot={{ r: 5 }}
-                  />
-                );
-              })}
+              {vendedoresAtivos.map((v, i) => (
+                <Line
+                  key={v.code}
+                  type="monotone"
+                  dataKey={String(v.code)}
+                  name={v.name.split(' ')[0]}
+                  stroke={PALETA[i % PALETA.length]}
+                  strokeWidth={2}
+                  dot={{ r: 3 }}
+                  activeDot={{ r: 5 }}
+                />
+              ))}
             </LineChart>
           </ResponsiveContainer>
         </div>
@@ -896,6 +911,9 @@ export default function LeadGeneration({ erpData, modulo, vendedoresMap, onChatL
   const [loadingTop, setLoadingTop] = useState(false);
   const [aniversariantes, setAniversariantes] = useState([]);
   const [cashbackList, setCashbackList] = useState([]);
+  // Cashback é caro (consulta saldo no TOTVS por cliente) e só carrega ao abrir
+  // a aba. Este flag evita o badge mostrar "0" enganoso antes de carregar.
+  const [cashbackCarregado, setCashbackCarregado] = useState(false);
   const [callsByPerson, setCallsByPerson] = useState({}); // person_code → último call
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -925,16 +943,23 @@ export default function LeadGeneration({ erpData, modulo, vendedoresMap, onChatL
   }, [vendedoresDoModulo, vendedorSel]);
 
   // ── Carregar Top Clientes do vendedor selecionado ──
+  // Carrega ao trocar de vendedor (não só quando a aba está aberta), pra que o
+  // contador do badge "Top" já mostre o número real. É 1 chamada barata.
   useEffect(() => {
-    if (categoriaSel !== 'top' || !vendedorSel) return;
+    // Ao trocar de vendedor/refresh, o cashback carregado fica obsoleto.
+    setCashbackCarregado(false);
+    if (!vendedorSel) {
+      setTopClientes([]);
+      return;
+    }
     setLoadingTop(true);
     apiGet(
-      `/api/crm/lead-generation/top-clientes?vendedor_code=${vendedorSel.code}&modulo=${modulo}&limit=50`,
+      `/api/crm/lead-generation/top-clientes?vendedor_code=${vendedorSel.code}&modulo=${encodeURIComponent(modulo)}&limit=50`,
     )
       .then((d) => setTopClientes(d?.clientes || []))
       .catch(() => setTopClientes([]))
       .finally(() => setLoadingTop(false));
-  }, [categoriaSel, vendedorSel, modulo, refreshKey]);
+  }, [vendedorSel, modulo, refreshKey]);
 
   // ── Carregar Aniversariantes do dia ──
   useEffect(() => {
@@ -951,6 +976,7 @@ export default function LeadGeneration({ erpData, modulo, vendedoresMap, onChatL
     if (categoriaSel !== 'cashback') return;
     if (!vendedorSel || !erpData?.clientes) {
       setCashbackList([]);
+      setCashbackCarregado(true);
       return;
     }
     const persons = erpData.clientes
@@ -958,6 +984,7 @@ export default function LeadGeneration({ erpData, modulo, vendedoresMap, onChatL
       .map((c) => ({ code: c.cod }));
     if (persons.length === 0) {
       setCashbackList([]);
+      setCashbackCarregado(true);
       return;
     }
     apiPost('/api/crm/cashback-balances', { persons, modulo })
@@ -973,19 +1000,25 @@ export default function LeadGeneration({ erpData, modulo, vendedoresMap, onChatL
         }));
         setCashbackList(arr);
       })
-      .catch(() => setCashbackList([]));
+      .catch(() => setCashbackList([]))
+      .finally(() => setCashbackCarregado(true));
   }, [categoriaSel, modulo, vendedorSel, erpData?.clientes, refreshKey]);
 
   // ── Carregar últimas ligações pra colocar timestamps nos cards ──
   useEffect(() => {
     if (!vendedorSel) return;
     apiGet(
-      `/api/crm/lead-generation/calls?vendedor_code=${vendedorSel.code}&modulo=${modulo}&limit=500`,
+      `/api/crm/lead-generation/calls?vendedor_code=${vendedorSel.code}&modulo=${encodeURIComponent(modulo)}&limit=500`,
     )
       .then((d) => {
         const map = {};
         for (const c of d?.calls || []) {
-          if (!map[c.person_code] || c.data_contato > map[c.person_code].data_contato) {
+          const prev = map[c.person_code];
+          if (
+            !prev ||
+            new Date(c.data_contato).getTime() >
+              new Date(prev.data_contato).getTime()
+          ) {
             map[c.person_code] = c;
           }
         }
@@ -1012,14 +1045,15 @@ export default function LeadGeneration({ erpData, modulo, vendedoresMap, onChatL
           return true;
         })
         .map((a) => {
-          // Normaliza pro shape esperado pelo ClienteCard
+          // Normaliza pro shape esperado pelo ClienteCard.
+          // dt_nascimento é data-only (YYYY-MM-DD): extrai dia/mês direto da
+          // string, sem new Date() (que interpretaria como UTC e deslocaria o
+          // dia em fusos negativos — aniversário 07/05 virava 06/05).
           let dt = null;
           if (a.dt_nascimento) {
-            const d = new Date(a.dt_nascimento);
-            if (!isNaN(d.getTime())) {
-              dt = `${String(d.getDate()).padStart(2, '0')}/${String(
-                d.getMonth() + 1,
-              ).padStart(2, '0')}`;
+            const m = String(a.dt_nascimento).match(/^(\d{4})-(\d{2})-(\d{2})/);
+            if (m) {
+              dt = `${m[3]}/${m[2]}`;
               if (a.idade != null) dt += ` (${a.idade} anos)`;
             }
           }
@@ -1041,17 +1075,8 @@ export default function LeadGeneration({ erpData, modulo, vendedoresMap, onChatL
     // ativo / a_inativar / inativo → vem do erpData
     const todosClientes = erpData?.clientes || [];
     return todosClientes.filter((c) => {
-      // Status: ativo / a_inativar / inativo
-      if (c.statusCarteira !== categoriaSel.replace('a_inativar', 'a_inativar')) {
-        // a_inativar no DB pode ser 'a_inativar' (mesmo)
-        const target =
-          categoriaSel === 'ativo'
-            ? 'ativo'
-            : categoriaSel === 'inativo'
-              ? 'inativo'
-              : 'a_inativar';
-        if (c.statusCarteira !== target) return false;
-      }
+      // Status da carteira precisa bater com a categoria selecionada
+      if (c.statusCarteira !== categoriaSel) return false;
       // Filtra pelo vendedor selecionado
       if (vendedorSel && c.vendedorCode !== vendedorSel.code) return false;
       return true;
@@ -1144,7 +1169,12 @@ export default function LeadGeneration({ erpData, modulo, vendedoresMap, onChatL
           {CATEGORIAS.map((c) => {
             const Icon = c.icon;
             const isActive = categoriaSel === c.key;
-            const count = statsCategoria[c.key] || 0;
+            // Cashback só é conhecido depois de carregar (é caro) — mostra "…"
+            // em vez de "0" enganoso enquanto não carregou.
+            const count =
+              c.key === 'cashback' && !cashbackCarregado
+                ? '…'
+                : statsCategoria[c.key] || 0;
             return (
               <button
                 key={c.key}
