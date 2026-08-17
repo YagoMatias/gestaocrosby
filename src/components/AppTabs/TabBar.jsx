@@ -10,17 +10,19 @@ export default function TabBar() {
     switchTab,
     closeTab,
     closeAllTabs,
-    isFinanceiroPath,
-    FINANCEIRO_PAGES,
+    isTabbedPath,
+    evictedLabel,
+    MAX_TABS,
+    TABBED_PAGES,
   } = useTabContext();
   const navigate = useNavigate();
   const { pathname } = useLocation();
 
   if (tabs.length === 0) return null;
 
-  // A barra também aparece fora do Financeiro; nesse caso fechar uma aba
+  // A barra também aparece em páginas sem aba; nesse caso fechar uma aba
   // não deve arrastar o usuário para dentro de outra.
-  const viewingTab = isFinanceiroPath(pathname);
+  const viewingTab = isTabbedPath(pathname);
 
   const handleSwitch = (path) => {
     switchTab(path);
@@ -48,7 +50,7 @@ export default function TabBar() {
   return (
     <div className="bg-white border-b border-gray-200 flex items-end px-2 pt-1 gap-0.5 overflow-x-auto scrollbar-hide">
       {tabs.map((path) => {
-        const page = FINANCEIRO_PAGES[path];
+        const page = TABBED_PAGES[path];
         if (!page) return null;
         const isActive = path === activeTab;
         return (
@@ -92,6 +94,15 @@ export default function TabBar() {
           </div>
         );
       })}
+
+      {evictedLabel && (
+        <span
+          title={`O limite é de ${MAX_TABS} abas abertas`}
+          className="ml-2 mb-0.5 px-2 py-1 rounded text-xs font-medium text-amber-700 bg-amber-50 whitespace-nowrap font-barlow shrink-0"
+        >
+          Limite de {MAX_TABS} abas — “{evictedLabel}” foi fechada
+        </span>
+      )}
 
       {tabs.length > 1 && (
         <button

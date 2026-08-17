@@ -15,9 +15,9 @@ import Header from './components/Header';
 import {
   TabProvider,
   useTabContext,
-} from './components/FinanceiroTabs/TabContext';
-import TabBar from './components/FinanceiroTabs/TabBar';
-import TabContainer from './components/FinanceiroTabs/TabContainer';
+} from './components/AppTabs/TabContext';
+import TabBar from './components/AppTabs/TabBar';
+import TabContainer from './components/AppTabs/TabContainer';
 // Lazy loading de todas as páginas para otimizar bundle
 const Home = lazy(() => import('./pages/Home'));
 const ContasAPagar = lazy(() => import('./pages/ContasAPagar'));
@@ -295,13 +295,13 @@ const ProtectedLayoutInner = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const handleToggleSidebar = useCallback(() => setSidebarOpen((o) => !o), []);
   const handleCloseSidebar = useCallback(() => setSidebarOpen(false), []);
-  const { isTabMode, isFinanceiroPath } = useTabContext();
+  const { isTabMode, isTabbedPath } = useTabContext();
   const { pathname } = useLocation();
 
-  // Páginas do Financeiro são sempre renderizadas pelo TabContainer.
+  // Páginas com aba são sempre renderizadas pelo TabContainer.
   // O Outlet cuida apenas do resto do sistema — assim a página não é
   // montada duas vezes (uma na rota, outra na aba).
-  const showTabContent = isFinanceiroPath(pathname);
+  const showTabContent = isTabbedPath(pathname);
 
   return (
     <div className="h-screen ">
@@ -329,7 +329,7 @@ const ProtectedLayoutInner = () => {
         >
           <ErrorBoundary>
             <PrivateRoute>
-              {/* Abas do Financeiro — sempre montadas quando existem,
+              {/* Abas abertas — sempre montadas enquanto existirem,
                   para preservar filtros e resultados ao alternar */}
               {isTabMode && (
                 <div
@@ -339,7 +339,7 @@ const ProtectedLayoutInner = () => {
                   <TabContainer />
                 </div>
               )}
-              {/* Outlet normal — páginas fora do Financeiro */}
+              {/* Outlet normal — páginas que não abrem em aba */}
               {!showTabContent && (
                 <div className="flex-1 flex flex-col min-h-0">
                   <Suspense fallback={<PageLoadingFallback />}>
