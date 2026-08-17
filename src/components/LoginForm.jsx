@@ -29,11 +29,25 @@ const LoginForm = () => {
 
     try {
       console.log('🔐 Chamando função login...');
-      await login(email, password, rememberMe);
+      const result = await login(email, password, rememberMe);
       console.log('✅ Login bem-sucedido!');
       setLoading(false);
-      console.log('🧭 Redirecionando para /home...');
-      navigate('/home');
+      // Redireciona para a primeira página que o usuário tem acesso.
+      // Owner/admin (allowedPages === '*') e quem tem /home vão para /home;
+      // usuários com acesso limitado (ex.: vendedor de franquia) iriam para
+      // /home sem permissão e seriam expulsos de volta ao login — por isso
+      // caem na primeira página liberada.
+      const pages = result?.user?.allowedPages;
+      let destino = '/home';
+      if (
+        Array.isArray(pages) &&
+        pages.length > 0 &&
+        !pages.includes('/home')
+      ) {
+        destino = pages[0];
+      }
+      console.log('🧭 Redirecionando para', destino);
+      navigate(destino);
       console.log('✅ Redirecionamento concluído');
     } catch (err) {
       console.error('❌ Erro no login:', err);

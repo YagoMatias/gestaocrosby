@@ -59,15 +59,22 @@ const PrivateRoute = ({ children }) => {
     return user.allowedPages.includes(currentPath);
   };
 
-  // Se não tem permissão, redireciona para /home ou /
+  // Se não tem permissão para a página atual, manda para uma página que o
+  // usuário PODE acessar — nunca expulsa para o login um usuário já
+  // autenticado só porque a rota pedida não está nas permissões dele.
   if (!hasPermission()) {
-    // Redirecionar para /home se tiver permissão, senão para login
     if (
       user.allowedPages &&
       Array.isArray(user.allowedPages) &&
       user.allowedPages.includes('/home')
     ) {
       return <Navigate to="/home" replace />;
+    }
+
+    // Usuário autenticado sem /home (ex.: vendedor de franquia): vai para a
+    // primeira página liberada, em vez de voltar para a tela de login.
+    if (Array.isArray(user.allowedPages) && user.allowedPages.length > 0) {
+      return <Navigate to={user.allowedPages[0]} replace />;
     }
 
     return <Navigate to="/" replace />;
