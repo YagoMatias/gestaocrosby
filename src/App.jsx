@@ -23,6 +23,7 @@ const DespesaFilial = lazy(() => import('./pages/DespesaFilial'));
 const DespesasFixas = lazy(() => import('./pages/DespesasFixas'));
 const DespesasIndustria = lazy(() => import('./pages/DespesasIndustria'));
 const Renegociacoes = lazy(() => import('./pages/Renegociacoes'));
+const CTO = lazy(() => import('./pages/CTO'));
 const LiberacaoPagamento = lazy(() => import('./pages/LiberacaoPagamento'));
 const ContasAReceber = lazy(() => import('./pages/ContasAReceber'));
 const BatidaCarteira = lazy(() => import('./pages/BatidaCarteira'));
@@ -197,6 +198,7 @@ const protectedRoutes = [
   { path: '/despesas-fixas', component: DespesasFixas },
   { path: '/despesas-industria', component: DespesasIndustria },
   { path: '/renegociacoes', component: Renegociacoes },
+  { path: '/cto', component: CTO },
   { path: '/liberacao-pagamento', component: LiberacaoPagamento },
   { path: '/contas-a-receber', component: ContasAReceber },
   { path: '/batida-carteira', component: BatidaCarteira },

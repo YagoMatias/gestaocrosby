@@ -1,6 +1,6 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { useAuth } from './AuthContext';
-import { supabase } from '../lib/supabase';
+import React, { useState, useRef, useEffect } from "react";
+import { useAuth } from "./AuthContext";
+import { supabase } from "../lib/supabase";
 import {
   Spinner,
   CheckCircle,
@@ -13,7 +13,6 @@ import {
   Camera,
   InstagramLogo,
   PencilSimple,
-  FileArrowUp,
   FileText,
   Trash,
   DownloadSimple,
@@ -37,23 +36,28 @@ import {
   Pause,
   MagnifyingGlassPlus,
   CircleNotch,
-} from '@phosphor-icons/react';
-import { TotvsURL } from '../config/constants';
+  FolderSimple,
+  FolderPlus,
+  CaretDown,
+} from "@phosphor-icons/react";
+import { TotvsURL } from "../config/constants";
 
-const BUCKET_NAME = 'clientes-confianca';
-const SUPABASE_URL = 'https://dorztqiunewggydvkjnf.supabase.co';
-const EvolutionURL = 'https://apigestaocrosby-bw2v.onrender.com/api/evolution/';
+const BUCKET_NAME = "clientes-confianca";
+const SUPABASE_URL = "https://dorztqiunewggydvkjnf.supabase.co";
+const EvolutionURL = "https://apigestaocrosby-bw2v.onrender.com/api/evolution/";
 
 const CATEGORIAS_DOCUMENTOS = [
-  { key: 'cartao_cnpj', label: 'Cartão CNPJ' },
-  { key: 'google_maps', label: 'Google Maps da Loja' },
-  { key: 'comprovante_qsa', label: 'Comprovante QSA' },
-  { key: 'rg_cpf_socios', label: 'RG e CPF dos Sócios' },
-  { key: 'comprovante_endereco', label: 'Comprov. Endereço Empresa' },
-  { key: 'score_cnpj', label: 'Score SPC/Serasa CNPJ' },
-  { key: 'score_socios', label: 'Score SPC/Serasa Sócios' },
-  { key: 'doc_retirada_rastreio', label: 'Doc. Retirada / Rastreio / Taxista' },
-  { key: 'declaracao_fiador', label: 'Declaração Resp. e Fiador' },
+  { key: "cartao_cnpj", label: "Cartão CNPJ" },
+  { key: "google_maps", label: "Google Maps da Loja" },
+  { key: "comprovante_qsa", label: "Comprovante QSA" },
+  { key: "rg_cpf_socios", label: "RG e CPF dos Sócios" },
+  { key: "comprovante_endereco", label: "Comprov. Endereço Empresa" },
+  { key: "score_cnpj", label: "Score SPC/Serasa CNPJ" },
+  { key: "score_socios", label: "Score SPC/Serasa Sócios" },
+  { key: "doc_retirada_rastreio", label: "Doc. Retirada / Rastreio / Taxista" },
+  { key: "declaracao_fiador", label: "Declaração Resp. e Fiador" },
+  { key: "nf_outros_fornecedores", label: "NFs de Outros Fornecedores" },
+  { key: "notas_fiscais", label: "Notas Fiscais" },
 ];
 
 const ClientePerfilModal = ({
@@ -66,9 +70,9 @@ const ClientePerfilModal = ({
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [dados, setDados] = useState(null);
-  const [erro, setErro] = useState('');
+  const [erro, setErro] = useState("");
   const [perfil, setPerfil] = useState(null);
-  const [instagram, setInstagram] = useState('');
+  const [instagram, setInstagram] = useState("");
   const [editandoInstagram, setEditandoInstagram] = useState(false);
   const [fotoLoading, setFotoLoading] = useState(false);
   const fotoInputRef = useRef(null);
@@ -77,14 +81,20 @@ const ClientePerfilModal = ({
   const [documentos, setDocumentos] = useState([]);
   const [uploadingDoc, setUploadingDoc] = useState(false);
   const docInputRef = useRef(null);
-  const [abaDocAtiva, setAbaDocAtiva] = useState(CATEGORIAS_DOCUMENTOS[0].key);
+  const [catExpandida, setCatExpandida] = useState(
+    CATEGORIAS_DOCUMENTOS[0].key,
+  );
+  // Categoria alvo do upload (ref para estar disponível no onChange do input)
+  const catUploadRef = useRef(CATEGORIAS_DOCUMENTOS[0].key);
+  const [catUploading, setCatUploading] = useState(null);
+  const [catDragAtiva, setCatDragAtiva] = useState(null);
   const [dadosCNPJ, setDadosCNPJ] = useState(null);
   const [coordenadas, setCoordenadas] = useState(null);
-  const [abaAtiva, setAbaAtiva] = useState('info');
+  const [abaAtiva, setAbaAtiva] = useState("info");
   const [conversas, setConversas] = useState([]);
   const [loadingConversas, setLoadingConversas] = useState(false);
   const [conversasTotal, setConversasTotal] = useState(0);
-  const [conversasPhone, setConversasPhone] = useState('');
+  const [conversasPhone, setConversasPhone] = useState("");
   const conversasEndRef = useRef(null);
   const [mediaCache, setMediaCache] = useState({});
   const [loadingMediaId, setLoadingMediaId] = useState(null);
@@ -98,8 +108,8 @@ const ClientePerfilModal = ({
     setLoadingMediaId(msg.id);
     try {
       const resp = await fetch(`${EvolutionURL}media`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messageId: msg.id }),
       });
       const json = await resp.json();
@@ -116,7 +126,7 @@ const ClientePerfilModal = ({
       setMediaCache((prev) => ({ ...prev, [msg.id]: expiredResult }));
       return expiredResult;
     } catch (e) {
-      console.warn('Erro ao buscar mídia:', e.message);
+      console.warn("Erro ao buscar mídia:", e.message);
       return null;
     } finally {
       setLoadingMediaId(null);
@@ -138,7 +148,7 @@ const ClientePerfilModal = ({
     }
     const media = await fetchMedia(msg);
     if (!media || media.expired) return;
-    const src = `data:${media.mimetype || 'audio/ogg'};base64,${media.base64}`;
+    const src = `data:${media.mimetype || "audio/ogg"};base64,${media.base64}`;
     const audio = new Audio(src);
     audioRef.current = audio;
     setPlayingAudioId(msg.id);
@@ -158,7 +168,7 @@ const ClientePerfilModal = ({
     const media = await fetchMedia(msg);
     if (media && !media.expired) {
       setLightboxImg(
-        `data:${media.mimetype || 'image/jpeg'};base64,${media.base64}`,
+        `data:${media.mimetype || "image/jpeg"};base64,${media.base64}`,
       );
     } else if (media?.expired && !thumb) {
       setLightboxImg(null);
@@ -166,8 +176,8 @@ const ClientePerfilModal = ({
   };
 
   const isAdmin =
-    user?.user_metadata?.role === 'owner' ||
-    user?.user_metadata?.role === 'admin';
+    user?.user_metadata?.role === "owner" ||
+    user?.user_metadata?.role === "admin";
 
   const dentroDoPrazo = (createdAt) => {
     if (!createdAt) return false;
@@ -187,46 +197,46 @@ const ClientePerfilModal = ({
   };
 
   const formatCurrency = (value) =>
-    (parseFloat(value) || 0).toLocaleString('pt-BR', {
-      style: 'currency',
-      currency: 'BRL',
+    (parseFloat(value) || 0).toLocaleString("pt-BR", {
+      style: "currency",
+      currency: "BRL",
     });
 
   const formatDateBR = (dateStr) => {
-    if (!dateStr) return '--';
+    if (!dateStr) return "--";
     const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return '--';
-    return d.toLocaleDateString('pt-BR');
+    if (isNaN(d.getTime())) return "--";
+    return d.toLocaleDateString("pt-BR");
   };
 
   const carregarPerfil = async (personCode) => {
     try {
       const { data } = await supabase
-        .from('clientes_confianca_perfil')
-        .select('*')
-        .eq('person_code', personCode)
+        .from("clientes_confianca_perfil")
+        .select("*")
+        .eq("person_code", personCode)
         .maybeSingle();
       if (data) {
         setPerfil(data);
-        setInstagram(data.instagram || '');
+        setInstagram(data.instagram || "");
       } else {
         setPerfil(null);
-        setInstagram('');
+        setInstagram("");
       }
     } catch {
       setPerfil(null);
-      setInstagram('');
+      setInstagram("");
     }
   };
 
   const carregarDadosPessoa = async (personCode) => {
     try {
       const { data } = await supabase
-        .from('pes_pessoa')
+        .from("pes_pessoa")
         .select(
-          'code, nm_pessoa, fantasy_name, cpf, telefone, email, phones, emails, addresses, uf',
+          "code, nm_pessoa, fantasy_name, cpf, telefone, email, phones, emails, addresses, uf",
         )
-        .eq('code', personCode)
+        .eq("code", personCode)
         .maybeSingle();
       setDadosPessoa(data || null);
     } catch {
@@ -237,10 +247,10 @@ const ClientePerfilModal = ({
   const carregarDocumentos = async (personCode) => {
     try {
       const { data } = await supabase
-        .from('clientes_confianca_documentos')
-        .select('*')
-        .eq('person_code', personCode)
-        .order('created_at', { ascending: false });
+        .from("clientes_confianca_documentos")
+        .select("*")
+        .eq("person_code", personCode)
+        .order("created_at", { ascending: false });
       setDocumentos(data || []);
     } catch {
       setDocumentos([]);
@@ -251,16 +261,16 @@ const ClientePerfilModal = ({
     setLoadingConversas(true);
     setConversas([]);
     setConversasTotal(0);
-    setConversasPhone('');
+    setConversasPhone("");
     try {
       // Tentar primeiro o telefone do TOTVS
       const phones = [];
       if (phoneTotvs) {
-        const clean = phoneTotvs.replace(/\D/g, '');
+        const clean = phoneTotvs.replace(/\D/g, "");
         if (clean.length >= 10) phones.push(clean);
       }
       if (phoneCnpj) {
-        const clean = phoneCnpj.replace(/\D/g, '');
+        const clean = phoneCnpj.replace(/\D/g, "");
         if (clean.length >= 10 && !phones.includes(clean)) phones.push(clean);
       }
 
@@ -279,11 +289,11 @@ const ClientePerfilModal = ({
             }
           }
         } catch (e) {
-          console.warn('Erro ao buscar conversas para', phone, e.message);
+          console.warn("Erro ao buscar conversas para", phone, e.message);
         }
       }
     } catch (e) {
-      console.warn('Erro geral ao buscar conversas:', e.message);
+      console.warn("Erro geral ao buscar conversas:", e.message);
     } finally {
       setLoadingConversas(false);
     }
@@ -298,11 +308,11 @@ const ClientePerfilModal = ({
     setDocumentos([]);
     setDadosCNPJ(null);
     setCoordenadas(null);
-    setAbaAtiva('info');
+    setAbaAtiva("info");
     setConversas([]);
     setConversasTotal(0);
-    setConversasPhone('');
-    setErro('');
+    setConversasPhone("");
+    setErro("");
     setEditandoInstagram(false);
     setModalFotoAberta(false);
 
@@ -311,8 +321,8 @@ const ClientePerfilModal = ({
       try {
         const personCode = parseInt(clienteCode);
         const resp = await fetch(`${TotvsURL}person-statistics`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ personCode }),
         });
         const json = await resp.json();
@@ -322,7 +332,7 @@ const ClientePerfilModal = ({
           await carregarDadosPessoa(personCode);
           await carregarDocumentos(personCode);
           // Buscar dados do CNPJ via BrasilAPI
-          const cnpjRaw = (clienteCnpj || '').replace(/\D/g, '');
+          const cnpjRaw = (clienteCnpj || "").replace(/\D/g, "");
           if (cnpjRaw.length === 14) {
             try {
               const respCnpj = await fetch(`${TotvsURL}cnpj/${cnpjRaw}`);
@@ -330,7 +340,7 @@ const ClientePerfilModal = ({
                 const cnpjResult = await respCnpj.json();
                 if (cnpjResult.success) {
                   setDadosCNPJ(cnpjResult.data);
-                  const cepRaw = (cnpjResult.data.cep || '').replace(/\D/g, '');
+                  const cepRaw = (cnpjResult.data.cep || "").replace(/\D/g, "");
                   if (cepRaw.length === 8) {
                     try {
                       const respCep = await fetch(
@@ -347,21 +357,21 @@ const ClientePerfilModal = ({
                         }
                       }
                     } catch (e) {
-                      console.warn('Erro ao buscar coordenadas:', e.message);
+                      console.warn("Erro ao buscar coordenadas:", e.message);
                     }
                   }
                 }
               }
             } catch (e) {
-              console.warn('Erro ao buscar CNPJ:', e.message);
+              console.warn("Erro ao buscar CNPJ:", e.message);
             }
           }
         } else {
-          setErro(json.message || 'Erro ao buscar estatísticas');
+          setErro(json.message || "Erro ao buscar estatísticas");
         }
       } catch (error) {
-        console.error('Erro ao buscar estatísticas:', error);
-        setErro('Erro ao conectar com o servidor');
+        console.error("Erro ao buscar estatísticas:", error);
+        setErro("Erro ao conectar com o servidor");
       } finally {
         setLoading(false);
       }
@@ -373,15 +383,15 @@ const ClientePerfilModal = ({
     if (!file || !clienteCode) return;
     if (perfil?.foto_path && !podeAlterarPerfil()) {
       alert(
-        'O prazo de 5 minutos para alterar a foto expirou. Somente um administrador pode alterá-la.',
+        "O prazo de 5 minutos para alterar a foto expirou. Somente um administrador pode alterá-la.",
       );
-      if (fotoInputRef.current) fotoInputRef.current.value = '';
+      if (fotoInputRef.current) fotoInputRef.current.value = "";
       return;
     }
     setFotoLoading(true);
     try {
       const personCode = parseInt(clienteCode);
-      const ext = file.name.split('.').pop();
+      const ext = file.name.split(".").pop();
       const path = `fotos/${personCode}.${ext}`;
       if (perfil?.foto_path) {
         await supabase.storage.from(BUCKET_NAME).remove([perfil.foto_path]);
@@ -390,18 +400,18 @@ const ClientePerfilModal = ({
         .from(BUCKET_NAME)
         .upload(path, file, { upsert: true });
       if (uploadError) throw uploadError;
-      await supabase.from('clientes_confianca_perfil').upsert(
+      await supabase.from("clientes_confianca_perfil").upsert(
         {
           person_code: personCode,
           foto_path: path,
           updated_at: new Date().toISOString(),
         },
-        { onConflict: 'person_code' },
+        { onConflict: "person_code" },
       );
       await carregarPerfil(personCode);
     } catch (err) {
-      console.error('Erro ao fazer upload da foto:', err);
-      alert('Erro ao enviar foto.');
+      console.error("Erro ao fazer upload da foto:", err);
+      alert("Erro ao enviar foto.");
     } finally {
       setFotoLoading(false);
     }
@@ -411,7 +421,7 @@ const ClientePerfilModal = ({
     if (!clienteCode) return;
     if (perfil?.instagram && !podeAlterarPerfil()) {
       alert(
-        'O prazo de 5 minutos para alterar o Instagram expirou. Somente um administrador pode alterá-lo.',
+        "O prazo de 5 minutos para alterar o Instagram expirou. Somente um administrador pode alterá-lo.",
       );
       setEditandoInstagram(false);
       setInstagram(perfil.instagram);
@@ -419,60 +429,87 @@ const ClientePerfilModal = ({
     }
     const personCode = parseInt(clienteCode);
     try {
-      await supabase.from('clientes_confianca_perfil').upsert(
+      await supabase.from("clientes_confianca_perfil").upsert(
         {
           person_code: personCode,
           instagram: instagram.trim(),
           updated_at: new Date().toISOString(),
         },
-        { onConflict: 'person_code' },
+        { onConflict: "person_code" },
       );
       setEditandoInstagram(false);
       await carregarPerfil(personCode);
     } catch (err) {
-      console.error('Erro ao salvar Instagram:', err);
+      console.error("Erro ao salvar Instagram:", err);
+    }
+  };
+
+  // Envia uma lista de arquivos (um ou v\u00e1rios) para uma categoria
+  const enviarDocumentos = async (arquivos, categoria) => {
+    const files = Array.from(arquivos || []);
+    if (!files.length || !clienteCode) return;
+    setUploadingDoc(true);
+    setCatUploading(categoria);
+    const falhas = [];
+    try {
+      const personCode = parseInt(clienteCode);
+      for (const file of files) {
+        try {
+          const uid = crypto.randomUUID?.() || String(Date.now());
+          const safeName = file.name
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .replace(/[^a-zA-Z0-9._-]/g, "_");
+          const path = `documentos/${personCode}/${categoria}/${uid}_${safeName}`;
+          const { error: uploadError } = await supabase.storage
+            .from(BUCKET_NAME)
+            .upload(path, file, { upsert: false });
+          if (uploadError) throw uploadError;
+          await supabase.from("clientes_confianca_documentos").insert({
+            person_code: personCode,
+            nome_arquivo: file.name,
+            file_path: path,
+            tipo: file.type,
+            uploaded_by: user?.id || null,
+            categoria,
+          });
+        } catch (err) {
+          console.error(`Erro ao enviar "${file.name}":`, err);
+          falhas.push(file.name);
+        }
+      }
+      await carregarDocumentos(personCode);
+      if (falhas.length) {
+        alert(`N\u00e3o foi poss\u00edvel enviar:\n- ${falhas.join("\n- ")}`);
+      }
+    } finally {
+      setUploadingDoc(false);
+      setCatUploading(null);
+      if (docInputRef.current) docInputRef.current.value = "";
     }
   };
 
   const handleUploadDocumento = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file || !clienteCode) return;
-    setUploadingDoc(true);
-    try {
-      const personCode = parseInt(clienteCode);
-      const uid = crypto.randomUUID?.() || String(Date.now());
-      const ext = file.name.split('.').pop();
-      const safeName = file.name
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-zA-Z0-9._-]/g, '_');
-      const path = `documentos/${personCode}/${abaDocAtiva}/${uid}_${safeName}`;
-      const { error: uploadError } = await supabase.storage
-        .from(BUCKET_NAME)
-        .upload(path, file, { upsert: false });
-      if (uploadError) throw uploadError;
-      await supabase.from('clientes_confianca_documentos').insert({
-        person_code: personCode,
-        nome_arquivo: file.name,
-        file_path: path,
-        tipo: file.type,
-        uploaded_by: user?.id || null,
-        categoria: abaDocAtiva,
-      });
-      await carregarDocumentos(personCode);
-    } catch (err) {
-      console.error('Erro ao fazer upload do documento:', err);
-      alert('Erro ao enviar documento.');
-    } finally {
-      setUploadingDoc(false);
-      if (docInputRef.current) docInputRef.current.value = '';
-    }
+    await enviarDocumentos(e.target.files, catUploadRef.current);
+  };
+
+  const abrirSeletorArquivos = (categoria) => {
+    catUploadRef.current = categoria;
+    setCatExpandida(categoria);
+    docInputRef.current?.click();
+  };
+
+  const handleDropDocumentos = async (e, categoria) => {
+    e.preventDefault();
+    setCatDragAtiva(null);
+    setCatExpandida(categoria);
+    await enviarDocumentos(e.dataTransfer?.files, categoria);
   };
 
   const removerDocumento = async (doc) => {
     if (!podeRemoverDocumento(doc)) {
       alert(
-        'O prazo de 5 minutos para remover este documento expirou. Somente um administrador pode removê-lo.',
+        "O prazo de 5 minutos para remover este documento expirou. Somente um administrador pode removê-lo.",
       );
       return;
     }
@@ -480,12 +517,12 @@ const ClientePerfilModal = ({
     try {
       await supabase.storage.from(BUCKET_NAME).remove([doc.file_path]);
       await supabase
-        .from('clientes_confianca_documentos')
+        .from("clientes_confianca_documentos")
         .delete()
-        .eq('id', doc.id);
+        .eq("id", doc.id);
       await carregarDocumentos(parseInt(clienteCode));
     } catch (err) {
-      console.error('Erro ao remover documento:', err);
+      console.error("Erro ao remover documento:", err);
     }
   };
 
@@ -496,13 +533,13 @@ const ClientePerfilModal = ({
         .download(doc.file_path);
       if (error) throw error;
       const url = URL.createObjectURL(data);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       a.href = url;
       a.download = doc.nome_arquivo;
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
-      console.error('Erro ao baixar documento:', err);
+      console.error("Erro ao baixar documento:", err);
     }
   };
 
@@ -513,32 +550,32 @@ const ClientePerfilModal = ({
 
   const getInstagramUrl = () => {
     if (!perfil?.instagram) return null;
-    const handle = perfil.instagram.replace(/^@/, '').trim();
+    const handle = perfil.instagram.replace(/^@/, "").trim();
     return `https://instagram.com/${handle}`;
   };
 
   const getScoreColor = () => {
-    if (!dados) return 'text-gray-400';
+    if (!dados) return "text-gray-400";
     const avg = dados.averageDelay ?? 0;
-    if (avg <= 5) return 'text-green-500';
-    if (avg <= 15) return 'text-yellow-500';
-    if (avg <= 30) return 'text-orange-500';
-    return 'text-red-500';
+    if (avg <= 5) return "text-green-500";
+    if (avg <= 15) return "text-yellow-500";
+    if (avg <= 30) return "text-orange-500";
+    return "text-red-500";
   };
 
   const getScoreLabel = () => {
-    if (!dados) return '--';
+    if (!dados) return "--";
     const avg = dados.averageDelay ?? 0;
-    if (avg <= 5) return 'Excelente';
-    if (avg <= 15) return 'Bom';
-    if (avg <= 30) return 'Regular';
-    return 'Crítico';
+    if (avg <= 5) return "Excelente";
+    if (avg <= 15) return "Bom";
+    if (avg <= 30) return "Regular";
+    return "Crítico";
   };
 
   const MetricRow = ({ label, value, color }) => (
     <div className="flex justify-between items-center py-2 border-b border-gray-100 last:border-0">
       <span className="text-xs text-gray-500">{label}</span>
-      <span className={`text-sm font-semibold ${color || 'text-gray-900'}`}>
+      <span className={`text-sm font-semibold ${color || "text-gray-900"}`}>
         {value}
       </span>
     </div>
@@ -586,9 +623,9 @@ const ClientePerfilModal = ({
             <div className="flex items-center gap-4">
               <div className="relative group">
                 <div
-                  className={`w-12 h-12 rounded-full border-2 border-white/50 overflow-hidden bg-white/10 flex items-center justify-center ${getFotoUrl() ? 'cursor-pointer hover:opacity-90 transition-opacity' : ''}`}
+                  className={`w-12 h-12 rounded-full border-2 border-white/50 overflow-hidden bg-white/10 flex items-center justify-center ${getFotoUrl() ? "cursor-pointer hover:opacity-90 transition-opacity" : ""}`}
                   onClick={() => getFotoUrl() && setModalFotoAberta(true)}
-                  title={getFotoUrl() ? 'Clique para ampliar' : ''}
+                  title={getFotoUrl() ? "Clique para ampliar" : ""}
                 >
                   {getFotoUrl() ? (
                     <img
@@ -629,9 +666,9 @@ const ClientePerfilModal = ({
                     `Cliente ${clienteCode}`}
                 </h2>
                 <p className="text-xs text-blue-200 mt-0.5">
-                  {dadosPessoa?.nm_pessoa ? `${dadosPessoa.nm_pessoa} • ` : ''}
+                  {dadosPessoa?.nm_pessoa ? `${dadosPessoa.nm_pessoa} • ` : ""}
                   Cód: {clienteCode}
-                  {clienteCnpj ? ` • CNPJ: ${clienteCnpj}` : ''}
+                  {clienteCnpj ? ` • CNPJ: ${clienteCnpj}` : ""}
                 </p>
               </div>
             </div>
@@ -647,22 +684,22 @@ const ClientePerfilModal = ({
           <div className="flex border-b border-gray-200">
             {[
               {
-                key: 'info',
-                label: 'Informações',
+                key: "info",
+                label: "Informações",
                 icon: <IdentificationCard size={14} />,
               },
               {
-                key: 'conversas',
-                label: `Conversas${conversasTotal > 0 ? ` (${conversasTotal})` : ''}`,
+                key: "conversas",
+                label: `Conversas${conversasTotal > 0 ? ` (${conversasTotal})` : ""}`,
                 icon: <ChatText size={14} />,
               },
               {
-                key: 'estatisticas',
-                label: 'Estatísticas',
+                key: "estatisticas",
+                label: "Estatísticas",
                 icon: <ChartLineUp size={14} />,
               },
               {
-                key: 'documentos',
+                key: "documentos",
                 label: `Documentos (${documentos.length})`,
                 icon: <FolderOpen size={14} />,
               },
@@ -672,7 +709,7 @@ const ClientePerfilModal = ({
                 onClick={() => {
                   setAbaAtiva(tab.key);
                   if (
-                    tab.key === 'conversas' &&
+                    tab.key === "conversas" &&
                     conversas.length === 0 &&
                     !loadingConversas
                   ) {
@@ -683,8 +720,8 @@ const ClientePerfilModal = ({
                 }}
                 className={`flex items-center gap-1.5 px-5 py-3 text-xs font-bold transition-colors border-b-2 ${
                   abaAtiva === tab.key
-                    ? 'border-[#000638] text-[#000638]'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    ? "border-[#000638] text-[#000638]"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                 }`}
               >
                 {tab.icon}
@@ -706,7 +743,7 @@ const ClientePerfilModal = ({
               <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
                 <p className="text-sm text-red-600">{erro}</p>
               </div>
-            ) : !dados ? null : abaAtiva === 'info' ? (
+            ) : !dados ? null : abaAtiva === "info" ? (
               <div className="space-y-6">
                 {/* Informações de Contato */}
                 <div>
@@ -725,7 +762,7 @@ const ClientePerfilModal = ({
                           CNPJ/CPF
                         </p>
                         <p className="text-sm text-gray-900 font-mono">
-                          {dadosPessoa?.cpf || clienteCnpj || '--'}
+                          {dadosPessoa?.cpf || clienteCnpj || "--"}
                         </p>
                       </div>
                     </div>
@@ -739,7 +776,7 @@ const ClientePerfilModal = ({
                           Telefone
                         </p>
                         <p className="text-sm text-gray-900">
-                          {dadosPessoa?.telefone || '--'}
+                          {dadosPessoa?.telefone || "--"}
                         </p>
                       </div>
                     </div>
@@ -753,7 +790,7 @@ const ClientePerfilModal = ({
                           E-mail
                         </p>
                         <p className="text-sm text-gray-900 break-all">
-                          {dadosPessoa?.email || '--'}
+                          {dadosPessoa?.email || "--"}
                         </p>
                       </div>
                     </div>
@@ -769,11 +806,11 @@ const ClientePerfilModal = ({
                         <p className="text-sm text-gray-900">
                           {(() => {
                             const addr = dadosPessoa?.addresses;
-                            if (!addr) return dadosPessoa?.uf || '--';
+                            if (!addr) return dadosPessoa?.uf || "--";
                             const main = Array.isArray(addr)
                               ? addr.find((a) => a.isDefault) || addr[0]
                               : addr;
-                            if (!main) return dadosPessoa?.uf || '--';
+                            if (!main) return dadosPessoa?.uf || "--";
                             const parts = [
                               main.address || main.street,
                               main.number,
@@ -784,8 +821,8 @@ const ClientePerfilModal = ({
                               main.zipCode || main.cep,
                             ].filter(Boolean);
                             return parts.length > 0
-                              ? parts.join(', ')
-                              : dadosPessoa?.uf || '--';
+                              ? parts.join(", ")
+                              : dadosPessoa?.uf || "--";
                           })()}
                         </p>
                       </div>
@@ -811,7 +848,7 @@ const ClientePerfilModal = ({
                                 value={instagram}
                                 onChange={(e) => setInstagram(e.target.value)}
                                 onKeyDown={(e) => {
-                                  if (e.key === 'Enter') salvarInstagram();
+                                  if (e.key === "Enter") salvarInstagram();
                                 }}
                                 placeholder="usuario"
                                 className="border border-gray-300 rounded-lg pl-7 pr-3 py-1.5 text-sm w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-white"
@@ -826,7 +863,7 @@ const ClientePerfilModal = ({
                             <button
                               onClick={() => {
                                 setEditandoInstagram(false);
-                                setInstagram(perfil?.instagram || '');
+                                setInstagram(perfil?.instagram || "");
                               }}
                               className="p-1.5 bg-gray-200 text-gray-600 rounded-lg hover:bg-gray-300 transition-colors"
                             >
@@ -896,17 +933,17 @@ const ClientePerfilModal = ({
                           SITUAÇÃO CADASTRAL
                         </p>
                         <p
-                          className={`text-sm font-bold ${dadosCNPJ.descricao_situacao_cadastral === 'ATIVA' ? 'text-green-600' : 'text-red-600'}`}
+                          className={`text-sm font-bold ${dadosCNPJ.descricao_situacao_cadastral === "ATIVA" ? "text-green-600" : "text-red-600"}`}
                         >
-                          {dadosCNPJ.descricao_situacao_cadastral || '—'}
+                          {dadosCNPJ.descricao_situacao_cadastral || "—"}
                         </p>
                         {dadosCNPJ.data_situacao_cadastral && (
                           <p className="text-[10px] text-gray-400 mt-1">
-                            Desde{' '}
+                            Desde{" "}
                             {dadosCNPJ.data_situacao_cadastral
-                              .split('-')
+                              .split("-")
                               .reverse()
-                              .join('/')}
+                              .join("/")}
                           </p>
                         )}
                       </div>
@@ -927,9 +964,9 @@ const ClientePerfilModal = ({
                           </p>
                           <p className="text-sm font-bold text-gray-900">
                             {dadosCNPJ.data_inicio_atividade
-                              .split('-')
+                              .split("-")
                               .reverse()
-                              .join('/')}
+                              .join("/")}
                           </p>
                         </div>
                       )}
@@ -959,7 +996,7 @@ const ClientePerfilModal = ({
                             CNAE PRINCIPAL
                           </p>
                           <p className="text-sm font-bold text-gray-900">
-                            {dadosCNPJ.cnae_fiscal} —{' '}
+                            {dadosCNPJ.cnae_fiscal} —{" "}
                             {dadosCNPJ.cnae_fiscal_descricao}
                           </p>
                         </div>
@@ -981,15 +1018,15 @@ const ClientePerfilModal = ({
                                 dadosCNPJ.complemento,
                               ]
                                 .filter(Boolean)
-                                .join(', '),
+                                .join(", "),
                               dadosCNPJ.bairro,
                               dadosCNPJ.municipio && dadosCNPJ.uf
                                 ? `${dadosCNPJ.municipio}/${dadosCNPJ.uf}`
                                 : dadosCNPJ.municipio || dadosCNPJ.uf,
-                              dadosCNPJ.cep ? `CEP ${dadosCNPJ.cep}` : '',
+                              dadosCNPJ.cep ? `CEP ${dadosCNPJ.cep}` : "",
                             ]
                               .filter(Boolean)
-                              .join(' — ')}
+                              .join(" — ")}
                           </p>
                           <div className="flex gap-2 mt-2">
                             {coordenadas && (
@@ -1013,7 +1050,7 @@ const ClientePerfilModal = ({
                                   dadosCNPJ.uf,
                                 ]
                                   .filter(Boolean)
-                                  .join(', '),
+                                  .join(", "),
                               )}`}
                               target="_blank"
                               rel="noopener noreferrer"
@@ -1050,11 +1087,11 @@ const ClientePerfilModal = ({
                             SIMPLES NACIONAL
                           </p>
                           <p
-                            className={`text-sm font-bold ${dadosCNPJ.opcao_pelo_simples ? 'text-green-600' : 'text-gray-900'}`}
+                            className={`text-sm font-bold ${dadosCNPJ.opcao_pelo_simples ? "text-green-600" : "text-gray-900"}`}
                           >
                             {dadosCNPJ.opcao_pelo_simples
-                              ? 'Optante'
-                              : 'Não optante'}
+                              ? "Optante"
+                              : "Não optante"}
                           </p>
                         </div>
                       )}
@@ -1064,9 +1101,9 @@ const ClientePerfilModal = ({
                             MEI
                           </p>
                           <p
-                            className={`text-sm font-bold ${dadosCNPJ.opcao_pelo_mei ? 'text-green-600' : 'text-gray-900'}`}
+                            className={`text-sm font-bold ${dadosCNPJ.opcao_pelo_mei ? "text-green-600" : "text-gray-900"}`}
                           >
-                            {dadosCNPJ.opcao_pelo_mei ? 'Sim' : 'Não'}
+                            {dadosCNPJ.opcao_pelo_mei ? "Sim" : "Não"}
                           </p>
                         </div>
                       )}
@@ -1094,7 +1131,7 @@ const ClientePerfilModal = ({
                               <p key={i} className="text-xs text-gray-700">
                                 <span className="font-mono text-gray-500">
                                   {cnae.codigo}
-                                </span>{' '}
+                                </span>{" "}
                                 — {cnae.descricao}
                               </p>
                             ))}
@@ -1124,11 +1161,11 @@ const ClientePerfilModal = ({
                               </div>
                               {socio.data_entrada_sociedade && (
                                 <p className="text-[10px] text-gray-400">
-                                  Desde{' '}
+                                  Desde{" "}
                                   {socio.data_entrada_sociedade
-                                    .split('-')
+                                    .split("-")
                                     .reverse()
-                                    .join('/')}
+                                    .join("/")}
                                 </p>
                               )}
                             </div>
@@ -1139,7 +1176,7 @@ const ClientePerfilModal = ({
                   </div>
                 )}
               </div>
-            ) : abaAtiva === 'conversas' ? (
+            ) : abaAtiva === "conversas" ? (
               <div className="flex flex-col h-full">
                 {loadingConversas ? (
                   <div className="flex items-center justify-center py-12">
@@ -1195,7 +1232,7 @@ const ClientePerfilModal = ({
                     <div
                       className="flex-1 bg-[#e5ddd5] rounded-lg overflow-y-auto p-4 space-y-1"
                       style={{
-                        maxHeight: 'calc(90vh - 220px)',
+                        maxHeight: "calc(90vh - 220px)",
                         backgroundImage:
                           "url(\"data:image/svg+xml,%3Csvg width='60' height='60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z' fill='%23d4cfc4' fill-opacity='.15' fill-rule='evenodd'/%3E%3C/svg%3E\")",
                       }}
@@ -1207,45 +1244,45 @@ const ClientePerfilModal = ({
 
                         // Separador de data
                         const msgDate = msg.msg_ts_tz
-                          ? new Date(msg.msg_ts_tz).toLocaleDateString('pt-BR')
-                          : '';
+                          ? new Date(msg.msg_ts_tz).toLocaleDateString("pt-BR")
+                          : "";
                         const prevDate = prevMsg?.msg_ts_tz
                           ? new Date(prevMsg.msg_ts_tz).toLocaleDateString(
-                              'pt-BR',
+                              "pt-BR",
                             )
-                          : '';
+                          : "";
                         const showDateSep = msgDate && msgDate !== prevDate;
 
                         // Hora
                         const msgTime = msg.msg_ts_tz
                           ? new Date(msg.msg_ts_tz).toLocaleTimeString(
-                              'pt-BR',
-                              { hour: '2-digit', minute: '2-digit' },
+                              "pt-BR",
+                              { hour: "2-digit", minute: "2-digit" },
                             )
-                          : '';
+                          : "";
 
                         // Não exibir mensagens de protocolo
                         if (
-                          msgType === 'protocolMessage' ||
-                          msgType === 'reactionMessage'
+                          msgType === "protocolMessage" ||
+                          msgType === "reactionMessage"
                         )
                           return null;
 
                         // Conteúdo da mensagem
                         let content = null;
                         if (
-                          msgType === 'conversation' ||
-                          msgType === 'extendedTextMessage' ||
-                          msgType === 'editedMessage'
+                          msgType === "conversation" ||
+                          msgType === "extendedTextMessage" ||
+                          msgType === "editedMessage"
                         ) {
                           content = (
                             <p className="text-[13px] leading-relaxed whitespace-pre-wrap break-words">
-                              {msg.text_content || ''}
+                              {msg.text_content || ""}
                             </p>
                           );
                         } else if (
-                          msgType === 'imageMessage' ||
-                          msgType === 'albumMessage'
+                          msgType === "imageMessage" ||
+                          msgType === "albumMessage"
                         ) {
                           const imgData =
                             msg.message?.imageMessage ||
@@ -1261,7 +1298,7 @@ const ClientePerfilModal = ({
                                   <img
                                     src={
                                       mediaCache[msg.id]
-                                        ? `data:${mediaCache[msg.id].mimetype || 'image/jpeg'};base64,${mediaCache[msg.id].base64}`
+                                        ? `data:${mediaCache[msg.id].mimetype || "image/jpeg"};base64,${mediaCache[msg.id].base64}`
                                         : `data:image/jpeg;base64,${thumb}`
                                     }
                                     alt="imagem"
@@ -1312,8 +1349,8 @@ const ClientePerfilModal = ({
                             </div>
                           );
                         } else if (
-                          msgType === 'audioMessage' ||
-                          msgType === 'ptvMessage'
+                          msgType === "audioMessage" ||
+                          msgType === "ptvMessage"
                         ) {
                           const audioData =
                             msg.message?.audioMessage ||
@@ -1342,7 +1379,7 @@ const ClientePerfilModal = ({
                           const isExpired = mediaCache[msg.id]?.expired;
                           content = (
                             <div
-                              className={`flex items-center gap-2 min-w-[180px] max-w-[260px] select-none ${isExpired ? 'opacity-60' : 'cursor-pointer'}`}
+                              className={`flex items-center gap-2 min-w-[180px] max-w-[260px] select-none ${isExpired ? "opacity-60" : "cursor-pointer"}`}
                               onClick={() => !isExpired && handlePlayAudio(msg)}
                             >
                               <div className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center shrink-0">
@@ -1370,7 +1407,7 @@ const ClientePerfilModal = ({
                                   bars.map((v, i) => (
                                     <div
                                       key={i}
-                                      className={`w-[3px] rounded-full ${isPlaying ? 'bg-emerald-500' : 'bg-emerald-600/50'}`}
+                                      className={`w-[3px] rounded-full ${isPlaying ? "bg-emerald-500" : "bg-emerald-600/50"}`}
                                       style={{
                                         height: `${Math.max(3, (v / 255) * 24)}px`,
                                       }}
@@ -1382,12 +1419,12 @@ const ClientePerfilModal = ({
                               </div>
                               <span className="text-[11px] text-gray-500 shrink-0">
                                 {isExpired
-                                  ? '⏱ expirado'
-                                  : `${min}:${String(sec).padStart(2, '0')}`}
+                                  ? "⏱ expirado"
+                                  : `${min}:${String(sec).padStart(2, "0")}`}
                               </span>
                             </div>
                           );
-                        } else if (msgType === 'videoMessage') {
+                        } else if (msgType === "videoMessage") {
                           const vidData = msg.message?.videoMessage;
                           const vidThumb = vidData?.jpegThumbnail;
                           const vidSecs = vidData?.seconds || 0;
@@ -1420,7 +1457,7 @@ const ClientePerfilModal = ({
                                 {vidSecs > 0 && (
                                   <span className="absolute bottom-1 right-1 text-[10px] text-white bg-black/60 px-1.5 py-0.5 rounded">
                                     {Math.floor(vidSecs / 60)}:
-                                    {String(vidSecs % 60).padStart(2, '0')}
+                                    {String(vidSecs % 60).padStart(2, "0")}
                                   </span>
                                 )}
                               </div>
@@ -1431,7 +1468,7 @@ const ClientePerfilModal = ({
                               )}
                             </div>
                           );
-                        } else if (msgType === 'documentMessage') {
+                        } else if (msgType === "documentMessage") {
                           content = (
                             <div className="flex items-center gap-1.5 text-[13px]">
                               <File size={14} className="opacity-60" />
@@ -1443,7 +1480,7 @@ const ClientePerfilModal = ({
                               )}
                             </div>
                           );
-                        } else if (msgType === 'stickerMessage') {
+                        } else if (msgType === "stickerMessage") {
                           const stickerData = msg.message?.stickerMessage;
                           const stickerThumb =
                             stickerData?.jpegThumbnail ||
@@ -1459,17 +1496,17 @@ const ClientePerfilModal = ({
                               Figurinha
                             </p>
                           );
-                        } else if (msgType === 'contactMessage') {
+                        } else if (msgType === "contactMessage") {
                           content = (
                             <div className="flex items-center gap-1.5 text-[13px]">
                               <Phone size={14} className="opacity-60" />
                               <span className="italic opacity-75">Contato</span>
                             </div>
                           );
-                        } else if (msgType === 'listMessage') {
+                        } else if (msgType === "listMessage") {
                           content = (
                             <p className="text-[13px]">
-                              {msg.text_content || 'Lista'}
+                              {msg.text_content || "Lista"}
                             </p>
                           );
                         } else {
@@ -1490,13 +1527,13 @@ const ClientePerfilModal = ({
                               </div>
                             )}
                             <div
-                              className={`flex ${isFromMe ? 'justify-end' : 'justify-start'}`}
+                              className={`flex ${isFromMe ? "justify-end" : "justify-start"}`}
                             >
                               <div
                                 className={`relative max-w-[75%] px-3 py-1.5 rounded-lg shadow-sm ${
                                   isFromMe
-                                    ? 'bg-[#d9fdd3] text-gray-900'
-                                    : 'bg-white text-gray-900'
+                                    ? "bg-[#d9fdd3] text-gray-900"
+                                    : "bg-white text-gray-900"
                                 }`}
                               >
                                 {!isFromMe && msg.pushName && (
@@ -1506,7 +1543,7 @@ const ClientePerfilModal = ({
                                 )}
                                 {content}
                                 <p
-                                  className={`text-[9px] mt-0.5 text-right ${isFromMe ? 'text-gray-500' : 'text-gray-400'}`}
+                                  className={`text-[9px] mt-0.5 text-right ${isFromMe ? "text-gray-500" : "text-gray-400"}`}
                                 >
                                   {msgTime}
                                 </p>
@@ -1520,7 +1557,7 @@ const ClientePerfilModal = ({
                   </>
                 )}
               </div>
-            ) : abaAtiva === 'estatisticas' ? (
+            ) : abaAtiva === "estatisticas" ? (
               <div className="space-y-6">
                 {/* Score + Stats */}
                 <div>
@@ -1570,7 +1607,7 @@ const ClientePerfilModal = ({
                     </div>
                     <div className="p-3 bg-gray-50 rounded-lg text-center">
                       <p className="text-lg font-extrabold text-red-600">
-                        {dados.averageDelay ?? 0}{' '}
+                        {dados.averageDelay ?? 0}{" "}
                         <span className="text-sm font-normal text-gray-400">
                           dias
                         </span>
@@ -1593,11 +1630,11 @@ const ClientePerfilModal = ({
                     <div className="bg-gray-50 rounded-lg p-4">
                       <MetricRow
                         label="Quantidade de Compras"
-                        value={dados.purchaseQuantity ?? '--'}
+                        value={dados.purchaseQuantity ?? "--"}
                       />
                       <MetricRow
                         label="Quantidade de Peças"
-                        value={dados.purchasePiecesQuantity ?? '--'}
+                        value={dados.purchasePiecesQuantity ?? "--"}
                       />
                       <MetricRow
                         label="Total de Compras"
@@ -1639,7 +1676,7 @@ const ClientePerfilModal = ({
                       />
                       <MetricRow
                         label="Qtd. Parcelas Pagas"
-                        value={dados.quantityInstallmentsPaid ?? '--'}
+                        value={dados.quantityInstallmentsPaid ?? "--"}
                       />
                       <MetricRow
                         label="Média por Parcela"
@@ -1669,11 +1706,11 @@ const ClientePerfilModal = ({
                       />
                       <MetricRow
                         label="Qtd. Parcelas Atrasadas"
-                        value={dados.quantityInstallmentsDelayed ?? '--'}
+                        value={dados.quantityInstallmentsDelayed ?? "--"}
                       />
                       <MetricRow
                         label="Média de Atraso"
-                        value={dados.averageInstallmentDelay ?? '--'}
+                        value={dados.averageInstallmentDelay ?? "--"}
                       />
                       <MetricRow
                         label="Atraso Médio"
@@ -1702,7 +1739,7 @@ const ClientePerfilModal = ({
                       />
                       <MetricRow
                         label="Qtd. Parcelas Abertas"
-                        value={dados.quantityInstallmentsOpen ?? '--'}
+                        value={dados.quantityInstallmentsOpen ?? "--"}
                       />
                       <MetricRow
                         label="Média em Aberto"
@@ -1730,135 +1767,184 @@ const ClientePerfilModal = ({
               /* Aba Documentos */
               <div className="space-y-4">
                 <div>
-                  <h3 className="text-sm font-bold text-[#000638] mb-3 flex items-center gap-2">
-                    <FolderOpen size={16} className="text-purple-600" />
-                    Documentos do Cliente
-                  </h3>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-bold text-[#000638] flex items-center gap-2">
+                      <FolderOpen size={16} className="text-purple-600" />
+                      Documentos do Cliente
+                    </h3>
+                    <span className="text-[10px] text-gray-400">
+                      {documentos.length}{" "}
+                      {documentos.length === 1 ? "arquivo" : "arquivos"} ·
+                      clique na pasta para anexar
+                    </span>
+                  </div>
 
-                  {/* Abas de categorias */}
-                  <div className="border-b border-gray-200 overflow-x-auto mb-4">
-                    <div className="flex min-w-max">
-                      {CATEGORIAS_DOCUMENTOS.map((cat) => {
-                        const docsCategoria = documentos.filter(
-                          (d) => d.categoria === cat.key,
-                        );
-                        const temDocs = docsCategoria.length > 0;
-                        return (
-                          <button
-                            key={cat.key}
-                            onClick={() => setAbaDocAtiva(cat.key)}
-                            className={`relative flex items-center gap-1.5 px-3 py-2.5 text-[11px] font-medium whitespace-nowrap border-b-2 transition-colors ${
-                              abaDocAtiva === cat.key
-                                ? 'border-purple-600 text-purple-700 bg-purple-50/50'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                            }`}
-                          >
-                            {cat.label}
-                            {temDocs ? (
-                              <span className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold bg-green-100 text-green-700">
+                  {/* Input único de upload (multiplo) */}
+                  <input
+                    ref={docInputRef}
+                    type="file"
+                    multiple
+                    onChange={handleUploadDocumento}
+                    className="hidden"
+                  />
+
+                  {/* Listagem vertical de categorias (pastas) */}
+                  <div className="space-y-2">
+                    {CATEGORIAS_DOCUMENTOS.map((cat) => {
+                      const docsCategoria = documentos.filter(
+                        (d) => d.categoria === cat.key,
+                      );
+                      const temDocs = docsCategoria.length > 0;
+                      const expandida = catExpandida === cat.key;
+                      const arrastando = catDragAtiva === cat.key;
+                      const enviando = catUploading === cat.key;
+                      return (
+                        <div
+                          key={cat.key}
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            setCatDragAtiva(cat.key);
+                          }}
+                          onDragLeave={() => setCatDragAtiva(null)}
+                          onDrop={(e) => handleDropDocumentos(e, cat.key)}
+                          className={`border rounded-lg overflow-hidden transition-colors ${
+                            arrastando
+                              ? "border-purple-500 bg-purple-50"
+                              : expandida
+                                ? "border-purple-200 bg-white"
+                                : "border-gray-200 bg-white hover:border-gray-300"
+                          }`}
+                        >
+                          {/* Linha da pasta */}
+                          <div className="flex items-center gap-2 px-3 py-2.5">
+                            <button
+                              onClick={() =>
+                                setCatExpandida(expandida ? null : cat.key)
+                              }
+                              className="flex items-center gap-2 flex-1 min-w-0 text-left"
+                            >
+                              <CaretDown
+                                size={12}
+                                weight="bold"
+                                className={`flex-shrink-0 text-gray-400 transition-transform ${
+                                  expandida ? "" : "-rotate-90"
+                                }`}
+                              />
+                              {expandida ? (
+                                <FolderOpen
+                                  size={18}
+                                  weight="fill"
+                                  className={`flex-shrink-0 ${temDocs ? "text-purple-600" : "text-gray-300"}`}
+                                />
+                              ) : (
+                                <FolderSimple
+                                  size={18}
+                                  weight="fill"
+                                  className={`flex-shrink-0 ${temDocs ? "text-purple-500" : "text-gray-300"}`}
+                                />
+                              )}
+                              <span className="text-xs font-medium text-gray-700 truncate">
+                                {cat.label}
+                              </span>
+                              <span
+                                className={`inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[9px] font-bold ${
+                                  temDocs
+                                    ? "bg-green-100 text-green-700"
+                                    : "bg-red-100 text-red-500"
+                                }`}
+                              >
                                 {docsCategoria.length}
                               </span>
-                            ) : (
-                              <span className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold bg-red-100 text-red-500">
-                                0
+                            </button>
+                            <button
+                              onClick={() => abrirSeletorArquivos(cat.key)}
+                              disabled={uploadingDoc}
+                              title="Adicionar arquivos nesta pasta"
+                              className="flex items-center gap-1 px-2 py-1 rounded-lg text-purple-600 hover:bg-purple-50 disabled:opacity-40 transition-colors"
+                            >
+                              {enviando ? (
+                                <Spinner
+                                  size={16}
+                                  className="animate-spin"
+                                  weight="bold"
+                                />
+                              ) : (
+                                <FolderPlus size={18} weight="bold" />
+                              )}
+                              <span className="text-[10px] font-semibold">
+                                {enviando ? "Enviando..." : "Anexar"}
                               </span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
+                            </button>
+                          </div>
 
-                  {/* Header com nome da categoria e botão de upload */}
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-xs text-gray-500">
-                      {
-                        CATEGORIAS_DOCUMENTOS.find((c) => c.key === abaDocAtiva)
-                          ?.label
-                      }
-                    </p>
-                    <button
-                      onClick={() => docInputRef.current?.click()}
-                      disabled={uploadingDoc}
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white text-xs font-medium rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
-                    >
-                      {uploadingDoc ? (
-                        <Spinner size={12} className="animate-spin" />
-                      ) : (
-                        <FileArrowUp size={14} weight="bold" />
-                      )}
-                      Anexar Arquivo
-                    </button>
-                    <input
-                      ref={docInputRef}
-                      type="file"
-                      onChange={handleUploadDocumento}
-                      className="hidden"
-                    />
-                  </div>
-
-                  {/* Lista de documentos da categoria ativa */}
-                  {(() => {
-                    const docsAtivos = documentos.filter(
-                      (d) => d.categoria === abaDocAtiva,
-                    );
-                    if (docsAtivos.length === 0) {
-                      return (
-                        <div className="text-center py-6 text-gray-400">
-                          <FileText
-                            size={32}
-                            className="mx-auto mb-2 opacity-30"
-                          />
-                          <p className="text-xs">
-                            Nenhum arquivo anexado nesta categoria
-                          </p>
-                        </div>
-                      );
-                    }
-                    return (
-                      <div className="space-y-2">
-                        {docsAtivos.map((doc) => (
-                          <div
-                            key={doc.id}
-                            className="flex items-center justify-between bg-gray-50 rounded-lg px-4 py-3 hover:bg-gray-100 transition-colors"
-                          >
-                            <div className="flex items-center gap-3">
-                              <FileText
-                                size={20}
-                                className="text-purple-500 flex-shrink-0"
-                              />
-                              <div>
-                                <p className="text-sm font-medium text-gray-900">
-                                  {doc.nome_arquivo}
-                                </p>
-                                <p className="text-[10px] text-gray-400">
-                                  {formatDateBR(doc.created_at)}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <button
-                                onClick={() => downloadDocumento(doc)}
-                                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                title="Download"
-                              >
-                                <DownloadSimple size={16} weight="bold" />
-                              </button>
-                              {podeRemoverDocumento(doc) && (
+                          {/* Arquivos da pasta */}
+                          {expandida && (
+                            <div className="border-t border-gray-100 px-3 py-2 bg-gray-50/60">
+                              {docsCategoria.length === 0 ? (
                                 <button
-                                  onClick={() => removerDocumento(doc)}
-                                  className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                                  title="Remover"
+                                  onClick={() => abrirSeletorArquivos(cat.key)}
+                                  className="w-full flex flex-col items-center justify-center gap-1 py-4 text-gray-400 hover:text-purple-500 transition-colors"
                                 >
-                                  <Trash size={16} weight="bold" />
+                                  <FolderPlus size={22} />
+                                  <span className="text-[10px]">
+                                    Nenhum arquivo · clique ou arraste para
+                                    anexar
+                                  </span>
                                 </button>
+                              ) : (
+                                <div className="space-y-1.5">
+                                  {docsCategoria.map((doc) => (
+                                    <div
+                                      key={doc.id}
+                                      className="flex items-center justify-between gap-2 bg-white border border-gray-100 rounded-lg px-3 py-2 hover:border-gray-200 transition-colors"
+                                    >
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <FileText
+                                          size={16}
+                                          className="text-purple-500 flex-shrink-0"
+                                        />
+                                        <div className="min-w-0">
+                                          <p className="text-xs font-medium text-gray-900 truncate">
+                                            {doc.nome_arquivo}
+                                          </p>
+                                          <p className="text-[10px] text-gray-400">
+                                            {formatDateBR(doc.created_at)}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-1 flex-shrink-0">
+                                        <button
+                                          onClick={() => downloadDocumento(doc)}
+                                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                          title="Download"
+                                        >
+                                          <DownloadSimple
+                                            size={15}
+                                            weight="bold"
+                                          />
+                                        </button>
+                                        {podeRemoverDocumento(doc) && (
+                                          <button
+                                            onClick={() =>
+                                              removerDocumento(doc)
+                                            }
+                                            className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                            title="Remover"
+                                          >
+                                            <Trash size={15} weight="bold" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
                               )}
                             </div>
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })()}
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
 
                   {/* Resumo geral de todas as categorias */}
                   <div className="mt-4 pt-3 border-t border-gray-200">
@@ -1875,8 +1961,8 @@ const ClientePerfilModal = ({
                             key={cat.key}
                             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-medium ${
                               count > 0
-                                ? 'bg-green-50 text-green-700 border border-green-200'
-                                : 'bg-red-50 text-red-500 border border-red-200'
+                                ? "bg-green-50 text-green-700 border border-green-200"
+                                : "bg-red-50 text-red-500 border border-red-200"
                             }`}
                           >
                             {count > 0 ? (

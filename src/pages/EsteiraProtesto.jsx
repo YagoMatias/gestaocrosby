@@ -7,7 +7,7 @@ import React, {
 } from 'react';
 import { toPng } from 'html-to-image';
 import { supabase, supabaseAdmin } from '../lib/supabase';
-import { TotvsURL } from '../config/constants';
+import { TotvsURL, API_BASE_URL } from '../config/constants';
 import PageTitle from '../components/ui/PageTitle';
 import Notification from '../components/ui/Notification';
 import {
@@ -30,6 +30,8 @@ import {
   MagnifyingGlass,
   WhatsappLogo,
   ImageSquare,
+  ChatText,
+  X,
 } from '@phosphor-icons/react';
 
 const formatCurrency = (value) =>
@@ -118,6 +120,56 @@ Os débitos em aberto com a CROSBY seguiram agora para cartório. Solicitamos a 
 Se desejar quitar hoje mesmo, responda com SIM`,
 ];
 
+// ─── SMS (DisparoPro) ───────────────────────────────────────────────────
+// Mesmo WhatsApp de atendimento e mesmas regras da tela de Call Center.
+const WHATSAPP_COBRANCA = '5571991003428';
+
+// Sem acentos de propósito: SMS usa GSM-7 e um único caractere fora da
+// tabela derruba o limite de 160 para 70 caracteres.
+const MENSAGEM_SMS_PROTESTO =
+  'Crosby: SEU TITULO ESTA PARA SER PROTESTADO. ENTRE EM CONTATO URGENTE ' +
+  `PELO WHATSAPP: https://wa.me/${WHATSAPP_COBRANCA}`;
+
+const SMS_LIMITE = 160;
+// O backend recusa lotes acima disso (MAX_LOTE em routes/sms.routes.js)
+const SMS_LOTE = 50;
+
+/**
+ * Normaliza um telefone para 55 + DDD + 9 dígitos.
+ * Espelha normalizarCelularSms do Call Center, que por sua vez espelha a
+ * normalizarNumero do backend — se divergirem, a tela reporta falha em
+ * SMS que na verdade saiu.
+ */
+const normalizarCelularSms = (telefone) => {
+  const d = String(telefone || '').replace(/\D/g, '');
+  if (!d) return { numero: null, motivo: 'Sem telefone' };
+
+  let nacional = d;
+  if (d.length >= 12 && d.startsWith('55')) nacional = d.slice(2);
+
+  if (nacional.length < 10 || nacional.length > 11) {
+    return { numero: null, motivo: 'Telefone incompleto' };
+  }
+
+  const ddd = nacional.slice(0, 2);
+  let assinante = nacional.slice(2);
+
+  if (Number(ddd) < 11) return { numero: null, motivo: `DDD inválido (${ddd})` };
+
+  if (assinante.length === 8) {
+    if (/^[2-5]/.test(assinante)) {
+      return { numero: null, motivo: 'Fixo não recebe SMS' };
+    }
+    assinante = `9${assinante}`; // repõe o nono dígito
+  }
+
+  if (assinante.length !== 9 || !assinante.startsWith('9')) {
+    return { numero: null, motivo: 'Não parece celular' };
+  }
+
+  return { numero: `55${ddd}${assinante}`, motivo: null };
+};
+
 const diasAtraso = (dtVencimento) => {
   const venc = parseDateNoTZ(dtVencimento);
   if (!venc) return 0;
@@ -136,6 +188,14 @@ const EsteiraProtesto = () => {
   const [removendoId, setRemovendoId] = useState(null);
   const [alterandoStatusId, setAlterandoStatusId] = useState(null);
   const [pessoasMap, setPessoasMap] = useState({});
+  const [faturasSelecionadas, setFaturasSelecionadas] = useState(new Set());
+
+  // Disparo de SMS (DisparoPro via backend, mesma rota do Call Center)
+  const [modalSmsAberto, setModalSmsAberto] = useState(false);
+  const [alvoSms, setAlvoSms] = useState('SELECIONADOS'); // ou 'TODOS'
+  const [textoSms, setTextoSms] = useState(MENSAGEM_SMS_PROTESTO);
+  const [enviandoSms, setEnviandoSms] = useState(false);
+  const [resultadoSms, setResultadoSms] = useState(null);
 
   // Aviso renderizado fora da tela só para virar PNG
   const avisoRef = useRef(null);
@@ -317,6 +377,69 @@ const EsteiraProtesto = () => {
   const toggleCliente = (cd) =>
     setClientesExpandidos((prev) => ({ ...prev, [cd]: !prev[cd] }));
 
+  // Accordion: o default é aberto (undefined !== false), então "fechar
+  // todos" precisa marcar false explicitamente em cada cliente visível.
+  const definirTodosExpandidos = (aberto) => {
+    const novo = {};
+    clientesAgrupados.forEach((c) => {
+      novo[c.cd_cliente] = aberto;
+    });
+    setClientesExpandidos(novo);
+  };
+
+  // ─── Seleção de faturas ───────────────────────────────────────────────
+  // Uma seleção só, no nível da fatura. O cliente é considerado
+  // selecionado quando tem ao menos uma fatura marcada — é isso que
+  // alimenta o disparo de SMS, que é por cliente.
+  const toggleFatura = (id) =>
+    setFaturasSelecionadas((prev) => {
+      const novo = new Set(prev);
+      if (novo.has(id)) novo.delete(id);
+      else novo.add(id);
+      return novo;
+    });
+
+  const faturasDoCliente = (cliente) => cliente.faturas.map((f) => f.id);
+
+  const selecaoDoCliente = (cliente) => {
+    const ids = faturasDoCliente(cliente);
+    const marcadas = ids.filter((id) => faturasSelecionadas.has(id)).length;
+    if (marcadas === 0) return 'nenhuma';
+    return marcadas === ids.length ? 'todas' : 'parcial';
+  };
+
+  const toggleSelecaoCliente = (cliente) => {
+    const ids = faturasDoCliente(cliente);
+    const tudoMarcado = selecaoDoCliente(cliente) === 'todas';
+    setFaturasSelecionadas((prev) => {
+      const novo = new Set(prev);
+      ids.forEach((id) => (tudoMarcado ? novo.delete(id) : novo.add(id)));
+      return novo;
+    });
+  };
+
+  const selecionarTudo = () =>
+    setFaturasSelecionadas(new Set(itens.map((i) => i.id)));
+
+  const limparSelecao = () => setFaturasSelecionadas(new Set());
+
+  // Faturas escolhidas para a imagem: as marcadas ou, se o cliente não
+  // tem nenhuma marcada, todas dele (não obriga a marcar para o caso simples)
+  const faturasParaImagem = (cliente) => {
+    const marcadas = cliente.faturas.filter((f) =>
+      faturasSelecionadas.has(f.id),
+    );
+    return marcadas.length > 0 ? marcadas : cliente.faturas;
+  };
+
+  const clientesSelecionados = useMemo(
+    () =>
+      clientesAgrupados.filter((c) =>
+        c.faturas.some((f) => faturasSelecionadas.has(f.id)),
+      ),
+    [clientesAgrupados, faturasSelecionadas],
+  );
+
   const telefoneCliente = (cdCliente) =>
     pessoasMap[String(cdCliente).trim()]?.phone || '';
 
@@ -348,11 +471,117 @@ const EsteiraProtesto = () => {
     );
   };
 
+  // ─── Disparo de SMS ───────────────────────────────────────────────────
+  // Destinatários resolvidos: um SMS por cliente, com o motivo quando o
+  // telefone não serve (o operador vê antes de disparar).
+  const destinatariosSms = useMemo(() => {
+    const base =
+      alvoSms === 'TODOS' ? clientesAgrupados : clientesSelecionados;
+    return base.map((c) => {
+      const { numero, motivo } = normalizarCelularSms(
+        telefoneCliente(c.cd_cliente),
+      );
+      return {
+        cd_cliente: c.cd_cliente,
+        nm_cliente: c.nm_cliente,
+        numero,
+        motivo,
+      };
+    });
+  }, [alvoSms, clientesAgrupados, clientesSelecionados, pessoasMap]);
+
+  const smsValidos = destinatariosSms.filter((d) => d.numero);
+  const smsInvalidos = destinatariosSms.filter((d) => !d.numero);
+
+  const abrirModalSms = () => {
+    setTextoSms(MENSAGEM_SMS_PROTESTO);
+    setResultadoSms(null);
+    setAlvoSms(clientesSelecionados.length > 0 ? 'SELECIONADOS' : 'TODOS');
+    setModalSmsAberto(true);
+  };
+
+  const enviarSms = async () => {
+    const texto = textoSms.trim();
+    if (!texto) return;
+    if (texto.length > SMS_LIMITE) {
+      setNotification({
+        type: 'error',
+        message: `Mensagem com ${texto.length} caracteres — o limite de 1 SMS é ${SMS_LIMITE}.`,
+      });
+      setTimeout(() => setNotification(null), 5000);
+      return;
+    }
+    if (smsValidos.length === 0) return;
+
+    setEnviandoSms(true);
+    setResultadoSms(null);
+    try {
+      // URGENTE pula o cooldown de 3 dias no backend (rota /api/sms/enviar).
+      // A esteira é o último aviso antes do cartório, então não faz sentido
+      // um lembrete de cobrança de 2 dias atrás bloquear justamente ela.
+      // O teto de 3 SMS por número por dia continua valendo.
+      const mensagens = smsValidos.map((d) => ({
+        numero: d.numero,
+        mensagem: texto,
+        prioridade: 'URGENTE',
+        cd_cliente: d.cd_cliente,
+        nm_cliente: d.nm_cliente,
+      }));
+
+      // O backend recusa lotes acima de SMS_LOTE — fatia e soma o resultado
+      const acumulado = { enviados: 0, rejeitados: [], bloqueadas: [] };
+      for (let i = 0; i < mensagens.length; i += SMS_LOTE) {
+        const lote = mensagens.slice(i, i + SMS_LOTE);
+        const resp = await fetch(`${API_BASE_URL}/api/sms/enviar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mensagens: lote }),
+        });
+        const json = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+          // 409 = travas anti-spam recusaram; 403 = fora da janela de horário
+          const motivo =
+            json?.details?.bloqueadas?.[0]?.motivo ||
+            json?.details?.invalidas?.[0]?.motivo ||
+            json?.message ||
+            `HTTP ${resp.status}`;
+          throw new Error(motivo);
+        }
+        const d = json?.data || {};
+        acumulado.enviados += d.enviados || 0;
+        acumulado.rejeitados.push(...(d.rejeitados || []));
+        acumulado.bloqueadas.push(...(d.bloqueadas || []));
+      }
+
+      setResultadoSms(acumulado);
+      setNotification({
+        type: acumulado.enviados > 0 ? 'success' : 'error',
+        message: `${acumulado.enviados} SMS enviado(s)${
+          acumulado.rejeitados.length
+            ? `, ${acumulado.rejeitados.length} rejeitado(s)`
+            : ''
+        }${
+          acumulado.bloqueadas.length
+            ? `, ${acumulado.bloqueadas.length} bloqueado(s) pelas travas`
+            : ''
+        }.`,
+      });
+      setTimeout(() => setNotification(null), 6000);
+    } catch (err) {
+      console.error('Erro ao enviar SMS:', err);
+      setNotification({ type: 'error', message: `Erro no envio: ${err.message}` });
+      setTimeout(() => setNotification(null), 8000);
+    } finally {
+      setEnviandoSms(false);
+    }
+  };
+
   // Gera o PNG do aviso: monta o nó escondido, espera o React pintar,
   // rasteriza com html-to-image e dispara o download.
   const baixarImagem = async (cliente) => {
     setGerandoImagem(cliente.cd_cliente);
-    setAvisoCliente(cliente);
+    // Só as faturas marcadas entram no PNG (ou todas, se nada marcado)
+    setAvisoCliente({ ...cliente, faturas: faturasParaImagem(cliente) });
     try {
       // Dois frames: um para o React montar o nó, outro para o layout assentar
       await new Promise((r) =>
@@ -535,6 +764,56 @@ const EsteiraProtesto = () => {
         </button>
       </div>
 
+      {/* Barra de ações em massa */}
+      {!loading && clientesAgrupados.length > 0 && (
+        <div className="bg-white p-3 rounded-lg shadow-sm border flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => definirTodosExpandidos(true)}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-[#000638] bg-gray-100 hover:bg-gray-200 transition-colors"
+          >
+            <CaretDown size={14} weight="bold" />
+            Abrir todos
+          </button>
+          <button
+            onClick={() => definirTodosExpandidos(false)}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold text-[#000638] bg-gray-100 hover:bg-gray-200 transition-colors"
+          >
+            <CaretRight size={14} weight="bold" />
+            Fechar todos
+          </button>
+
+          <div className="h-5 w-px bg-gray-200 mx-1" />
+
+          <button
+            onClick={selecionarTudo}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold text-[#000638] bg-gray-100 hover:bg-gray-200 transition-colors"
+          >
+            Selecionar tudo
+          </button>
+          <button
+            onClick={limparSelecao}
+            disabled={faturasSelecionadas.size === 0}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold text-[#000638] bg-gray-100 hover:bg-gray-200 disabled:opacity-40 transition-colors"
+          >
+            Limpar seleção
+          </button>
+
+          <span className="text-xs text-gray-500 ml-1">
+            {faturasSelecionadas.size > 0
+              ? `${faturasSelecionadas.size} fatura(s) de ${clientesSelecionados.length} cliente(s) selecionada(s)`
+              : 'Nenhuma fatura selecionada'}
+          </span>
+
+          <button
+            onClick={abrirModalSms}
+            className="flex items-center gap-1 ml-auto px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 transition-colors shadow-md uppercase tracking-wide"
+          >
+            <ChatText size={14} weight="bold" />
+            Enviar SMS
+          </button>
+        </div>
+      )}
+
       {/* Lista agrupada por cliente */}
       {loading ? (
         <div className="flex items-center justify-center h-48">
@@ -556,20 +835,37 @@ const EsteiraProtesto = () => {
                 className="bg-white rounded-lg shadow-sm border overflow-hidden"
               >
                 {/* Cabeçalho do cliente */}
-                <button
-                  onClick={() => toggleCliente(cliente.cd_cliente)}
-                  className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors"
-                >
-                  <div className="flex items-center gap-2 text-left">
-                    {expandido ? (
-                      <CaretDown size={16} className="text-gray-400" />
-                    ) : (
-                      <CaretRight size={16} className="text-gray-400" />
-                    )}
-                    <div>
-                      <div className="font-bold text-sm text-[#000638]">
+                <div className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors">
+                  <div className="flex items-center gap-2 text-left min-w-0">
+                    {/* Marca/desmarca todas as faturas deste cliente */}
+                    <input
+                      type="checkbox"
+                      checked={selecaoDoCliente(cliente) === 'todas'}
+                      ref={(el) => {
+                        if (el)
+                          el.indeterminate =
+                            selecaoDoCliente(cliente) === 'parcial';
+                      }}
+                      onChange={() => toggleSelecaoCliente(cliente)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-4 h-4 accent-[#000638] cursor-pointer"
+                      title="Selecionar todas as faturas deste cliente"
+                    />
+                    <button
+                      onClick={() => toggleCliente(cliente.cd_cliente)}
+                      className="flex items-center gap-2 text-left min-w-0"
+                      title={expandido ? 'Recolher faturas' : 'Ver faturas'}
+                    >
+                      {expandido ? (
+                        <CaretDown size={16} className="text-gray-400" />
+                      ) : (
+                        <CaretRight size={16} className="text-gray-400" />
+                      )}
+                      <span className="font-bold text-sm text-[#000638]">
                         {cliente.nm_cliente}
-                      </div>
+                      </span>
+                    </button>
+                    <div>
                       <div className="text-[11px] text-gray-500 flex items-center gap-2 flex-wrap">
                         <span>Cód. {cliente.cd_cliente}</span>
                         <span className="text-gray-300">|</span>
@@ -652,7 +948,7 @@ const EsteiraProtesto = () => {
                       Imagem
                     </span>
                   </div>
-                </button>
+                </div>
 
                 {/* Faturas do cliente */}
                 {expandido && (
@@ -660,6 +956,20 @@ const EsteiraProtesto = () => {
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="bg-[#000638] text-white">
+                          <th className="px-3 py-2 text-center font-semibold w-8">
+                            <input
+                              type="checkbox"
+                              checked={selecaoDoCliente(cliente) === 'todas'}
+                              ref={(el) => {
+                                if (el)
+                                  el.indeterminate =
+                                    selecaoDoCliente(cliente) === 'parcial';
+                              }}
+                              onChange={() => toggleSelecaoCliente(cliente)}
+                              className="w-3.5 h-3.5 accent-white cursor-pointer align-middle"
+                              title="Selecionar todas"
+                            />
+                          </th>
                           <th className="px-3 py-2 text-left font-semibold">
                             Empresa
                           </th>
@@ -701,8 +1011,22 @@ const EsteiraProtesto = () => {
                           return (
                             <tr
                               key={item.id}
-                              className="border-b border-gray-100 hover:bg-gray-50"
+                              onClick={() => toggleFatura(item.id)}
+                              className={`border-b border-gray-100 cursor-pointer transition-colors ${
+                                faturasSelecionadas.has(item.id)
+                                  ? 'bg-blue-50 hover:bg-blue-100'
+                                  : 'hover:bg-gray-50'
+                              }`}
                             >
+                              <td className="px-3 py-2 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={faturasSelecionadas.has(item.id)}
+                                  onChange={() => toggleFatura(item.id)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="w-3.5 h-3.5 accent-[#000638] cursor-pointer align-middle"
+                                />
+                              </td>
                               <td className="px-3 py-2">{item.cd_empresa}</td>
                               <td className="px-3 py-2 font-semibold text-[#000638]">
                                 {item.nr_fat}/{item.nr_parcela}
@@ -755,7 +1079,10 @@ const EsteiraProtesto = () => {
                                   const salvando = alterandoStatusId === item.id;
                                   return (
                                     <button
-                                      onClick={() => alternarStatus(item)}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        alternarStatus(item);
+                                      }}
                                       disabled={salvando}
                                       className={`inline-flex items-center justify-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase transition-colors disabled:opacity-60 ${
                                         protestado
@@ -783,7 +1110,10 @@ const EsteiraProtesto = () => {
                               </td>
                               <td className="px-3 py-2 text-center">
                                 <button
-                                  onClick={() => removerItem(item)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    removerItem(item);
+                                  }}
                                   disabled={removendoId === item.id}
                                   className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold text-red-600 border border-red-200 hover:bg-red-50 disabled:opacity-50 rounded-lg transition-colors"
                                   title="Remover da esteira"
@@ -809,6 +1139,195 @@ const EsteiraProtesto = () => {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Modal de disparo de SMS */}
+      {modalSmsAberto && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
+              <div className="flex items-center gap-2">
+                <ChatText size={20} className="text-teal-600" weight="bold" />
+                <h2 className="text-lg font-bold text-[#000638]">
+                  Enviar SMS de protesto
+                </h2>
+              </div>
+              <button
+                onClick={() => setModalSmsAberto(false)}
+                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"
+                aria-label="Fechar"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-auto px-5 py-4 space-y-4">
+              {/* Destinatários */}
+              <div>
+                <label className="block text-xs font-semibold mb-1.5 text-[#000638]">
+                  Destinatários
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setAlvoSms('SELECIONADOS')}
+                    disabled={clientesSelecionados.length === 0}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors disabled:opacity-40 ${
+                      alvoSms === 'SELECIONADOS'
+                        ? 'bg-[#000638] text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    Selecionados ({clientesSelecionados.length})
+                  </button>
+                  <button
+                    onClick={() => setAlvoSms('TODOS')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                      alvoSms === 'TODOS'
+                        ? 'bg-[#000638] text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    Todos da esteira ({clientesAgrupados.length})
+                  </button>
+                </div>
+                <p className="text-[11px] text-gray-500 mt-1.5">
+                  Um SMS por cliente, não por fatura.
+                </p>
+              </div>
+
+              {/* Mensagem */}
+              <div>
+                <label className="block text-xs font-semibold mb-1 text-[#000638]">
+                  Mensagem
+                </label>
+                <textarea
+                  value={textoSms}
+                  onChange={(e) => setTextoSms(e.target.value)}
+                  rows={4}
+                  className="border border-[#000638]/30 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+                />
+                <div className="flex justify-between mt-1">
+                  <span className="text-[11px] text-gray-500">
+                    Evite acentos: SMS usa GSM-7 e um acento derruba o limite
+                    para 70 caracteres.
+                  </span>
+                  <span
+                    className={`text-[11px] font-bold ${
+                      textoSms.trim().length > SMS_LIMITE
+                        ? 'text-red-600'
+                        : 'text-gray-500'
+                    }`}
+                  >
+                    {textoSms.trim().length}/{SMS_LIMITE}
+                  </span>
+                </div>
+              </div>
+
+              {/* Prévia dos destinatários */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs font-semibold text-[#000638]">
+                    Vão receber ({smsValidos.length})
+                  </span>
+                  {smsInvalidos.length > 0 && (
+                    <span className="text-[11px] font-bold text-amber-600">
+                      {smsInvalidos.length} sem celular válido
+                    </span>
+                  )}
+                </div>
+                <div className="border border-gray-200 rounded-lg max-h-52 overflow-auto">
+                  <table className="w-full text-[11px]">
+                    <tbody>
+                      {destinatariosSms.map((d) => (
+                        <tr
+                          key={d.cd_cliente}
+                          className="border-b border-gray-100 last:border-0"
+                        >
+                          <td className="px-3 py-1.5 text-[#000638]">
+                            {d.nm_cliente}
+                          </td>
+                          <td className="px-3 py-1.5 text-right">
+                            {d.numero ? (
+                              <span className="text-gray-600">{d.numero}</span>
+                            ) : (
+                              <span className="text-amber-600 font-semibold">
+                                {d.motivo}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                      {destinatariosSms.length === 0 && (
+                        <tr>
+                          <td className="px-3 py-4 text-center text-gray-500">
+                            Nenhum destinatário — selecione faturas ou troque
+                            para "Todos da esteira".
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Resultado do último disparo */}
+              {resultadoSms && (
+                <div className="border border-gray-200 rounded-lg p-3 text-xs bg-gray-50">
+                  <div className="font-bold text-[#000638] mb-1">
+                    Resultado do envio
+                  </div>
+                  <div className="text-green-700">
+                    {resultadoSms.enviados} enviado(s)
+                  </div>
+                  {resultadoSms.rejeitados.length > 0 && (
+                    <div className="text-red-600">
+                      {resultadoSms.rejeitados.length} rejeitado(s) pela
+                      operadora
+                    </div>
+                  )}
+                  {resultadoSms.bloqueadas.length > 0 && (
+                    <div className="text-amber-600">
+                      {resultadoSms.bloqueadas.length} bloqueado(s) pelas travas
+                      anti-spam (teto diário / cooldown)
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="px-5 py-3 border-t border-gray-200 flex justify-between items-center">
+              <span className="text-[11px] text-gray-500">
+                Sem cooldown nesta tela. Continuam valendo a janela de horário
+                e o teto de 3 SMS por número por dia.
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setModalSmsAberto(false)}
+                  className="px-4 py-2 rounded-lg text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"
+                >
+                  Fechar
+                </button>
+                <button
+                  onClick={enviarSms}
+                  disabled={
+                    enviandoSms ||
+                    smsValidos.length === 0 ||
+                    textoSms.trim().length === 0 ||
+                    textoSms.trim().length > SMS_LIMITE
+                  }
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors uppercase tracking-wide"
+                >
+                  {enviandoSms ? (
+                    <CircleNotch size={14} className="animate-spin" />
+                  ) : (
+                    <ChatText size={14} weight="bold" />
+                  )}
+                  Enviar {smsValidos.length} SMS
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

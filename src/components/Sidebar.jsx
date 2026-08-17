@@ -161,6 +161,13 @@ const financeiro = [
         roles: ['owner', 'admin', 'manager', 'user'],
       },
       {
+        name: 'CTO',
+        href: '/cto',
+        icon: Storefront,
+        color: 'text-red-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
         name: 'Liberação de Pagamento',
         href: '/liberacao-pagamento',
         icon: CheckCircle,
