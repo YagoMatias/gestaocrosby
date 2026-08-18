@@ -61,6 +61,11 @@ const AVAILABLE_PAGES = [
     name: 'Inscrições da Vaga (candidatos e currículos)',
     category: 'RH',
   },
+  {
+    path: '/rh/documentos',
+    name: 'Admissão — Documentos (dados sensíveis)',
+    category: 'RH',
+  },
 
   // Financeiro
   { path: '/contas-a-pagar', name: 'Contas a Pagar', category: 'Financeiro' },
@@ -678,6 +683,7 @@ const GerenciadorAcessos = () => {
       manager: 'bg-orange-100 text-orange-700 border-orange-300',
       user: 'bg-blue-100 text-blue-700 border-blue-300',
       vendedor: 'bg-green-100 text-green-700 border-green-300',
+      franquias: 'bg-teal-100 text-teal-700 border-teal-300',
       guest: 'bg-gray-100 text-gray-700 border-gray-300',
     };
     return colors[role] || colors.guest;
@@ -690,6 +696,7 @@ const GerenciadorAcessos = () => {
       manager: 'Gerente',
       user: 'Financeiro',
       vendedor: 'Vendedor',
+      franquias: 'Franquia',
       guest: 'Convidado',
     };
     return labels[role] || role;
@@ -827,6 +834,7 @@ const GerenciadorAcessos = () => {
                   <option value="manager">🟠 Gerente</option>
                   <option value="user">🔵 Financeiro</option>
                   <option value="vendedor">🟢 Vendedor</option>
+                  <option value="franquias">🏬 Franquia</option>
                   <option value="guest">⚪ Convidado</option>
                 </select>
 
