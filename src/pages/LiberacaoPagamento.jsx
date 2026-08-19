@@ -44,6 +44,7 @@ import {
   ArrowDown,
   ArrowsDownUp,
   CaretDown,
+  CaretRight,
   Storefront,
   Sparkle,
 } from '@phosphor-icons/react';
@@ -2589,6 +2590,153 @@ const LinhaTitulo = React.memo(
 );
 LinhaTitulo.displayName = 'LinhaTitulo';
 
+// ─── Linha de grupo (fornecedor) ─────────────────────
+// Mesma regra do PDF: um fornecedor = uma linha, com os valores somados.
+// Clicar na linha abre logo abaixo as faturas em aberto daquele fornecedor,
+// com banco, forma de pagamento, chave PIX e as demais informações.
+const LinhaGrupoFornecedor = React.memo(
+  ({
+    grupo,
+    aberto,
+    onToggle,
+    podeSelecionar,
+    todosSelecionados,
+    onSelecionarGrupo,
+    showBaixado,
+  }) => {
+    const Caret = aberto ? CaretDown : CaretRight;
+    return (
+      <tr
+        onClick={() => onToggle(grupo.chave)}
+        title={
+          aberto ? 'Clique para fechar as faturas' : 'Clique para ver as faturas'
+        }
+        className={`border-b-2 cursor-pointer transition-colors ${
+          aberto
+            ? 'bg-blue-50 hover:bg-blue-100 border-[#000638]'
+            : 'bg-gray-50 hover:bg-gray-100 border-gray-200'
+        }`}
+      >
+        <td
+          className="px-2 py-2 text-center"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {podeSelecionar && grupo.idsSelecionaveis.length > 0 && (
+            <input
+              type="checkbox"
+              checked={todosSelecionados}
+              onChange={(e) =>
+                onSelecionarGrupo(grupo.idsSelecionaveis, e.target.checked)
+              }
+              title="Selecionar todos os títulos deste fornecedor"
+              className="w-4 h-4 accent-[#000638]"
+            />
+          )}
+        </td>
+        <td className="px-2 py-2">
+          <div className="flex flex-col gap-1">
+            {grupo.statuses.map((st) => {
+              const cfg = STATUS_CONFIG[st] || STATUS_CONFIG.PENDENTE;
+              const StIcon = cfg.icon;
+              return (
+                <span
+                  key={st}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border w-fit ${cfg.color}`}
+                >
+                  <StIcon size={11} weight="bold" />
+                  {cfg.label}
+                  {grupo.statusCount[st] > 1 && (
+                    <b className="ml-0.5">{grupo.statusCount[st]}</b>
+                  )}
+                </span>
+              );
+            })}
+          </div>
+        </td>
+        {showBaixado && (
+          <td className="px-2 py-2 text-center text-[10px] font-bold text-emerald-600">
+            {grupo.qtdBaixados}/{grupo.itens.length}
+          </td>
+        )}
+        <td className="px-2 py-2 text-[10px] font-semibold text-gray-600 whitespace-nowrap">
+          {grupo.vencimentoMin || '—'}
+          {grupo.qtdVencimentos > 1 && (
+            <span className="ml-1 text-gray-400 font-bold">
+              +{grupo.qtdVencimentos - 1}
+            </span>
+          )}
+        </td>
+        <td className="px-2 py-2 text-xs font-bold text-[#000638] whitespace-nowrap">
+          {fmtBRL(grupo.somaValor)}
+        </td>
+        <td className="px-2 py-2 text-xs font-bold text-blue-700 whitespace-nowrap">
+          {grupo.temReal ? fmtBRL(grupo.somaReal) : ''}
+        </td>
+        <td className="px-2 py-2">
+          <div className="flex items-start gap-1.5">
+            <Caret
+              size={14}
+              weight="bold"
+              className="text-[#000638] mt-0.5 shrink-0"
+            />
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-gray-800 break-words leading-tight">
+                {grupo.fornecedor}
+              </p>
+              <p className="text-[9px] font-bold uppercase text-gray-400">
+                {grupo.itens.length} título(s)
+              </p>
+            </div>
+          </div>
+        </td>
+        <td className="px-2 py-2 text-[10px] text-gray-600 break-words">
+          {grupo.despesas[0] || '—'}
+          {grupo.despesas.length > 1 && (
+            <span className="ml-1 text-gray-400 font-bold">
+              +{grupo.despesas.length - 1}
+            </span>
+          )}
+        </td>
+        <td className="px-2 py-2 text-[10px] text-gray-600 break-words">
+          {grupo.ccustos[0] || '—'}
+          {grupo.ccustos.length > 1 && (
+            <span className="ml-1 text-gray-400 font-bold">
+              +{grupo.ccustos.length - 1}
+            </span>
+          )}
+        </td>
+        <td className="px-2 py-2 text-[10px] font-semibold text-gray-400">
+          {grupo.itens.length} fatura(s)
+        </td>
+        <td className="px-2 py-2" colSpan={6}>
+          <div className="flex flex-wrap items-center gap-1">
+            {grupo.bancos.map((b) => (
+              <span
+                key={b}
+                className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-white border border-gray-300 text-gray-600"
+              >
+                {b}
+              </span>
+            ))}
+            {grupo.formas.map((f) => (
+              <span
+                key={f}
+                className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-[#000638] text-white"
+              >
+                {f}
+              </span>
+            ))}
+            <span className="text-[9px] font-semibold text-gray-400 ml-1">
+              {aberto ? 'clique para fechar' : 'clique para ver as faturas'}
+            </span>
+          </div>
+        </td>
+      </tr>
+    );
+  },
+);
+LinhaGrupoFornecedor.displayName = 'LinhaGrupoFornecedor';
+
 // ─── Multi-select de Despesas ─────────────────────────────────────────────────
 const FiltroDespesaMultiSelect = ({ opcoes, selecionadas, onChange }) => {
   const [aberto, setAberto] = useState(false);
@@ -2705,6 +2853,9 @@ const LiberacaoPagamento = () => {
   const [showModalAdicionar, setShowModalAdicionar] = useState(false);
   const [modalDetalhe, setModalDetalhe] = useState(null);
   const [ordenacao, setOrdenacao] = useState({ coluna: null, dir: 'asc' });
+  // Agrupamento por fornecedor (mesma regra do PDF)
+  const [agruparFornecedor, setAgruparFornecedor] = useState(true);
+  const [gruposAbertos, setGruposAbertos] = useState(() => new Set());
   // Modal de pagamento em lote
   const [modalPagarSelecionados, setModalPagarSelecionados] = useState(false);
   // Execução manual do job de provisão automática (admin/owner)
@@ -2913,6 +3064,91 @@ const LiberacaoPagamento = () => {
     filtroBaixado,
     ordenacao,
   ]);
+
+  // Agrupa os títulos filtrados por fornecedor, somando os valores —
+  // mesma regra usada na exportação em PDF.
+  const gruposFornecedor = useMemo(() => {
+    const mapa = new Map();
+    for (const t of titulosFiltrados) {
+      const chave = (t.nm_fornecedor || '').trim() || '—';
+      if (!mapa.has(chave)) {
+        mapa.set(chave, {
+          chave,
+          fornecedor: chave,
+          itens: [],
+          somaValor: 0,
+          somaReal: 0,
+          temReal: false,
+          statusCount: {},
+          qtdBaixados: 0,
+          idsSelecionaveis: [],
+          despesasSet: new Set(),
+          ccustosSet: new Set(),
+          bancosSet: new Set(),
+          formasSet: new Set(),
+          vencSet: new Set(),
+        });
+      }
+      const g = mapa.get(chave);
+      g.itens.push(t);
+      g.somaValor += parseFloat(t.vl_duplicata || 0);
+      if (t.vl_real != null) {
+        g.temReal = true;
+        g.somaReal += parseFloat(t.vl_real || 0);
+      }
+      g.statusCount[t.status] = (g.statusCount[t.status] || 0) + 1;
+      if (t.baixado) g.qtdBaixados++;
+      if (
+        t.status === 'PENDENTE' ||
+        t.status === 'PROVISAO' ||
+        t.status === 'APROVADO'
+      )
+        g.idsSelecionaveis.push(t.id);
+      if (t.ds_despesaitem) g.despesasSet.add(t.ds_despesaitem);
+      if (t.cd_ccusto) {
+        const nome = CENTROS_CUSTO[String(t.cd_ccusto)];
+        g.ccustosSet.add(`${t.cd_ccusto}${nome ? ' - ' + nome : ''}`);
+      }
+      if (t.banco_pagamento) g.bancosSet.add(t.banco_pagamento);
+      if (t.forma_pagamento) g.formasSet.add(t.forma_pagamento);
+      if (t.dt_vencimento) g.vencSet.add(String(t.dt_vencimento).slice(0, 10));
+    }
+    return Array.from(mapa.values()).map((g) => {
+      const vencs = Array.from(g.vencSet).sort();
+      return {
+        ...g,
+        statuses: Object.keys(g.statusCount),
+        despesas: Array.from(g.despesasSet),
+        ccustos: Array.from(g.ccustosSet),
+        bancos: Array.from(g.bancosSet),
+        formas: Array.from(g.formasSet),
+        vencimentoMin: vencs.length ? fmtDate(vencs[0]) : '',
+        qtdVencimentos: vencs.length,
+      };
+    });
+  }, [titulosFiltrados]);
+
+  const toggleGrupo = useCallback((chave) => {
+    setGruposAbertos((prev) => {
+      const n = new Set(prev);
+      n.has(chave) ? n.delete(chave) : n.add(chave);
+      return n;
+    });
+  }, []);
+
+  const abrirTodosGrupos = useCallback(() => {
+    setGruposAbertos(new Set(gruposFornecedor.map((g) => g.chave)));
+  }, [gruposFornecedor]);
+
+  const fecharTodosGrupos = useCallback(() => setGruposAbertos(new Set()), []);
+
+  const selecionarGrupo = useCallback((ids, marcar) => {
+    setSelecionados((prev) => {
+      const n = new Set(prev);
+      ids.forEach((id) => (marcar ? n.add(id) : n.delete(id)));
+      return n;
+    });
+  }, []);
 
   const despesasDisponiveis = useMemo(() => {
     const set = new Set();
@@ -4128,6 +4364,41 @@ const LiberacaoPagamento = () => {
           Adicionar Duplicata
         </button>
 
+        <div className="flex items-center gap-1.5 border-l border-gray-200 pl-2">
+          <button
+            onClick={() => setAgruparFornecedor((v) => !v)}
+            title="Alterna entre uma linha por fornecedor (valores somados) e a lista de títulos"
+            className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded transition-colors ${
+              agruparFornecedor
+                ? 'bg-[#000638] text-white hover:bg-[#001060]'
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+          >
+            <Storefront size={14} weight="bold" />
+            {agruparFornecedor ? 'Agrupado por fornecedor' : 'Lista de títulos'}
+          </button>
+          {agruparFornecedor && (
+            <>
+              <button
+                onClick={abrirTodosGrupos}
+                disabled={gruposFornecedor.length === 0}
+                className="flex items-center gap-1 bg-gray-100 hover:bg-gray-200 disabled:opacity-40 text-gray-700 text-xs font-semibold px-2.5 py-1.5 rounded transition-colors"
+              >
+                <CaretDown size={12} weight="bold" />
+                Abrir todas
+              </button>
+              <button
+                onClick={fecharTodosGrupos}
+                disabled={gruposAbertos.size === 0}
+                className="flex items-center gap-1 bg-gray-100 hover:bg-gray-200 disabled:opacity-40 text-gray-700 text-xs font-semibold px-2.5 py-1.5 rounded transition-colors"
+              >
+                <CaretRight size={12} weight="bold" />
+                Fechar todas
+              </button>
+            </>
+          )}
+        </div>
+
         {isAdmin && (
           <div className="relative">
             <button
@@ -4407,23 +4678,60 @@ const LiberacaoPagamento = () => {
                 </tr>
               </thead>
               <tbody>
-                {titulosFiltrados.map((item) => (
-                  <LinhaTitulo
-                    key={item.id}
-                    item={item}
-                    isAdmin={isAdmin}
-                    isFinanceiro={isFinanceiro}
-                    selecionado={selecionados.has(item.id)}
-                    onToggleSelect={toggleSelect}
-                    onSalvar={salvarTitulo}
-                    onExcluir={excluirTitulo}
-                    onMudarStatus={mudarStatusTitulo}
-                    onAbrirModal={setModalItem}
-                    onAbrirDetalhe={setModalDetalhe}
-                    onToggleBaixado={toggleBaixado}
-                    showBaixado={filtroStatus === 'PAGO'}
-                  />
-                ))}
+                {agruparFornecedor
+                  ? gruposFornecedor.map((g) => (
+                      <React.Fragment key={g.chave}>
+                        <LinhaGrupoFornecedor
+                          grupo={g}
+                          aberto={gruposAbertos.has(g.chave)}
+                          onToggle={toggleGrupo}
+                          podeSelecionar={isAdmin || isFinanceiro}
+                          todosSelecionados={
+                            g.idsSelecionaveis.length > 0 &&
+                            g.idsSelecionaveis.every((id) =>
+                              selecionados.has(id),
+                            )
+                          }
+                          onSelecionarGrupo={selecionarGrupo}
+                          showBaixado={filtroStatus === 'PAGO'}
+                        />
+                        {gruposAbertos.has(g.chave) &&
+                          g.itens.map((item) => (
+                            <LinhaTitulo
+                              key={item.id}
+                              item={item}
+                              isAdmin={isAdmin}
+                              isFinanceiro={isFinanceiro}
+                              selecionado={selecionados.has(item.id)}
+                              onToggleSelect={toggleSelect}
+                              onSalvar={salvarTitulo}
+                              onExcluir={excluirTitulo}
+                              onMudarStatus={mudarStatusTitulo}
+                              onAbrirModal={setModalItem}
+                              onAbrirDetalhe={setModalDetalhe}
+                              onToggleBaixado={toggleBaixado}
+                              showBaixado={filtroStatus === 'PAGO'}
+                            />
+                          ))}
+                      </React.Fragment>
+                    ))
+                  : titulosFiltrados.map((item) => (
+                      <LinhaTitulo
+                        key={item.id}
+                        item={item}
+                        isAdmin={isAdmin}
+                        isFinanceiro={isFinanceiro}
+                        selecionado={selecionados.has(item.id)}
+                        onToggleSelect={toggleSelect}
+                        onSalvar={salvarTitulo}
+                        onExcluir={excluirTitulo}
+                        onMudarStatus={mudarStatusTitulo}
+                        onAbrirModal={setModalItem}
+                        onAbrirDetalhe={setModalDetalhe}
+                        onToggleBaixado={toggleBaixado}
+                        showBaixado={filtroStatus === 'PAGO'}
+                      />
+                    ))}
               </tbody>
             </table>
           </div>

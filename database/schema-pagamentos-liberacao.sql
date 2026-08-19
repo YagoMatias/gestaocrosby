@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS pagamentos_liberacao (
   forma_pagamento   VARCHAR(20)
                     CHECK (forma_pagamento IN ('PIX', 'BOLETO', 'DEBITO', 'CREDITO') OR forma_pagamento IS NULL),
   codigo_barras     VARCHAR(255),   -- usado quando BOLETO
-  chave_pix         VARCHAR(255),   -- usado quando PIX
+  chave_pix         TEXT,           -- usado quando PIX (aceita copia e cola / BR Code)
   link_pagamento    VARCHAR(500),   -- usado quando DEBITO ou CREDITO
   observacao        TEXT,
 
