@@ -1581,12 +1581,11 @@ const FormularioSolicitacoes = () => {
                     </select>
                   </Field>
                   <Field label="Chave PIX">
-                    <input
-                      type="text"
+                    <textarea
+                      rows={2}
                       value={loteChavePix}
                       onChange={(e) => setLoteChavePix(e.target.value)}
-                      maxLength={140}
-                      className={inputCls}
+                      className={`${inputCls} font-mono break-all resize-y`}
                     />
                   </Field>
                 </div>
@@ -2037,13 +2036,12 @@ const FormularioSolicitacoes = () => {
                     <Hash size={14} weight="bold" />
                     Chave PIX *
                   </label>
-                  <input
-                    type="text"
+                  <textarea
+                    rows={2}
                     value={chavePix}
                     onChange={(e) => setChavePix(e.target.value)}
-                    maxLength={140}
-                    placeholder="CPF, CNPJ, e-mail, telefone ou chave aleatória"
-                    className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#000638] transition-colors"
+                    placeholder="CPF, CNPJ, e-mail, telefone, chave aleatória ou PIX copia e cola"
+                    className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm font-mono break-all resize-y focus:outline-none focus:border-[#000638] transition-colors"
                   />
                 </div>
               )}

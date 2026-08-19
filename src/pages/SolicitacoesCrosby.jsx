@@ -4218,11 +4218,12 @@ const ModalEdicao = ({
               {formaPagamento.toLowerCase() === 'pix' && (
                 <div>
                   <ELabel>Chave PIX *</ELabel>
-                  <input
-                    className={inpCls}
+                  <textarea
+                    rows={2}
+                    className={`${inpCls} font-mono break-all resize-y`}
                     value={chavePix}
                     onChange={(e) => setChavePix(e.target.value)}
-                    placeholder="CPF, e-mail, telefone ou chave aleatória"
+                    placeholder="CPF, e-mail, telefone, chave aleatória ou PIX copia e cola"
                   />
                 </div>
               )}
