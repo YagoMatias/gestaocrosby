@@ -420,6 +420,21 @@ const AVAILABLE_PAGES = [
     name: 'Monitoramento TOTVS',
     category: 'Tecnologia',
   },
+  {
+    path: '/tecnologia/leitura-rfid',
+    name: 'Leitura de RFID',
+    category: 'Tecnologia',
+  },
+  {
+    path: '/tecnologia/pdv-rfid',
+    name: 'PDV RFID',
+    category: 'Tecnologia',
+  },
+  {
+    path: '/tecnologia/etiquetas-preco',
+    name: 'Etiquetas de Preço',
+    category: 'Tecnologia',
+  },
 ];
 
 const GerenciadorAcessos = () => {

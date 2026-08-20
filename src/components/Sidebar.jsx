@@ -51,6 +51,8 @@ import {
   Briefcase,
   IdentificationBadge,
   Gavel,
+  Broadcast,
+  Tag,
 } from '@phosphor-icons/react';
 
 // Componentes de ícones modernos
@@ -338,6 +340,12 @@ const painelVendasItems = [
 
 const varejo = [
   {
+    name: 'Etiquetas de Preço',
+    href: '/tecnologia/etiquetas-preco',
+    icon: Tag,
+    color: 'text-fuchsia-600',
+  },
+  {
     name: 'Dashboard Varejo',
     href: '/dashboard-varejo',
     icon: ChartLineUp,
@@ -609,6 +617,24 @@ const tecnologiaItems = [
     href: '/tecnologia/inventario-patrimonio',
     icon: Package,
     color: 'text-indigo-600',
+  },
+  {
+    name: 'Leitura de RFID',
+    href: '/tecnologia/leitura-rfid',
+    icon: Broadcast,
+    color: 'text-rose-600',
+  },
+  {
+    name: 'PDV RFID',
+    href: '/tecnologia/pdv-rfid',
+    icon: ShoppingCart,
+    color: 'text-emerald-600',
+  },
+  {
+    name: 'Etiquetas de Preço',
+    href: '/tecnologia/etiquetas-preco',
+    icon: Tag,
+    color: 'text-fuchsia-600',
   },
   {
     name: 'Cotação de Compras',

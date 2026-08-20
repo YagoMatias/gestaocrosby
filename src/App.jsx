@@ -115,6 +115,9 @@ const NewForecast = lazy(() => import('./pages/NewForecast'));
 const ControleChips = lazy(() => import('./pages/ControleChips'));
 const MonitoramentoTotvs = lazy(() => import('./pages/MonitoramentoTotvs'));
 const InventarioPatrimonio = lazy(() => import('./pages/InventarioPatrimonio'));
+const LeituraRFID = lazy(() => import('./pages/LeituraRFID'));
+const PDVRfid = lazy(() => import('./pages/PDVRfid'));
+const EtiquetasPreco = lazy(() => import('./pages/EtiquetasPreco'));
 const CotacaoCompras = lazy(() => import('./pages/CotacaoCompras'));
 const ClientesPorEmpresa = lazy(() => import('./pages/ClientesPorEmpresa'));
 const CriarVouchers = lazy(() => import('./pages/CriarVouchers'));
@@ -182,6 +185,9 @@ const protectedRoutes = [
     path: '/tecnologia/inventario-patrimonio',
     component: InventarioPatrimonio,
   },
+  { path: '/tecnologia/leitura-rfid', component: LeituraRFID },
+  { path: '/tecnologia/pdv-rfid', component: PDVRfid },
+  { path: '/tecnologia/etiquetas-preco', component: EtiquetasPreco },
   { path: '/tecnologia/cotacao-compras', component: CotacaoCompras },
   { path: '/tecnologia/clientes-por-empresa', component: ClientesPorEmpresa },
   { path: '/tecnologia/criar-vouchers', component: CriarVouchers },
