@@ -64,7 +64,16 @@ import {
   X,
   Spinner,
   Gavel,
+  FileXls,
 } from '@phosphor-icons/react';
+import * as XLSX from 'xlsx';
+
+// Rótulos das seções da aba Situação de Clientes
+const LABEL_STATUS = {
+  inativos: 'Inativos',
+  bloqueados: 'Bloqueados',
+  ativos: 'Ativos',
+};
 
 // Registrar componentes do Chart.js
 ChartJS.register(
@@ -149,8 +158,23 @@ const InadimplentesMultimarcas = () => {
   const [observacaoBaixa, setObservacaoBaixa] = useState('');
   const [loadingBaixa, setLoadingBaixa] = useState(false);
 
-  // Estado para alternar entre LISTA e DASHBOARD
+  // Estado para alternar entre LISTA, DASHBOARD e CLIENTES INATIVOS
   const [viewMode, setViewMode] = useState('lista');
+
+  // ─── Aba Clientes Inativos ───
+  const [clientesMultimarcas, setClientesMultimarcas] = useState([]);
+  const [inativosCarregados, setInativosCarregados] = useState(false);
+  const [inativosLoading, setInativosLoading] = useState(false);
+  const [inativosErro, setInativosErro] = useState(null);
+  const [buscaInativos, setBuscaInativos] = useState('');
+  const [togglandoCliente, setTogglandoCliente] = useState(null);
+  // 'inativos' | 'bloqueados' | 'ativos'
+  const [filtroStatus, setFiltroStatus] = useState('inativos');
+
+  // ─── Seleção em massa na lista de inadimplentes (para inativar) ───
+  const [clientesSelecionados, setClientesSelecionados] = useState(new Set());
+  const [inativandoMassa, setInativandoMassa] = useState(false);
+  const [progressoInativacao, setProgressoInativacao] = useState('');
 
   // Títulos já enviados para a Esteira de Protesto
   const [protestos, setProtestos] = useState([]);
@@ -995,9 +1019,13 @@ Crosby`;
           nm_fantasia: item.nm_fantasia || '',
           nr_telefone: item.nr_telefone || '',
           ds_uf: item.ds_uf || '',
+          nr_cpfcnpj: item.nr_cpfcnpj || '',
           valor_total: 0,
           faturas: [],
         };
+      }
+      if (!acc[cdCliente].nr_cpfcnpj && item.nr_cpfcnpj) {
+        acc[cdCliente].nr_cpfcnpj = item.nr_cpfcnpj;
       }
       acc[cdCliente].valor_total += parseFloat(item.vl_fatura) || 0;
       acc[cdCliente].faturas.push(item);
@@ -1042,6 +1070,10 @@ Crosby`;
           case 'nm_cliente':
             valorA = (a.nm_cliente || '').toLowerCase();
             valorB = (b.nm_cliente || '').toLowerCase();
+            break;
+          case 'nr_cpfcnpj':
+            valorA = String(a.nr_cpfcnpj || '');
+            valorB = String(b.nr_cpfcnpj || '');
             break;
           case 'ds_uf':
             valorA = (a.ds_uf || '').trim().toLowerCase();
@@ -1655,6 +1687,298 @@ Crosby`;
     }).format(valor || 0);
   };
 
+  // Exporta a tabela principal de clientes inadimplentes para Excel
+  const baixarExcel = useCallback(() => {
+    const rows = clientesAgrupados.map((cliente) => ({
+      'Código Cliente': cliente.cd_cliente || '',
+      'Nome Cliente': cliente.nm_cliente || '',
+      'CPF/CNPJ': formatarCpfCnpj(cliente.nr_cpfcnpj) || '',
+      Estado: cliente.ds_uf?.trim() || '',
+      'Valor Vencido': parseFloat(cliente.valor_total) || 0,
+      'A Vencer': parseFloat(cliente.valor_a_vencer) || 0,
+      Situação: cliente.situacao || '',
+      Representante: cliente.representante || '',
+      'Dias Atraso (máx)': cliente.diasAtrasoMax || 0,
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [
+      { wch: 14 },
+      { wch: 40 },
+      { wch: 20 },
+      { wch: 8 },
+      { wch: 14 },
+      { wch: 14 },
+      { wch: 14 },
+      { wch: 20 },
+      { wch: 14 },
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Inadimplentes MTM');
+    const date = new Date().toISOString().split('T')[0];
+    XLSX.writeFile(wb, `inadimplentes-multimarcas-${date}.xlsx`);
+  }, [clientesAgrupados]);
+
+  const formatarCpfCnpj = (valor) => {
+    const d = String(valor || '').replace(/\D/g, '');
+    if (d.length === 14)
+      return d.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+    if (d.length === 11)
+      return d.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+    return valor || '';
+  };
+
+  // Situação do cliente no TOTVS — o customerStatus da busca é a fonte
+  // confiável (a API não preenche isInactive na consulta)
+  const estaInativo = (c) =>
+    c.isInactive === true || /inativo/i.test(c.customerStatus || '');
+  const estaBloqueado = (c) => /bloque/i.test(c.customerStatus || '');
+
+  // ─── Aba Clientes Inativos: carga da lista com status ──────────────────────
+  const carregarStatusMultimarcas = useCallback(async (refresh = false) => {
+    setInativosLoading(true);
+    setInativosErro(null);
+    try {
+      const resp = await fetch(
+        `${TotvsURL}multibrand-clients${refresh ? '?refresh=true' : ''}`,
+      );
+      if (!resp.ok) throw new Error(`Erro HTTP ${resp.status}`);
+      const result = await resp.json();
+      const lista = result.data || [];
+      // Cache antigo do backend pode não ter o campo isInactive — força refresh
+      if (!refresh && lista.length > 0 && lista[0].isInactive === undefined) {
+        return carregarStatusMultimarcas(true);
+      }
+      setClientesMultimarcas(lista);
+      setInativosCarregados(true);
+    } catch (e) {
+      setInativosErro(e.message || 'Erro ao carregar clientes.');
+    } finally {
+      setInativosLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (viewMode === 'inativos' && !inativosCarregados && !inativosLoading) {
+      carregarStatusMultimarcas();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, inativosCarregados]);
+
+  // Valor vencido por cliente (a partir das faturas vencidas já carregadas)
+  const valoresVencidosPorCliente = useMemo(() => {
+    const mapa = {};
+    dados.forEach((i) => {
+      const cd = String(i.cd_cliente);
+      mapa[cd] = (mapa[cd] || 0) + (parseFloat(i.vl_fatura) || 0);
+    });
+    return mapa;
+  }, [dados]);
+
+  // Clientes do status escolhido, separados por situação de faturas.
+  // A situação vem do customerStatus do TOTVS (Ativo/Inativo/Bloqueado/
+  // Restrito) — o isInactive da busca não é preenchido pela API.
+  const clientesInativosView = useMemo(() => {
+    const termo = buscaInativos.trim().toLowerCase();
+    const termoDigitos = termo.replace(/\D/g, '');
+
+    const filtrarBusca = (c) => {
+      if (!termo) return true;
+      return (
+        (c.name || '').toLowerCase().includes(termo) ||
+        (c.fantasyName || '').toLowerCase().includes(termo) ||
+        String(c.code).includes(termo) ||
+        (termoDigitos.length > 0 && String(c.cnpj || '').includes(termoDigitos))
+      );
+    };
+
+    const enriquecer = (c) => ({
+      ...c,
+      valorVencido: valoresVencidosPorCliente[String(c.code)] || 0,
+      valorAVencer: valoresAVencer[String(c.code)] || 0,
+    });
+
+    const contagem = {
+      inativos: clientesMultimarcas.filter(estaInativo).length,
+      bloqueados: clientesMultimarcas.filter(estaBloqueado).length,
+      ativos: clientesMultimarcas.filter(
+        (c) => !estaInativo(c) && !estaBloqueado(c),
+      ).length,
+    };
+
+    const porStatus = {
+      inativos: estaInativo,
+      bloqueados: estaBloqueado,
+      ativos: (c) => !estaInativo(c) && !estaBloqueado(c),
+    }[filtroStatus];
+
+    const lista = clientesMultimarcas
+      .filter(porStatus)
+      .filter(filtrarBusca)
+      .map(enriquecer);
+
+    return {
+      contagem,
+      total: lista.length,
+      comAVencer: lista
+        .filter((c) => c.valorAVencer > 0)
+        .sort((a, b) => b.valorAVencer - a.valorAVencer),
+      comVencidas: lista
+        .filter((c) => c.valorAVencer <= 0 && c.valorVencido > 0)
+        .sort((a, b) => b.valorVencido - a.valorVencido),
+      semFaturas: lista
+        .filter((c) => c.valorAVencer <= 0 && c.valorVencido <= 0)
+        .sort((a, b) => (a.name || '').localeCompare(b.name || '')),
+    };
+  }, [
+    clientesMultimarcas,
+    buscaInativos,
+    filtroStatus,
+    valoresVencidosPorCliente,
+    valoresAVencer,
+  ]);
+
+  // ─── Seleção em massa na lista de inadimplentes ────────────────────────────
+  const toggleSelecionado = (cdCliente) => {
+    setClientesSelecionados((prev) => {
+      const n = new Set(prev);
+      const key = String(cdCliente);
+      n.has(key) ? n.delete(key) : n.add(key);
+      return n;
+    });
+  };
+
+  const toggleSelecionarTodos = () => {
+    setClientesSelecionados((prev) => {
+      const todos = clientesAgrupados.map((c) => String(c.cd_cliente));
+      const todosSelecionados =
+        todos.length > 0 && todos.every((cd) => prev.has(cd));
+      return todosSelecionados ? new Set() : new Set(todos);
+    });
+  };
+
+  // Inativa no TOTVS todos os clientes selecionados na lista (sequencial)
+  const inativarSelecionados = async () => {
+    const clientes = clientesAgrupados.filter((c) =>
+      clientesSelecionados.has(String(c.cd_cliente)),
+    );
+    if (clientes.length === 0) return;
+    if (
+      !window.confirm(
+        `INATIVAR ${clientes.length} cliente(s) no TOTVS?\n\nO campo Ativo/Inativo do cadastro de cada cliente será alterado.`,
+      )
+    )
+      return;
+
+    setInativandoMassa(true);
+    const falhas = [];
+    let ok = 0;
+
+    for (let i = 0; i < clientes.length; i++) {
+      const cliente = clientes[i];
+      setProgressoInativacao(`${i + 1}/${clientes.length}`);
+      const doc = String(cliente.nr_cpfcnpj || '').replace(/\D/g, '');
+      if (doc.length !== 11 && doc.length !== 14) {
+        falhas.push(`${cliente.nm_cliente}: sem CPF/CNPJ válido`);
+        continue;
+      }
+      const isPJ = doc.length === 14;
+      try {
+        const resp = await fetch(`${TotvsURL}cliente/toggle-inactive`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            personType: isPJ ? 'PJ' : 'PF',
+            [isPJ ? 'cnpj' : 'cpf']: doc,
+            isInactive: true,
+          }),
+        });
+        const result = await resp.json().catch(() => ({}));
+        if (!resp.ok || result.success === false) {
+          throw new Error(result.message || `Erro HTTP ${resp.status}`);
+        }
+        ok++;
+        // Reflete na aba Clientes Inativos, se já carregada
+        setClientesMultimarcas((prev) =>
+          prev.map((c) =>
+            String(c.code) === String(cliente.cd_cliente)
+              ? { ...c, isInactive: true, customerStatus: 'Inativo' }
+              : c,
+          ),
+        );
+      } catch (err) {
+        falhas.push(`${cliente.nm_cliente}: ${err.message}`);
+      }
+    }
+
+    setInativandoMassa(false);
+    setProgressoInativacao('');
+    setClientesSelecionados(new Set());
+
+    if (falhas.length > 0) {
+      alert(
+        `Inativação concluída: ${ok} com sucesso, ${falhas.length} com erro.\n\nErros:\n${falhas.join('\n')}`,
+      );
+    }
+    setNotification({
+      type: falhas.length === 0 ? 'success' : 'error',
+      message:
+        falhas.length === 0
+          ? `${ok} cliente(s) inativado(s) no TOTVS com sucesso!`
+          : `${ok} inativado(s), ${falhas.length} com erro.`,
+    });
+    setTimeout(() => setNotification(null), 5000);
+  };
+
+  // Ativa/inativa o cliente no TOTVS
+  const alternarInativo = async (cliente, novoInativo) => {
+    const acao = novoInativo ? 'INATIVAR' : 'ATIVAR';
+    if (
+      !window.confirm(
+        `${acao} o cliente ${cliente.name} (cód. ${cliente.code}) no TOTVS?`,
+      )
+    )
+      return;
+    setTogglandoCliente(cliente.code);
+    try {
+      const resp = await fetch(`${TotvsURL}cliente/toggle-inactive`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          personType: 'PJ',
+          cnpj: cliente.cnpj,
+          isInactive: novoInativo,
+        }),
+      });
+      const result = await resp.json().catch(() => ({}));
+      if (!resp.ok || result.success === false) {
+        throw new Error(result.message || `Erro HTTP ${resp.status}`);
+      }
+      setClientesMultimarcas((prev) =>
+        prev.map((c) =>
+          c.code === cliente.code
+            ? {
+                ...c,
+                isInactive: novoInativo,
+                customerStatus: novoInativo ? 'Inativo' : 'Ativo',
+              }
+            : c,
+        ),
+      );
+      setNotification({
+        type: 'success',
+        message: `Cliente ${cliente.name} ${novoInativo ? 'inativado' : 'ativado'} no TOTVS com sucesso!`,
+      });
+    } catch (err) {
+      setNotification({
+        type: 'error',
+        message: `Erro ao ${acao.toLowerCase()} cliente: ${err.message}`,
+      });
+    } finally {
+      setTogglandoCliente(null);
+      setTimeout(() => setNotification(null), 4000);
+    }
+  };
+
   const formatarData = (data) => {
     if (!data) return 'N/A';
     const [datePart] = String(data).split('T');
@@ -2222,6 +2546,17 @@ Crosby`;
           <ChartLineUp size={16} weight="bold" />
           Dashboard
         </button>
+        <button
+          onClick={() => setViewMode('inativos')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition-colors shadow-md ${
+            viewMode === 'inativos'
+              ? 'bg-[#000638] text-white'
+              : 'bg-white text-[#000638] border border-[#000638]/30 hover:bg-gray-50'
+          }`}
+        >
+          <Users size={16} weight="bold" />
+          Situação dos Clientes
+        </button>
       </div>
 
       {/* ======================== VIEW: DASHBOARD ======================== */}
@@ -2714,14 +3049,44 @@ Crosby`;
                     Lista de Clientes Inadimplentes
                   </CardTitle>
                 </div>
-                <button
-                  onClick={() => abrirModalHistorico(null)}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-[#000638] text-white text-xs font-medium rounded hover:bg-[#fe0000] transition-colors"
-                  title="Ver histórico completo de alterações"
-                >
-                  <ClockClockwise size={16} weight="bold" />
-                  Log
-                </button>
+                <div className="flex items-center gap-2">
+                  {clientesSelecionados.size > 0 && (
+                    <button
+                      onClick={inativarSelecionados}
+                      disabled={inativandoMassa}
+                      className="inline-flex items-center gap-2 px-4 py-2 bg-red-600 text-white text-xs font-medium rounded hover:bg-red-700 transition-colors disabled:opacity-60"
+                      title="Inativar no TOTVS todos os clientes selecionados"
+                    >
+                      {inativandoMassa ? (
+                        <>
+                          <Spinner size={14} className="animate-spin" />
+                          Inativando {progressoInativacao}...
+                        </>
+                      ) : (
+                        <>
+                          <X size={14} weight="bold" />
+                          Inativar Selecionados ({clientesSelecionados.size})
+                        </>
+                      )}
+                    </button>
+                  )}
+                  <button
+                    onClick={baixarExcel}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-xs font-medium rounded hover:bg-emerald-700 transition-colors"
+                    title="Baixar a tabela em Excel"
+                  >
+                    <FileXls size={16} weight="bold" />
+                    Baixar Excel
+                  </button>
+                  <button
+                    onClick={() => abrirModalHistorico(null)}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-[#000638] text-white text-xs font-medium rounded hover:bg-[#fe0000] transition-colors"
+                    title="Ver histórico completo de alterações"
+                  >
+                    <ClockClockwise size={16} weight="bold" />
+                    Log
+                  </button>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="pt-0 px-4 pb-4">
@@ -2737,6 +3102,20 @@ Crosby`;
                   <table className="w-full text-sm text-left">
                     <thead className="text-xs text-gray-700 uppercase bg-gray-50">
                       <tr>
+                        <th className="px-3 py-3 w-10 text-center">
+                          <input
+                            type="checkbox"
+                            checked={
+                              clientesAgrupados.length > 0 &&
+                              clientesAgrupados.every((c) =>
+                                clientesSelecionados.has(String(c.cd_cliente)),
+                              )
+                            }
+                            onChange={toggleSelecionarTodos}
+                            className="w-4 h-4 accent-[#000638] cursor-pointer"
+                            title="Selecionar todos"
+                          />
+                        </th>
                         <th
                           className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
                           onClick={() => ordenarColuna('cd_cliente')}
@@ -2759,6 +3138,20 @@ Crosby`;
                           <div className="flex items-center gap-1">
                             Nome Cliente
                             {ordenarPor === 'nm_cliente' && (
+                              <span>
+                                {direcaoOrdenacao === 'asc' ? '↑' : '↓'}
+                              </span>
+                            )}
+                          </div>
+                        </th>
+                        <th
+                          className="px-4 py-3 cursor-pointer hover:bg-gray-100 select-none"
+                          onClick={() => ordenarColuna('nr_cpfcnpj')}
+                          title="Clique para ordenar"
+                        >
+                          <div className="flex items-center gap-1">
+                            CPF/CNPJ
+                            {ordenarPor === 'nr_cpfcnpj' && (
                               <span>
                                 {direcaoOrdenacao === 'asc' ? '↑' : '↓'}
                               </span>
@@ -2843,7 +3236,7 @@ Crosby`;
                       {clientesAgrupados.length === 0 ? (
                         <tr>
                           <td
-                            colSpan={9}
+                            colSpan={11}
                             className="px-4 py-8 text-center text-gray-500"
                           >
                             Nenhum cliente inadimplente encontrado
@@ -2856,11 +3249,29 @@ Crosby`;
                             className="bg-white border-b hover:bg-blue-50 cursor-pointer transition-colors"
                             onClick={() => abrirModal(cliente)}
                           >
+                            <td
+                              className="px-3 py-3 text-center"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={clientesSelecionados.has(
+                                  String(cliente.cd_cliente),
+                                )}
+                                onChange={() =>
+                                  toggleSelecionado(cliente.cd_cliente)
+                                }
+                                className="w-4 h-4 accent-[#000638] cursor-pointer"
+                              />
+                            </td>
                             <td className="px-4 py-3 font-medium text-gray-900">
                               {cliente.cd_cliente || 'N/A'}
                             </td>
                             <td className="px-4 py-3 font-medium text-gray-900">
                               {cliente.nm_cliente || 'N/A'}
+                            </td>
+                            <td className="px-4 py-3 text-gray-700 whitespace-nowrap">
+                              {formatarCpfCnpj(cliente.nr_cpfcnpj) || 'N/A'}
                             </td>
                             <td className="px-4 py-3">
                               <span className="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-1 rounded">
@@ -2984,6 +3395,290 @@ Crosby`;
             </CardContent>
           </Card>
         </>
+      )}
+
+      {/* ======================== VIEW: CLIENTES INATIVOS ======================== */}
+      {viewMode === 'inativos' && (
+        <div className="space-y-4">
+          {/* Barra de busca + refresh */}
+          <div className="bg-white p-4 rounded-lg shadow-sm border flex flex-wrap items-center gap-2">
+            <MagnifyingGlass size={15} weight="bold" className="text-[#000638]" />
+            <input
+              type="text"
+              value={buscaInativos}
+              onChange={(e) => setBuscaInativos(e.target.value)}
+              placeholder="Buscar cliente por nome, código ou CNPJ..."
+              className="flex-1 min-w-[220px] border border-[#000638]/20 rounded-lg px-3 py-1.5 text-xs bg-[#f8f9fb] text-[#000638] focus:outline-none focus:ring-2 focus:ring-[#000638]"
+            />
+            {buscaInativos && (
+              <button
+                type="button"
+                onClick={() => setBuscaInativos('')}
+                className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1"
+              >
+                Limpar
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => carregarStatusMultimarcas(true)}
+              disabled={inativosLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#000638] text-white text-xs font-medium rounded hover:opacity-90 transition disabled:opacity-60"
+              title="Atualizar status direto do TOTVS"
+            >
+              <ArrowClockwise size={13} weight="bold" />
+              Atualizar
+            </button>
+          </div>
+
+          {/* Seletor de situação + resumo por grupo */}
+          {inativosCarregados && !inativosLoading && (
+            <>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  {
+                    key: 'inativos',
+                    label: 'Inativos',
+                    qtd: clientesInativosView.contagem.inativos,
+                    ativo: 'bg-gray-700 text-white border-gray-700',
+                  },
+                  {
+                    key: 'bloqueados',
+                    label: 'Bloqueados',
+                    qtd: clientesInativosView.contagem.bloqueados,
+                    ativo: 'bg-red-600 text-white border-red-600',
+                  },
+                  {
+                    key: 'ativos',
+                    label: 'Ativos',
+                    qtd: clientesInativosView.contagem.ativos,
+                    ativo: 'bg-green-600 text-white border-green-600',
+                  },
+                ].map((op) => (
+                  <button
+                    key={op.key}
+                    type="button"
+                    onClick={() => setFiltroStatus(op.key)}
+                    className={`rounded-lg border shadow-sm px-4 py-2 min-w-[140px] text-left transition ${
+                      filtroStatus === op.key
+                        ? op.ativo
+                        : 'bg-white border-gray-200 text-[#000638] hover:bg-gray-50'
+                    }`}
+                  >
+                    <p className="text-[9px] uppercase tracking-wide opacity-70">
+                      {op.label} no TOTVS
+                    </p>
+                    <p className="text-sm font-bold">{op.qtd}</p>
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <div className="bg-orange-50 rounded-lg border border-orange-300 shadow-sm px-4 py-2 min-w-[150px]">
+                  <p className="text-[9px] text-orange-700 uppercase tracking-wide">
+                    Com faturas a vencer
+                  </p>
+                  <p className="text-sm font-bold text-orange-700">
+                    {clientesInativosView.comAVencer.length}
+                  </p>
+                </div>
+                <div className="bg-red-50 rounded-lg border border-red-300 shadow-sm px-4 py-2 min-w-[150px]">
+                  <p className="text-[9px] text-red-700 uppercase tracking-wide">
+                    Com faturas vencidas
+                  </p>
+                  <p className="text-sm font-bold text-red-700">
+                    {clientesInativosView.comVencidas.length}
+                  </p>
+                </div>
+                <div className="bg-green-50 rounded-lg border border-green-300 shadow-sm px-4 py-2 min-w-[150px]">
+                  <p className="text-[9px] text-green-700 uppercase tracking-wide">
+                    Sem nenhuma fatura
+                  </p>
+                  <p className="text-sm font-bold text-green-700">
+                    {clientesInativosView.semFaturas.length}
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
+
+          {inativosErro && (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm flex items-center gap-2">
+              <Warning size={16} weight="bold" />
+              {inativosErro}
+            </div>
+          )}
+
+          {inativosLoading && (
+            <div className="flex items-center justify-center py-12">
+              <CircleNotch size={32} className="animate-spin text-[#000638]" />
+              <span className="ml-2 text-sm text-gray-500">
+                Carregando clientes multimarcas...
+              </span>
+            </div>
+          )}
+
+          {!inativosLoading &&
+            inativosCarregados &&
+            [
+              {
+                key: 'comAVencer',
+                titulo: `${LABEL_STATUS[filtroStatus]} com faturas a vencer`,
+                headerBg: 'bg-orange-500',
+                lista: clientesInativosView.comAVencer,
+              },
+              {
+                key: 'comVencidas',
+                titulo: `${LABEL_STATUS[filtroStatus]} com faturas vencidas`,
+                headerBg: 'bg-red-600',
+                lista: clientesInativosView.comVencidas,
+              },
+              {
+                key: 'semFaturas',
+                titulo: `${LABEL_STATUS[filtroStatus]} sem nenhuma fatura vencida ou a vencer`,
+                headerBg: 'bg-green-600',
+                lista: clientesInativosView.semFaturas,
+              },
+            ].map((secao) => {
+              return (
+                <Card
+                  key={secao.key}
+                  className="shadow-lg rounded-xl bg-white overflow-hidden"
+                >
+                  <div
+                    className={`${secao.headerBg} text-white px-4 py-2.5 flex items-center justify-between`}
+                  >
+                    <span className="font-bold text-xs uppercase tracking-wide">
+                      {secao.titulo}
+                    </span>
+                    <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full font-semibold">
+                      {secao.lista.length} cliente(s)
+                    </span>
+                  </div>
+                  <CardContent className="p-0">
+                    {secao.lista.length === 0 ? (
+                      <p className="px-4 py-6 text-center text-xs text-gray-400">
+                        Nenhum cliente nesta situação.
+                      </p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm text-left">
+                          <thead className="text-xs text-gray-700 uppercase bg-gray-50">
+                            <tr>
+                              <th className="px-4 py-2.5">Código</th>
+                              <th className="px-4 py-2.5">Nome</th>
+                              <th className="px-4 py-2.5">CNPJ</th>
+                              <th className="px-4 py-2.5">Status</th>
+                              <th className="px-4 py-2.5 text-right">
+                                Valor Vencido
+                              </th>
+                              <th className="px-4 py-2.5 text-right">
+                                A Vencer
+                              </th>
+                              <th className="px-4 py-2.5 text-center">Ação</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {secao.lista.map((cliente) => (
+                              <tr
+                                key={cliente.code}
+                                className="bg-white border-b hover:bg-gray-50 transition-colors"
+                              >
+                                <td className="px-4 py-2.5 font-medium text-gray-900">
+                                  {cliente.code}
+                                </td>
+                                <td className="px-4 py-2.5 text-gray-900">
+                                  {cliente.name || 'N/A'}
+                                  {cliente.fantasyName && (
+                                    <span className="block text-[10px] text-gray-400">
+                                      {cliente.fantasyName}
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2.5 text-gray-700 whitespace-nowrap">
+                                  {formatarCpfCnpj(cliente.cnpj) || 'N/A'}
+                                </td>
+                                <td className="px-4 py-2.5">
+                                  <span
+                                    className={`text-xs font-semibold px-2 py-1 rounded ${
+                                      estaInativo(cliente)
+                                        ? 'bg-gray-200 text-gray-700'
+                                        : estaBloqueado(cliente)
+                                          ? 'bg-red-100 text-red-800'
+                                          : 'bg-green-100 text-green-800'
+                                    }`}
+                                  >
+                                    {cliente.customerStatus || '—'}
+                                  </span>
+                                </td>
+                                <td
+                                  className={`px-4 py-2.5 text-right font-medium ${
+                                    cliente.valorVencido > 0
+                                      ? 'text-red-600'
+                                      : 'text-gray-400'
+                                  }`}
+                                >
+                                  {formatarMoeda(cliente.valorVencido)}
+                                </td>
+                                <td
+                                  className={`px-4 py-2.5 text-right font-medium ${
+                                    cliente.valorAVencer > 0
+                                      ? 'text-orange-600'
+                                      : 'text-gray-400'
+                                  }`}
+                                >
+                                  {formatarMoeda(cliente.valorAVencer)}
+                                </td>
+                                <td className="px-4 py-2.5 text-center">
+                                  <button
+                                    onClick={() =>
+                                      alternarInativo(
+                                        cliente,
+                                        !estaInativo(cliente),
+                                      )
+                                    }
+                                    disabled={togglandoCliente === cliente.code}
+                                    className={`inline-flex items-center gap-1.5 px-3 py-1 text-white text-xs font-semibold rounded transition-colors disabled:opacity-60 ${
+                                      estaInativo(cliente)
+                                        ? 'bg-green-600 hover:bg-green-700'
+                                        : 'bg-red-600 hover:bg-red-700'
+                                    }`}
+                                  >
+                                    {togglandoCliente === cliente.code ? (
+                                      <Spinner
+                                        size={12}
+                                        className="animate-spin"
+                                      />
+                                    ) : estaInativo(cliente) ? (
+                                      <CheckCircle size={12} weight="bold" />
+                                    ) : (
+                                      <X size={12} weight="bold" />
+                                    )}
+                                    {estaInativo(cliente)
+                                      ? 'Ativar'
+                                      : 'Inativar'}
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+
+          {!inativosLoading && inativosCarregados && (
+            <p className="text-xs text-gray-400 italic">
+              💡 A situação vem do cadastro do cliente no TOTVS. Os valores
+              vencidos e a vencer usam as faturas carregadas na aba Lista. A
+              ação Ativar/Inativar grava direto no cadastro (campo
+              Ativo/Inativo); o desbloqueio de cliente PJ não é oferecido pela
+              API e continua manual no ERP.
+            </p>
+          )}
+        </div>
       )}
 
       {/* Modal de Lista de Clientes Filtrados */}
