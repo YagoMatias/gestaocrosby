@@ -14,7 +14,10 @@ import {
   CurrencyDollar,
   Cake,
   Spinner,
+  DownloadSimple,
 } from '@phosphor-icons/react';
+import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
 import {
   COLORS,
   formatPhone,
@@ -1789,6 +1792,54 @@ export default function CarteiraView({
         ? vendedores.filter((v) => parseLojaFromVendedor(v) === lojaFiltro)
         : vendedores;
 
+  // Exporta a carteira visível (respeita filtro de status, loja e drill-down)
+  // em Excel, uma linha por cliente.
+  const exportarCarteira = () => {
+    const STATUS = { ativo: 'Ativo', aInativar: 'A Inativar', inativo: 'Inativo' };
+    const rows = [];
+    vendedoresVisiveis.forEach((v) => {
+      const grupo = porVendedorFiltrado[v];
+      if (!grupo) return;
+      const loja = parseLojaFromVendedor(v);
+      grupo.clientes.forEach((c) => {
+        rows.push({
+          Vendedor: v,
+          Loja: loja,
+          Código: c.cod || c.code || '',
+          Cliente: c.nome || '',
+          Telefone: c.fone ? formatPhone(c.fone) : '',
+          Cidade: c.cidade || '',
+          Status: STATUS[c._status] || c._status || '',
+          'Última Compra': c.ultimaCompra || '',
+          'Dias s/ Comprar': Number.isFinite(c.diasSemComprar)
+            ? c.diasSemComprar
+            : '',
+          'LTV Total': Math.round((c._ltv || 0) * 100) / 100,
+          'Ticket Médio': Math.round((c._ticket || 0) * 100) / 100,
+        });
+      });
+    });
+    if (rows.length === 0) return;
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [
+      { wch: 26 }, { wch: 16 }, { wch: 9 }, { wch: 30 }, { wch: 16 },
+      { wch: 18 }, { wch: 11 }, { wch: 13 }, { wch: 13 }, { wch: 13 }, { wch: 13 },
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Carteira');
+    const hoje = new Date().toISOString().slice(0, 10);
+    const escopoRaw =
+      viewMode === 'loja' && lojaSel ? lojaSel : lojaFiltro ? lojaFiltro : '';
+    const escopo = escopoRaw
+      ? '_' + escopoRaw.replace(/[^a-zA-Z0-9]+/g, '-')
+      : '';
+    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    saveAs(
+      new Blob([buf], { type: 'application/octet-stream' }),
+      `Carteira_${modulo}${escopo}_${hoje}.xlsx`,
+    );
+  };
+
   return (
     <div className="space-y-3">
       {/* Aniversariantes + Cashback (só revenda) — lado a lado, abrem popup */}
@@ -1977,6 +2028,17 @@ export default function CarteiraView({
             </button>
           ))}
         </div>
+
+        {/* Exportar a carteira visível em Excel */}
+        <button
+          onClick={exportarCarteira}
+          disabled={vendedoresVisiveis.length === 0}
+          className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Exportar a lista visível para Excel"
+        >
+          <DownloadSimple size={14} weight="bold" />
+          Exportar
+        </button>
       </div>
 
       {/* Grid por LOJA (visão agregada) */}
