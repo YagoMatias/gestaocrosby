@@ -22,9 +22,11 @@ import {
   CurrencyDollar,
   Percent,
   Warning,
+  Crosshair,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import useApiClient from '../hooks/useApiClient';
+import { TotvsURL } from '../config/constants';
 
 // --- Canais + metas padrão (planilha FORCAST) --------------------------------
 // fonte: chave no endpoint semanal (null = 100% manual)
@@ -41,14 +43,17 @@ const CANAIS_BASE = [
   { canal: 'MTM DAVID', fonte: 'MTM_DAVID', meta: 65000, codes: [26] },
   { canal: 'MTM ARTHUR', fonte: 'MTM_ARTHUR', meta: 90000, codes: [259] },
   { canal: 'VAREJO', fonte: 'VAREJO', meta: 363400, varejo: true },
-  { canal: 'BLUECRED', fonte: null, meta: 25000 },
-  { canal: 'RICARDO ELETRO', fonte: null, meta: 12000 },
+  // clientes com contrato BlueCred × faturas de crediário (pseudo-vendedor -1000)
+  { canal: 'BLUECRED', fonte: 'BLUECRED', meta: 25000, codes: [-1000], direto: true },
+  // op 512 não gera NF: vem do contas a receber como pseudo-vendedor -512
+  { canal: 'RICARDO ELETRO', fonte: 'RICARDO_ELETRO', meta: 12000, codes: [-512], direto: true },
   { canal: 'MALA', fonte: null, meta: 10 },
-  { canal: 'CARTÃO PB', fonte: null, meta: 50 },
-  { canal: 'CARTÃO RN', fonte: null, meta: 100 },
-  { canal: 'CARTÃO PI', fonte: null, meta: 50 },
-  { canal: 'CARTÃO PE', fonte: null, meta: 50 },
-  { canal: 'CARTÃO PB - PATOS', fonte: null, meta: 50 },
+  // Cartões: contados em UNIDADES (qtd), fora dos totais em R$
+  { canal: 'CARTÃO PB', fonte: null, meta: 50, qtd: true },
+  { canal: 'CARTÃO RN', fonte: null, meta: 100, qtd: true },
+  { canal: 'CARTÃO PI', fonte: null, meta: 50, qtd: true },
+  { canal: 'CARTÃO PE', fonte: null, meta: 50, qtd: true },
+  { canal: 'CARTÃO PB - PATOS', fonte: null, meta: 50, qtd: true },
 ];
 
 const OP_NOVIDADES = 7255;
@@ -91,6 +96,12 @@ const formatBRL = (v) =>
     currency: 'BRL',
     minimumFractionDigits: 2,
   });
+
+const formatInt = (v) => (Number(v) || 0).toLocaleString('pt-BR');
+
+// Canais de cartão são medidos em unidades; o resto em R$
+const fmtValor = (v, qtd) =>
+  qtd ? `${formatInt(v)} und` : formatBRL(v);
 
 // Converte texto digitado ("1.234,56" ou "1234.56") em número.
 const parseNum = (str) => {
@@ -139,10 +150,34 @@ const semanasSig = (semanas) =>
 const ddmm = (iso) =>
   iso && iso.length >= 10 ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : '';
 
+// Agrupa as vendas por cliente (nível intermediário do drill): soma valores
+// e guarda as faturas de cada um para o nível seguinte.
+const agruparPorCliente = (vendas) => {
+  const mapa = new Map();
+  for (const v of vendas || []) {
+    const code = v.cliente_code;
+    const cur = mapa.get(code) || {
+      cliente_code: code,
+      cliente_nome: v.cliente_nome || `Cliente ${code}`,
+      qtd: 0,
+      valor: 0,
+      vendas: [],
+    };
+    if (v.cliente_nome) cur.cliente_nome = v.cliente_nome;
+    cur.qtd += 1;
+    cur.valor += Number(v.valor || 0);
+    cur.vendas.push(v);
+    mapa.set(code, cur);
+  }
+  return [...mapa.values()]
+    .map((c) => ({ ...c, valor: Math.round(c.valor * 100) / 100 }))
+    .sort((a, b) => b.valor - a.valor);
+};
+
 // Input de dinheiro: mostra R$ formatado quando não está focado; ao focar,
 // vira número puro pra edição. FORA do componente da página (senão o React
 // recria o tipo a cada render e o input perde o foco a cada tecla).
-const MoneyInput = ({ value, onChange, strong }) => {
+const MoneyInput = ({ value, onChange, strong, qtd }) => {
   const [focused, setFocused] = useState(false);
   const [draft, setDraft] = useState('');
   const num = parseNum(value);
@@ -150,8 +185,8 @@ const MoneyInput = ({ value, onChange, strong }) => {
     <input
       type="text"
       inputMode="decimal"
-      value={focused ? draft : num === 0 ? '' : formatBRL(num)}
-      placeholder="R$ 0,00"
+      value={focused ? draft : num === 0 ? '' : fmtValor(num, qtd)}
+      placeholder={qtd ? '0 und' : 'R$ 0,00'}
       onFocus={() => {
         setDraft(num === 0 ? '' : String(num).replace('.', ','));
         setFocused(true);
@@ -188,6 +223,47 @@ const NewForecast = () => {
   const fetchSeq = useRef(0);
   const saveTimer = useRef(null);
   const storeLoaded = useRef(false);
+
+  // Modo apresentação: destaca as linhas dos canais e/ou as colunas das
+  // semanas clicados — aceita vários (efêmero, não persiste).
+  const [focoCanais, setFocoCanais] = useState([]);
+  const [focoSemanas, setFocoSemanas] = useState([]);
+  const toggleFoco = (setter) => (v) =>
+    setter((prev) =>
+      prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v],
+    );
+  const toggleCanal = toggleFoco(setFocoCanais);
+  const toggleSemana = toggleFoco(setFocoSemanas);
+
+  // Nomes das lojas (mesma rota do FiltroEmpresa) — o drill do varejo mostra
+  // "CROSBY SHOPPING MIDWAY" em vez de "95".
+  const [branchNames, setBranchNames] = useState({});
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      try {
+        const r = await fetch(`${TotvsURL}branches`);
+        if (!r.ok) return;
+        const json = await r.json();
+        let empresas = json?.data?.data || json?.data || [];
+        if (!Array.isArray(empresas)) empresas = [];
+        const mapa = {};
+        for (const emp of empresas) {
+          const code = parseInt(emp.cd_empresa);
+          if (!Number.isFinite(code)) continue;
+          mapa[code] =
+            emp.nm_grupoempresa || emp.fantasyName || emp.description || null;
+        }
+        if (vivo) setBranchNames(mapa);
+      } catch (_) {
+        /* sem nomes: cai no código da filial */
+      }
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, []);
+  const nomeFilial = (code) => branchNames[Number(code)] || `Filial ${code}`;
 
   // drill modal: { canal, week, stack: [view] }
   const [drill, setDrill] = useState(null);
@@ -389,10 +465,12 @@ const NewForecast = () => {
     return { realizado, meta, pct, falta };
   };
 
+  // Totais em R$ — canais medidos em unidades (cartões) ficam de fora
   const totals = useMemo(() => {
     const acc = { realizado: 0, meta: 0, falta: 0 };
     for (const k of SEMANAS) acc[k] = 0;
     for (const c of CANAIS_BASE) {
+      if (c.qtd) continue;
       const { realizado, meta, falta } = calc(c);
       for (const k of SEMANAS) acc[k] += parseNum(cellValue(c, k));
       acc.realizado += realizado;
@@ -404,6 +482,41 @@ const NewForecast = () => {
   }, [store, auto, SEMANAS]);
 
   const totalPct = totals.meta > 0 ? (totals.realizado / totals.meta) * 100 : 0;
+
+  // Soma do que está em foco (canais × semanas selecionados). Sem canal em
+  // foco vale a coluna inteira; sem semana em foco, a linha inteira.
+  const foco = useMemo(() => {
+    const canais = focoCanais.length
+      ? CANAIS_BASE.filter((c) => focoCanais.includes(c.canal))
+      : CANAIS_BASE;
+    const semanas = focoSemanas.length
+      ? semanasDef.filter((w) => focoSemanas.includes(w.s))
+      : semanasDef;
+    let brl = 0;
+    let und = 0;
+    for (const c of canais) {
+      for (const w of semanas) {
+        const v = parseNum(cellValue(c, `s${w.s}`));
+        if (c.qtd) und += v;
+        else brl += v;
+      }
+    }
+    // Rótulo: "BAZAR × Semana 2", "2 canais × 3 semanas", "BAZAR × todas"
+    const parteCanal =
+      focoCanais.length === 0
+        ? 'todos os canais'
+        : focoCanais.length === 1
+          ? focoCanais[0]
+          : `${focoCanais.length} canais`;
+    const parteSemana =
+      focoSemanas.length === 0
+        ? 'todas as semanas'
+        : focoSemanas.length === 1
+          ? `Semana ${focoSemanas[0]}`
+          : `${focoSemanas.length} semanas`;
+    return { brl, und, label: `${parteCanal} × ${parteSemana}` };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focoCanais, focoSemanas, semanasDef, store, auto]);
 
   const handleReset = () => {
     if (
@@ -472,29 +585,83 @@ const NewForecast = () => {
     const dSem = drillData[kSem]; // {vendedores, varejo, expedicao} | undefined
 
     const thCls = 'px-3 py-1.5 font-semibold text-[#000638] border-b';
-    const tabelaVendas = (vendas) => (
-      <table className="w-full text-xs text-left border-collapse">
-        <thead>
-          <tr className="bg-[#000638]/5">
-            <th className={thCls}>Data</th>
-            <th className={thCls}>Fatura</th>
-            <th className={thCls}>Filial</th>
-            <th className={thCls}>Cliente</th>
-            <th className={`${thCls} text-right`}>Valor</th>
-          </tr>
-        </thead>
-        <tbody>
-          {vendas.map((v, i) => (
-            <tr key={i} className="border-b last:border-0 hover:bg-gray-50">
-              <td className="px-3 py-1.5 whitespace-nowrap">{ddmm(v.data)}</td>
-              <td className="px-3 py-1.5">{v.fatura || '—'}</td>
-              <td className="px-3 py-1.5">{v.branch_code}</td>
-              <td className="px-3 py-1.5">{v.cliente_nome || `Cliente ${v.cliente_code}`}</td>
-              <td className="px-3 py-1.5 text-right whitespace-nowrap">{formatBRL(v.valor)}</td>
+
+    // Nível de clientes: agrupado, com soma; clique abre as faturas do cliente
+    const tabelaClientes = (vendas) => {
+      const clientes = agruparPorCliente(vendas);
+      const total = vendas.reduce((a, v) => a + (v.valor || 0), 0);
+      return (
+        <>
+          <p className="text-[11px] text-gray-400 mb-2">
+            {formatInt(clientes.length)} cliente(s) &bull;{' '}
+            {formatInt(vendas.length)} venda(s) &bull; {formatBRL(total)}
+          </p>
+          <table className="w-full text-xs text-left border-collapse">
+            <thead>
+              <tr className="bg-[#000638]/5">
+                <th className={thCls}>Código</th>
+                <th className={thCls}>Cliente</th>
+                <th className={`${thCls} text-right`}>Vendas</th>
+                <th className={`${thCls} text-right`}>Valor</th>
+              </tr>
+            </thead>
+            <tbody>
+              {clientes.map((cl) => (
+                <tr
+                  key={cl.cliente_code}
+                  onClick={() =>
+                    pushView({
+                      tipo: 'faturas',
+                      titulo: cl.cliente_nome,
+                      vendas: cl.vendas,
+                    })
+                  }
+                  className="border-b last:border-0 hover:bg-gray-50 cursor-pointer"
+                >
+                  <td className="px-3 py-1.5">{cl.cliente_code}</td>
+                  <td className="px-3 py-1.5">{cl.cliente_nome}</td>
+                  <td className="px-3 py-1.5 text-right">{formatInt(cl.qtd)}</td>
+                  <td className="px-3 py-1.5 text-right whitespace-nowrap">
+                    {formatBRL(cl.valor)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      );
+    };
+
+    // Nível final: faturas de um cliente
+    const tabelaFaturas = (vendas) => (
+      <>
+        <p className="text-[11px] text-gray-400 mb-2">
+          {formatInt(vendas.length)} venda(s) &bull;{' '}
+          {formatBRL(vendas.reduce((a, v) => a + (v.valor || 0), 0))}
+        </p>
+        <table className="w-full text-xs text-left border-collapse">
+          <thead>
+            <tr className="bg-[#000638]/5">
+              <th className={thCls}>Data</th>
+              <th className={thCls}>Fatura</th>
+              <th className={thCls}>Filial</th>
+              <th className={`${thCls} text-right`}>Valor</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {vendas.map((v, i) => (
+              <tr key={i} className="border-b last:border-0 hover:bg-gray-50">
+                <td className="px-3 py-1.5 whitespace-nowrap">{ddmm(v.data)}</td>
+                <td className="px-3 py-1.5">{v.fatura || '—'}</td>
+                <td className="px-3 py-1.5">{nomeFilial(v.branch_code)}</td>
+                <td className="px-3 py-1.5 text-right whitespace-nowrap">
+                  {formatBRL(v.valor)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </>
     );
 
     const carregando = (
@@ -506,14 +673,19 @@ const NewForecast = () => {
       </div>
     );
 
-    // ─ Nível vendas (clientes) ─
+    // ─ Nível faturas de um cliente (último nível) ─
+    if (view.tipo === 'faturas') {
+      return tabelaFaturas(view.vendas || []);
+    }
+
+    // ─ Nível clientes (agrupados) do vendedor ─
     if (view.tipo === 'vendas') {
       // vendas embutidas (atacado) ou sob demanda (vendedor de loja)
       if (view.vendas) {
         return view.vendas.length === 0 ? (
           <div className="text-sm text-gray-400 py-6 text-center">Nenhuma venda.</div>
         ) : (
-          tabelaVendas(view.vendas)
+          tabelaClientes(view.vendas)
         );
       }
       const entry = vendasCache[`${view.sellerCode}|${weekKeyOf(w)}`];
@@ -531,7 +703,7 @@ const NewForecast = () => {
       return vendas.length === 0 ? (
         <div className="text-sm text-gray-400 py-6 text-center">Nenhuma venda.</div>
       ) : (
-        tabelaVendas(vendas)
+        tabelaClientes(vendas)
       );
     }
 
@@ -577,22 +749,77 @@ const NewForecast = () => {
     const valorPainel = autoValue(c, kSem);
     const ovr = store.overrides?.[c.canal]?.[kSem];
 
+    const blocoAjuste = (
+      <div className="mb-4 border border-[#000638]/10 rounded-lg p-3 bg-[#f8f9fb]">
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <p className="text-[11px] text-gray-500 mb-0.5">
+              {c.fonte ? 'Valor do Painel de Vendas' : 'Valor da célula'}
+            </p>
+            <p className="text-sm font-bold text-[#000638]">
+              {c.fonte
+                ? fmtValor(valorPainel, c.qtd)
+                : fmtValor(parseNum(cellValue(c, kSem)), c.qtd)}
+            </p>
+          </div>
+          <div className="flex-1 min-w-[160px]">
+            <p className="text-[11px] text-gray-500 mb-0.5">
+              {c.fonte ? 'Ajustar valor (override)' : 'Digitar valor'}
+            </p>
+            <input
+              type="text"
+              inputMode="decimal"
+              defaultValue={
+                c.fonte
+                  ? ovr !== undefined && ovr !== null && ovr !== ''
+                    ? ovr
+                    : ''
+                  : store.manual?.[c.canal]?.[kSem] || ''
+              }
+              placeholder={
+                c.fonte ? fmtValor(valorPainel, c.qtd) : c.qtd ? '0 und' : 'R$ 0,00'
+              }
+              onBlur={(e) => {
+                const raw = e.target.value.trim();
+                if (c.fonte && raw === '') clearOverrideCell(c, kSem);
+                else setCell(c, kSem, parseNum(raw));
+              }}
+              className="w-full border border-[#000638]/30 rounded-md px-3 py-1.5 text-sm text-right bg-white focus:outline-none focus:ring-2 focus:ring-[#000638]/30 focus:border-[#000638]"
+            />
+          </div>
+          {isOverridden(c, kSem) && (
+            <button
+              onClick={() => clearOverrideCell(c, kSem)}
+              className="text-xs border border-amber-300 text-amber-700 rounded-md px-3 py-1.5 hover:bg-amber-50"
+            >
+              Voltar ao painel
+            </button>
+          )}
+        </div>
+        {c.fonte && (
+          <p className="text-[10px] text-gray-400 mt-1.5">
+            O ajuste vale só para esta célula; deixe vazio para usar o valor do
+            painel.
+          </p>
+        )}
+      </div>
+    );
+
     let corpo = null;
     if (c.expedicao) {
       if (!dSem) corpo = carregando;
       else {
-        const vendas = (dSem.expedicao || []).filter((v) =>
-          c.expedicao === 'novidades'
-            ? v.op === OP_NOVIDADES
-            : c.expedicao === 'bazar'
-              ? OPS_BAZAR.includes(v.op)
-              : v.op !== OP_NOVIDADES && !OPS_BAZAR.includes(v.op),
-        );
+        const vendas = (dSem.expedicao || []).filter((v) => {
+          if (c.expedicao === 'novidades') return v.op === OP_NOVIDADES;
+          if (c.expedicao === 'bazar') return OPS_BAZAR.includes(v.op);
+          // showroom/fábricas = o que sobra da expedição
+          return v.op !== OP_NOVIDADES && !OPS_BAZAR.includes(v.op);
+        });
         corpo =
           vendas.length === 0 ? (
             <div className="text-sm text-gray-400 py-6 text-center">Nenhuma venda.</div>
           ) : (
-            tabelaVendas(vendas)
+            tabelaClientes(vendas)
           );
       }
     } else if (c.varejo) {
@@ -616,7 +843,7 @@ const NewForecast = () => {
                   onClick={() =>
                     pushView({
                       tipo: 'vendedores',
-                      titulo: `Filial ${l.branch_code}`,
+                      titulo: nomeFilial(l.branch_code),
                       filial: l.branch_code,
                       vendedores: (l.sellers || []).map((s) => ({
                         code: s.seller_code,
@@ -628,7 +855,12 @@ const NewForecast = () => {
                   }
                   className="border-b last:border-0 hover:bg-gray-50 cursor-pointer"
                 >
-                  <td className="px-3 py-1.5 font-semibold">{l.branch_code}</td>
+                  <td className="px-3 py-1.5 font-semibold">
+                    {nomeFilial(l.branch_code)}
+                    <span className="text-gray-400 font-normal ml-1">
+                      #{l.branch_code}
+                    </span>
+                  </td>
                   <td className="px-3 py-1.5 text-right">{(l.sellers || []).length}</td>
                   <td className="px-3 py-1.5 text-right">{l.qtd}</td>
                   <td className="px-3 py-1.5 text-right">{formatBRL(l.valor)}</td>
@@ -644,6 +876,23 @@ const NewForecast = () => {
         const rows = (c.codes || [])
           .map((code) => dSem.vendedores?.[code])
           .filter(Boolean);
+        // canal de vendedor único (ex: Ricardo Eletro, BlueCred) — vai direto
+        // aos clientes, sem passar pela lista de vendedores
+        if (c.direto) {
+          const vendas = rows.flatMap((r) => r.vendas || []);
+          return (
+            <>
+              {blocoAjuste}
+              {vendas.length === 0 ? (
+                <div className="text-sm text-gray-400 py-6 text-center">
+                  Nenhuma venda nesta semana.
+                </div>
+              ) : (
+                tabelaClientes(vendas)
+              )}
+            </>
+          );
+        }
         corpo =
           rows.length === 0 ? (
             <div className="text-sm text-gray-400 py-6 text-center">
@@ -686,55 +935,7 @@ const NewForecast = () => {
 
     return (
       <>
-        {/* Ajuste do valor da célula */}
-        <div className="mb-4 border border-[#000638]/10 rounded-lg p-3 bg-[#f8f9fb]">
-          <div className="flex flex-wrap items-end gap-3">
-            <div>
-              <p className="text-[11px] text-gray-500 mb-0.5">
-                {c.fonte ? 'Valor do Painel de Vendas' : 'Valor da célula'}
-              </p>
-              <p className="text-sm font-bold text-[#000638]">
-                {c.fonte ? formatBRL(valorPainel) : formatBRL(parseNum(cellValue(c, kSem)))}
-              </p>
-            </div>
-            <div className="flex-1 min-w-[160px]">
-              <p className="text-[11px] text-gray-500 mb-0.5">
-                {c.fonte ? 'Ajustar valor (override)' : 'Digitar valor'}
-              </p>
-              <input
-                type="text"
-                inputMode="decimal"
-                defaultValue={
-                  c.fonte
-                    ? ovr !== undefined && ovr !== null && ovr !== ''
-                      ? ovr
-                      : ''
-                    : store.manual?.[c.canal]?.[kSem] || ''
-                }
-                placeholder={c.fonte ? formatBRL(valorPainel) : 'R$ 0,00'}
-                onBlur={(e) => {
-                  const raw = e.target.value.trim();
-                  if (c.fonte && raw === '') clearOverrideCell(c, kSem);
-                  else setCell(c, kSem, parseNum(raw));
-                }}
-                className="w-full border border-[#000638]/30 rounded-md px-3 py-1.5 text-sm text-right bg-white focus:outline-none focus:ring-2 focus:ring-[#000638]/30 focus:border-[#000638]"
-              />
-            </div>
-            {isOverridden(c, kSem) && (
-              <button
-                onClick={() => clearOverrideCell(c, kSem)}
-                className="text-xs border border-amber-300 text-amber-700 rounded-md px-3 py-1.5 hover:bg-amber-50"
-              >
-                Voltar ao painel
-              </button>
-            )}
-          </div>
-          {c.fonte && (
-            <p className="text-[10px] text-gray-400 mt-1.5">
-              O ajuste vale só para esta célula; deixe vazio para usar o valor do painel.
-            </p>
-          )}
-        </div>
+        {blocoAjuste}
         {corpo}
       </>
     );
@@ -880,7 +1081,29 @@ const NewForecast = () => {
       )}
 
       {/* Cards resumo — estilo Painel de Vendas */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div
+        className={`grid grid-cols-2 gap-3 ${
+          focoCanais.length > 0 || focoSemanas.length > 0
+            ? 'lg:grid-cols-5'
+            : 'lg:grid-cols-4'
+        }`}
+      >
+        {(focoCanais.length > 0 || focoSemanas.length > 0) && (
+          <ResumoCard
+            icon={Crosshair}
+            color="text-violet-700"
+            bg="bg-violet-100"
+            label={foco.label}
+            value={
+              foco.brl === 0 && foco.und > 0
+                ? `${formatInt(foco.und)} und`
+                : foco.und > 0
+                  ? `${formatBRL(foco.brl)} + ${formatInt(foco.und)} und`
+                  : formatBRL(foco.brl)
+            }
+            destaque
+          />
+        )}
         <ResumoCard
           icon={CurrencyDollar}
           color="text-emerald-600"
@@ -911,6 +1134,42 @@ const NewForecast = () => {
         />
       </div>
 
+      {/* Foco de apresentação ativo */}
+      {(focoCanais.length > 0 || focoSemanas.length > 0) && (
+        <div className="flex items-center gap-2 text-xs flex-wrap">
+          <span className="text-gray-500">Foco:</span>
+          {focoCanais.map((canal) => (
+            <button
+              key={canal}
+              onClick={() => toggleCanal(canal)}
+              title="Remover do foco"
+              className="bg-violet-600 text-white rounded-full px-2.5 py-1 font-semibold hover:bg-violet-700"
+            >
+              {canal} ×
+            </button>
+          ))}
+          {focoSemanas.map((s) => (
+            <button
+              key={s}
+              onClick={() => toggleSemana(s)}
+              title="Remover do foco"
+              className="bg-violet-600 text-white rounded-full px-2.5 py-1 font-semibold hover:bg-violet-700"
+            >
+              Semana {s} ×
+            </button>
+          ))}
+          <button
+            onClick={() => {
+              setFocoCanais([]);
+              setFocoSemanas([]);
+            }}
+            className="text-gray-500 hover:text-[#000638] underline underline-offset-2"
+          >
+            limpar tudo
+          </button>
+        </div>
+      )}
+
       {/* Tabela */}
       <div className="bg-white rounded-lg shadow-md border border-[#000638]/10 overflow-x-auto">
         <table className="w-full text-sm border-collapse min-w-[980px]">
@@ -919,14 +1178,34 @@ const NewForecast = () => {
               <th className="text-left font-semibold px-4 py-3 sticky left-0 bg-[#f5f5f8] z-10">
                 Canal
               </th>
-              {semanasDef.map((w) => (
-                <th key={w.s} className="text-right font-semibold px-3 py-3">
-                  Semana {w.s}
-                  <div className="text-[10px] font-normal text-gray-400">
-                    {ddmm(w.datemin)}–{ddmm(w.datemax)}
-                  </div>
-                </th>
-              ))}
+              {semanasDef.map((w) => {
+                const colFoco = focoSemanas.includes(w.s);
+                return (
+                  <th
+                    key={w.s}
+                    className={`text-right font-semibold px-3 py-3 transition-colors ${
+                      colFoco ? 'bg-violet-600 text-white' : ''
+                    }`}
+                  >
+                    <button
+                      onClick={() => toggleSemana(w.s)}
+                      title="Clique para destacar esta semana"
+                      className={`text-right rounded px-1 -mx-1 transition ${
+                        colFoco ? 'font-bold' : 'hover:text-violet-700'
+                      }`}
+                    >
+                      Semana {w.s}
+                      <div
+                        className={`text-[10px] font-normal ${
+                          colFoco ? 'text-violet-100' : 'text-gray-400'
+                        }`}
+                      >
+                        {ddmm(w.datemin)}–{ddmm(w.datemax)}
+                      </div>
+                    </button>
+                  </th>
+                );
+              })}
               <th className="text-right font-semibold px-3 py-3 bg-[#000638]/10">
                 Realizado
               </th>
@@ -938,15 +1217,34 @@ const NewForecast = () => {
             </tr>
           </thead>
           <tbody>
-            {CANAIS_BASE.map((c) => {
+            {CANAIS_BASE.map((c, idx) => {
               const { realizado, pct, falta } = calc(c);
+              const linhaFoco = focoCanais.includes(c.canal);
+              // zebra suave nas linhas sem foco
+              const zebra = idx % 2 === 1 ? 'bg-[#000638]/[0.02]' : '';
               return (
                 <tr
                   key={c.canal}
-                  className="border-t border-gray-100 hover:bg-gray-50/60"
+                  className={`border-t transition-colors ${
+                    linhaFoco
+                      ? 'border-violet-200 bg-violet-50'
+                      : `border-gray-100 ${zebra} hover:bg-gray-50/60`
+                  }`}
                 >
-                  <td className="px-4 py-1.5 font-medium text-[#000638] sticky left-0 bg-white z-10 whitespace-nowrap">
-                    <span className="inline-flex items-center gap-1.5">
+                  <td
+                    className={`px-4 py-1.5 font-medium sticky left-0 z-10 whitespace-nowrap transition-colors ${
+                      linhaFoco
+                        ? 'bg-violet-100 text-violet-900'
+                        : `${idx % 2 === 1 ? 'bg-[#fbfbfc]' : 'bg-white'} text-[#000638]`
+                    }`}
+                  >
+                    <button
+                      onClick={() => toggleCanal(c.canal)}
+                      title="Clique para destacar esta linha"
+                      className={`inline-flex items-center gap-1.5 rounded px-1 -mx-1 transition ${
+                        linhaFoco ? 'font-bold' : 'hover:text-violet-700'
+                      }`}
+                    >
                       {c.canal}
                       {c.fonte && (
                         <span
@@ -954,35 +1252,49 @@ const NewForecast = () => {
                           className="inline-block w-1.5 h-1.5 rounded-full bg-violet-400"
                         />
                       )}
-                    </span>
+                    </button>
                   </td>
                   {semanasDef.map((w) => {
                     const k = `s${w.s}`;
                     const ovr = isOverridden(c, k);
+                    const colFoco = focoSemanas.includes(w.s);
+                    const cruz = linhaFoco && colFoco;
                     return (
-                      <td key={k} className="px-1 py-1">
+                      <td
+                        key={k}
+                        className={`px-1 py-1 transition-colors ${
+                          colFoco && !linhaFoco ? 'bg-violet-50' : ''
+                        }`}
+                      >
                         <button
                           onClick={() => abrirCelula(c, w)}
                           title="Clique para detalhar / ajustar"
                           className={`w-full text-right px-2 py-1.5 rounded-md text-sm transition hover:bg-[#000638]/5 hover:ring-1 hover:ring-[#000638]/20 ${
-                            ovr
-                              ? 'bg-amber-50 text-amber-800 font-semibold'
-                              : 'text-gray-700'
+                            cruz
+                              ? 'bg-violet-600 text-white font-bold ring-2 ring-violet-700 hover:bg-violet-700'
+                              : ovr
+                                ? 'bg-amber-50 text-amber-800 font-semibold'
+                                : 'text-gray-700'
                           }`}
                         >
-                          {formatBRL(parseNum(cellValue(c, k)))}
+                          {fmtValor(parseNum(cellValue(c, k)), c.qtd)}
                         </button>
                       </td>
                     );
                   })}
-                  <td className="px-3 py-1.5 text-right font-semibold text-[#000638] bg-[#000638]/5 whitespace-nowrap">
-                    {formatBRL(realizado)}
+                  <td
+                    className={`px-3 py-1.5 text-right font-semibold text-[#000638] whitespace-nowrap ${
+                      linhaFoco ? 'bg-violet-100' : 'bg-[#000638]/5'
+                    }`}
+                  >
+                    {fmtValor(realizado, c.qtd)}
                   </td>
                   <td className="px-1 py-1">
                     <MoneyInput
                       value={metaValue(c)}
                       onChange={(v) => setMeta(c, v)}
                       strong
+                      qtd={c.qtd}
                     />
                   </td>
                   <td className="px-3 py-1.5">
@@ -1001,7 +1313,7 @@ const NewForecast = () => {
                     </div>
                   </td>
                   <td className="px-3 py-1.5 text-right font-medium text-gray-600 whitespace-nowrap">
-                    {falta > 0 ? formatBRL(falta) : '—'}
+                    {falta > 0 ? fmtValor(falta, c.qtd) : '—'}
                   </td>
                 </tr>
               );
@@ -1010,11 +1322,19 @@ const NewForecast = () => {
           <tfoot>
             <tr className="border-t-2 border-[#000638]/20 bg-[#000638]/5 font-semibold text-[#000638]">
               <td className="px-4 py-3 sticky left-0 bg-[#f5f5f8] z-10">TOTAL</td>
-              {SEMANAS.map((k) => (
-                <td key={k} className="px-3 py-3 text-right">
-                  {formatBRL(totals[k])}
-                </td>
-              ))}
+              {semanasDef.map((w) => {
+                const colFoco = focoSemanas.includes(w.s);
+                return (
+                  <td
+                    key={w.s}
+                    className={`px-3 py-3 text-right transition-colors ${
+                      colFoco ? 'bg-violet-600 text-white font-bold' : ''
+                    }`}
+                  >
+                    {formatBRL(totals[`s${w.s}`])}
+                  </td>
+                );
+              })}
               <td className="px-3 py-3 text-right bg-[#000638]/10">
                 {formatBRL(totals.realizado)}
               </td>
@@ -1080,14 +1400,29 @@ const NewForecast = () => {
   );
 };
 
-const ResumoCard = ({ icon: Icon, color, bg, label, value }) => (
-  <div className="bg-white rounded-lg shadow-md border border-[#000638]/10 p-4 flex items-center gap-3">
+const ResumoCard = ({ icon: Icon, color, bg, label, value, destaque }) => (
+  <div
+    className={`bg-white rounded-lg shadow-md p-4 flex items-center gap-3 ${
+      destaque
+        ? 'border-2 border-violet-500 ring-2 ring-violet-200'
+        : 'border border-[#000638]/10'
+    }`}
+  >
     <div className={`p-2 rounded-full ${bg} shrink-0`}>
       <Icon size={20} className={color} />
     </div>
     <div className="min-w-0">
-      <p className="text-xs text-gray-500 font-medium truncate">{label}</p>
-      <p className="text-base font-bold text-[#000638] truncate">{value}</p>
+      <p
+        className={`text-xs font-medium truncate ${
+          destaque ? 'text-violet-700' : 'text-gray-500'
+        }`}
+        title={label}
+      >
+        {label}
+      </p>
+      <p className="text-base font-bold text-[#000638] truncate" title={value}>
+        {value}
+      </p>
     </div>
   </div>
 );

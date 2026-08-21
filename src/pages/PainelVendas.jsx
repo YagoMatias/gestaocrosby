@@ -24,15 +24,43 @@ const formatData = (iso) => {
   return d && m && y ? `${d}/${m}/${y}` : String(iso);
 };
 
+// Agrupa as vendas por cliente (nível intermediário do drill): soma valores
+// e guarda as faturas de cada um para o nível seguinte.
+const agruparPorCliente = (vendas) => {
+  const mapa = new Map();
+  for (const v of vendas || []) {
+    const code = v.cliente_code;
+    const cur = mapa.get(code) || {
+      cliente_code: code,
+      cliente_nome: v.cliente_nome || `Cliente ${code}`,
+      qtd: 0,
+      valor: 0,
+      vendas: [],
+    };
+    if (v.cliente_nome) cur.cliente_nome = v.cliente_nome;
+    cur.qtd += 1;
+    cur.valor += Number(v.valor || 0);
+    cur.vendas.push(v);
+    mapa.set(code, cur);
+  }
+  return [...mapa.values()]
+    .map((c) => ({ ...c, valor: Math.round(c.valor * 100) / 100 }))
+    .sort((a, b) => b.valor - a.valor);
+};
+
 // Grupos fixos (definidos pelo gestor). Vendedores fora deles:
 // vendeu na 99 → card individual ATACADO; senão → entra no card VAREJO.
-// -50 = pseudo-vendedor EXPEDIÇÃO: vendas do GERAL (50) nas operações de
-// showroom/novidades (7254, 7276, 7255, 7237, 7299, 7007) — o backend separa.
+// Pseudo-vendedores montados pelo backend a partir das NFs (régua TRAR008):
+//   -50   = EXPEDIÇÃO      (ops 7254, 7276, 7255, 7237, 7299, 7007, 887-889)
+//   -512  = RICARDO ELETRO (op 512)
+//   -1000 = BLUECRED       (clientes com contrato × faturas de crediário)
 const GRUPOS_FIXOS = [
   { nome: 'FRANQUIA', codes: [40] },
   { nome: 'REVENDA', codes: [161, 241, 165] },
   { nome: 'MTM', codes: [259, 21, 26] },
   { nome: 'EXPEDIÇÃO', codes: [-50] },
+  { nome: 'RICARDO ELETRO', codes: [-512] },
+  { nome: 'BLUECRED', codes: [-1000] },
 ];
 
 export default function PainelVendas() {
@@ -498,6 +526,7 @@ export default function PainelVendas() {
               )}
 
               {/* Nível: vendas do vendedor */}
+              {/* Nível: clientes do vendedor (agrupados) */}
               {viewAtual.tipo === 'vendas' &&
                 (() => {
                   const entry = vendasCache[viewAtual.sellerCode];
@@ -533,6 +562,7 @@ export default function PainelVendas() {
                       </div>
                     );
                   }
+                  const clientes = agruparPorCliente(vendas);
                   const totalVendas = vendas.reduce(
                     (a, v) => a + (v.valor || 0),
                     0,
@@ -540,6 +570,7 @@ export default function PainelVendas() {
                   return (
                     <>
                       <p className="text-[11px] text-gray-400 mb-2">
+                        {formatInt(clientes.length)} cliente(s) &bull;{' '}
                         {formatInt(vendas.length)} venda(s) &bull; R${' '}
                         {formatBRL(totalVendas)}
                       </p>
@@ -547,16 +578,13 @@ export default function PainelVendas() {
                         <thead>
                           <tr className="bg-[#000638]/5">
                             <th className="px-3 py-1.5 font-semibold text-[#000638] border-b">
-                              Data
-                            </th>
-                            <th className="px-3 py-1.5 font-semibold text-[#000638] border-b">
-                              Fatura
-                            </th>
-                            <th className="px-3 py-1.5 font-semibold text-[#000638] border-b">
-                              Filial
+                              Código
                             </th>
                             <th className="px-3 py-1.5 font-semibold text-[#000638] border-b">
                               Cliente
+                            </th>
+                            <th className="px-3 py-1.5 font-semibold text-[#000638] border-b text-right">
+                              Vendas
                             </th>
                             <th className="px-3 py-1.5 font-semibold text-[#000638] border-b text-right">
                               Valor
@@ -564,25 +592,29 @@ export default function PainelVendas() {
                           </tr>
                         </thead>
                         <tbody>
-                          {vendas.map((v, i) => (
+                          {clientes.map((c) => (
                             <tr
-                              key={i}
-                              className="border-b last:border-0 hover:bg-gray-50 transition-colors"
+                              key={c.cliente_code}
+                              onClick={() =>
+                                pushView({
+                                  tipo: 'faturas',
+                                  titulo: c.cliente_nome,
+                                  vendas: c.vendas,
+                                })
+                              }
+                              className="border-b last:border-0 hover:bg-gray-50 transition-colors cursor-pointer"
                             >
-                              <td className="px-3 py-1.5 text-gray-700 whitespace-nowrap">
-                                {formatData(v.data)}
+                              <td className="px-3 py-1.5 text-gray-700">
+                                {c.cliente_code}
                               </td>
                               <td className="px-3 py-1.5 text-gray-700">
-                                {v.fatura}
+                                {c.cliente_nome}
                               </td>
-                              <td className="px-3 py-1.5 text-gray-700">
-                                {v.branch_code}
-                              </td>
-                              <td className="px-3 py-1.5 text-gray-700">
-                                {v.cliente_nome || `Cliente ${v.cliente_code}`}
+                              <td className="px-3 py-1.5 text-gray-700 text-right">
+                                {formatInt(c.qtd)}
                               </td>
                               <td className="px-3 py-1.5 text-gray-700 text-right whitespace-nowrap">
-                                R$ {formatBRL(v.valor)}
+                                R$ {formatBRL(c.valor)}
                               </td>
                             </tr>
                           ))}
@@ -591,6 +623,57 @@ export default function PainelVendas() {
                     </>
                   );
                 })()}
+
+              {/* Nível: faturas de um cliente */}
+              {viewAtual.tipo === 'faturas' && (
+                <>
+                  <p className="text-[11px] text-gray-400 mb-2">
+                    {formatInt(viewAtual.vendas.length)} venda(s) &bull; R${' '}
+                    {formatBRL(
+                      viewAtual.vendas.reduce((a, v) => a + (v.valor || 0), 0),
+                    )}
+                  </p>
+                  <table className="w-full text-xs text-left border-collapse">
+                    <thead>
+                      <tr className="bg-[#000638]/5">
+                        <th className="px-3 py-1.5 font-semibold text-[#000638] border-b">
+                          Data
+                        </th>
+                        <th className="px-3 py-1.5 font-semibold text-[#000638] border-b">
+                          Fatura
+                        </th>
+                        <th className="px-3 py-1.5 font-semibold text-[#000638] border-b">
+                          Filial
+                        </th>
+                        <th className="px-3 py-1.5 font-semibold text-[#000638] border-b text-right">
+                          Valor
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {viewAtual.vendas.map((v, i) => (
+                        <tr
+                          key={i}
+                          className="border-b last:border-0 hover:bg-gray-50 transition-colors"
+                        >
+                          <td className="px-3 py-1.5 text-gray-700 whitespace-nowrap">
+                            {formatData(v.data)}
+                          </td>
+                          <td className="px-3 py-1.5 text-gray-700">
+                            {v.fatura || '—'}
+                          </td>
+                          <td className="px-3 py-1.5 text-gray-700">
+                            {v.branch_code}
+                          </td>
+                          <td className="px-3 py-1.5 text-gray-700 text-right whitespace-nowrap">
+                            R$ {formatBRL(v.valor)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )}
             </div>
           </div>
         </div>
