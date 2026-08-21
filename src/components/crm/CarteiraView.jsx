@@ -190,6 +190,18 @@ function fmtMoeda(v) {
   });
 }
 
+// Extrai o nome da loja a partir do nome do vendedor.
+// Formato esperado do TOTVS: "NOME - LOJA - INT" (ex.: "ALISSON - MIDWAY - INT").
+// A loja é o segundo segmento; sufixos como INT/EXT ficam de fora.
+function parseLojaFromVendedor(vendedor) {
+  const partes = String(vendedor || '')
+    .split(' - ')
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (partes.length >= 2) return partes[1].toUpperCase();
+  return 'SEM LOJA';
+}
+
 // Formata tempo de cadastro em formato amigável
 function fmtTempoCadastro(dtStr) {
   if (!dtStr) return '—';
@@ -316,6 +328,80 @@ function VendedorCard({
           )}
         </div>
       )}
+
+      <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+        <span className="text-[10px] text-gray-500 uppercase font-semibold">
+          LTV Total
+        </span>
+        <span className="text-sm font-bold text-[#000638]">
+          {fmtMoeda(stats.ltv)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ─── Card agregado por LOJA ─────────────────────────────────────────────────
+function LojaCard({ loja, clientes, vendedores, oportunidades, color, onClick }) {
+  const stats = useMemo(() => {
+    let ativos = 0;
+    let aInativar = 0;
+    let inativos = 0;
+    let ltv = 0;
+    clientes.forEach((c) => {
+      if (c._status === 'ativo') ativos += 1;
+      else if (c._status === 'aInativar') aInativar += 1;
+      else if (c._status === 'inativo') inativos += 1;
+      ltv += c._ltv || 0;
+    });
+    return { ativos, aInativar, inativos, ltv };
+  }, [clientes]);
+
+  return (
+    <div
+      onClick={onClick}
+      className="relative rounded-lg p-3 cursor-pointer transition-all bg-white border border-gray-200 hover:shadow-md hover:border-[#000638]/30"
+    >
+      <div className="flex items-center gap-2 mb-3">
+        <span
+          className="w-2.5 h-2.5 rounded-full shrink-0"
+          style={{ background: color }}
+        />
+        <h3 className="text-sm font-bold truncate text-[#000638]">{loja}</h3>
+        <span className="text-[10px] text-gray-400 ml-auto">
+          {clientes.length} clientes
+        </span>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        <div>
+          <div className="text-xl font-bold text-green-600">{stats.ativos}</div>
+          <div className="text-[10px] text-gray-500 uppercase">Ativos</div>
+        </div>
+        <div>
+          <div className="text-xl font-bold text-yellow-600">
+            {stats.aInativar}
+          </div>
+          <div className="text-[10px] text-gray-500 uppercase">A Inativar</div>
+        </div>
+        <div>
+          <div className="text-xl font-bold text-red-600">{stats.inativos}</div>
+          <div className="text-[10px] text-gray-500 uppercase">Inativos</div>
+        </div>
+      </div>
+
+      <div className="flex gap-2 mb-3 flex-wrap">
+        <span className="flex items-center gap-1 text-[10px] font-bold bg-gray-50 text-gray-600 border border-gray-200 px-2 py-0.5 rounded-full">
+          <Users size={11} weight="bold" />
+          {vendedores.length} vendedor{vendedores.length !== 1 ? 'es' : ''}
+        </span>
+        {oportunidades > 0 && (
+          <span className="flex items-center gap-1 text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full">
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" />
+            {oportunidades} oportunidade{oportunidades !== 1 ? 's' : ''}
+          </span>
+        )}
+      </div>
 
       <div className="flex items-center justify-between pt-2 border-t border-gray-100">
         <span className="text-[10px] text-gray-500 uppercase font-semibold">
@@ -1328,6 +1414,8 @@ export default function CarteiraView({
   const [filtroGeral, setFiltroGeral] = useState('todos');
   const [summaryModal, setSummaryModal] = useState(null); // 'todos' | 'ativo' | 'aInativar' | 'inativo' | 'oportunidades'
   const [vendedorSel, setVendedorSel] = useState(null);
+  const [viewMode, setViewMode] = useState('vendedor'); // 'vendedor' | 'loja'
+  const [lojaSel, setLojaSel] = useState(null); // loja selecionada no modo 'loja'
 
   // Agrupa clientes por vendedor do módulo, considerando a última compra
   // com CADA vendedor para classificar status (ativo/a inativar/inativo).
@@ -1559,6 +1647,28 @@ export default function CarteiraView({
     return out;
   }, [porVendedor, filtroGeral]);
 
+  // Agrupa os vendedores (já filtrados) por LOJA, para a visão por loja.
+  // Soma clientes/LTV/oportunidades e mantém a lista de vendedores da loja.
+  const porLoja = useMemo(() => {
+    const lojas = {};
+    Object.entries(porVendedorFiltrado).forEach(([vendName, grupo]) => {
+      const loja = parseLojaFromVendedor(vendName);
+      if (!lojas[loja])
+        lojas[loja] = {
+          clientes: [],
+          vendedores: [],
+          oportunidades: 0,
+          primeiraCompra: 0,
+        };
+      lojas[loja].clientes.push(...grupo.clientes);
+      lojas[loja].vendedores.push(vendName);
+      lojas[loja].oportunidades +=
+        oportunidadesMap[String(grupo.vendedorCode)] || 0;
+      lojas[loja].primeiraCompra += grupo.primeiraCompra || 0;
+    });
+    return lojas;
+  }, [porVendedorFiltrado, oportunidadesMap]);
+
   // Totais agregados de TODOS os vendedores (para resumo no topo)
   // Também monta listas planas pra alimentar os modais
   const { totaisCarteira, todosClientesFlat, oportunidadesPorVendedor } = useMemo(() => {
@@ -1668,6 +1778,13 @@ export default function CarteiraView({
 
   // Lista de vendedores (cards)
   const vendedores = Object.keys(porVendedorFiltrado).sort();
+
+  // Lojas (visão por loja) e vendedores visíveis conforme o modo/drill-down
+  const lojasOrdenadas = Object.keys(porLoja).sort();
+  const vendedoresVisiveis =
+    viewMode === 'loja' && lojaSel
+      ? [...(porLoja[lojaSel]?.vendedores || [])].sort()
+      : vendedores;
 
   return (
     <div className="space-y-3">
@@ -1796,7 +1913,7 @@ export default function CarteiraView({
       </div>
 
       {/* Filtros do topo */}
-      <div className="flex gap-2 flex-wrap">
+      <div className="flex gap-2 flex-wrap items-center">
         {[
           { key: 'todos', label: 'Todos' },
           { key: 'ativo', label: 'Ativos' },
@@ -1815,36 +1932,100 @@ export default function CarteiraView({
             {f.label}
           </button>
         ))}
+
+        {/* Toggle de visualização: Por Vendedor / Por Loja */}
+        <div className="ml-auto inline-flex rounded-lg border border-gray-200 bg-white p-0.5">
+          {[
+            { key: 'vendedor', label: 'Por Vendedor' },
+            { key: 'loja', label: 'Por Loja' },
+          ].map((v) => (
+            <button
+              key={v.key}
+              onClick={() => {
+                setViewMode(v.key);
+                setLojaSel(null);
+              }}
+              className={`text-xs font-bold px-3 py-1 rounded-md transition ${
+                viewMode === v.key
+                  ? 'bg-[#000638] text-white'
+                  : 'text-gray-600 hover:bg-gray-100'
+              }`}
+            >
+              {v.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Grid de cards por vendedor */}
-      {vendedores.length === 0 ? (
-        <div className="bg-white border border-gray-200 rounded-lg p-6 text-center">
-          <p className="text-sm text-gray-500">
-            Nenhum vendedor encontrado com o filtro selecionado.
-          </p>
-        </div>
+      {/* Grid por LOJA (visão agregada) */}
+      {viewMode === 'loja' && !lojaSel ? (
+        lojasOrdenadas.length === 0 ? (
+          <div className="bg-white border border-gray-200 rounded-lg p-6 text-center">
+            <p className="text-sm text-gray-500">
+              Nenhuma loja encontrada com o filtro selecionado.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            {lojasOrdenadas.map((loja, idx) => {
+              const g = porLoja[loja];
+              return (
+                <LojaCard
+                  key={loja}
+                  loja={loja}
+                  clientes={g.clientes}
+                  vendedores={g.vendedores}
+                  oportunidades={g.oportunidades}
+                  color={COLORS[idx % COLORS.length]}
+                  onClick={() => setLojaSel(loja)}
+                />
+              );
+            })}
+          </div>
+        )
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          {vendedores.map((v, idx) => {
-            const grupo = porVendedorFiltrado[v];
-            const ops = oportunidadesMap[String(grupo.vendedorCode)] || 0;
-            const vInfo = vendedoresMap?.byTotvsId?.[grupo.vendedorCode];
-            const inativo = vInfo && vInfo.ativo === false;
-            return (
-              <VendedorCard
-                key={v}
-                vendedor={v}
-                clientes={grupo.clientes}
-                color={COLORS[idx % COLORS.length]}
-                oportunidades={ops}
-                primeiraCompra={grupo.primeiraCompra || 0}
-                inativo={inativo}
-                onClick={() => handleClickCard(v)}
-              />
-            );
-          })}
-        </div>
+        <>
+          {/* Voltar para lojas quando uma loja está selecionada */}
+          {viewMode === 'loja' && lojaSel && (
+            <button
+              onClick={() => setLojaSel(null)}
+              className="inline-flex items-center gap-1.5 text-xs font-bold text-[#000638] hover:underline mb-1"
+            >
+              ← Voltar para lojas
+              <span className="text-gray-400 font-normal">/ {lojaSel}</span>
+            </button>
+          )}
+
+          {/* Grid de cards por vendedor (todos, ou só os da loja selecionada) */}
+          {vendedoresVisiveis.length === 0 ? (
+            <div className="bg-white border border-gray-200 rounded-lg p-6 text-center">
+              <p className="text-sm text-gray-500">
+                Nenhum vendedor encontrado com o filtro selecionado.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+              {vendedoresVisiveis.map((v, idx) => {
+                const grupo = porVendedorFiltrado[v];
+                const ops = oportunidadesMap[String(grupo.vendedorCode)] || 0;
+                const vInfo = vendedoresMap?.byTotvsId?.[grupo.vendedorCode];
+                const inativo = vInfo && vInfo.ativo === false;
+                return (
+                  <VendedorCard
+                    key={v}
+                    vendedor={v}
+                    clientes={grupo.clientes}
+                    color={COLORS[idx % COLORS.length]}
+                    oportunidades={ops}
+                    primeiraCompra={grupo.primeiraCompra || 0}
+                    inativo={inativo}
+                    onClick={() => handleClickCard(v)}
+                  />
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
 
       {/* Modal de resumo (clica num card de totais → abre lista) */}
