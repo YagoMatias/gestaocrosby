@@ -1416,6 +1416,7 @@ export default function CarteiraView({
   const [vendedorSel, setVendedorSel] = useState(null);
   const [viewMode, setViewMode] = useState('vendedor'); // 'vendedor' | 'loja'
   const [lojaSel, setLojaSel] = useState(null); // loja selecionada no modo 'loja'
+  const [lojaFiltro, setLojaFiltro] = useState(''); // '' = todas as lojas (filtro no modo vendedor)
 
   // Agrupa clientes por vendedor do módulo, considerando a última compra
   // com CADA vendedor para classificar status (ativo/a inativar/inativo).
@@ -1784,7 +1785,9 @@ export default function CarteiraView({
   const vendedoresVisiveis =
     viewMode === 'loja' && lojaSel
       ? [...(porLoja[lojaSel]?.vendedores || [])].sort()
-      : vendedores;
+      : lojaFiltro
+        ? vendedores.filter((v) => parseLojaFromVendedor(v) === lojaFiltro)
+        : vendedores;
 
   return (
     <div className="space-y-3">
@@ -1933,8 +1936,27 @@ export default function CarteiraView({
           </button>
         ))}
 
+        {/* Filtro por loja própria (afeta a visão Por Vendedor) */}
+        {viewMode === 'vendedor' && lojasOrdenadas.length > 0 && (
+          <select
+            value={lojaFiltro}
+            onChange={(e) => setLojaFiltro(e.target.value)}
+            className="ml-auto text-xs font-bold px-3 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
+            title="Filtrar por loja própria"
+          >
+            <option value="">Todas as lojas ({lojasOrdenadas.length})</option>
+            {lojasOrdenadas.map((loja) => (
+              <option key={loja} value={loja}>
+                {loja}
+              </option>
+            ))}
+          </select>
+        )}
+
         {/* Toggle de visualização: Por Vendedor / Por Loja */}
-        <div className="ml-auto inline-flex rounded-lg border border-gray-200 bg-white p-0.5">
+        <div
+          className={`${viewMode === 'vendedor' ? '' : 'ml-auto'} inline-flex rounded-lg border border-gray-200 bg-white p-0.5`}
+        >
           {[
             { key: 'vendedor', label: 'Por Vendedor' },
             { key: 'loja', label: 'Por Loja' },
