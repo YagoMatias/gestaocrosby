@@ -209,7 +209,7 @@ const PDVRfid = () => {
   const [posting, setPosting] = useState(false);
   const [saleResult, setSaleResult] = useState(null); // TransactionResponseModel + total
   // Recebimento do pagamento (transforma a transação em "atendida")
-  const [receiveDocType, setReceiveDocType] = useState('20');
+  const [receiveDocType, setReceiveDocType] = useState('3');
   const [receiving, setReceiving] = useState(false);
   const [receiveDone, setReceiveDone] = useState(false);
   const [receiveError, setReceiveError] = useState('');
@@ -406,6 +406,10 @@ const PDVRfid = () => {
         operationCode: parseInt(operation, 10),
         paymentConditionCode: parseInt(condition, 10),
         isPreSale,
+        // O insert só aceita status 1 (Em andamento) — validado por sonda:
+        // 2..6 retornam "Invalid Status value". O recebimento atua sobre a
+        // transação em andamento e a leva direto a atendida.
+        status: 1,
         totalAmountTransaction: Number(totals.total.toFixed(2)),
         items: items.map((i) => ({
           productCode: i.productCode,
@@ -427,7 +431,11 @@ const PDVRfid = () => {
         showToast('erro', j?.message || 'TOTVS recusou a transação');
         return;
       }
-      setSaleResult({ ...j.data, total: payload.totalAmountTransaction });
+      setSaleResult({
+        ...j.data,
+        total: payload.totalAmountTransaction,
+        isPreSale,
+      });
       setReceiveDone(false);
       setReceiveError('');
       setItems([]);
@@ -865,7 +873,9 @@ const PDVRfid = () => {
               <h3 className="text-lg font-bold text-[#000638]">
                 {receiveDone
                   ? 'Venda atendida!'
-                  : 'Transação incluída — em andamento'}
+                  : saleResult.isPreSale
+                    ? 'Pré-venda gerada — finalize no caixa TOTVS'
+                    : 'Transação incluída — aguardando recebimento'}
               </h3>
               <p className="mt-2 text-sm text-gray-600">
                 Nº da transação{' '}
@@ -886,7 +896,7 @@ const PDVRfid = () => {
                 ) : null}
               </p>
 
-              {!receiveDone && (
+              {!receiveDone && !saleResult.isPreSale && (
                 <div className="mt-4 text-left bg-gray-50 rounded-xl p-3 ring-1 ring-gray-200">
                   <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">
                     Receber pagamento — tipo de documento
@@ -896,11 +906,13 @@ const PDVRfid = () => {
                     onChange={(e) => setReceiveDocType(e.target.value)}
                     className="w-full h-9 px-2 rounded-lg border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
                   >
-                    <option value="20">20 — PIX</option>
+                    {/* Enum oficial DocumentType (FCRFM001): 26=PIX, 20=CREDEV */}
                     <option value="3">3 — Dinheiro</option>
+                    <option value="26">26 — PIX</option>
                     <option value="4">4 — Cartão de crédito</option>
                     <option value="5">5 — Cartão de débito</option>
                     <option value="1">1 — Fatura</option>
+                    <option value="20">20 — Credev</option>
                   </select>
                   <button
                     onClick={receberPagamento}
@@ -910,7 +922,7 @@ const PDVRfid = () => {
                     {receiving ? (
                       <>
                         <Spinner size={16} className="animate-spin" />{' '}
-                        Recebendo…
+                        Recebendo… (pode levar minutos)
                       </>
                     ) : (
                       <>
