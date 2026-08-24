@@ -39,6 +39,11 @@ const AVAILABLE_PAGES = [
     category: 'Principal',
   },
   {
+    path: '/tecnologia/chamados-dryland',
+    name: 'Chamados Dryland',
+    category: 'Principal',
+  },
+  {
     path: '/cadastrar-cliente',
     name: 'Cadastrar Cliente',
     category: 'Principal',

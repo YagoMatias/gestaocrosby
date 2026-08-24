@@ -88,6 +88,12 @@ const solicitacoesCrosby = [
     icon: ShoppingCart,
     color: 'text-blue-600',
   },
+  {
+    name: 'Chamados Dryland',
+    href: '/tecnologia/chamados-dryland',
+    icon: Ticket,
+    color: 'text-orange-600',
+  },
 ];
 
 const rh = [

@@ -113,6 +113,7 @@ const DashboardVendas = lazy(() => import('./pages/DashboardVendas'));
 const Forecast = lazy(() => import('./pages/Forecast'));
 const NewForecast = lazy(() => import('./pages/NewForecast'));
 const ControleChips = lazy(() => import('./pages/ControleChips'));
+const ChamadosDryland = lazy(() => import('./pages/ChamadosDryland'));
 const MonitoramentoTotvs = lazy(() => import('./pages/MonitoramentoTotvs'));
 const InventarioPatrimonio = lazy(() => import('./pages/InventarioPatrimonio'));
 const LeituraRFID = lazy(() => import('./pages/LeituraRFID'));
@@ -180,6 +181,7 @@ const protectedRoutes = [
   { path: '/forecast/faturamento-historico', component: Forecast },
   { path: '/dashboard-vendas', component: Forecast },
   { path: '/tecnologia/controle-chip', component: ControleChips },
+  { path: '/tecnologia/chamados-dryland', component: ChamadosDryland },
   { path: '/tecnologia/monitoramento-totvs', component: MonitoramentoTotvs },
   {
     path: '/tecnologia/inventario-patrimonio',
