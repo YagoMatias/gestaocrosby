@@ -87,6 +87,7 @@ import {
   executarProvisaoLiberacao,
 } from './jobs/provisao-liberacao.job.js';
 import { iniciarJobBoletoCobranca } from './jobs/boleto-cobranca.job.js';
+import { iniciarJobDrylandChamados } from './jobs/dryland-chamados-notificacao.job.js';
 
 // =============================================================================
 // SERVER SETUP
@@ -189,6 +190,7 @@ app.listen(PORT, async () => {
   iniciarJobConversaoTemplate();
   iniciarJobProvisaoLiberacao();
   iniciarJobBoletoCobranca();
+  iniciarJobDrylandChamados();
 
   // Retoma campanhas WhatsApp travadas após restart (reseta processing → pending)
   (async () => {

@@ -179,6 +179,8 @@ const NoticesModal = ({ onClose }) => {
       return '/analise-credito';
     if (String(notif.tipo) === 'PROVISAO_LIBERACAO')
       return '/liberacao-pagamento';
+    if (String(notif.tipo) === 'DRYLAND_CHAMADO_NOVO')
+      return '/tecnologia/chamados-dryland';
     return null;
   };
 
