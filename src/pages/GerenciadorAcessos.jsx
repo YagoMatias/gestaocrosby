@@ -178,6 +178,11 @@ const AVAILABLE_PAGES = [
     category: 'Varejo',
   },
   {
+    path: '/cobranca-bluecard',
+    name: 'Cobrança BlueCard',
+    category: 'Varejo',
+  },
+  {
     path: '/documento-bluecred',
     name: 'Documento Bluecred',
     category: 'Varejo',

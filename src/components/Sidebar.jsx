@@ -407,6 +407,12 @@ const varejo = [
         color: 'text-blue-600',
       },
       {
+        name: 'Cobrança',
+        href: '/cobranca-bluecard',
+        icon: Barcode,
+        color: 'text-rose-600',
+      },
+      {
         name: 'Documentos Bluecred',
         href: '/documento-bluecred',
         icon: FileText,
