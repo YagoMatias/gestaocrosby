@@ -316,9 +316,17 @@ const ClientesCashbackFranquia = () => {
           </div>
 
           {dadosFiltrados.length === 0 ? (
-            <div className="text-center text-gray-500 py-10 text-sm">
-              Nenhum cliente com cashback comprou nessa data nas empresas
-              selecionadas.
+            <div className="text-center text-gray-500 py-10 text-sm px-4">
+              <p className="font-semibold text-gray-600">
+                Nenhum cliente com cashback comprou em {fmtData(dataAlvo)} nesta(s)
+                loja(s).
+              </p>
+              <p className="text-xs text-gray-400 mt-2 max-w-md mx-auto">
+                Só aparecem clientes com cadastro e com saldo de cashback. Tente
+                outro período (3/30/59 dias). Se sua loja teve vendas nesse dia e
+                nada aparece, a sincronização com o TOTVS pode estar atrasada —
+                avise o suporte.
+              </p>
             </div>
           ) : (
             <div className="overflow-x-auto">
