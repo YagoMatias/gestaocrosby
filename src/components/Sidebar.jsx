@@ -48,6 +48,7 @@ import {
   Cake,
   Headset,
   Coins,
+  ArrowCounterClockwise,
   Briefcase,
   IdentificationBadge,
   Gavel,
@@ -748,6 +749,12 @@ const minhaFranquiaItem = {
       href: '/clientes-cashback-franquia',
       icon: Coins,
       color: 'text-amber-500',
+    },
+    {
+      name: 'Clientes Inativos',
+      href: '/clientes-inativos-franquia',
+      icon: ArrowCounterClockwise,
+      color: 'text-rose-600',
     },
   ],
 };

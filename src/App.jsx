@@ -42,6 +42,9 @@ const PosVendasFranquia = lazy(() => import('./pages/PosVendasFranquia'));
 const ClientesCashbackFranquia = lazy(
   () => import('./pages/ClientesCashbackFranquia'),
 );
+const ClientesInativosFranquia = lazy(
+  () => import('./pages/ClientesInativosFranquia'),
+);
 
 const MetasVarejo = lazy(() => import('./pages/MetasVarejo'));
 
@@ -226,6 +229,10 @@ const protectedRoutes = [
   {
     path: '/clientes-cashback-franquia',
     component: ClientesCashbackFranquia,
+  },
+  {
+    path: '/clientes-inativos-franquia',
+    component: ClientesInativosFranquia,
   },
   { path: '/metas-varejo', component: MetasVarejo },
   { path: '/ranking-faturamento', component: RankingFaturamento },

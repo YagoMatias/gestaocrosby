@@ -309,6 +309,11 @@ const AVAILABLE_PAGES = [
     name: 'Clientes com Cashback',
     category: 'Minha Franquia',
   },
+  {
+    path: '/clientes-inativos-franquia',
+    name: 'Clientes Inativos',
+    category: 'Minha Franquia',
+  },
 
   // Antecipações
   {

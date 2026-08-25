@@ -1,7 +1,7 @@
 {
   "redirects": [
     {
-      "source": "/((?!vagas|assets)[^.]*)",
+      "source": "/((?!vagas|admissao|assets)[^.]*)",
       "has": [{ "type": "host", "value": "vagas.crosbyoficial.com.br" }],
       "destination": "https://crosbyoficial.com.br",
       "permanent": false
