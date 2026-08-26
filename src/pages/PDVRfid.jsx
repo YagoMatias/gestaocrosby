@@ -32,6 +32,16 @@ import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
 import useRfidReader from '../hooks/useRfidReader';
 
+// Enum oficial DocumentType (FCRFM001) — cuidado: 26=PIX, 20=CREDEV
+const DOC_TYPES = [
+  { code: 3, label: '3 — Dinheiro' },
+  { code: 26, label: '26 — PIX' },
+  { code: 4, label: '4 — Cartão de crédito' },
+  { code: 5, label: '5 — Cartão de débito' },
+  { code: 1, label: '1 — Fatura' },
+  { code: 20, label: '20 — Credev' },
+];
+
 const fmtBRL = (v) =>
   Number(v || 0).toLocaleString('pt-BR', {
     style: 'currency',
@@ -195,7 +205,9 @@ const PDVRfid = () => {
   const [cfop, setCfop] = useState(
     () => localStorage.getItem('pdv_rfid_cfop') || '5102',
   );
-  const [isPreSale, setIsPreSale] = useState(true);
+  // Pré-venda DESLIGADA por padrão: pré-venda fica aguardando um caixa
+  // físico "continuar" — o recebimento via API trava nela
+  const [isPreSale, setIsPreSale] = useState(false);
   const [sellers, setSellers] = useState([]);
   const [seller, setSeller] = useState(
     () => localStorage.getItem('pdv_rfid_seller') || '',
@@ -213,6 +225,11 @@ const PDVRfid = () => {
   const [receiving, setReceiving] = useState(false);
   const [receiveDone, setReceiveDone] = useState(false);
   const [receiveError, setReceiveError] = useState('');
+  // Etapa "Encerrar venda": confirma no TOTVS que o plano de pagamento foi
+  // gravado (parcelas existem) antes de liberar o recebimento
+  const [closing, setClosing] = useState(false);
+  const [closed, setClosed] = useState(false);
+  const [closeError, setCloseError] = useState('');
   const [manualCode, setManualCode] = useState('');
   const branchRef = useRef(branch);
   branchRef.current = branch;
@@ -411,6 +428,17 @@ const PDVRfid = () => {
         // transação em andamento e a leva direto a atendida.
         status: 1,
         totalAmountTransaction: Number(totals.total.toFixed(2)),
+        // Plano de pagamento — equivale ao "encerramento" do PDV físico:
+        // a forma de recebimento fica definida já na inclusão, e o
+        // recebimento posterior só liquida o que já está previsto
+        paymentPlanItems: [
+          {
+            documentType: parseInt(receiveDocType, 10),
+            documentTypeSequence: 1,
+            installmentValue: Number(totals.total.toFixed(2)),
+            expirationDate: new Date().toISOString().slice(0, 10),
+          },
+        ],
         items: items.map((i) => ({
           productCode: i.productCode,
           quantity: i.qty,
@@ -438,6 +466,8 @@ const PDVRfid = () => {
       });
       setReceiveDone(false);
       setReceiveError('');
+      setClosed(false);
+      setCloseError('');
       setItems([]);
       setCustomer(null);
       beep(true);
@@ -454,11 +484,54 @@ const PDVRfid = () => {
     operation,
     condition,
     isPreSale,
+    receiveDocType,
     totals,
     items,
     cfop,
     showToast,
   ]);
+
+  // "Encerrar venda": confere no TOTVS se a transação está com o plano de
+  // pagamento gravado (parcelas). Sem isso o recebimento trava no servidor
+  // e cancela a transação — este gate evita queimar a venda.
+  const encerrarVenda = useCallback(async () => {
+    if (!saleResult || closing) return;
+    setClosing(true);
+    setCloseError('');
+    try {
+      const qs = new URLSearchParams({
+        branch: saleResult.branchCode,
+        code: saleResult.transactionCode,
+        date: String(saleResult.transactionDate).slice(0, 10),
+      });
+      const r = await fetch(
+        `${API_BASE_URL}/api/totvs/pdv/transaction-status?${qs}`,
+      );
+      const j = await r.json();
+      if (!r.ok || !j.success) {
+        setCloseError(j?.message || 'Falha ao consultar a transação');
+        return;
+      }
+      const { status, hasPaymentPlan, installment } = j.data;
+      if (status === 6) {
+        setCloseError('Transação foi cancelada no TOTVS — faça a venda de novo.');
+        return;
+      }
+      if (!hasPaymentPlan) {
+        setCloseError(
+          'O TOTVS não gravou o plano de pagamento desta transação — recebimento bloqueado (iria travar e cancelar a venda). Confira a forma de recebimento e refaça a venda.',
+        );
+        return;
+      }
+      console.log('[PDV] Encerramento ok — parcelas:', installment);
+      setClosed(true);
+      beep(true);
+    } catch (err) {
+      setCloseError(`Falha na consulta: ${err.message}`);
+    } finally {
+      setClosing(false);
+    }
+  }, [saleResult, closing]);
 
   // Recebe o pagamento da transação recém-incluída (gera contas a receber
   // e dispara o faturamento — a transação vira "atendida")
@@ -783,6 +856,21 @@ const PDVRfid = () => {
               ))}
             </select>
 
+            <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">
+              Forma de recebimento
+            </label>
+            <select
+              value={receiveDocType}
+              onChange={(e) => setReceiveDocType(e.target.value)}
+              className="w-full h-9 px-2 rounded-lg border border-gray-300 bg-white text-sm mb-3 focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
+            >
+              {DOC_TYPES.map((d) => (
+                <option key={d.code} value={d.code}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+
             <label className="flex items-center gap-2 text-sm text-gray-600 mb-4 select-none">
               <input
                 type="checkbox"
@@ -897,27 +985,59 @@ const PDVRfid = () => {
               </p>
 
               {!receiveDone && !saleResult.isPreSale && (
-                <div className="mt-4 text-left bg-gray-50 rounded-xl p-3 ring-1 ring-gray-200">
-                  <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">
-                    Receber pagamento — tipo de documento
-                  </label>
+                <div className="mt-4 text-left bg-gray-50 rounded-xl p-3 ring-1 ring-gray-200 space-y-2">
+                  {/* Etapa 1 — Encerrar venda: confirma no TOTVS que o plano
+                      de pagamento foi gravado antes de liberar o recebimento */}
+                  <button
+                    onClick={encerrarVenda}
+                    disabled={closing || closed}
+                    className={`w-full h-10 rounded-xl text-sm font-semibold inline-flex items-center justify-center gap-2 transition-colors ${
+                      closed
+                        ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-300 cursor-default'
+                        : 'bg-[#000638] text-white hover:bg-[#000638]/90 disabled:opacity-50'
+                    }`}
+                  >
+                    {closing ? (
+                      <>
+                        <Spinner size={16} className="animate-spin" />{' '}
+                        Encerrando…
+                      </>
+                    ) : closed ? (
+                      <>
+                        <CheckCircle size={16} weight="bold" /> Venda
+                        encerrada
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle size={16} /> Encerrar venda
+                      </>
+                    )}
+                  </button>
+                  {closeError && (
+                    <p className="text-xs text-rose-600">{closeError}</p>
+                  )}
+
+                  {/* Etapa 2 — Receber pagamento (habilita após encerrar) */}
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 pt-1">
+                    Forma de recebimento
+                  </div>
                   <select
                     value={receiveDocType}
+                    disabled={!closed}
                     onChange={(e) => setReceiveDocType(e.target.value)}
-                    className="w-full h-9 px-2 rounded-lg border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
+                    className="w-full h-9 px-2 rounded-lg border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#000638]/30 disabled:bg-gray-100 disabled:text-gray-400"
                   >
-                    {/* Enum oficial DocumentType (FCRFM001): 26=PIX, 20=CREDEV */}
-                    <option value="3">3 — Dinheiro</option>
-                    <option value="26">26 — PIX</option>
-                    <option value="4">4 — Cartão de crédito</option>
-                    <option value="5">5 — Cartão de débito</option>
-                    <option value="1">1 — Fatura</option>
-                    <option value="20">20 — Credev</option>
+                    {DOC_TYPES.map((d) => (
+                      <option key={d.code} value={d.code}>
+                        {d.label}
+                      </option>
+                    ))}
                   </select>
                   <button
                     onClick={receberPagamento}
-                    disabled={receiving}
-                    className="mt-2 w-full h-10 rounded-xl bg-emerald-600 text-white text-sm font-semibold inline-flex items-center justify-center gap-2 hover:bg-emerald-700 disabled:opacity-50"
+                    disabled={!closed || receiving}
+                    title={closed ? '' : 'Encerre a venda primeiro'}
+                    className="w-full h-10 rounded-xl bg-emerald-600 text-white text-sm font-semibold inline-flex items-center justify-center gap-2 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {receiving ? (
                       <>
@@ -932,9 +1052,7 @@ const PDVRfid = () => {
                     )}
                   </button>
                   {receiveError && (
-                    <p className="mt-2 text-xs text-rose-600">
-                      {receiveError}
-                    </p>
+                    <p className="text-xs text-rose-600">{receiveError}</p>
                   )}
                 </div>
               )}
@@ -951,6 +1069,8 @@ const PDVRfid = () => {
                   setSaleResult(null);
                   setReceiveDone(false);
                   setReceiveError('');
+                  setClosed(false);
+                  setCloseError('');
                 }}
                 className="mt-4 w-full h-10 rounded-xl bg-[#000638] text-white text-sm font-semibold hover:bg-[#000638]/90"
               >
