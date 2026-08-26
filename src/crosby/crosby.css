@@ -272,3 +272,11 @@
   .crosby-page .cb-footer-inner--thanks { flex-direction: column; align-items: stretch; text-align: center; }
   .crosby-page .cb-follow { padding: 20px; text-align: center; }
 }
+
+/* Info de cidade/UF/bairro preenchida pelo ViaCEP abaixo do campo CEP */
+.cb-cep-info {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #7bd88f;
+  font-weight: 600;
+}
