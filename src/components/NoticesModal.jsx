@@ -7,6 +7,7 @@ import {
   Calendar,
   Bell,
   XCircle,
+  Checks,
 } from '@phosphor-icons/react';
 import { useAuth } from './AuthContext';
 import { useNotices } from '../hooks/useNotices';
@@ -36,6 +37,7 @@ const NoticesModal = ({ onClose }) => {
   const [selectedNotice, setSelectedNotice] = useState(null);
   const [selectedSistema, setSelectedSistema] = useState(null);
   const [confirming, setConfirming] = useState(false);
+  const [marcandoTodas, setMarcandoTodas] = useState(false);
 
   useEffect(() => {
     loadNotices();
@@ -122,6 +124,41 @@ const NoticesModal = ({ onClose }) => {
       );
     } catch (error) {
       console.error('Erro ao marcar notificação de sistema como lida:', error);
+    }
+  };
+
+  // Marca de uma vez todas as notificações de SISTEMA ainda não lidas
+  // (chamados do Dryland, provisão, esteira...). Não mexe nos avisos: aqueles
+  // exigem o "Li e compreendi" individual, que é o propósito deles.
+  // A tabela não tem policy de UPDATE — a marcação só passa pela RPC.
+  const marcarTodasComoLidas = async () => {
+    if (marcandoTodas) return;
+    const naoLidas = notificacoesSistema.filter((n) => !n.lida);
+    if (naoLidas.length === 0) return;
+
+    setMarcandoTodas(true);
+    try {
+      const resultados = await Promise.all(
+        naoLidas.map((n) =>
+          supabase.rpc('marcar_notificacao_sistema_lida', {
+            p_id: n.id,
+            p_user: user.id,
+          }),
+        ),
+      );
+      const falhas = resultados.filter((r) => r?.error);
+      if (falhas.length > 0) {
+        console.error(
+          `Falha ao marcar ${falhas.length} de ${naoLidas.length} notificação(ões):`,
+          falhas[0].error,
+        );
+      }
+      // relê do servidor: se alguma falhar, a tela mostra o estado real
+      await loadNotificacoesSistema();
+    } catch (error) {
+      console.error('Erro ao marcar todas como lidas:', error);
+    } finally {
+      setMarcandoTodas(false);
     }
   };
 
@@ -222,6 +259,7 @@ const NoticesModal = ({ onClose }) => {
     notificacoesSistema.filter((n) => n.lida).length;
   const avisosCount = notices.length;
   const sistemaCount = notificacoesSistema.length;
+  const naoLidasSistema = notificacoesSistema.filter((n) => !n.lida).length;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4">
@@ -233,19 +271,32 @@ const NoticesModal = ({ onClose }) => {
               <h2 className="text-lg font-bold mb-0.5">Meus Avisos</h2>
               <p className="text-xs text-blue-100">
                 {unreadCount > 0
-                  ? `Você tem ${unreadCount} notificação${
-                      unreadCount > 1 ? 'ões' : ''
+                  ? `Você tem ${unreadCount} notificaç${
+                      unreadCount > 1 ? 'ões' : 'ão'
                     } não lida${unreadCount > 1 ? 's' : ''}`
                   : 'Tudo lido por aqui'}
               </p>
             </div>
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-lg hover:bg-white hover:bg-opacity-20 transition-colors"
-              title="Fechar"
-            >
-              <X size={20} weight="bold" />
-            </button>
+            <div className="flex items-center gap-2">
+              {tipoFiltro !== 'avisos' && naoLidasSistema > 0 && (
+                <button
+                  onClick={marcarTodasComoLidas}
+                  disabled={marcandoTodas}
+                  title="Marca como lidas todas as notificações de sistema (chamados, provisão, esteira)"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white bg-opacity-20 hover:bg-opacity-30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <Checks size={14} weight="bold" />
+                  {marcandoTodas ? 'Marcando...' : `Ler todas (${naoLidasSistema})`}
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                className="p-1.5 rounded-lg hover:bg-white hover:bg-opacity-20 transition-colors"
+                title="Fechar"
+              >
+                <X size={20} weight="bold" />
+              </button>
+            </div>
           </div>
 
           {/* Filtros por Tipo */}
