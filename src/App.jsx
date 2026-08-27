@@ -35,6 +35,9 @@ const TitulosClientes = lazy(() => import('./pages/TitulosClientes'));
 const TitulosClientesVarejo = lazy(() => import('./pages/TitulosClientesVarejo'));
 const AnaliseCredito = lazy(() => import('./pages/AnaliseCredito'));
 const NotasFiscais = lazy(() => import('./pages/NotasFiscais'));
+const ManifestacaoDestinatario = lazy(
+  () => import('./pages/ManifestacaoDestinatario'),
+);
 const AniversariantesFranquia = lazy(
   () => import('./pages/AniversariantesFranquia'),
 );
@@ -222,6 +225,10 @@ const protectedRoutes = [
   { path: '/titulos-clientes-varejo', component: TitulosClientesVarejo },
   { path: '/analise-credito', component: AnaliseCredito },
   { path: '/notas-fiscais', component: NotasFiscais },
+  {
+    path: '/manifestacao-destinatario',
+    component: ManifestacaoDestinatario,
+  },
   { path: '/consulta-nfs', component: ConsultaNFs },
   { path: '/atividade-clientes', component: AtividadeClientes },
   { path: '/extratos-bancos', component: ExtratosBancos },

@@ -74,6 +74,11 @@ const AVAILABLE_PAGES = [
 
   // Financeiro
   { path: '/contas-a-pagar', name: 'Contas a Pagar', category: 'Financeiro' },
+  {
+    path: '/manifestacao-destinatario',
+    name: 'Manifestação do Destinatário',
+    category: 'Financeiro',
+  },
   { path: '/emprestimos', name: 'Empréstimos', category: 'Financeiro' },
   {
     path: '/despesa-filial',

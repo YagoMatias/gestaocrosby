@@ -200,6 +200,22 @@ const financeiro = [
     roles: ['owner', 'admin', 'manager', 'user'],
   },
   {
+    name: 'Fiscal',
+    href: '#',
+    icon: FileText,
+    color: 'text-amber-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
+    children: [
+      {
+        name: 'Manifestação do Destinatário',
+        href: '/manifestacao-destinatario',
+        icon: ClipboardText,
+        color: 'text-amber-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+    ],
+  },
+  {
     name: 'Contas a Receber',
     href: '#',
     icon: Receipt,

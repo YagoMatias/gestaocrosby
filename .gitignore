@@ -27,3 +27,7 @@ backend/.cache/
 .env.local
 .env.*.local
 .scripts/copia_list.txt
+
+# Certificados digitais A1 (NUNCA commitar)
+backend/certs/
+*.pfx
