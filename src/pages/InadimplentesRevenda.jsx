@@ -69,6 +69,28 @@ import {
 import * as XLSX from 'xlsx';
 
 // Rótulos das seções da aba Situação de Clientes
+// Empresas FILIAL — mesma regra do componente FiltroEmpresa: codigo abaixo de
+// 5999, exceto 98 e 980 que sao franquias. As franquias (6000+) ficam de fora.
+const FRANQUIA_CODES = ['98', '980'];
+let filiaisCache = null;
+
+async function buscarCodigosFiliais() {
+  if (filiaisCache) return filiaisCache;
+  const resp = await fetch(`${TotvsURL}branches`);
+  if (!resp.ok) throw new Error(`Erro ao buscar empresas: HTTP ${resp.status}`);
+  const result = await resp.json();
+  const empresas = result.data?.data || result.data || [];
+  filiaisCache = empresas
+    .map((e) => String(e.cd_empresa))
+    .filter(
+      (cd) =>
+        /^\d+$/.test(cd) &&
+        parseInt(cd, 10) < 5999 &&
+        !FRANQUIA_CODES.includes(cd),
+    );
+  return filiaisCache;
+}
+
 // Maximo de clientes por consulta ao contas a receber — o TOTVS recusa
 // (HTTP 400) listas acima de ~1000 codigos
 const LOTE_CLIENTES = 500;
@@ -752,94 +774,101 @@ Crosby`;
       const umAnoFrenteStr = umAnoFrente.toISOString().split('T')[0];
 
       // ============================================================
-      // PASSO 1: Buscar códigos dos clientes REVENDA (classificação TOTVS)
+      // PASSO 1: Faturas das empresas FILIAL (franquias ficam de fora)
       // ============================================================
-      console.log('🔍 Buscando clientes REVENDA...');
-      const respRevenda = await fetch(`${TotvsURL}reseller-clients`);
-      if (!respRevenda.ok) {
-        const errData = await respRevenda.json().catch(() => ({}));
+      // Buscar as faturas primeiro e classificar depois e MUITO mais rapido do
+      // que listar os ~25 mil clientes de revenda e consultar em lotes: o TOTVS
+      // derrubava a conexao naquele volume.
+      const codigosFiliais = await buscarCodigosFiliais();
+      console.log(`🏢 Restringindo a ${codigosFiliais.length} empresas FILIAL`);
+
+      const buscarFaturas = async (dtInicio, dtFim, status) => {
+        const params = new URLSearchParams({
+          dt_inicio: dtInicio,
+          dt_fim: dtFim,
+          modo: 'vencimento',
+          situacao: '1',
+          status,
+          branches: codigosFiliais.join(','),
+        });
+        const resp = await fetch(
+          `${TotvsURL}accounts-receivable/filter?${params.toString()}`,
+        );
+        if (!resp.ok) {
+          const errData = await resp.json().catch(() => ({}));
+          throw new Error(errData.message || `Erro HTTP ${resp.status}`);
+        }
+        const result = await resp.json();
+        return result.data?.items || [];
+      };
+
+      console.log('🔍 Buscando faturas das filiais via TOTVS...');
+      const [todasVencidas, todasAVencer] = await Promise.all([
+        buscarFaturas(dataIni, dataFim, 'Vencido'),
+        buscarFaturas(amanhaStr, umAnoFrenteStr, 'Em Aberto').catch((err) => {
+          console.warn('⚠️ Falha ao buscar faturas a vencer:', err.message);
+          return [];
+        }),
+      ]);
+
+      // ============================================================
+      // PASSO 2: Classificar so os clientes que tem fatura
+      // ============================================================
+      const codigosComFatura = [
+        ...new Set(
+          [...todasVencidas, ...todasAVencer]
+            .map((i) => parseInt(i.cd_cliente, 10))
+            .filter((c) => !isNaN(c)),
+        ),
+      ];
+
+      const respClassif = await fetch(`${TotvsURL}clients-classifications`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ personCodes: codigosComFatura }),
+      });
+      if (!respClassif.ok) {
+        const errData = await respClassif.json().catch(() => ({}));
         throw new Error(
-          errData.message ||
-            `Erro ao buscar revenda: HTTP ${respRevenda.status}`,
+          errData.message || `Erro ao classificar clientes: HTTP ${respClassif.status}`,
         );
       }
-      const resultRevenda = await respRevenda.json();
-      const revenda = resultRevenda.data || [];
+      const classificados = (await respClassif.json()).data || [];
+
+      // REVENDA = tipo 7/code 1 (REVENDEDOR SIM) ou tipo 20/code 3 (TIPO DE
+      // CLIENTE = REVENDEDOR), a mesma uniao usada nos multimarcas
+      const ehRevenda = (c) =>
+        (c.classifications || []).some(
+          (cl) =>
+            (cl.typeCode === 7 && String(cl.code) === '1') ||
+            (cl.typeCode === 20 && String(cl.code) === '3'),
+        );
+
+      const revenda = classificados.filter(ehRevenda);
+      const revendaMap = {};
+      revenda.forEach((m) => {
+        revendaMap[String(m.code)] = m;
+      });
+      setClientesRevenda(revenda);
+      setInativosCarregados(true);
+
+      console.log(
+        `📋 ${codigosComFatura.length} clientes com fatura → ${revenda.length} sao de revenda`,
+      );
 
       if (revenda.length === 0) {
-        console.warn('⚠️ Nenhum cliente revenda encontrado.');
+        console.warn('⚠️ Nenhum cliente revenda com faturas no periodo.');
         setDados([]);
         setValoresAVencer({});
         return;
       }
 
-      // Montar mapa de revenda para enriquecer depois (nome, fantasia)
-      const revendaMap = {};
-      revenda.forEach((m) => {
-        revendaMap[String(m.code)] = m;
-      });
-
-      // Códigos separados por vírgula para query param
-      const listaCodigosRevenda = revenda.map((m) => m.code);
-      console.log(`📋 ${revenda.length} clientes revenda encontrados`);
-
-      // ============================================================
-      // PASSO 2: Buscar contas a receber APENAS dos clientes revenda
-      // ============================================================
-      // O TOTVS recusa (HTTP 400) listas de clientes acima de ~1000 codigos e
-      // a revenda passa disso, entao a busca vai em lotes e o resultado e unido
-      const lotesClientes = [];
-      for (let i = 0; i < listaCodigosRevenda.length; i += LOTE_CLIENTES) {
-        lotesClientes.push(
-          listaCodigosRevenda.slice(i, i + LOTE_CLIENTES).join(','),
-        );
-      }
-
-      const buscarFaturasEmLotes = async (dtInicio, dtFim, status) => {
-        const itens = [];
-        // Em ondas para nao disparar dezenas de consultas simultaneas ao TOTVS
-        for (let i = 0; i < lotesClientes.length; i += LOTES_SIMULTANEOS) {
-          const onda = lotesClientes.slice(i, i + LOTES_SIMULTANEOS);
-          const respostas = await Promise.all(
-            onda.map((lote) => {
-              const params = new URLSearchParams({
-                dt_inicio: dtInicio,
-                dt_fim: dtFim,
-                modo: 'vencimento',
-                situacao: '1',
-                status,
-                cd_cliente: lote,
-              });
-              return fetch(
-                `${TotvsURL}accounts-receivable/filter?${params.toString()}`,
-              );
-            }),
-          );
-          for (const resp of respostas) {
-            if (!resp.ok) {
-              const errData = await resp.json().catch(() => ({}));
-              throw new Error(errData.message || `Erro HTTP ${resp.status}`);
-            }
-            const result = await resp.json();
-            itens.push(...(result.data?.items || []));
-          }
-        }
-        return itens;
-      };
-
-      console.log(
-        `🔍 Buscando inadimplentes (apenas revenda) via TOTVS em ${lotesClientes.length} lote(s)...`,
+      const faturasVencidas = todasVencidas.filter(
+        (i) => revendaMap[String(i.cd_cliente)],
       );
-
-      const [faturasVencidas, faturasAVencerTodas] = await Promise.all([
-        buscarFaturasEmLotes(dataIni, dataFim, 'Vencido'),
-        buscarFaturasEmLotes(amanhaStr, umAnoFrenteStr, 'Em Aberto').catch(
-          (err) => {
-            console.warn('⚠️ Falha ao buscar faturas a vencer:', err.message);
-            return [];
-          },
-        ),
-      ]);
+      const faturasAVencerTodas = todasAVencer.filter(
+        (i) => revendaMap[String(i.cd_cliente)],
+      );
 
       console.log(
         `📊 Faturas revenda — vencidas: ${faturasVencidas.length}, A vencer: ${faturasAVencerTodas.length}`,
@@ -1747,36 +1776,18 @@ Crosby`;
     c.isInactive === true || /inativo/i.test(c.customerStatus || '');
   const estaBloqueado = (c) => /bloque/i.test(c.customerStatus || '');
 
-  // ─── Aba Clientes Inativos: carga da lista com status ──────────────────────
-  const carregarStatusRevenda = useCallback(async (refresh = false) => {
-    setInativosLoading(true);
+  // ─── Aba Situacao dos Clientes ────────────────────────────────────────────
+  // A lista vem do proprio fetchDados: sao os clientes de revenda que tem
+  // fatura no periodo. Nao ha carga separada — listar os ~25 mil classificados
+  // era lento demais e derrubava a conexao com o TOTVS.
+  const carregarStatusRevenda = useCallback(async () => {
     setInativosErro(null);
-    try {
-      const resp = await fetch(
-        `${TotvsURL}reseller-clients${refresh ? '?refresh=true' : ''}`,
+    if (clientesRevenda.length === 0) {
+      setInativosErro(
+        'Use o filtro acima para carregar os dados — a situacao mostra os clientes de revenda com faturas no periodo.',
       );
-      if (!resp.ok) throw new Error(`Erro HTTP ${resp.status}`);
-      const result = await resp.json();
-      const lista = result.data || [];
-      // Cache antigo do backend pode não ter o campo isInactive — força refresh
-      if (!refresh && lista.length > 0 && lista[0].isInactive === undefined) {
-        return carregarStatusRevenda(true);
-      }
-      setClientesRevenda(lista);
-      setInativosCarregados(true);
-    } catch (e) {
-      setInativosErro(e.message || 'Erro ao carregar clientes.');
-    } finally {
-      setInativosLoading(false);
     }
-  }, []);
-
-  useEffect(() => {
-    if (viewMode === 'inativos' && !inativosCarregados && !inativosLoading) {
-      carregarStatusRevenda();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, inativosCarregados]);
+  }, [clientesRevenda]);
 
   // Valor vencido por cliente (a partir das faturas vencidas já carregadas)
   const valoresVencidosPorCliente = useMemo(() => {
