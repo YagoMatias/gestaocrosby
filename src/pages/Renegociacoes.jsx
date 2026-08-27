@@ -1,7 +1,14 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+} from 'react';
 import PageTitle from '../components/ui/PageTitle';
 import useApiClient from '../hooks/useApiClient';
 import * as XLSX from 'xlsx';
+import { toPng } from 'html-to-image';
 import {
   Funnel,
   Spinner,
@@ -11,6 +18,7 @@ import {
   MagnifyingGlass,
   CheckCircle,
   FileXls,
+  ImageSquare,
   CalendarBlank,
 } from '@phosphor-icons/react';
 
@@ -38,7 +46,7 @@ const FORNECEDORES_RENEGOCIADOS = [
     diaVencimento: 27,
     inicio: '2026-06',
   },
-  { cd: 12839, nome: 'TEXILFIO', diaVencimento: 23, inicio: '2026-05' },
+  { cd: 20950, nome: 'ARTECA', diaVencimento: 27, inicio: '2026-08' },
   {
     cd: 67813,
     nome: 'ELIAN INDUSTRIA TEXTIL LTDA',
@@ -49,6 +57,12 @@ const FORNECEDORES_RENEGOCIADOS = [
   { cd: 11766, nome: 'NOVAPELLI', diaVencimento: 27, inicio: '2026-07' },
   { cd: 6499, nome: 'LUNELLI TEXTIL LTDA', diaVencimento: 22, inicio: null },
   { cd: 6975, nome: 'VICUNHA', diaVencimento: 10, inicio: null },
+];
+
+// Duplicatas que não existem mais no contas a pagar mas ainda voltam na busca.
+// Todas as parcelas da duplicata são ignoradas. fornecedor = cd do TOTVS.
+const DUPLICATAS_IGNORADAS = [
+  { fornecedor: 67813, duplicata: '5459' }, // ELIAN — fatura cancelada
 ];
 
 // Filiais fixas — mesmo conjunto da página de despesas de indústria
@@ -277,6 +291,8 @@ const Renegociacoes = () => {
   const [dadosCarregados, setDadosCarregados] = useState(false);
   const [erro, setErro] = useState(null);
   const [modalParcelas, setModalParcelas] = useState(null);
+  const [gerandoPng, setGerandoPng] = useState(false);
+  const tabelaRef = useRef(null);
 
   // ─── Buscar dados ──────────────────────────────────────────────────────────
   const buscarDados = useCallback(async () => {
@@ -322,8 +338,20 @@ const Renegociacoes = () => {
         FORNECEDORES_RENEGOCIADOS.map((f) => String(f.cd)),
       );
 
+      const ignoradasSet = new Set(
+        DUPLICATAS_IGNORADAS.map(
+          (d) => `${d.fornecedor}|${String(d.duplicata).trim()}`,
+        ),
+      );
+
       const processados = dadosArray
         .filter((item) => codigosSet.has(String(item.cd_fornecedor)))
+        .filter(
+          (item) =>
+            !ignoradasSet.has(
+              `${item.cd_fornecedor}|${String(item.nr_duplicata ?? '').trim()}`,
+            ),
+        )
         .map((item) => ({
           ...item,
           nm_empresa:
@@ -403,16 +431,25 @@ const Renegociacoes = () => {
       // renegociação, independente do ano filtrado)
       let totalGeral = 0;
       let totalGeralPago = 0;
+      const gruposMes = new Map(); // anoMes -> itens da parcela
       itens.forEach((item) => {
         const d = criarDataSemFuso(item.dt_vencimento);
         if (!d) return;
-        if (forn.inicio) {
-          const anoMes = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-          if (anoMes < forn.inicio) return;
-        }
+        const anoMes = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        if (forn.inicio && anoMes < forn.inicio) return;
         const valor = parseFloat(item.vl_duplicata) || 0;
         totalGeral += valor;
         if (item.dt_liq) totalGeralPago += valor;
+        if (!gruposMes.has(anoMes)) gruposMes.set(anoMes, []);
+        gruposMes.get(anoMes).push(item);
+      });
+
+      // Parcelas de todo o período: cada mês com fatura é uma parcela;
+      // paga quando todas as faturas do mês têm dt_liq
+      const parcelasGeral = gruposMes.size;
+      let parcelasGeralPagas = 0;
+      gruposMes.forEach((grupo) => {
+        if (grupo.every((i) => i.dt_liq)) parcelasGeralPagas += 1;
       });
 
       return {
@@ -426,6 +463,9 @@ const Renegociacoes = () => {
         totalGeralPago,
         totalGeralAberto: totalGeral - totalGeralPago,
         qtdParcelas: numParcela,
+        parcelasGeral,
+        parcelasGeralPagas,
+        parcelasGeralAbertas: parcelasGeral - parcelasGeralPagas,
       };
     });
   }, [dados, ano]);
@@ -452,13 +492,23 @@ const Renegociacoes = () => {
   const totaisGerais = useMemo(() => {
     const total = linhas.reduce((s, l) => s + l.totalGeral, 0);
     const pago = linhas.reduce((s, l) => s + l.totalGeralPago, 0);
-    return { total, pago, aberto: total - pago };
+    const parcelas = linhas.reduce((s, l) => s + l.parcelasGeral, 0);
+    const parcelasPagas = linhas.reduce((s, l) => s + l.parcelasGeralPagas, 0);
+    return { total, pago, aberto: total - pago, parcelas, parcelasPagas };
   }, [linhas]);
 
   // ─── Exportar Excel (mesmo layout da planilha de renegociações) ────────────
   const exportarExcel = useCallback(() => {
     const aoa = [
-      ['Fornecedor', 'Vencimento', ...MESES, 'Total', 'Em Aberto', 'Pago'],
+      [
+        'Fornecedor',
+        'Vencimento',
+        ...MESES,
+        'Total',
+        'Em Aberto',
+        'Pago',
+        'Parcelas Pagas',
+      ],
     ];
     for (const linha of linhas) {
       aoa.push([
@@ -473,6 +523,7 @@ const Renegociacoes = () => {
         linha.totalGeral,
         linha.totalGeralAberto,
         linha.totalGeralPago,
+        `${linha.parcelasGeralPagas}/${linha.parcelasGeral}`,
       ]);
     }
     aoa.push([]);
@@ -483,6 +534,7 @@ const Renegociacoes = () => {
       totaisGerais.total,
       totaisGerais.aberto,
       totaisGerais.pago,
+      `${totaisGerais.parcelasPagas}/${totaisGerais.parcelas}`,
     ]);
 
     const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -493,11 +545,36 @@ const Renegociacoes = () => {
       { wch: 14 },
       { wch: 14 },
       { wch: 14 },
+      { wch: 14 },
     ];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Renegociações');
     XLSX.writeFile(wb, `renegociacoes-${ano}.xlsx`);
   }, [linhas, totaisMes, totaisGerais, ano]);
+
+  // ─── Baixar PNG da tabela (html-to-image: captura a tabela inteira na
+  // horizontal, mesmo a parte escondida pelo scroll) ─────────────────────────
+  const baixarPng = useCallback(async () => {
+    if (!tabelaRef.current) return;
+    setGerandoPng(true);
+    try {
+      const dataUrl = await toPng(tabelaRef.current, {
+        backgroundColor: '#ffffff',
+        pixelRatio: 2,
+        cacheBust: true,
+        quality: 1,
+      });
+      const link = document.createElement('a');
+      link.download = `renegociacoes-${ano}.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (e) {
+      console.error('Erro ao gerar imagem:', e);
+      alert('Erro ao baixar imagem: ' + e.message);
+    } finally {
+      setGerandoPng(false);
+    }
+  }, [ano]);
 
   // ─── Anos disponíveis no seletor ───────────────────────────────────────────
   const anos = useMemo(() => {
@@ -657,9 +734,35 @@ const Renegociacoes = () => {
                 <span className="w-3 h-3 rounded bg-gray-50 border border-gray-300 inline-block" />
                 A vencer
               </span>
+              <div className="ml-auto flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={baixarPng}
+                  disabled={gerandoPng}
+                  className="flex items-center gap-1.5 bg-[#000638] hover:opacity-90 text-white text-[10px] font-semibold px-3 py-1.5 rounded-lg transition disabled:opacity-60"
+                >
+                  {gerandoPng ? (
+                    <Spinner size={12} className="animate-spin" />
+                  ) : (
+                    <ImageSquare size={12} weight="bold" />
+                  )}
+                  {gerandoPng ? 'Gerando...' : 'PNG'}
+                </button>
+                <button
+                  type="button"
+                  onClick={exportarExcel}
+                  className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-semibold px-3 py-1.5 rounded-lg transition"
+                >
+                  <FileXls size={12} weight="bold" />
+                  Excel
+                </button>
+              </div>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full text-xs border-collapse">
+              {/* wrapper w-max: o PNG captura a largura total da tabela,
+                  não só a área visível do scroll */}
+              <div ref={tabelaRef} className="w-max min-w-full bg-white">
+                <table className="w-full text-xs border-collapse">
                 <thead>
                   <tr className="bg-[#000638] text-white">
                     <th className="px-4 py-2.5 text-left font-bold sticky left-0 bg-[#000638] z-10 min-w-[180px]">
@@ -752,6 +855,15 @@ const Renegociacoes = () => {
                         <span className="block text-[9px] text-green-600 font-semibold">
                           {formatarMoeda(linha.totalGeralPago)} pago
                         </span>
+                        {linha.parcelasGeral > 0 && (
+                          <span
+                            className="block text-[9px] text-gray-500 font-semibold"
+                            title={`${linha.parcelasGeralPagas} parcela(s) paga(s) de ${linha.parcelasGeral} · ${linha.parcelasGeralAbertas} em aberto`}
+                          >
+                            {linha.parcelasGeralPagas}/{linha.parcelasGeral}{' '}
+                            parcelas pagas
+                          </span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -777,10 +889,17 @@ const Renegociacoes = () => {
                       <span className="block text-[9px] text-green-600">
                         {formatarMoeda(totaisGerais.pago)} pago
                       </span>
+                      {totaisGerais.parcelas > 0 && (
+                        <span className="block text-[9px] text-gray-500">
+                          {totaisGerais.parcelasPagas}/{totaisGerais.parcelas}{' '}
+                          parcelas pagas
+                        </span>
+                      )}
                     </td>
                   </tr>
                 </tfoot>
-              </table>
+                </table>
+              </div>
             </div>
           </div>
         )}
