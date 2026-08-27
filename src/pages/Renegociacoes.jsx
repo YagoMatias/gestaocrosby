@@ -763,141 +763,141 @@ const Renegociacoes = () => {
                   não só a área visível do scroll */}
               <div ref={tabelaRef} className="w-max min-w-full bg-white">
                 <table className="w-full text-xs border-collapse">
-                <thead>
-                  <tr className="bg-[#000638] text-white">
-                    <th className="px-4 py-2.5 text-left font-bold sticky left-0 bg-[#000638] z-10 min-w-[180px]">
-                      Fornecedor
-                    </th>
-                    <th className="px-2 py-2.5 text-center font-semibold min-w-[70px]">
-                      <span className="inline-flex items-center gap-1">
-                        <CalendarBlank size={11} weight="bold" />
-                        Venc.
-                      </span>
-                    </th>
-                    {MESES.map((m) => (
-                      <th
-                        key={m}
-                        className="px-2 py-2.5 text-center font-semibold uppercase min-w-[85px]"
-                      >
-                        {m}
+                  <thead>
+                    <tr className="bg-[#000638] text-white">
+                      <th className="px-4 py-2.5 text-left font-bold sticky left-0 bg-[#000638] z-10 min-w-[180px]">
+                        Fornecedor
                       </th>
-                    ))}
-                    <th className="px-3 py-2.5 text-right font-bold min-w-[100px]">
-                      Total
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {linhas.map((linha) => (
-                    <tr
-                      key={linha.cd}
-                      className="border-b border-gray-100 hover:bg-gray-50 transition"
-                    >
-                      <td className="px-4 py-2 font-semibold text-[#000638] sticky left-0 bg-white z-10 border-r border-gray-100">
-                        {linha.nomeExibicao}
-                        <span className="block text-[9px] text-gray-400 font-normal">
-                          Cód. {linha.cd} · {linha.qtdParcelas} parcela(s)
+                      <th className="px-2 py-2.5 text-center font-semibold min-w-[70px]">
+                        <span className="inline-flex items-center gap-1">
+                          <CalendarBlank size={11} weight="bold" />
+                          Venc.
                         </span>
-                      </td>
-                      <td className="px-2 py-2 text-center text-gray-600 font-medium">
-                        {linha.diaVencimento
-                          ? `dia ${linha.diaVencimento}`
-                          : '—'}
-                      </td>
-                      {linha.meses.map((cel, m) => (
-                        <td
+                      </th>
+                      {MESES.map((m) => (
+                        <th
                           key={m}
-                          onClick={() =>
-                            cel.itens.length > 0 &&
-                            setModalParcelas({
-                              fornecedorNome: linha.nomeExibicao,
-                              mesLabel: MESES[m],
-                              ano,
-                              itens: cel.itens,
-                            })
-                          }
-                          className={`px-2 py-2 text-center align-middle ${
-                            cel.itens.length > 0
-                              ? `cursor-pointer ${STATUS_ESTILOS[cel.status].celula}`
-                              : 'text-gray-300'
-                          }`}
+                          className="px-2 py-2.5 text-center font-semibold uppercase min-w-[85px]"
                         >
-                          {cel.itens.length > 0 ? (
-                            <div>
-                              <span
-                                className={`block text-[9px] font-bold uppercase ${STATUS_ESTILOS[cel.status].label}`}
-                              >
-                                {cel.parcela}
-                                {cel.status === 'pago' && (
-                                  <CheckCircle
-                                    size={9}
-                                    weight="fill"
-                                    className="inline ml-0.5 mb-px"
-                                  />
-                                )}
-                              </span>
-                              <span className="font-semibold text-[#000638]">
-                                {formatarMoeda(cel.total)}
-                              </span>
-                            </div>
-                          ) : (
-                            '—'
+                          {m}
+                        </th>
+                      ))}
+                      <th className="px-3 py-2.5 text-right font-bold min-w-[100px]">
+                        Total
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {linhas.map((linha) => (
+                      <tr
+                        key={linha.cd}
+                        className="border-b border-gray-100 hover:bg-gray-50 transition"
+                      >
+                        <td className="px-4 py-2 font-semibold text-[#000638] sticky left-0 bg-white z-10 border-r border-gray-100">
+                          {linha.nomeExibicao}
+                          <span className="block text-[9px] text-gray-400 font-normal">
+                            Cód. {linha.cd} · {linha.qtdParcelas} parcela(s)
+                          </span>
+                        </td>
+                        <td className="px-2 py-2 text-center text-gray-600 font-medium">
+                          {linha.diaVencimento
+                            ? `dia ${linha.diaVencimento}`
+                            : '—'}
+                        </td>
+                        {linha.meses.map((cel, m) => (
+                          <td
+                            key={m}
+                            onClick={() =>
+                              cel.itens.length > 0 &&
+                              setModalParcelas({
+                                fornecedorNome: linha.nomeExibicao,
+                                mesLabel: MESES[m],
+                                ano,
+                                itens: cel.itens,
+                              })
+                            }
+                            className={`px-2 py-2 text-center align-middle ${
+                              cel.itens.length > 0
+                                ? `cursor-pointer ${STATUS_ESTILOS[cel.status].celula}`
+                                : 'text-gray-300'
+                            }`}
+                          >
+                            {cel.itens.length > 0 ? (
+                              <div>
+                                <span
+                                  className={`block text-[9px] font-bold uppercase ${STATUS_ESTILOS[cel.status].label}`}
+                                >
+                                  {cel.parcela}
+                                  {cel.status === 'pago' && (
+                                    <CheckCircle
+                                      size={9}
+                                      weight="fill"
+                                      className="inline ml-0.5 mb-px"
+                                    />
+                                  )}
+                                </span>
+                                <span className="font-semibold text-[#000638]">
+                                  {formatarMoeda(cel.total)}
+                                </span>
+                              </div>
+                            ) : (
+                              '—'
+                            )}
+                          </td>
+                        ))}
+                        <td className="px-3 py-2 text-right border-l border-gray-100 whitespace-nowrap">
+                          <span className="block font-bold text-[#000638]">
+                            {formatarMoeda(linha.totalGeral)}
+                          </span>
+                          <span className="block text-[9px] text-amber-600 font-semibold">
+                            {formatarMoeda(linha.totalGeralAberto)} em aberto
+                          </span>
+                          <span className="block text-[9px] text-green-600 font-semibold">
+                            {formatarMoeda(linha.totalGeralPago)} pago
+                          </span>
+                          {linha.parcelasGeral > 0 && (
+                            <span
+                              className="block text-[9px] text-gray-500 font-semibold"
+                              title={`${linha.parcelasGeralPagas} parcela(s) paga(s) de ${linha.parcelasGeral} · ${linha.parcelasGeralAbertas} em aberto`}
+                            >
+                              {linha.parcelasGeralPagas}/{linha.parcelasGeral}{' '}
+                              parcelas pagas
+                            </span>
                           )}
                         </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-gray-100 border-t-2 border-gray-300 font-bold text-[#000638]">
+                      <td className="px-4 py-2.5 sticky left-0 bg-gray-100 z-10">
+                        TOTAL ({ano})
+                      </td>
+                      <td />
+                      {totaisMes.map((t, m) => (
+                        <td key={m} className="px-2 py-2.5 text-center">
+                          {t > 0 ? formatarMoeda(t) : '—'}
+                        </td>
                       ))}
-                      <td className="px-3 py-2 text-right border-l border-gray-100 whitespace-nowrap">
-                        <span className="block font-bold text-[#000638]">
-                          {formatarMoeda(linha.totalGeral)}
+                      <td className="px-3 py-2.5 text-right whitespace-nowrap">
+                        <span className="block">
+                          {formatarMoeda(totaisGerais.total)}
                         </span>
-                        <span className="block text-[9px] text-amber-600 font-semibold">
-                          {formatarMoeda(linha.totalGeralAberto)} em aberto
+                        <span className="block text-[9px] text-amber-600">
+                          {formatarMoeda(totaisGerais.aberto)} em aberto
                         </span>
-                        <span className="block text-[9px] text-green-600 font-semibold">
-                          {formatarMoeda(linha.totalGeralPago)} pago
+                        <span className="block text-[9px] text-green-600">
+                          {formatarMoeda(totaisGerais.pago)} pago
                         </span>
-                        {linha.parcelasGeral > 0 && (
-                          <span
-                            className="block text-[9px] text-gray-500 font-semibold"
-                            title={`${linha.parcelasGeralPagas} parcela(s) paga(s) de ${linha.parcelasGeral} · ${linha.parcelasGeralAbertas} em aberto`}
-                          >
-                            {linha.parcelasGeralPagas}/{linha.parcelasGeral}{' '}
+                        {totaisGerais.parcelas > 0 && (
+                          <span className="block text-[9px] text-gray-500">
+                            {totaisGerais.parcelasPagas}/{totaisGerais.parcelas}{' '}
                             parcelas pagas
                           </span>
                         )}
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-gray-100 border-t-2 border-gray-300 font-bold text-[#000638]">
-                    <td className="px-4 py-2.5 sticky left-0 bg-gray-100 z-10">
-                      TOTAL ({ano})
-                    </td>
-                    <td />
-                    {totaisMes.map((t, m) => (
-                      <td key={m} className="px-2 py-2.5 text-center">
-                        {t > 0 ? formatarMoeda(t) : '—'}
-                      </td>
-                    ))}
-                    <td className="px-3 py-2.5 text-right whitespace-nowrap">
-                      <span className="block">
-                        {formatarMoeda(totaisGerais.total)}
-                      </span>
-                      <span className="block text-[9px] text-amber-600">
-                        {formatarMoeda(totaisGerais.aberto)} em aberto
-                      </span>
-                      <span className="block text-[9px] text-green-600">
-                        {formatarMoeda(totaisGerais.pago)} pago
-                      </span>
-                      {totaisGerais.parcelas > 0 && (
-                        <span className="block text-[9px] text-gray-500">
-                          {totaisGerais.parcelasPagas}/{totaisGerais.parcelas}{' '}
-                          parcelas pagas
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                </tfoot>
+                  </tfoot>
                 </table>
               </div>
             </div>
