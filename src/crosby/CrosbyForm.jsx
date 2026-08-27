@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { API_BASE_URL } from "../config/constants";
+import { maskDate, maskCep, onlyDigits, buscarCep, dataNascValida } from "./formHelpers";
 import "./crosby.css";
 
 // Hook: neutraliza o body global do app (flex/center/h-screen/font-barlow)
@@ -28,11 +29,11 @@ const FIELDS = [
   { name: "cpf", label: "CPF*", type: "text", placeholder: "CPF (Para gerar a NF do produto)*", required: true },
   { name: "empresa", label: "Nome da empresa, profissão ou négocio*", type: "text", placeholder: "Informe o nome ex: Advogado", required: true },
   { name: "instagram", label: "Instagram*", type: "text", placeholder: "Digite seu instagram @exemplo*", required: true },
-  { name: "nascimento", label: "Data de nascimento*", type: "text", placeholder: "Digite sua Data de Nascimento (só dígitos)*", required: true },
-  { name: "cep", label: "CEP*", type: "text", placeholder: "Digite seu CEP*", required: true },
-  { name: "endereco", label: "Endereço*", type: "text", placeholder: "Digite nome da rua (Rua exemplo)*", required: true },
-  { name: "numero", label: "Nº*", type: "text", placeholder: "Digite APENAS números*", required: true },
-  { name: "complemento", label: "Complemento*", type: "text", placeholder: "Apto, Bloco, Bairro*", required: true },
+  { name: "nascimento", label: "Data de nascimento*", type: "text", inputMode: "numeric", placeholder: "DD/MM/AAAA", required: true },
+  { name: "cep", label: "CEP*", type: "text", inputMode: "numeric", placeholder: "00000-000", required: true },
+  { name: "endereco", label: "Endereço*", type: "text", placeholder: "Rua/Avenida (preenchido pelo CEP)*", required: true },
+  { name: "numero", label: "Nº*", type: "text", inputMode: "numeric", placeholder: "Digite APENAS números*", required: true },
+  { name: "complemento", label: "Complemento", type: "text", placeholder: "Apto, Bloco (opcional)" },
 ];
 
 export default function CrosbyForm() {
@@ -40,24 +41,63 @@ export default function CrosbyForm() {
   const navigate = useNavigate();
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState("");
+  const [values, setValues] = useState({});
+  // Preenchido pelo ViaCEP a partir do CEP
+  const [cepInfo, setCepInfo] = useState({ cidade: "", estado: "", bairro: "" });
+  const [buscandoCep, setBuscandoCep] = useState(false);
+
+  const setField = (name, val) => setValues((v) => ({ ...v, [name]: val }));
+
+  function handleChange(name, raw) {
+    let val = raw;
+    if (name === "nascimento") val = maskDate(raw);
+    else if (name === "cep") val = maskCep(raw);
+    else if (name === "numero") val = onlyDigits(raw);
+    setField(name, val);
+  }
+
+  async function handleCepBlur() {
+    if (onlyDigits(values.cep || "").length !== 8) return;
+    setBuscandoCep(true);
+    const info = await buscarCep(values.cep);
+    setBuscandoCep(false);
+    if (info) {
+      setCepInfo({
+        cidade: info.localidade || "",
+        estado: info.uf || "",
+        bairro: info.bairro || "",
+      });
+      // Preenche a rua automaticamente (usuário ainda pode ajustar)
+      if (info.logradouro) setField("endereco", info.logradouro);
+    }
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
     setErro("");
-    const raw = Object.fromEntries(new FormData(e.currentTarget).entries());
-    // Mapeia 'nascimento' (campo do form) → 'data_nasc' (backend)
+
+    // Validação de nascimento (evita gravar data bagunçada)
+    if (!dataNascValida(values.nascimento)) {
+      setErro("Data de nascimento inválida. Use o formato DD/MM/AAAA.");
+      return;
+    }
+
     const payload = {
-      nome: raw.nome,
-      whatsapp: raw.whatsapp,
-      email: raw.email,
-      cpf: raw.cpf,
-      empresa: raw.empresa,
-      instagram: raw.instagram,
-      data_nasc: raw.nascimento,
-      cep: raw.cep,
-      endereco: raw.endereco,
-      numero: raw.numero,
-      complemento: raw.complemento,
+      nome: values.nome,
+      whatsapp: values.whatsapp,
+      email: values.email,
+      cpf: values.cpf,
+      empresa: values.empresa,
+      instagram: values.instagram,
+      data_nasc: values.nascimento,
+      cep: values.cep,
+      endereco: values.endereco,
+      numero: values.numero,
+      complemento: values.complemento,
+      // Derivados do CEP (padronizados)
+      cidade: cepInfo.cidade,
+      estado: cepInfo.estado,
+      bairro: cepInfo.bairro,
     };
     setEnviando(true);
     try {
@@ -68,7 +108,6 @@ export default function CrosbyForm() {
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j?.error || `Erro ${r.status}`);
-      // Redireciona pra página de agradecimento
       navigate("/lp/bluecard/obrigado");
     } catch (err) {
       setErro(err.message || "Falha ao enviar. Tenta de novo.");
@@ -115,9 +154,24 @@ export default function CrosbyForm() {
                   id={f.name}
                   name={f.name}
                   type={f.type}
+                  inputMode={f.inputMode}
                   placeholder={f.placeholder}
                   required={f.required}
+                  value={values[f.name] || ""}
+                  onChange={(e) => handleChange(f.name, e.target.value)}
+                  onBlur={f.name === "cep" ? handleCepBlur : undefined}
+                  maxLength={
+                    f.name === "nascimento" ? 10 : f.name === "cep" ? 9 : undefined
+                  }
                 />
+                {/* Cidade/UF/Bairro preenchidos pelo CEP (logo após o campo CEP) */}
+                {f.name === "cep" && (cepInfo.cidade || buscandoCep) && (
+                  <div className="cb-cep-info">
+                    {buscandoCep
+                      ? "Buscando endereço pelo CEP…"
+                      : `${cepInfo.bairro ? cepInfo.bairro + " · " : ""}${cepInfo.cidade}${cepInfo.estado ? "/" + cepInfo.estado : ""}`}
+                  </div>
+                )}
               </div>
             ))}
             {erro && (
