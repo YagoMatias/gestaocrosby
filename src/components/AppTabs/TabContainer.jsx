@@ -19,7 +19,9 @@ const PAGE_COMPONENTS = {
 
   // ---- Financeiro › Contas a Receber ----
   '/contas-a-receber': lazy(() => import('../../pages/ContasAReceber')),
-  '/dash-contas-a-receber': lazy(() => import('../../pages/DashContasAReceber')),
+  '/dash-contas-a-receber': lazy(
+    () => import('../../pages/DashContasAReceber'),
+  ),
   '/dash-inadimplencia': lazy(() => import('../../pages/DashInadimplencia')),
   '/metas-inadimplencia': lazy(() => import('../../pages/MetasInadimplencia')),
   '/esteira-protesto': lazy(() => import('../../pages/EsteiraProtesto')),
@@ -32,13 +34,29 @@ const PAGE_COMPONENTS = {
   // ---- Financeiro › demais ----
   '/conciliacao-stone': lazy(() => import('../../pages/ConciliacaoStone')),
   '/dre': lazy(() => import('../../pages/DRE')),
-  '/automacao-financeiro': lazy(() => import('../../pages/AutomacaoFinanceiro')),
+  '/automacao-financeiro': lazy(
+    () => import('../../pages/AutomacaoFinanceiro'),
+  ),
+
+  // ---- Financeiro › Fiscal ----
+  '/manifestacao-destinatario': lazy(
+    () => import('../../pages/ManifestacaoDestinatario'),
+  ),
 
   // ---- Solicitações Crosby ----
   '/solicitacoes-crosby': lazy(() => import('../../pages/SolicitacoesCrosby')),
   '/solicitacoes-crosby/compras-manutencao': lazy(
     () => import('../../pages/SolicitacoesCrosbyComprasManutencao'),
   ),
+  '/tecnologia/chamados-dryland': lazy(
+    () => import('../../pages/ChamadosDryland'),
+  ),
+
+  // ---- RH ----
+  '/rh/vagas': lazy(() => import('../../pages/rh/Vagas')),
+
+  // ---- Showroom ----
+  '/showroom': lazy(() => import('../../pages/Showroom')),
 
   // ---- Clientes ----
   '/cadastrar-cliente': lazy(() => import('../../pages/CadastrarCliente')),
@@ -86,6 +104,95 @@ const PAGE_COMPONENTS = {
   '/clientes-cashback-franquia': lazy(
     () => import('../../pages/ClientesCashbackFranquia'),
   ),
+  '/clientes-inativos-franquia': lazy(
+    () => import('../../pages/ClientesInativosFranquia'),
+  ),
+
+  // ---- Varejo ----
+  '/dashboard-varejo': lazy(() => import('../../pages/DashboardVarejo')),
+  '/metas-varejo': lazy(() => import('../../pages/MetasVarejo')),
+  '/titulos-clientes-varejo': lazy(
+    () => import('../../pages/TitulosClientesVarejo'),
+  ),
+  '/voucher-varejo': lazy(() => import('../../pages/VoucherVarejo')),
+  '/promocoes': lazy(() => import('../../pages/Promocoes')),
+  '/credev-varejo': lazy(() => import('../../pages/CredevVarejo')),
+
+  // ---- Varejo › BlueCred ----
+  '/dashboard-bluecred': lazy(() => import('../../pages/DashboardBluecred')),
+  '/cobranca-bluecard': lazy(() => import('../../pages/CobrancaBluecard')),
+  '/documento-bluecred': lazy(() => import('../../pages/DocumentoBluecred')),
+  '/clientes-bluecred': lazy(() => import('../../pages/ClientesBluecred')),
+  '/antecipacao-bluecred': lazy(() => import('../../pages/AntecipacaoBoletos')),
+
+  // ---- Marketing ----
+  '/bluecard/leads': lazy(() => import('../../pages/BluecardLeads')),
+  '/crosby-bot': lazy(() => import('../../pages/CrosbyBot')),
+
+  // ---- Revenda ----
+  '/inadimplentes-revenda': lazy(
+    () => import('../../pages/InadimplentesRevenda'),
+  ),
+
+  // ---- Franquias ----
+  '/compras-franquias': lazy(() => import('../../pages/ComprasFranquias')),
+  '/inadimplentes-franquias': lazy(
+    () => import('../../pages/InadimplentesFranquias'),
+  ),
+  '/estoque/expedicao-showroom': lazy(
+    () => import('../../pages/ExpedicaoShowroom'),
+  ),
+
+  // ---- Expedição ----
+  '/duplicata-vendas': lazy(() => import('../../pages/DuplicataVendas')),
+
+  // ---- Antecipações ----
+  '/faturas-clientes-antecipacao': lazy(
+    () => import('../../pages/FaturasClientesConfianca'),
+  ),
+  '/nf-clientes-antecipacao': lazy(
+    () => import('../../pages/NotasFiscaisClientesConfianca'),
+  ),
+  '/comprovantes-antecipacao': lazy(
+    () => import('../../pages/ComprovantesConfianca'),
+  ),
+  '/clientes-antecipacao': lazy(() => import('../../pages/ClientesConfianca')),
+  '/licitacao-titulos': lazy(() => import('../../pages/LicitacaoTitulos')),
+  '/solicitacoes-remessa': lazy(
+    () => import('../../pages/SolicitacoesRemessa'),
+  ),
+  '/minhas-remessas': lazy(() => import('../../pages/MinhasRemessas')),
+
+  // ---- Recuperação de Crédito ----
+  '/recuperacao-credito': lazy(() => import('../../pages/RecuperacaoCredito')),
+
+  // ---- Tecnologia ----
+  '/tecnologia/controle-chip': lazy(() => import('../../pages/ControleChips')),
+  '/tecnologia/inventario-patrimonio': lazy(
+    () => import('../../pages/InventarioPatrimonio'),
+  ),
+  '/tecnologia/leitura-rfid': lazy(() => import('../../pages/LeituraRFID')),
+  '/tecnologia/pdv-rfid': lazy(() => import('../../pages/PDVRfid')),
+  '/tecnologia/etiquetas-preco': lazy(
+    () => import('../../pages/EtiquetasPreco'),
+  ),
+  '/tecnologia/cotacao-compras': lazy(
+    () => import('../../pages/CotacaoCompras'),
+  ),
+  '/tecnologia/monitoramento-totvs': lazy(
+    () => import('../../pages/MonitoramentoTotvs'),
+  ),
+  '/tecnologia/clientes-por-empresa': lazy(
+    () => import('../../pages/ClientesPorEmpresa'),
+  ),
+  '/tecnologia/criar-vouchers': lazy(() => import('../../pages/CriarVouchers')),
+
+  // ---- Administração ----
+  '/painel-admin': lazy(() => import('../../pages/PainelAdmin')),
+  '/gerenciador-acessos': lazy(() => import('../../pages/GerenciadorAcessos')),
+  '/gerenciador-avisos': lazy(() => import('../../pages/GerenciadorAvisos')),
+  '/api-claude': lazy(() => import('../../pages/ApiClaude')),
+  '/crosby-manage': lazy(() => import('../../pages/CrosbyManage')),
 
   // ---- Ranking ----
   '/ranking-faturamento': lazy(() => import('../../pages/RankingFaturamento')),

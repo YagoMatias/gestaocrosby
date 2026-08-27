@@ -135,6 +135,13 @@ const TABBED_PAGES = {
     dot: 'bg-emerald-500',
   },
 
+  // ---- Financeiro › Fiscal ----
+  '/manifestacao-destinatario': {
+    label: 'Manifestação Destinatário',
+    group: 'Fiscal',
+    dot: 'bg-amber-500',
+  },
+
   // ---- Solicitações Crosby ----
   '/solicitacoes-crosby': {
     label: 'Solicitações Crosby',
@@ -145,6 +152,25 @@ const TABBED_PAGES = {
     label: 'Compras & Manutenção',
     group: 'Solicitações Crosby',
     dot: 'bg-orange-500',
+  },
+  '/tecnologia/chamados-dryland': {
+    label: 'Chamados Dryland',
+    group: 'Solicitações Crosby',
+    dot: 'bg-orange-500',
+  },
+
+  // ---- RH ----
+  '/rh/vagas': {
+    label: 'Vagas & Banco de Talentos',
+    group: 'RH',
+    dot: 'bg-blue-500',
+  },
+
+  // ---- Showroom ----
+  '/showroom': {
+    label: 'Showroom',
+    group: 'Showroom',
+    dot: 'bg-emerald-500',
   },
 
   // ---- Clientes ----
@@ -201,7 +227,7 @@ const TABBED_PAGES = {
     dot: 'bg-sky-500',
   },
   '/ranking-compras-franquias': {
-    label: 'Compras Franquias',
+    label: 'Compras Franquias (Sellin)',
     group: 'Painel de Vendas',
     dot: 'bg-sky-500',
   },
@@ -278,6 +304,231 @@ const TABBED_PAGES = {
     label: 'Clientes com Cashback',
     group: 'Minha Franquia',
     dot: 'bg-amber-500',
+  },
+  '/clientes-inativos-franquia': {
+    label: 'Clientes Inativos',
+    group: 'Minha Franquia',
+    dot: 'bg-amber-500',
+  },
+
+  // ---- Varejo ----
+  '/dashboard-varejo': {
+    label: 'Dashboard Varejo',
+    group: 'Varejo',
+    dot: 'bg-green-500',
+  },
+  '/metas-varejo': {
+    label: 'Metas Varejo',
+    group: 'Varejo',
+    dot: 'bg-green-500',
+  },
+  '/titulos-clientes-varejo': {
+    label: 'Portal de Títulos Varejo',
+    group: 'Varejo',
+    dot: 'bg-green-500',
+  },
+  '/voucher-varejo': {
+    label: 'Voucher Varejo',
+    group: 'Varejo',
+    dot: 'bg-green-500',
+  },
+  '/promocoes': {
+    label: 'Promoções',
+    group: 'Varejo',
+    dot: 'bg-green-500',
+  },
+  '/credev-varejo': {
+    label: 'CREDEV Varejo',
+    group: 'Varejo',
+    dot: 'bg-green-500',
+  },
+
+  // ---- Varejo › BlueCred ----
+  '/dashboard-bluecred': {
+    label: 'Dashboard BlueCred',
+    group: 'BlueCred',
+    dot: 'bg-blue-500',
+  },
+  '/cobranca-bluecard': {
+    label: 'Cobrança BlueCard',
+    group: 'BlueCred',
+    dot: 'bg-blue-500',
+  },
+  '/documento-bluecred': {
+    label: 'Documentos Bluecred',
+    group: 'BlueCred',
+    dot: 'bg-blue-500',
+  },
+  '/clientes-bluecred': {
+    label: 'Clientes Bluecred',
+    group: 'BlueCred',
+    dot: 'bg-blue-500',
+  },
+  '/antecipacao-bluecred': {
+    label: 'Antecipação BlueCred',
+    group: 'BlueCred',
+    dot: 'bg-blue-500',
+  },
+
+  // ---- Marketing ----
+  '/bluecard/leads': {
+    label: 'BlueCard Leads',
+    group: 'Marketing',
+    dot: 'bg-pink-500',
+  },
+  '/crosby-bot': {
+    label: 'Crosby Bot',
+    group: 'Marketing',
+    dot: 'bg-pink-500',
+  },
+
+  // ---- Revenda ----
+  '/inadimplentes-revenda': {
+    label: 'Inadimplentes Revenda',
+    group: 'Revenda',
+    dot: 'bg-blue-500',
+  },
+
+  // ---- Franquias ----
+  '/compras-franquias': {
+    label: 'Compras Franquias',
+    group: 'Franquias',
+    dot: 'bg-amber-500',
+  },
+  '/inadimplentes-franquias': {
+    label: 'Inadimplentes Franquias',
+    group: 'Franquias',
+    dot: 'bg-amber-500',
+  },
+  '/estoque/expedicao-showroom': {
+    label: 'Expedição Franquias',
+    group: 'Franquias',
+    dot: 'bg-amber-500',
+  },
+
+  // ---- Expedição ----
+  '/duplicata-vendas': {
+    label: 'Duplicata de Vendas',
+    group: 'Expedição',
+    dot: 'bg-teal-500',
+  },
+
+  // ---- Antecipações ----
+  '/faturas-clientes-antecipacao': {
+    label: 'Faturas Antecipação',
+    group: 'Antecipações',
+    dot: 'bg-amber-500',
+  },
+  '/nf-clientes-antecipacao': {
+    label: 'NFs Antecipação',
+    group: 'Antecipações',
+    dot: 'bg-amber-500',
+  },
+  '/comprovantes-antecipacao': {
+    label: 'Comprovantes Antecipação',
+    group: 'Antecipações',
+    dot: 'bg-amber-500',
+  },
+  '/clientes-antecipacao': {
+    label: 'Clientes Antecipação',
+    group: 'Antecipações',
+    dot: 'bg-amber-500',
+  },
+  '/licitacao-titulos': {
+    label: 'Licitação de Títulos',
+    group: 'Antecipações',
+    dot: 'bg-amber-500',
+  },
+  '/solicitacoes-remessa': {
+    label: 'Solicitações de Remessa',
+    group: 'Antecipações',
+    dot: 'bg-amber-500',
+  },
+  '/minhas-remessas': {
+    label: 'Minhas Remessas',
+    group: 'Antecipações',
+    dot: 'bg-amber-500',
+  },
+
+  // ---- Recuperação de Crédito ----
+  '/recuperacao-credito': {
+    label: 'Recuperação de Crédito',
+    group: 'Recuperação de Crédito',
+    dot: 'bg-red-500',
+  },
+
+  // ---- Tecnologia ----
+  '/tecnologia/controle-chip': {
+    label: 'Controle de Chip',
+    group: 'Tecnologia',
+    dot: 'bg-cyan-500',
+  },
+  '/tecnologia/inventario-patrimonio': {
+    label: 'Inventário de Patrimônio',
+    group: 'Tecnologia',
+    dot: 'bg-cyan-500',
+  },
+  '/tecnologia/leitura-rfid': {
+    label: 'Leitura de RFID',
+    group: 'Tecnologia',
+    dot: 'bg-cyan-500',
+  },
+  '/tecnologia/pdv-rfid': {
+    label: 'PDV RFID',
+    group: 'Tecnologia',
+    dot: 'bg-cyan-500',
+  },
+  '/tecnologia/etiquetas-preco': {
+    label: 'Etiquetas de Preço',
+    group: 'Tecnologia',
+    dot: 'bg-cyan-500',
+  },
+  '/tecnologia/cotacao-compras': {
+    label: 'Cotação de Compras',
+    group: 'Tecnologia',
+    dot: 'bg-cyan-500',
+  },
+  '/tecnologia/monitoramento-totvs': {
+    label: 'Monitoramento TOTVS',
+    group: 'Tecnologia',
+    dot: 'bg-cyan-500',
+  },
+  '/tecnologia/clientes-por-empresa': {
+    label: 'Clientes por Filial',
+    group: 'Tecnologia',
+    dot: 'bg-cyan-500',
+  },
+  '/tecnologia/criar-vouchers': {
+    label: 'Criar Vouchers',
+    group: 'Tecnologia',
+    dot: 'bg-cyan-500',
+  },
+
+  // ---- Administração ----
+  '/painel-admin': {
+    label: 'Painel Admin',
+    group: 'Administração',
+    dot: 'bg-red-500',
+  },
+  '/gerenciador-acessos': {
+    label: 'Gerenciador de Acessos',
+    group: 'Administração',
+    dot: 'bg-red-500',
+  },
+  '/gerenciador-avisos': {
+    label: 'Gerenciador de Avisos',
+    group: 'Administração',
+    dot: 'bg-red-500',
+  },
+  '/api-claude': {
+    label: 'API Claude',
+    group: 'Administração',
+    dot: 'bg-red-500',
+  },
+  '/crosby-manage': {
+    label: 'Crosby Manage',
+    group: 'Administração',
+    dot: 'bg-red-500',
   },
 
   // ---- Ranking ----
