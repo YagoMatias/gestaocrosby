@@ -24,142 +24,195 @@ import {
   Info,
 } from '@phosphor-icons/react';
 
-// Lista de todas as páginas do sistema (sincronizada com App.jsx e Sidebar)
+// Lista de todas as páginas do sistema, organizada com as mesmas seções da
+// Sidebar (mesma ordem, mesmos agrupamentos) para facilitar a conferência.
 const AVAILABLE_PAGES = [
-  // Principal
+  // ─── Principal ──────────────────────────────────────────────
   { path: '/home', name: 'Home', category: 'Principal' },
+  { path: '/user-panel', name: 'Painel do Usuário', category: 'Principal' },
+
+  // ─── Solicitações Crosby ────────────────────────────────────
   {
     path: '/solicitacoes-crosby',
     name: 'Solicitações Crosby',
-    category: 'Principal',
+    category: 'Solicitações Crosby',
+  },
+  {
+    path: '/formulario-solicitacoes',
+    name: 'Formulário de Solicitações',
+    category: 'Solicitações Crosby',
   },
   {
     path: '/solicitacoes-crosby/compras-manutencao',
     name: 'Compras & Manutenção',
-    category: 'Principal',
+    category: 'Solicitações Crosby',
   },
   {
     path: '/tecnologia/chamados-dryland',
     name: 'Chamados Dryland',
-    category: 'Principal',
+    category: 'Solicitações Crosby',
   },
-  {
-    path: '/cadastrar-cliente',
-    name: 'Cadastrar Cliente',
-    category: 'Principal',
-  },
-  {
-    path: '/solicitacoes-crosby-rh',
-    name: 'Solicitações Crosby RH (dados sensíveis)',
-    category: 'Principal',
-  },
-  { path: '/user-panel', name: 'Painel do Usuário', category: 'Principal' },
 
-  // RH — Banco de Talentos
+  // ─── RH / Banco de Talentos ─────────────────────────────────
   {
     path: '/rh/vagas',
     name: 'Vagas & Banco de Talentos',
-    category: 'RH',
+    category: 'RH / Banco de Talentos',
   },
   {
     path: '/rh/inscricoes',
     name: 'Inscrições da Vaga (candidatos e currículos)',
-    category: 'RH',
+    category: 'RH / Banco de Talentos',
   },
   {
     path: '/rh/documentos',
     name: 'Admissão — Documentos (dados sensíveis)',
-    category: 'RH',
+    category: 'RH / Banco de Talentos',
   },
 
-  // Financeiro
-  { path: '/contas-a-pagar', name: 'Contas a Pagar', category: 'Financeiro' },
+  // ─── Clientes ───────────────────────────────────────────────
   {
-    path: '/manifestacao-destinatario',
-    name: 'Manifestação do Destinatário',
-    category: 'Financeiro',
+    path: '/cadastrar-cliente',
+    name: 'Cadastrar Cliente',
+    category: 'Clientes',
   },
-  { path: '/emprestimos', name: 'Empréstimos', category: 'Financeiro' },
+  { path: '/consulta-cliente', name: 'Consulta Cliente', category: 'Clientes' },
+  { path: '/clientes-totvs', name: 'Clientes TOTVS', category: 'Clientes' },
+  {
+    path: '/creditos-clientes',
+    name: 'Créditos Clientes',
+    category: 'Clientes',
+  },
+  { path: '/top-clientes', name: 'Top Clientes', category: 'Clientes' },
+
+  // ─── Showroom ───────────────────────────────────────────────
+  {
+    path: '/showroom',
+    name: 'Showroom — Pedidos (Wix)',
+    category: 'Showroom',
+  },
+
+  // ─── Financeiro › Contas a Pagar ────────────────────────────
+  {
+    path: '/contas-a-pagar',
+    name: 'Consulta (Contas a Pagar)',
+    category: 'Financeiro — Contas a Pagar',
+  },
+  {
+    path: '/dash-contas-a-pagar',
+    name: 'Dashboard (Contas a Pagar)',
+    category: 'Financeiro — Contas a Pagar',
+  },
+  {
+    path: '/emprestimos',
+    name: 'Empréstimos',
+    category: 'Financeiro — Contas a Pagar',
+  },
   {
     path: '/despesa-filial',
-    name: 'Despesas por Filial',
-    category: 'Financeiro',
+    name: 'Controle de Filiais',
+    category: 'Financeiro — Contas a Pagar',
   },
   {
     path: '/despesas-fixas',
     name: 'Despesas Fixas',
-    category: 'Financeiro',
+    category: 'Financeiro — Contas a Pagar',
   },
   {
     path: '/despesas-industria',
     name: 'Despesas de Indústria',
-    category: 'Financeiro',
+    category: 'Financeiro — Contas a Pagar',
   },
   {
     path: '/renegociacoes',
     name: 'Renegociações',
-    category: 'Financeiro',
+    category: 'Financeiro — Contas a Pagar',
   },
   {
     path: '/cto',
     name: 'CTO (Custos Operacionais)',
-    category: 'Financeiro',
+    category: 'Financeiro — Contas a Pagar',
   },
   {
     path: '/liberacao-pagamento',
     name: 'Liberação de Pagamento',
-    category: 'Financeiro',
+    category: 'Financeiro — Contas a Pagar',
   },
   {
     path: '/pagamentos-fabricas',
     name: 'Pagamentos Fábricas',
-    category: 'Financeiro',
+    category: 'Financeiro — Contas a Pagar',
   },
+
+  // ─── Financeiro › Fiscal ────────────────────────────────────
   {
-    path: '/contas-a-pagar-emissao',
-    name: 'Contas a Pagar (Emissão)',
-    category: 'Financeiro',
+    path: '/manifestacao-destinatario',
+    name: 'Manifestação do Destinatário',
+    category: 'Financeiro — Fiscal',
   },
+
+  // ─── Financeiro › Contas a Receber ──────────────────────────
   {
     path: '/contas-a-receber',
-    name: 'Contas a Receber',
-    category: 'Financeiro',
+    name: 'Consulta (Contas a Receber)',
+    category: 'Financeiro — Contas a Receber',
   },
-  {
-    path: '/analise-credito',
-    name: 'Análise de Crédito',
-    category: 'Financeiro',
-  },
-  {
-    path: '/batida-carteira',
-    name: 'Batida de Carteira',
-    category: 'Financeiro',
-  },
-  { path: '/dre', name: 'DRE', category: 'Financeiro' },
   {
     path: '/dash-contas-a-receber',
-    name: 'Dash Contas a Receber',
-    category: 'Financeiro',
+    name: 'Dashboard (Contas a Receber)',
+    category: 'Financeiro — Contas a Receber',
   },
   {
     path: '/dash-inadimplencia',
-    name: 'Dash Inadimplência',
-    category: 'Financeiro',
+    name: 'Dashboard Inadimplência',
+    category: 'Financeiro — Contas a Receber',
   },
   {
     path: '/metas-inadimplencia',
     name: 'Metas Inadimplência',
-    category: 'Financeiro',
+    category: 'Financeiro — Contas a Receber',
   },
   {
     path: '/esteira-protesto',
     name: 'Esteira de Protesto',
-    category: 'Financeiro',
+    category: 'Financeiro — Contas a Receber',
   },
-  { path: '/pmr', name: 'PMR', category: 'Financeiro' },
+  {
+    path: '/call-center',
+    name: 'Call Center',
+    category: 'Financeiro — Contas a Receber',
+  },
+  {
+    path: '/pmr',
+    name: 'Dashboard PMR',
+    category: 'Financeiro — Contas a Receber',
+  },
+  {
+    path: '/batida-carteira',
+    name: 'Batida de Carteira',
+    category: 'Financeiro — Contas a Receber',
+  },
   {
     path: '/solicitacao-baixa',
     name: 'Solicitação de Baixa',
+    category: 'Financeiro — Contas a Receber',
+  },
+  {
+    path: '/analise-credito',
+    name: 'Análise de Crédito',
+    category: 'Financeiro — Contas a Receber',
+  },
+
+  // ─── Financeiro (demais) ────────────────────────────────────
+  {
+    path: '/conciliacao-stone',
+    name: 'Conciliação (Stone)',
+    category: 'Financeiro',
+  },
+  { path: '/dre', name: 'DRE', category: 'Financeiro' },
+  {
+    path: '/automacao-financeiro',
+    name: 'Automação Financeiro',
     category: 'Financeiro',
   },
   {
@@ -168,77 +221,92 @@ const AVAILABLE_PAGES = [
     category: 'Financeiro',
   },
 
-  // CMV
+  // ─── Painel de Vendas ───────────────────────────────────────
+  {
+    path: '/painel-vendas',
+    name: 'Painel de Vendas',
+    category: 'Painel de Vendas',
+  },
+  { path: '/crm-vendas', name: 'CRM de Vendas', category: 'Painel de Vendas' },
+  { path: '/forecast', name: 'Forecast (Hub)', category: 'Painel de Vendas' },
+  {
+    path: '/new-forecast',
+    name: 'New Forecast',
+    category: 'Painel de Vendas',
+  },
+  {
+    path: '/forecast/faturamento-historico',
+    name: 'Forecast — Faturamento Detalhado',
+    category: 'Painel de Vendas',
+  },
+  {
+    path: '/dashboard-vendas',
+    name: 'Forecast — Dashboard Vendas',
+    category: 'Painel de Vendas',
+  },
+  {
+    path: '/crm/competicao',
+    name: 'Painel Competição (B2R × B2M)',
+    category: 'Painel de Vendas',
+  },
+  {
+    path: '/ranking-compras-franquias',
+    name: 'Compras Franquias (Sellin)',
+    category: 'Painel de Vendas',
+  },
+  {
+    path: '/totvs',
+    name: 'Faturamento TOTVS',
+    category: 'Painel de Vendas',
+  },
+  {
+    path: '/catalogo-admin',
+    name: 'Catálogo Virtual',
+    category: 'Painel de Vendas',
+  },
 
-  // Varejo
+  // ─── Varejo ─────────────────────────────────────────────────
   { path: '/dashboard-varejo', name: 'Dashboard Varejo', category: 'Varejo' },
   { path: '/metas-varejo', name: 'Metas Varejo', category: 'Varejo' },
+  {
+    path: '/titulos-clientes-varejo',
+    name: 'Portal de Títulos Varejo',
+    category: 'Varejo',
+  },
   { path: '/voucher-varejo', name: 'Voucher Varejo', category: 'Varejo' },
   { path: '/promocoes', name: 'Promoções', category: 'Varejo' },
   { path: '/credev-varejo', name: 'CREDEV Varejo', category: 'Varejo' },
-  { path: '/top-clientes', name: 'Top Clientes', category: 'Varejo' },
   {
     path: '/dashboard-bluecred',
-    name: 'Dashboard Bluecred',
-    category: 'Varejo',
+    name: 'BlueCred — Dashboard',
+    category: 'Varejo — BlueCred',
   },
   {
     path: '/cobranca-bluecard',
-    name: 'Cobrança BlueCard',
-    category: 'Varejo',
+    name: 'BlueCred — Cobrança',
+    category: 'Varejo — BlueCred',
   },
   {
     path: '/documento-bluecred',
-    name: 'Documento Bluecred',
-    category: 'Varejo',
+    name: 'BlueCred — Documentos',
+    category: 'Varejo — BlueCred',
   },
   {
     path: '/clientes-bluecred',
-    name: 'Clientes Bluecred',
-    category: 'Varejo',
+    name: 'BlueCred — Clientes',
+    category: 'Varejo — BlueCred',
   },
   {
     path: '/antecipacao-bluecred',
-    name: 'Antecipação Bluecred',
-    category: 'Varejo',
+    name: 'BlueCred — Antecipação',
+    category: 'Varejo — BlueCred',
   },
 
-  // Estoque
-  {
-    path: '/estoque/expedicao-showroom',
-    name: 'Expedição Franquias',
-    category: 'Estoque',
-  },
-
-  // Showroom
-  {
-    path: '/showroom',
-    name: 'Showroom — Pedidos (Wix)',
-    category: 'Showroom',
-  },
-
-  // Marketing
-  {
-    path: '/bluecard/leads',
-    name: 'BlueCard — Leads',
-    category: 'Marketing',
-  },
-  {
-    path: '/lp/bluecard',
-    name: 'BlueCard — Página Pública (LP)',
-    category: 'Marketing',
-  },
-
-  // Multimarcas
+  // ─── Multimarcas ────────────────────────────────────────────
   {
     path: '/inadimplentes-multimarcas',
     name: 'Inadimplentes Multimarcas',
     category: 'Multimarcas',
-  },
-  {
-    path: '/call-center',
-    name: 'Call Center',
-    category: 'Financeiro',
   },
   {
     path: '/minhas-solicitacoes-baixa',
@@ -250,30 +318,21 @@ const AVAILABLE_PAGES = [
     name: 'Portal de Títulos MTM',
     category: 'Multimarcas',
   },
-  {
-    path: '/clientes-mtm',
-    name: 'Clientes MTM',
-    category: 'Multimarcas',
-  },
+  { path: '/clientes-mtm', name: 'Clientes MTM', category: 'Multimarcas' },
   {
     path: '/analise-credito-mtm',
     name: 'Análise de Crédito (MTM)',
     category: 'Multimarcas',
   },
 
-  // Revenda
+  // ─── Revenda ────────────────────────────────────────────────
   {
     path: '/inadimplentes-revenda',
     name: 'Inadimplentes Revenda',
     category: 'Revenda',
   },
 
-  // Franquias
-  {
-    path: '/voucher-usage',
-    name: 'Vouchers',
-    category: 'Franquias',
-  },
+  // ─── Franquias ──────────────────────────────────────────────
   {
     path: '/compras-franquias',
     name: 'Compras Franquias',
@@ -285,47 +344,39 @@ const AVAILABLE_PAGES = [
     category: 'Franquias',
   },
   {
-    path: '/minhas-solicitacoes-baixa',
-    name: 'Minhas Solicitações de Baixa',
+    path: '/estoque/expedicao-showroom',
+    name: 'Expedição Franquias',
     category: 'Franquias',
   },
 
-  // Recuperação de Crédito
+  // ─── Marketing ──────────────────────────────────────────────
+  {
+    path: '/bluecard/leads',
+    name: 'BlueCard — Leads',
+    category: 'Marketing',
+  },
+  {
+    path: '/lp/bluecard',
+    name: 'BlueCard — Página Pública (LP)',
+    category: 'Marketing',
+  },
+  { path: '/crosby-bot', name: 'Crosby Bot', category: 'Marketing' },
+
+  // ─── Recuperação de Crédito ─────────────────────────────────
   {
     path: '/recuperacao-credito',
     name: 'Recuperação de Crédito',
     category: 'Recuperação de Crédito',
   },
 
-  // Minha Franquia
+  // ─── Expedição ──────────────────────────────────────────────
   {
-    path: '/contas-pagar-franquias',
-    name: 'Contas a Pagar Franquias',
-    category: 'Minha Franquia',
-  },
-  { path: '/notas-fiscais', name: 'Notas Fiscais', category: 'Minha Franquia' },
-  {
-    path: '/aniversariantes-franquia',
-    name: 'Aniversariantes',
-    category: 'Minha Franquia',
-  },
-  {
-    path: '/pos-vendas-franquia',
-    name: 'Pós-Vendas',
-    category: 'Minha Franquia',
-  },
-  {
-    path: '/clientes-cashback-franquia',
-    name: 'Clientes com Cashback',
-    category: 'Minha Franquia',
-  },
-  {
-    path: '/clientes-inativos-franquia',
-    name: 'Clientes Inativos',
-    category: 'Minha Franquia',
+    path: '/duplicata-vendas',
+    name: 'Duplicata de Vendas',
+    category: 'Expedição',
   },
 
-  // Antecipações
+  // ─── Antecipações ───────────────────────────────────────────
   {
     path: '/faturas-clientes-antecipacao',
     name: 'Faturas Clientes',
@@ -362,82 +413,52 @@ const AVAILABLE_PAGES = [
     category: 'Antecipações',
   },
 
-  // Clientes
-  { path: '/consulta-cliente', name: 'Consulta Cliente', category: 'Clientes' },
-  { path: '/clientes-totvs', name: 'Clientes TOTVS', category: 'Clientes' },
+  // ─── Minha Franquia ─────────────────────────────────────────
   {
-    path: '/creditos-clientes',
-    name: 'Créditos Clientes',
-    category: 'Clientes',
+    path: '/contas-pagar-franquias',
+    name: 'Portal de Títulos',
+    category: 'Minha Franquia',
+  },
+  { path: '/voucher-usage', name: 'Vouchers', category: 'Minha Franquia' },
+  { path: '/notas-fiscais', name: 'Notas Fiscais', category: 'Minha Franquia' },
+  { path: '/consulta-nfs', name: 'Consulta NFs', category: 'Minha Franquia' },
+  {
+    path: '/aniversariantes-franquia',
+    name: 'Aniversariantes',
+    category: 'Minha Franquia',
+  },
+  {
+    path: '/pos-vendas-franquia',
+    name: 'Pós-Vendas',
+    category: 'Minha Franquia',
+  },
+  {
+    path: '/clientes-cashback-franquia',
+    name: 'Clientes com Cashback',
+    category: 'Minha Franquia',
+  },
+  {
+    path: '/clientes-inativos-franquia',
+    name: 'Clientes Inativos',
+    category: 'Minha Franquia',
   },
 
-  // CRM / Painel de Vendas
-  { path: '/crm-vendas', name: 'CRM Vendas', category: 'CRM' },
-  {
-    path: '/crm/competicao',
-    name: 'Painel Competição (B2R × B2M)',
-    category: 'CRM',
-  },
-  { path: '/forecast', name: 'Forecast (Hub)', category: 'CRM' },
-  {
-    path: '/forecast/faturamento-historico',
-    name: 'Forecast — Faturamento Detalhado',
-    category: 'CRM',
-  },
-  {
-    path: '/dashboard-vendas',
-    name: 'Forecast — Dashboard Vendas',
-    category: 'CRM',
-  },
-  {
-    path: '/ranking-compras-franquias',
-    name: 'Compras Franquias (Sellin)',
-    category: 'CRM',
-  },
-
-  // Outros
+  // ─── Ranking ────────────────────────────────────────────────
   {
     path: '/ranking-faturamento',
     name: 'Ranking Faturamento',
-    category: 'Outros',
+    category: 'Ranking',
   },
 
-  // Administração
-  { path: '/painel-admin', name: 'Painel Admin', category: 'Administração' },
-  {
-    path: '/gerenciador-acessos',
-    name: 'Gerenciador de Acessos',
-    category: 'Administração',
-  },
-  {
-    path: '/gerenciador-avisos',
-    name: 'Gerenciador de Avisos',
-    category: 'Administração',
-  },
-  {
-    path: '/api-claude',
-    name: 'API Claude',
-    category: 'Administração',
-  },
   // ─── Tecnologia ─────────────────────────────────────────────
   {
     path: '/tecnologia/controle-chip',
-    name: 'Controle de Chips',
+    name: 'Controle de Chip',
     category: 'Tecnologia',
   },
   {
     path: '/tecnologia/inventario-patrimonio',
     name: 'Inventário de Patrimônio',
-    category: 'Tecnologia',
-  },
-  {
-    path: '/tecnologia/cotacao-compras',
-    name: 'Cotação de Compras',
-    category: 'Tecnologia',
-  },
-  {
-    path: '/tecnologia/monitoramento-totvs',
-    name: 'Monitoramento TOTVS',
     category: 'Tecnologia',
   },
   {
@@ -455,6 +476,41 @@ const AVAILABLE_PAGES = [
     name: 'Etiquetas de Preço',
     category: 'Tecnologia',
   },
+  {
+    path: '/tecnologia/cotacao-compras',
+    name: 'Cotação de Compras',
+    category: 'Tecnologia',
+  },
+  {
+    path: '/tecnologia/monitoramento-totvs',
+    name: 'Monitoramento TOTVS',
+    category: 'Tecnologia',
+  },
+  {
+    path: '/tecnologia/clientes-por-empresa',
+    name: 'Clientes por Filial',
+    category: 'Tecnologia',
+  },
+  {
+    path: '/tecnologia/criar-vouchers',
+    name: 'Criar Vouchers',
+    category: 'Tecnologia',
+  },
+
+  // ─── Administração ──────────────────────────────────────────
+  { path: '/painel-admin', name: 'Painel Admin', category: 'Administração' },
+  {
+    path: '/gerenciador-acessos',
+    name: 'Gerenciador de Acessos',
+    category: 'Administração',
+  },
+  {
+    path: '/gerenciador-avisos',
+    name: 'Gerenciador de Avisos',
+    category: 'Administração',
+  },
+  { path: '/api-claude', name: 'API Claude', category: 'Administração' },
+  { path: '/crosby-manage', name: 'Crosby Manage', category: 'Administração' },
 ];
 
 const GerenciadorAcessos = () => {
