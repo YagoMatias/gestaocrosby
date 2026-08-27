@@ -10,6 +10,8 @@ import {
   WarningCircle,
   CaretDown,
   CaretUp,
+  PencilSimple,
+  X,
 } from '@phosphor-icons/react';
 
 const LOCAL_API_BASE_URL = 'http://localhost:4000';
@@ -97,6 +99,10 @@ const CreditosClientes = () => {
   const [sortField, setSortField] = useState(null);
   const [sortDir, setSortDir] = useState('desc');
   const [buscaRealizada, setBuscaRealizada] = useState(false);
+  // Edicao de limite por filial
+  const [edicaoLimite, setEdicaoLimite] = useState(null);
+  const [salvandoLimite, setSalvandoLimite] = useState(false);
+  const [msgLimite, setMsgLimite] = useState(null);
 
   const carregarFiliais = async () => {
     if (filiaisCarregadas) return;
@@ -245,10 +251,13 @@ const CreditosClientes = () => {
   const totais = saldo?.totals || emptyBalance.totals;
 
   const filiaisComValor = useMemo(() => {
+    // Mostra a filial que tenha qualquer valor diferente de zero — CREDEV,
+    // adiantamento ou limite. Filial sem nada nao aparece.
     const filtered = (saldo.values || []).filter(
       (v) =>
         Number(v.refundCreditValue || 0) !== 0 ||
-        Number(v.advanceAmountValue || 0) !== 0,
+        Number(v.advanceAmountValue || 0) !== 0 ||
+        Number(v.limitValue || 0) !== 0,
     );
 
     if (!sortField) return filtered;
@@ -259,6 +268,65 @@ const CreditosClientes = () => {
       return sortDir === 'asc' ? va - vb : vb - va;
     });
   }, [saldo.values, sortField, sortDir]);
+
+  const abrirEdicaoLimite = (value) => {
+    setMsgLimite(null);
+    setEdicaoLimite({
+      branchCode: value.branchCode,
+      // O TOTVS nao expoe o limite comercial em nenhuma consulta; os dois
+      // campos sao gravados juntos, partindo do financeiro atual
+      financeiro: String(Number(value.limitValue || 0)),
+      comercial: String(Number(value.limitValue || 0)),
+    });
+  };
+
+  const salvarLimite = async () => {
+    if (!edicaoLimite || !clienteSelecionado) return;
+    const financeiro = Number(String(edicaoLimite.financeiro).replace(',', '.'));
+    const comercial = Number(String(edicaoLimite.comercial).replace(',', '.'));
+    if (isNaN(financeiro) || financeiro < 0 || isNaN(comercial) || comercial < 0) {
+      setMsgLimite({ tipo: 'erro', texto: 'Informe valores validos (0 ou maior).' });
+      return;
+    }
+
+    const doc = String(saldo.cpfCnpj || clienteSelecionado.cnpj || '').replace(/\D/g, '');
+    if (doc.length !== 11 && doc.length !== 14) {
+      setMsgLimite({ tipo: 'erro', texto: 'Cliente sem CPF/CNPJ valido no cadastro.' });
+      return;
+    }
+
+    setSalvandoLimite(true);
+    setMsgLimite(null);
+    try {
+      const isPJ = doc.length === 14;
+      const response = await fetchWithFallback('/api/totvs/cliente/limite-filial', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          personType: isPJ ? 'PJ' : 'PF',
+          [isPJ ? 'cnpj' : 'cpf']: doc,
+          name: saldo.name || clienteSelecionado.name,
+          branchCode: edicaoLimite.branchCode,
+          limitValue: financeiro,
+          saleLimitValue: comercial,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data?.success === false) {
+        throw new Error(data?.message || `HTTP ${response.status}`);
+      }
+      setMsgLimite({
+        tipo: 'ok',
+        texto: `Limite da filial ${edicaoLimite.branchCode} atualizado.`,
+      });
+      setEdicaoLimite(null);
+      await consultarSaldo(clienteSelecionado);
+    } catch (error) {
+      setMsgLimite({ tipo: 'erro', texto: error.message || 'Falha ao gravar o limite.' });
+    } finally {
+      setSalvandoLimite(false);
+    }
+  };
 
   const handleSort = (field) => {
     if (sortField === field) {
@@ -612,6 +680,18 @@ const CreditosClientes = () => {
                               <SortIcon field="advanceAmountValue" />
                             </span>
                           </th>
+                          <th
+                            className="py-2.5 px-5 text-right text-[10px] font-bold uppercase tracking-wider text-white cursor-pointer select-none hover:text-blue-200 transition-colors"
+                            onClick={() => handleSort('limitValue')}
+                          >
+                            <span className="inline-flex items-center">
+                              Limite
+                              <SortIcon field="limitValue" />
+                            </span>
+                          </th>
+                          <th className="py-2.5 px-5 text-center text-[10px] font-bold uppercase tracking-wider text-white">
+                            Ação
+                          </th>
                         </tr>
                       </thead>
                       <tbody>
@@ -645,6 +725,27 @@ const CreditosClientes = () => {
                                 {formatCurrency(value.advanceAmountValue)}
                               </span>
                             </td>
+                            <td className="py-2.5 px-5 text-right text-sm tabular-nums">
+                              <span
+                                className={
+                                  Number(value.limitValue || 0) !== 0
+                                    ? 'font-semibold text-[#000638]'
+                                    : 'text-gray-300'
+                                }
+                              >
+                                {formatCurrency(value.limitValue)}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-5 text-center">
+                              <button
+                                type="button"
+                                onClick={() => abrirEdicaoLimite(value)}
+                                className="inline-flex items-center gap-1 rounded-md bg-[#000638] px-2.5 py-1 text-[11px] font-semibold text-white transition hover:opacity-90"
+                              >
+                                <PencilSimple size={12} weight="bold" />
+                                Limite
+                              </button>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -659,6 +760,10 @@ const CreditosClientes = () => {
                           <td className="py-3 px-5 text-right text-sm font-bold text-amber-700 tabular-nums">
                             {formatCurrency(totais.advanceAmountValue || 0)}
                           </td>
+                          <td className="py-3 px-5 text-right text-sm font-bold text-[#000638] tabular-nums">
+                            {formatCurrency(totais.limitValue || 0)}
+                          </td>
+                          <td />
                         </tr>
                       </tfoot>
                     </table>
@@ -667,7 +772,7 @@ const CreditosClientes = () => {
                   <div className="flex flex-col items-center justify-center py-14 text-gray-400 gap-2">
                     <Wallet size={28} weight="light" />
                     <span className="text-sm">
-                      Nenhuma filial com CREDEV ou Adiantamento
+                      Nenhuma filial com CREDEV, Adiantamento ou Limite
                     </span>
                   </div>
                 )}
@@ -676,6 +781,115 @@ const CreditosClientes = () => {
           )}
         </div>
       </div>
+
+      {/* Modal de edicao do limite da filial */}
+      {edicaoLimite && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => !salvandoLimite && setEdicaoLimite(null)}
+        >
+          <div
+            className="w-full max-w-sm overflow-hidden rounded-2xl bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between bg-[#000638] px-5 py-4">
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-white/70">
+                  Limite de credito — filial {edicaoLimite.branchCode}
+                </p>
+                <h3 className="text-base font-bold leading-tight text-white">
+                  {saldo.name || 'Cliente'}
+                </h3>
+              </div>
+              <button
+                onClick={() => !salvandoLimite && setEdicaoLimite(null)}
+                className="text-white/70 transition hover:text-white"
+              >
+                <X size={18} weight="bold" />
+              </button>
+            </div>
+
+            <div className="space-y-3 px-5 py-4">
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-[#000638]">
+                  Limite financeiro
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={edicaoLimite.financeiro}
+                  onChange={(e) =>
+                    setEdicaoLimite((p) => ({ ...p, financeiro: e.target.value }))
+                  }
+                  className="w-full rounded-lg border border-[#000638]/30 bg-[#f8f9fb] px-3 py-2 text-sm text-[#000638] focus:outline-none focus:ring-2 focus:ring-[#000638]"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-[#000638]">
+                  Limite comercial
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={edicaoLimite.comercial}
+                  onChange={(e) =>
+                    setEdicaoLimite((p) => ({ ...p, comercial: e.target.value }))
+                  }
+                  className="w-full rounded-lg border border-[#000638]/30 bg-[#f8f9fb] px-3 py-2 text-sm text-[#000638] focus:outline-none focus:ring-2 focus:ring-[#000638]"
+                />
+              </div>
+              <p className="text-[11px] leading-snug text-gray-500">
+                O TOTVS nao devolve o limite comercial em consulta — ele vem
+                preenchido com o valor do financeiro e os dois sao gravados
+                juntos. O limite mensal nao e alterado.
+              </p>
+              {msgLimite && (
+                <div
+                  className={`rounded-lg px-3 py-2 text-xs font-medium ${
+                    msgLimite.tipo === 'ok'
+                      ? 'border border-green-200 bg-green-50 text-green-700'
+                      : 'border border-red-200 bg-red-50 text-red-700'
+                  }`}
+                >
+                  {msgLimite.texto}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-gray-100 px-5 py-3">
+              <button
+                onClick={() => setEdicaoLimite(null)}
+                disabled={salvandoLimite}
+                className="rounded-lg px-4 py-1.5 text-sm text-gray-600 transition hover:bg-gray-100 disabled:opacity-60"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={salvarLimite}
+                disabled={salvandoLimite}
+                className="inline-flex items-center gap-2 rounded-lg bg-[#000638] px-4 py-1.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-60"
+              >
+                {salvandoLimite && <Spinner size={14} className="animate-spin" />}
+                {salvandoLimite ? 'Gravando...' : 'Gravar no TOTVS'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {msgLimite && !edicaoLimite && (
+        <div
+          className={`fixed bottom-6 right-6 z-50 rounded-lg px-4 py-3 text-sm font-medium shadow-lg ${
+            msgLimite.tipo === 'ok'
+              ? 'border border-green-200 bg-green-50 text-green-700'
+              : 'border border-red-200 bg-red-50 text-red-700'
+          }`}
+        >
+          {msgLimite.texto}
+        </div>
+      )}
     </div>
   );
 };
