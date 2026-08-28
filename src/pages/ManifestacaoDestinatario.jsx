@@ -73,7 +73,9 @@ const serieDaChave = (chave) => {
 // Fora dessa lista o chamado abre sem loja definida e quem abre escolhe.
 const LOJAS_DRYLAND = [2, 5, 55, 65, 87, 88, 90, 93, 94, 95, 97, 98];
 
-// Modal de escrituração: e daqui que saem os chamados para o setor fiscal
+// Modal de escrituração: é daqui que saem os chamados para o setor fiscal.
+// Notas agrupadas por EMITENTE (quem emitiu contra as filiais); cada linha
+// mostra a nota completa, com o DESTINATÁRIO = a filial que recebeu.
 const ModalEscrituracao = ({
   notas,
   nomeDaFilial,
@@ -82,6 +84,7 @@ const ModalEscrituracao = ({
 }) => {
   const [aba, setAba] = useState('pendente');
   const [selecionadas, setSelecionadas] = useState(new Set());
+  const [abertos, setAbertos] = useState(new Set());
 
   const daAba = useMemo(
     () =>
@@ -91,28 +94,36 @@ const ModalEscrituracao = ({
     [notas, aba],
   );
 
-  // Agrupado por CNPJ do emitente: e o emitente que responde pela nota
   const grupos = useMemo(() => {
     const m = new Map();
     for (const n of daAba) {
       const k = n.emitente_cnpj || 'sem-cnpj';
       if (!m.has(k))
         m.set(k, {
+          key: k,
           cnpj: n.emitente_cnpj,
           nome: n.emitente_nome || 'Sem emitente',
           notas: [],
+          total: 0,
         });
-      m.get(k).notas.push(n);
+      const g = m.get(k);
+      g.notas.push(n);
+      g.total += parseFloat(n.valor_total) || 0;
     }
     return [...m.values()].sort((a, b) => b.notas.length - a.notas.length);
   }, [daAba]);
 
-  useEffect(() => setSelecionadas(new Set()), [aba]);
+  // Troca de aba: zera seleção e recolhe tudo
+  useEffect(() => {
+    setSelecionadas(new Set());
+    setAbertos(new Set());
+  }, [aba]);
 
-  const alternar = (chave) =>
+  const alternarNota = (chave) =>
     setSelecionadas((prev) => {
       const s = new Set(prev);
-      s.has(chave) ? s.delete(chave) : s.add(chave);
+      if (s.has(chave)) s.delete(chave);
+      else s.add(chave);
       return s;
     });
 
@@ -126,12 +137,26 @@ const ModalEscrituracao = ({
     });
   };
 
+  const alternarAberto = (key) =>
+    setAbertos((prev) => {
+      const s = new Set(prev);
+      if (s.has(key)) s.delete(key);
+      else s.add(key);
+      return s;
+    });
+
   const escolhidas = daAba.filter((n) => selecionadas.has(n.chave_acesso));
+  const fmtMoeda = (v) =>
+    (parseFloat(v) || 0).toLocaleString('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+    });
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[92vh] flex flex-col">
-        <div className="bg-[#000638] text-white p-4 rounded-t-xl flex justify-between items-center">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl h-[92vh] flex flex-col overflow-hidden">
+        {/* Cabeçalho */}
+        <div className="bg-[#000638] text-white px-4 py-3 flex justify-between items-center shrink-0">
           <h3 className="text-sm font-bold uppercase tracking-wider flex items-center gap-2">
             <ClipboardText size={18} weight="bold" />
             Escrituração das notas
@@ -141,7 +166,8 @@ const ModalEscrituracao = ({
           </button>
         </div>
 
-        <div className="p-3 border-b border-gray-200 flex items-center gap-2">
+        {/* Barra de abas e ações */}
+        <div className="px-3 py-2 border-b border-gray-200 flex flex-wrap items-center gap-2 shrink-0">
           {[
             [
               'pendente',
@@ -168,87 +194,241 @@ const ModalEscrituracao = ({
               {rotulo} ({qtd})
             </button>
           ))}
+          <div className="h-5 w-px bg-gray-300 mx-1" />
+          <button
+            onClick={() => setAbertos(new Set(grupos.map((g) => g.key)))}
+            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 flex items-center gap-1"
+          >
+            <CaretDown size={11} weight="bold" /> Abrir todos
+          </button>
+          <button
+            onClick={() => setAbertos(new Set())}
+            className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 flex items-center gap-1"
+          >
+            <CaretUp size={11} weight="bold" /> Recolher todos
+          </button>
           <span className="text-xs text-gray-500 ml-auto">
             {grupos.length} emitente(s) · {daAba.length} nota(s)
           </span>
         </div>
 
-        <div className="flex-1 overflow-y-auto overflow-x-hidden p-3">
+        {/* Lista de emitentes */}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 bg-gray-50">
           {grupos.length === 0 ? (
             <div className="text-center py-10 text-sm text-gray-500">
               Nenhuma nota nesta situação
             </div>
           ) : (
             grupos.map((g) => {
-              const todasMarcadas = g.notas.every((n) =>
+              const aberto = abertos.has(g.key);
+              const marcadas = g.notas.filter((n) =>
                 selecionadas.has(n.chave_acesso),
-              );
+              ).length;
+              const todasMarcadas = marcadas === g.notas.length;
               return (
                 <div
-                  key={g.cnpj || 'sem'}
-                  className="mb-3 border border-gray-200 rounded-lg"
+                  key={g.key}
+                  className="mb-2 border border-gray-200 rounded-lg bg-white overflow-hidden"
                 >
-                  <div className="bg-gray-50 px-3 py-2 flex items-center gap-2 rounded-t-lg">
+                  {/* Cabeçalho do emitente — clica para abrir/recolher */}
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => alternarAberto(g.key)}
+                    onKeyDown={(e) => e.key === 'Enter' && alternarAberto(g.key)}
+                    className={`w-full px-3 py-2 flex items-center gap-2 cursor-pointer transition-colors ${
+                      aberto ? 'bg-[#000638]/5' : 'bg-white hover:bg-gray-50'
+                    }`}
+                  >
+                    {aberto ? (
+                      <CaretDown size={14} weight="bold" className="shrink-0 text-[#000638]" />
+                    ) : (
+                      <CaretRight size={14} weight="bold" className="shrink-0 text-gray-400" />
+                    )}
                     <input
                       type="checkbox"
                       checked={todasMarcadas}
+                      ref={(el) => {
+                        if (el)
+                          el.indeterminate = marcadas > 0 && !todasMarcadas;
+                      }}
+                      onClick={(e) => e.stopPropagation()}
                       onChange={() => alternarGrupo(g)}
                       className="cursor-pointer shrink-0"
+                      title="Selecionar todas as notas deste emitente"
                     />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-bold text-[#000638] truncate">
+                    <span className="shrink-0 text-[9px] font-bold text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded uppercase">
+                      Emitente
+                    </span>
+                    <div className="flex-1 min-w-0 flex flex-wrap items-baseline gap-x-2">
+                      <span className="text-xs font-bold text-[#000638] truncate max-w-full">
                         {g.nome}
-                      </div>
-                      <div className="text-[10px] text-gray-500 truncate">
+                      </span>
+                      <span className="text-[10px] text-gray-500">
                         {formatCnpj(g.cnpj)}
-                      </div>
+                      </span>
                     </div>
+                    {marcadas > 0 && (
+                      <span className="shrink-0 text-[10px] font-bold text-white bg-[#000638] px-2 py-0.5 rounded-full">
+                        {marcadas} sel.
+                      </span>
+                    )}
+                    <span className="shrink-0 text-[11px] font-semibold text-green-600">
+                      {fmtMoeda(g.total)}
+                    </span>
                     <span className="shrink-0 text-[10px] font-bold text-gray-600 bg-gray-200 px-2 py-0.5 rounded">
                       {g.notas.length} nota{g.notas.length > 1 ? 's' : ''}
                     </span>
                   </div>
-                  <div className="divide-y divide-gray-100">
-                    {g.notas.map((n) => (
-                      <label
-                        key={n.chave_acesso}
-                        className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-gray-50 cursor-pointer"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selecionadas.has(n.chave_acesso)}
-                          onChange={() => alternar(n.chave_acesso)}
-                          className="cursor-pointer shrink-0"
-                        />
-                        <span className="shrink-0 w-16 font-semibold text-gray-800">
-                          NF {nfDaChave(n.chave_acesso)}
-                        </span>
-                        <span className="shrink-0 w-20 text-gray-500">
-                          {formatDateBR(n.data_emissao)}
-                        </span>
-                        <span className="flex-1 min-w-0 truncate text-gray-600">
-                          {n.empresa_codigo} - {nomeDaFilial(n) || '--'}
-                        </span>
-                        <span className="shrink-0 w-24 text-right font-semibold text-green-600">
-                          {(parseFloat(n.valor_total) || 0).toLocaleString(
-                            'pt-BR',
-                            {
-                              style: 'currency',
-                              currency: 'BRL',
-                            },
-                          )}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
+
+                  {/* Notas do emitente */}
+                  {aberto && (
+                    <div className="border-t border-gray-200 overflow-x-auto">
+                      <table className="w-full text-xs" style={{ minWidth: 900 }}>
+                        <thead>
+                          <tr className="bg-gray-100 text-[10px] uppercase tracking-wide text-gray-600">
+                            <th className="w-8 px-2 py-1.5" />
+                            <th className="w-20 px-2 py-1.5 text-left">
+                              NF / Série
+                            </th>
+                            <th className="w-20 px-2 py-1.5 text-left">
+                              Emissão
+                            </th>
+                            <th className="px-2 py-1.5 text-left">
+                              Destinatário
+                              <span className="block normal-case font-normal text-[9px] text-gray-400">
+                                filial que recebeu · CNPJ destinatário da nota
+                              </span>
+                            </th>
+                            <th className="w-16 px-2 py-1.5 text-center">
+                              Tipo
+                            </th>
+                            <th className="w-20 px-2 py-1.5 text-center">
+                              Situação
+                            </th>
+                            <th className="w-28 px-2 py-1.5 text-center">
+                              Manifestação
+                            </th>
+                            <th className="w-16 px-2 py-1.5 text-center">
+                              Origem
+                            </th>
+                            <th className="w-24 px-2 py-1.5 text-right">
+                              Valor
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {g.notas.map((n) => (
+                            <tr
+                              key={n.chave_acesso}
+                              onClick={() => alternarNota(n.chave_acesso)}
+                              className={`cursor-pointer transition-colors ${
+                                selecionadas.has(n.chave_acesso)
+                                  ? 'bg-blue-50'
+                                  : 'hover:bg-gray-50'
+                              }`}
+                              title={`Chave: ${n.chave_acesso}`}
+                            >
+                              <td className="px-2 py-1.5 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={selecionadas.has(n.chave_acesso)}
+                                  onChange={() => alternarNota(n.chave_acesso)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="cursor-pointer"
+                                />
+                              </td>
+                              <td className="px-2 py-1.5 font-semibold text-gray-800 whitespace-nowrap">
+                                {nfDaChave(n.chave_acesso)}
+                                <span className="text-gray-400 font-normal">
+                                  {' '}/ {serieDaChave(n.chave_acesso)}
+                                </span>
+                              </td>
+                              <td className="px-2 py-1.5 text-gray-600 whitespace-nowrap">
+                                {formatDateBR(n.data_emissao)}
+                              </td>
+                              <td className="px-2 py-1.5">
+                                <div className="text-gray-800 truncate max-w-[260px]">
+                                  {n.empresa_codigo != null
+                                    ? `${n.empresa_codigo} - `
+                                    : ''}
+                                  {nomeDaFilial(n) || '--'}
+                                </div>
+                                <div className="text-[10px] text-gray-400">
+                                  {formatCnpj(n.cnpj_destinatario)}
+                                </div>
+                              </td>
+                              <td className="px-2 py-1.5 text-center text-gray-600">
+                                {n.tipo_operacao === '0'
+                                  ? 'Entrada'
+                                  : n.tipo_operacao === '1'
+                                    ? 'Saída'
+                                    : '--'}
+                              </td>
+                              <td className="px-2 py-1.5 text-center">
+                                <span
+                                  className={`inline-block px-1.5 py-0.5 rounded-full text-[10px] font-medium ${
+                                    n.situacao === '1'
+                                      ? 'bg-green-100 text-green-700'
+                                      : n.situacao === '2'
+                                        ? 'bg-red-100 text-red-700'
+                                        : 'bg-orange-100 text-orange-700'
+                                  }`}
+                                >
+                                  {SITUACAO_LABEL[n.situacao] || '--'}
+                                </span>
+                              </td>
+                              <td className="px-2 py-1.5 text-center">
+                                <span
+                                  className={`inline-block px-1.5 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap ${
+                                    n.manifestacao
+                                      ? 'bg-blue-100 text-blue-700'
+                                      : 'bg-amber-100 text-amber-700'
+                                  }`}
+                                >
+                                  {MANIFESTACAO_LABEL[n.manifestacao] ||
+                                    n.manifestacao_descricao ||
+                                    'Pendente'}
+                                </span>
+                              </td>
+                              <td className="px-2 py-1.5 text-center">
+                                <span
+                                  className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                                    origemDoRegistro(n.schema_origem) ===
+                                    'SEFAZ'
+                                      ? 'bg-emerald-100 text-emerald-700'
+                                      : 'bg-indigo-100 text-indigo-700'
+                                  }`}
+                                >
+                                  {origemDoRegistro(n.schema_origem)}
+                                </span>
+                              </td>
+                              <td className="px-2 py-1.5 text-right font-semibold text-green-600 whitespace-nowrap">
+                                {fmtMoeda(n.valor_total)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               );
             })
           )}
         </div>
 
-        <div className="p-3 border-t border-gray-200 flex items-center justify-between gap-2">
+        {/* Rodapé */}
+        <div className="px-3 py-2.5 border-t border-gray-200 flex items-center justify-between gap-2 shrink-0 bg-white">
           <span className="text-xs text-gray-600">
             {escolhidas.length} nota(s) selecionada(s)
+            {escolhidas.length > 0 &&
+              ` · ${fmtMoeda(
+                escolhidas.reduce(
+                  (a, n) => a + (parseFloat(n.valor_total) || 0),
+                  0,
+                ),
+              )}`}
           </span>
           <div className="flex items-center gap-2">
             <button
