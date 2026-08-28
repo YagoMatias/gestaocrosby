@@ -39,11 +39,14 @@ const MANIFESTACAO_LABEL = {
 const origemDoRegistro = (schema) =>
   schema === 'csv-fisfp153' ? 'TOTVS' : 'SEFAZ';
 
-// Situação da escrituração. Nota cancelada ou denegada não se escritura,
-// então ela não entra na fila de pendências — fica fora dos dois lados.
+// Situação da escrituração. Não se escritura nota cancelada, denegada nem
+// de entrada — elas ficam fora dos dois lados e de qualquer contagem.
+// A exclusão vem ANTES de olhar a fatura: existem notas de entrada e uma
+// cancelada já marcadas como escrituradas, e elas também não devem contar.
 const escrituracaoDaNota = (n) => {
-  if (n.escriturada) return 'escriturada';
   if (n.situacao === '2' || n.situacao === '3') return 'nao_aplica';
+  if (n.tipo_operacao === '0') return 'nao_aplica';
+  if (n.escriturada) return 'escriturada';
   return 'pendente';
 };
 
@@ -1110,7 +1113,7 @@ const ManifestacaoDestinatario = () => {
             </div>
             {totais.naoAplica > 0 && (
               <div className="text-[9px] text-gray-400 mt-0.5">
-                + {totais.naoAplica} cancelada(s)/denegada(s), fora da fila
+                + {totais.naoAplica} fora da fila (entrada, cancelada ou denegada)
               </div>
             )}
           </button>
@@ -1311,7 +1314,9 @@ const ManifestacaoDestinatario = () => {
                             item.escriturada
                               ? `Fatura ${item.nr_fatura || ''}`.trim()
                               : escrituracaoDaNota(item) === 'nao_aplica'
-                                ? 'Nota cancelada/denegada — não se escritura'
+                                ? item.tipo_operacao === '0'
+                                  ? 'Nota de entrada — não se escritura'
+                                  : 'Nota cancelada/denegada — não se escritura'
                                 : 'Sem fatura no TOTVS'
                           }
                         >
