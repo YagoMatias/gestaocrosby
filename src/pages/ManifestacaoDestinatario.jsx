@@ -254,7 +254,7 @@ const ModalEscrituracao = ({
                       }}
                       onClick={(e) => e.stopPropagation()}
                       onChange={() => alternarGrupo(g)}
-                      className="cursor-pointer shrink-0"
+                      className="cursor-pointer shrink-0 w-4 h-4 p-0 mb-0"
                       title="Selecionar todas as notas deste emitente"
                     />
                     <span className="shrink-0 text-[9px] font-bold text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded uppercase">
@@ -335,7 +335,7 @@ const ModalEscrituracao = ({
                                   checked={selecionadas.has(n.chave_acesso)}
                                   onChange={() => alternarNota(n.chave_acesso)}
                                   onClick={(e) => e.stopPropagation()}
-                                  className="cursor-pointer"
+                                  className="cursor-pointer w-4 h-4 p-0 mb-0"
                                 />
                               </td>
                               <td className="px-2 py-1.5 font-semibold text-gray-800 whitespace-nowrap">
