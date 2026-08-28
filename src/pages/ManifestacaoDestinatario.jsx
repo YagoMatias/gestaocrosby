@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import FiltroEmpresa from '../components/FiltroEmpresa';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { API_BASE_URL } from '../config/constants';
 import PageTitle from '../components/ui/PageTitle';
@@ -31,6 +32,10 @@ const MANIFESTACAO_LABEL = {
   210240: 'Operação não Realizada',
 };
 
+// Origem do registro: SEFAZ (Distribuição DFe) ou TOTVS (importação do FISFP153)
+const origemDoRegistro = (schema) =>
+  schema === 'csv-fisfp153' ? 'TOTVS' : 'SEFAZ';
+
 const formatCnpj = (cnpj) => {
   const d = String(cnpj || '').replace(/\D/g, '');
   if (d.length !== 14) return cnpj || '--';
@@ -52,7 +57,7 @@ const serieDaChave = (chave) => {
 const ManifestacaoDestinatario = () => {
   const [dados, setDados] = useState([]);
   const [empresas, setEmpresas] = useState([]);
-  const [cnpjsSelecionados, setCnpjsSelecionados] = useState([]);
+  const [filiaisSelecionadas, setFiliaisSelecionadas] = useState([]);
   const [loading, setLoading] = useState(false);
   const [sincronizando, setSincronizando] = useState(false);
   const [dadosCarregados, setDadosCarregados] = useState(false);
@@ -61,6 +66,7 @@ const ManifestacaoDestinatario = () => {
   const [periodo, setPeriodo] = useState({ dt_inicio: '', dt_fim: '' });
   const [tipoOperacao, setTipoOperacao] = useState('');
   const [situacao, setSituacao] = useState('');
+  const [origem, setOrigem] = useState('');
   const [pesquisa, setPesquisa] = useState('');
 
   const [paginaAtual, setPaginaAtual] = useState(1);
@@ -70,27 +76,22 @@ const ManifestacaoDestinatario = () => {
     direcao: 'desc',
   });
 
-  // Período padrão: últimos 90 dias (janela da SEFAZ)
+  // Período padrão: início do ano (histórico importado do FISFP153 + sync SEFAZ)
   useEffect(() => {
     const hoje = new Date();
-    const inicio = new Date();
-    inicio.setDate(hoje.getDate() - 90);
     setPeriodo({
-      dt_inicio: inicio.toISOString().split('T')[0],
+      dt_inicio: `${hoje.getFullYear()}-01-01`,
       dt_fim: hoje.toISOString().split('T')[0],
     });
   }, []);
 
-  // Carregar empresas (CNPJs com certificado)
+  // Filiais consultadas na SEFAZ (código + nome do TOTVS)
   useEffect(() => {
     const carregar = async () => {
       try {
         const r = await fetch(`${API_BASE_URL}/api/sefaz/dfe/empresas`);
         const json = await r.json();
-        if (json.success && Array.isArray(json.data)) {
-          setEmpresas(json.data);
-          setCnpjsSelecionados(json.data.map((e) => e.cnpj));
-        }
+        if (json.success && Array.isArray(json.data)) setEmpresas(json.data);
       } catch (e) {
         console.error('Erro ao carregar empresas:', e);
       }
@@ -98,13 +99,16 @@ const ManifestacaoDestinatario = () => {
     carregar();
   }, []);
 
-  const descricaoPorCnpj = useMemo(() => {
+  const nomePorCodigo = useMemo(() => {
     const m = {};
     empresas.forEach((e) => {
-      m[e.cnpj] = e.descricao;
+      if (e.codigo) m[e.codigo] = e.nome;
     });
     return m;
   }, [empresas]);
+
+  const nomeDaFilial = (item) =>
+    item.empresa_nome || nomePorCodigo[item.empresa_codigo] || '';
 
   const formatDateBR = (isoDate) => {
     if (!isoDate) return '--';
@@ -124,12 +128,16 @@ const ManifestacaoDestinatario = () => {
     setPaginaAtual(1);
     try {
       const params = new URLSearchParams();
-      if (cnpjsSelecionados.length > 0)
-        params.set('cnpjs', cnpjsSelecionados.join(','));
+      const codigosFiliais = filiaisSelecionadas
+        .map((f) => parseInt(f.cd_empresa))
+        .filter((c) => !isNaN(c));
+      if (codigosFiliais.length > 0)
+        params.set('empresas', codigosFiliais.join(','));
       if (periodo.dt_inicio) params.set('startDate', periodo.dt_inicio);
       if (periodo.dt_fim) params.set('endDate', periodo.dt_fim);
       if (tipoOperacao) params.set('tipoOperacao', tipoOperacao);
       if (situacao) params.set('situacao', situacao);
+      if (origem) params.set('origem', origem);
 
       const r = await fetch(`${API_BASE_URL}/api/sefaz/dfe/notas?${params}`);
       const json = await r.json();
@@ -189,12 +197,6 @@ const ManifestacaoDestinatario = () => {
     buscarDados();
   };
 
-  const toggleCnpj = (cnpj) => {
-    setCnpjsSelecionados((prev) =>
-      prev.includes(cnpj) ? prev.filter((c) => c !== cnpj) : [...prev, cnpj],
-    );
-  };
-
   const handleSort = (campo) => {
     setOrdenacao((prev) => ({
       campo,
@@ -224,8 +226,10 @@ const ManifestacaoDestinatario = () => {
           item.emitente_cnpj,
           item.chave_acesso,
           nfDaChave(item.chave_acesso),
-          descricaoPorCnpj[item.cnpj_destinatario],
+          nomeDaFilial(item),
           item.cnpj_destinatario,
+          item.empresa_codigo,
+          origemDoRegistro(item.schema_origem),
         ]
           .map((v) => String(v ?? '').toLowerCase())
           .some((v) => v.includes(termo)),
@@ -254,7 +258,7 @@ const ManifestacaoDestinatario = () => {
     }
 
     return filtrados;
-  }, [dados, ordenacao, pesquisa, descricaoPorCnpj]);
+  }, [dados, ordenacao, pesquisa, nomePorCodigo]);
 
   const totalPages = Math.ceil(dadosProcessados.length / itensPorPagina);
 
@@ -273,9 +277,11 @@ const ManifestacaoDestinatario = () => {
         acc.valorTotal += parseFloat(item.valor_total) || 0;
         acc.quantidade += 1;
         if (!item.manifestacao) acc.pendentes += 1;
+        if (origemDoRegistro(item.schema_origem) === 'SEFAZ') acc.sefaz += 1;
+        else acc.totvs += 1;
         return acc;
       },
-      { valorTotal: 0, quantidade: 0, pendentes: 0 },
+      { valorTotal: 0, quantidade: 0, pendentes: 0, sefaz: 0, totvs: 0 },
     );
   }, [dadosProcessados]);
 
@@ -286,9 +292,8 @@ const ManifestacaoDestinatario = () => {
     }
     try {
       const dadosParaExportar = dadosProcessados.map((item) => ({
-        Destinatário:
-          descricaoPorCnpj[item.cnpj_destinatario] ||
-          formatCnpj(item.cnpj_destinatario),
+        Filial: item.empresa_codigo ?? '',
+        Destinatário: nomeDaFilial(item),
         'CNPJ Destinatário': formatCnpj(item.cnpj_destinatario),
         'Data Emissão': formatDateBR(item.data_emissao),
         'Nº NF': nfDaChave(item.chave_acesso),
@@ -306,6 +311,7 @@ const ManifestacaoDestinatario = () => {
           MANIFESTACAO_LABEL[item.manifestacao] ||
           item.manifestacao_descricao ||
           'Pendente',
+        Origem: origemDoRegistro(item.schema_origem),
         'Valor Total': parseFloat(item.valor_total) || 0,
         'Chave de Acesso': item.chave_acesso || '',
       }));
@@ -397,36 +403,13 @@ const ManifestacaoDestinatario = () => {
             </button>
           </div>
 
-          {/* Empresas (CNPJs com certificado) */}
-          <div className="mb-3">
-            <label className="block text-xs font-semibold mb-1 text-[#000638]">
-              Empresas
-            </label>
-            <div className="flex flex-wrap gap-1.5">
-              {empresas.length === 0 && (
-                <span className="text-xs text-gray-400">
-                  Nenhum certificado configurado no servidor
-                </span>
-              )}
-              {empresas.map((e) => (
-                <button
-                  key={e.cnpj}
-                  type="button"
-                  onClick={() => toggleCnpj(e.cnpj)}
-                  className={`px-2 py-1 rounded-full text-xs font-medium border transition-colors ${
-                    cnpjsSelecionados.includes(e.cnpj)
-                      ? 'bg-[#000638] text-white border-[#000638]'
-                      : 'bg-white text-gray-600 border-gray-300 hover:border-[#000638]'
-                  }`}
-                  title={formatCnpj(e.cnpj)}
-                >
-                  {e.descricao}
-                </button>
-              ))}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-2 mb-3">
+            <div className="lg:col-span-1">
+              <FiltroEmpresa
+                empresasSelecionadas={filiaisSelecionadas}
+                onSelectEmpresas={setFiliaisSelecionadas}
+              />
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 mb-3">
             <div>
               <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
                 Emissão - Início
@@ -482,6 +465,20 @@ const ManifestacaoDestinatario = () => {
                 <option value="3">Denegada</option>
               </select>
             </div>
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Origem
+              </label>
+              <select
+                value={origem}
+                onChange={(e) => setOrigem(e.target.value)}
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+              >
+                <option value="">Todas</option>
+                <option value="sefaz">SEFAZ</option>
+                <option value="totvs">TOTVS</option>
+              </select>
+            </div>
             <div className="flex items-end">
               <button
                 type="submit"
@@ -513,7 +510,7 @@ const ManifestacaoDestinatario = () => {
 
       {/* Cards de Resumo */}
       {dadosCarregados && dadosProcessados.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4 max-w-7xl mx-auto w-full">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 mb-4 max-w-7xl mx-auto w-full">
           <div className="bg-white rounded-lg shadow p-3 border border-[#000638]/10">
             <div className="text-xs font-bold text-green-700 mb-1">
               Valor Total
@@ -539,6 +536,23 @@ const ManifestacaoDestinatario = () => {
             </div>
             <div className="text-sm font-extrabold text-amber-600">
               {totais.pendentes}
+            </div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-3 border border-[#000638]/10">
+            <div className="text-xs font-bold text-gray-700 mb-1">Origem</div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-extrabold text-emerald-600">
+                {totais.sefaz}
+              </span>
+              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
+                SEFAZ
+              </span>
+              <span className="text-sm font-extrabold text-indigo-600">
+                {totais.totvs}
+              </span>
+              <span className="text-[10px] font-bold text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded">
+                TOTVS
+              </span>
             </div>
           </div>
         </div>
@@ -618,13 +632,15 @@ const ManifestacaoDestinatario = () => {
                 <thead className="bg-[#000638] text-white text-xs uppercase tracking-wider">
                   <tr>
                     {[
-                      ['cnpj_destinatario', 'Destinatário', 'left'],
+                      ['empresa_codigo', 'Filial', 'center'],
+                      ['empresa_nome', 'Destinatário', 'left'],
                       ['data_emissao', 'Data Emissão', 'center'],
                       ['chave_acesso', 'Nº NF', 'center'],
                       ['emitente_nome', 'Emitente', 'left'],
                       ['tipo_operacao', 'Tipo Op.', 'center'],
                       ['situacao', 'Situação', 'center'],
                       ['manifestacao', 'Manifestação', 'center'],
+                      ['schema_origem', 'Origem', 'center'],
                       ['valor_total', 'Valor Total', 'center'],
                     ].map(([campo, label, align]) => (
                       <th
@@ -651,9 +667,16 @@ const ManifestacaoDestinatario = () => {
                       key={`${item.cnpj_destinatario}-${item.chave_acesso}-${index}`}
                       className="text-xs odd:bg-white even:bg-gray-50 hover:bg-gray-100 transition-colors"
                     >
+                      <td className="text-center px-2 py-2">
+                        <span className="inline-block px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 font-bold">
+                          {item.empresa_codigo ?? '--'}
+                        </span>
+                      </td>
                       <td className="text-left text-gray-900 px-2 py-2">
-                        {descricaoPorCnpj[item.cnpj_destinatario] ||
-                          formatCnpj(item.cnpj_destinatario)}
+                        <div>{nomeDaFilial(item) || '--'}</div>
+                        <div className="text-[10px] text-gray-400">
+                          {formatCnpj(item.cnpj_destinatario)}
+                        </div>
                       </td>
                       <td className="text-center text-gray-900 px-2 py-2">
                         {formatDateBR(item.data_emissao)}
@@ -700,6 +723,22 @@ const ManifestacaoDestinatario = () => {
                           {MANIFESTACAO_LABEL[item.manifestacao] ||
                             item.manifestacao_descricao ||
                             'Pendente'}
+                        </span>
+                      </td>
+                      <td className="text-center px-2 py-2">
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold tracking-wide ${
+                            origemDoRegistro(item.schema_origem) === 'SEFAZ'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-indigo-100 text-indigo-700'
+                          }`}
+                          title={
+                            origemDoRegistro(item.schema_origem) === 'SEFAZ'
+                              ? 'Capturada na SEFAZ (Distribuição DFe)'
+                              : 'Importada do TOTVS (FISFP153)'
+                          }
+                        >
+                          {origemDoRegistro(item.schema_origem)}
                         </span>
                       </td>
                       <td className="text-center font-semibold text-green-600 px-2 py-2">
