@@ -15,6 +15,7 @@ import {
   MagnifyingGlass,
   ClipboardText,
   ArrowsClockwise,
+  UploadSimple,
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -315,9 +316,19 @@ const ManifestacaoDestinatario = () => {
         if (!item.manifestacao) acc.pendentes += 1;
         if (origemDoRegistro(item.schema_origem) === 'SEFAZ') acc.sefaz += 1;
         else acc.totvs += 1;
+        if (item.escriturada) acc.escrituradas += 1;
+        else acc.naoEscrituradas += 1;
         return acc;
       },
-      { valorTotal: 0, quantidade: 0, pendentes: 0, sefaz: 0, totvs: 0 },
+      {
+        valorTotal: 0,
+        quantidade: 0,
+        pendentes: 0,
+        sefaz: 0,
+        totvs: 0,
+        escrituradas: 0,
+        naoEscrituradas: 0,
+      },
     );
   }, [dadosProcessados]);
 
@@ -426,6 +437,7 @@ const ManifestacaoDestinatario = () => {
                 de operação e a situação da nota
               </span>
             </div>
+            <div className="flex items-center gap-2 flex-wrap justify-end">
             <button
               type="button"
               onClick={sincronizarSefaz}
@@ -440,6 +452,33 @@ const ManifestacaoDestinatario = () => {
               )}
               {sincronizando ? 'Sincronizando...' : 'Sincronizar SEFAZ'}
             </button>
+            <label
+              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold shadow-md uppercase transition-colors ${
+                importando
+                  ? 'bg-gray-400 text-white cursor-wait'
+                  : 'bg-indigo-600 text-white hover:bg-indigo-700 cursor-pointer'
+              }`}
+              title="CSV de manifestações do TOTVS: as notas com fatura entram como escrituradas"
+            >
+              {importando ? (
+                <Spinner size={12} className="animate-spin" />
+              ) : (
+                <UploadSimple size={12} weight="bold" />
+              )}
+              {importando ? 'Importando...' : 'Importar Escrituradas'}
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                className="hidden"
+                disabled={!!importando}
+                onChange={(e) => {
+                  const arq = e.target.files?.[0];
+                  e.target.value = '';
+                  importarEscrituradas(arq);
+                }}
+              />
+            </label>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-8 gap-2 mb-3">
@@ -518,6 +557,20 @@ const ManifestacaoDestinatario = () => {
                 <option value="totvs">TOTVS</option>
               </select>
             </div>
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Escrituração
+              </label>
+              <select
+                value={escrituracao}
+                onChange={(e) => setEscrituracao(e.target.value)}
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+              >
+                <option value="">Todas</option>
+                <option value="escriturada">Escrituradas</option>
+                <option value="pendente">Pendentes de escrituração</option>
+              </select>
+            </div>
             <div className="flex items-end">
               <button
                 type="submit"
@@ -575,6 +628,25 @@ const ManifestacaoDestinatario = () => {
             </div>
             <div className="text-sm font-extrabold text-amber-600">
               {totais.pendentes}
+            </div>
+          </div>
+          <div className="bg-white rounded-lg shadow p-3 border border-[#000638]/10">
+            <div className="text-xs font-bold text-gray-700 mb-1">
+              Escrituração
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-extrabold text-teal-600">
+                {totais.escrituradas}
+              </span>
+              <span className="text-[10px] font-bold text-teal-700 bg-teal-100 px-1.5 py-0.5 rounded">
+                ESCRITURADAS
+              </span>
+              <span className="text-sm font-extrabold text-orange-600">
+                {totais.naoEscrituradas}
+              </span>
+              <span className="text-[10px] font-bold text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded">
+                PENDENTES
+              </span>
             </div>
           </div>
           <div className="bg-white rounded-lg shadow p-3 border border-[#000638]/10">
@@ -763,6 +835,22 @@ const ManifestacaoDestinatario = () => {
                           {MANIFESTACAO_LABEL[item.manifestacao] ||
                             item.manifestacao_descricao ||
                             'Pendente'}
+                        </span>
+                      </td>
+                      <td className="text-center px-2 py-2">
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            item.escriturada
+                              ? 'bg-teal-100 text-teal-700'
+                              : 'bg-orange-100 text-orange-700'
+                          }`}
+                          title={
+                            item.escriturada
+                              ? `Fatura ${item.nr_fatura || ''}`.trim()
+                              : 'Sem fatura no TOTVS'
+                          }
+                        >
+                          {item.escriturada ? 'ESCRITURADA' : 'PENDENTE'}
                         </span>
                       </td>
                       <td className="text-center px-2 py-2">
