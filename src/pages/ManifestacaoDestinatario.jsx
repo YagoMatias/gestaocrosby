@@ -39,6 +39,26 @@ const MANIFESTACAO_LABEL = {
 const origemDoRegistro = (schema) =>
   schema === 'csv-fisfp153' ? 'TOTVS' : 'SEFAZ';
 
+// Situação da escrituração. Nota cancelada ou denegada não se escritura,
+// então ela não entra na fila de pendências — fica fora dos dois lados.
+const escrituracaoDaNota = (n) => {
+  if (n.escriturada) return 'escriturada';
+  if (n.situacao === '2' || n.situacao === '3') return 'nao_aplica';
+  return 'pendente';
+};
+
+const ESCRITURACAO_ROTULO = {
+  escriturada: 'ESCRITURADA',
+  pendente: 'PENDENTE',
+  nao_aplica: 'NÃO SE APLICA',
+};
+
+const ESCRITURACAO_CLASSE = {
+  escriturada: 'bg-teal-100 text-teal-700',
+  pendente: 'bg-orange-100 text-orange-700',
+  nao_aplica: 'bg-gray-100 text-gray-500',
+};
+
 const formatCnpj = (cnpj) => {
   const d = String(cnpj || '').replace(/\D/g, '');
   if (d.length !== 14) return cnpj || '--';
@@ -74,8 +94,8 @@ const serieDaChave = (chave) => {
 const LOJAS_DRYLAND = [2, 5, 55, 65, 87, 88, 90, 93, 94, 95, 97, 98];
 
 // Modal de escrituração: é daqui que saem os chamados para o setor fiscal.
-// Notas agrupadas por EMITENTE (quem emitiu contra as filiais); cada linha
-// mostra a nota completa, com o DESTINATÁRIO = a filial que recebeu.
+// Notas agrupadas por DESTINATÁRIO (a filial que recebeu e precisa escriturar);
+// cada linha mostra a nota completa, com o EMITENTE que a emitiu.
 const ModalEscrituracao = ({
   notas,
   nomeDaFilial,
@@ -87,22 +107,22 @@ const ModalEscrituracao = ({
   const [abertos, setAbertos] = useState(new Set());
 
   const daAba = useMemo(
-    () =>
-      notas.filter((n) =>
-        aba === 'escriturada' ? n.escriturada : !n.escriturada,
-      ),
+    () => notas.filter((n) => escrituracaoDaNota(n) === aba),
     [notas, aba],
   );
 
+  // Agrupado pelo DESTINATARIO: e a filial que recebeu a nota e precisa
+  // escriturar, entao e por ela que o chamado e aberto.
   const grupos = useMemo(() => {
     const m = new Map();
     for (const n of daAba) {
-      const k = n.emitente_cnpj || 'sem-cnpj';
+      const k = n.cnpj_destinatario || 'sem-cnpj';
       if (!m.has(k))
         m.set(k, {
           key: k,
-          cnpj: n.emitente_cnpj,
-          nome: n.emitente_nome || 'Sem emitente',
+          cnpj: n.cnpj_destinatario,
+          codigo: n.empresa_codigo,
+          nome: nomeDaFilial(n) || 'Sem destinatário',
           notas: [],
           total: 0,
         });
@@ -172,12 +192,13 @@ const ModalEscrituracao = ({
             [
               'pendente',
               'Pendentes',
-              notas.filter((n) => !n.escriturada).length,
+              notas.filter((n) => escrituracaoDaNota(n) === 'pendente').length,
             ],
             [
               'escriturada',
               'Escrituradas',
-              notas.filter((n) => n.escriturada).length,
+              notas.filter((n) => escrituracaoDaNota(n) === 'escriturada')
+                .length,
             ],
           ].map(([id, rotulo, qtd]) => (
             <button
@@ -208,7 +229,7 @@ const ModalEscrituracao = ({
             <CaretUp size={11} weight="bold" /> Recolher todos
           </button>
           <span className="text-xs text-gray-500 ml-auto">
-            {grupos.length} emitente(s) · {daAba.length} nota(s)
+            {grupos.length} destinatário(s) · {daAba.length} nota(s)
           </span>
         </div>
 
@@ -255,13 +276,14 @@ const ModalEscrituracao = ({
                       onClick={(e) => e.stopPropagation()}
                       onChange={() => alternarGrupo(g)}
                       className="cursor-pointer shrink-0 w-4 h-4 p-0 mb-0"
-                      title="Selecionar todas as notas deste emitente"
+                      title="Selecionar todas as notas deste destinatário"
                     />
                     <span className="shrink-0 text-[9px] font-bold text-indigo-700 bg-indigo-100 px-1.5 py-0.5 rounded uppercase">
-                      Emitente
+                      Destinatário
                     </span>
                     <div className="flex-1 min-w-0 flex flex-wrap items-baseline gap-x-2">
                       <span className="text-xs font-bold text-[#000638] truncate max-w-full">
+                        {g.codigo != null ? `${g.codigo} - ` : ''}
                         {g.nome}
                       </span>
                       <span className="text-[10px] text-gray-500">
@@ -295,9 +317,9 @@ const ModalEscrituracao = ({
                               Emissão
                             </th>
                             <th className="px-2 py-1.5 text-left">
-                              Destinatário
+                              Emitente
                               <span className="block normal-case font-normal text-[9px] text-gray-400">
-                                filial que recebeu · CNPJ destinatário da nota
+                                quem emitiu a nota · CNPJ do emitente
                               </span>
                             </th>
                             <th className="w-16 px-2 py-1.5 text-center">
@@ -349,13 +371,10 @@ const ModalEscrituracao = ({
                               </td>
                               <td className="px-2 py-1.5">
                                 <div className="text-gray-800 truncate max-w-[260px]">
-                                  {n.empresa_codigo != null
-                                    ? `${n.empresa_codigo} - `
-                                    : ''}
-                                  {nomeDaFilial(n) || '--'}
+                                  {n.emitente_nome || '--'}
                                 </div>
                                 <div className="text-[10px] text-gray-400">
-                                  {formatCnpj(n.cnpj_destinatario)}
+                                  {formatCnpj(n.emitente_cnpj)}
                                 </div>
                               </td>
                               <td className="px-2 py-1.5 text-center text-gray-600">
@@ -637,11 +656,15 @@ const ManifestacaoDestinatario = () => {
     const emitentes = [
       ...new Set(notas.map((n) => n.emitente_nome).filter(Boolean)),
     ];
+    // O chamado é da filial que precisa escriturar, então é ela que nomeia
+    const filiaisNome = [
+      ...new Set(notas.map((n) => nomeDaFilial(n)).filter(Boolean)),
+    ];
     const assunto =
       notas.length === 1
         ? `NF ${nfDaChave(notas[0].chave_acesso)} pendente de escrituração`
         : `${notas.length} notas pendentes de escrituração` +
-          (emitentes.length === 1 ? ` — ${emitentes[0]}` : '');
+          (filiaisNome.length === 1 ? ` — ${filiaisNome[0]}` : '');
 
     const filiais = [...new Set(notas.map((n) => n.empresa_codigo))];
     const loja_cd =
@@ -691,6 +714,8 @@ const ManifestacaoDestinatario = () => {
           item.cnpj_destinatario,
           item.empresa_codigo,
           origemDoRegistro(item.schema_origem),
+          ESCRITURACAO_ROTULO[escrituracaoDaNota(item)],
+          item.nr_fatura,
         ]
           .map((v) => String(v ?? '').toLowerCase())
           .some((v) => v.includes(termo)),
@@ -740,8 +765,10 @@ const ManifestacaoDestinatario = () => {
         if (!item.manifestacao) acc.pendentes += 1;
         if (origemDoRegistro(item.schema_origem) === 'SEFAZ') acc.sefaz += 1;
         else acc.totvs += 1;
-        if (item.escriturada) acc.escrituradas += 1;
-        else acc.naoEscrituradas += 1;
+        const esc = escrituracaoDaNota(item);
+        if (esc === 'escriturada') acc.escrituradas += 1;
+        else if (esc === 'pendente') acc.naoEscrituradas += 1;
+        else acc.naoAplica += 1;
         return acc;
       },
       {
@@ -752,6 +779,7 @@ const ManifestacaoDestinatario = () => {
         totvs: 0,
         escrituradas: 0,
         naoEscrituradas: 0,
+        naoAplica: 0,
       },
     );
   }, [dadosProcessados]);
@@ -782,7 +810,7 @@ const ManifestacaoDestinatario = () => {
           MANIFESTACAO_LABEL[item.manifestacao] ||
           item.manifestacao_descricao ||
           'Pendente',
-        Escrituração: item.escriturada ? 'ESCRITURADA' : 'PENDENTE',
+        Escrituração: ESCRITURACAO_ROTULO[escrituracaoDaNota(item)],
         'Nº Fatura': item.nr_fatura || '',
         'Dt. Fatura': formatDateBR(item.dt_fatura),
         Origem: origemDoRegistro(item.schema_origem),
@@ -1080,6 +1108,11 @@ const ManifestacaoDestinatario = () => {
                 PENDENTES
               </span>
             </div>
+            {totais.naoAplica > 0 && (
+              <div className="text-[9px] text-gray-400 mt-0.5">
+                + {totais.naoAplica} cancelada(s)/denegada(s), fora da fila
+              </div>
+            )}
           </button>
           <div className="bg-white rounded-lg shadow p-3 border border-[#000638]/10">
             <div className="text-xs font-bold text-gray-700 mb-1">Origem</div>
@@ -1271,18 +1304,18 @@ const ManifestacaoDestinatario = () => {
                       </td>
                       <td className="text-center px-2 py-2">
                         <span
-                          className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            item.escriturada
-                              ? 'bg-teal-100 text-teal-700'
-                              : 'bg-orange-100 text-orange-700'
+                          className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap ${
+                            ESCRITURACAO_CLASSE[escrituracaoDaNota(item)]
                           }`}
                           title={
                             item.escriturada
                               ? `Fatura ${item.nr_fatura || ''}`.trim()
-                              : 'Sem fatura no TOTVS'
+                              : escrituracaoDaNota(item) === 'nao_aplica'
+                                ? 'Nota cancelada/denegada — não se escritura'
+                                : 'Sem fatura no TOTVS'
                           }
                         >
-                          {item.escriturada ? 'ESCRITURADA' : 'PENDENTE'}
+                          {ESCRITURACAO_ROTULO[escrituracaoDaNota(item)]}
                         </span>
                       </td>
                       <td className="text-center px-2 py-2">
