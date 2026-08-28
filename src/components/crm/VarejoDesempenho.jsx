@@ -214,6 +214,9 @@ export default function VarejoDesempenho() {
 
       // sellers-totals não retorna `totals` agregado — calcula no front
       const rows = sellersResp.data?.dataRow || [];
+      // Bonificação Elite (op 5919): não tem vendedor, então entra no TOTAL da
+      // loja (não como vendedora). O backend soma e devolve `bonificacoes`.
+      const bonificacoes = Number(sellersResp.data?.bonificacoes || 0);
       const sum = rows.reduce(
         (acc, r) => {
           acc.invoice_value += Number(r.invoice_value || 0);
@@ -224,9 +227,10 @@ export default function VarejoDesempenho() {
         { invoice_value: 0, invoice_qty: 0, itens_qty: 0 },
       );
       const totals = {
-        invoice_value: sum.invoice_value,
+        invoice_value: sum.invoice_value + bonificacoes,
         invoice_qty: sum.invoice_qty,
         itens_qty: sum.itens_qty,
+        bonificacoes,
         tm: sum.invoice_qty > 0 ? sum.invoice_value / sum.invoice_qty : 0,
         pa: sum.invoice_qty > 0 ? sum.itens_qty / sum.invoice_qty : 0,
         pmpv: sum.itens_qty > 0 ? sum.invoice_value / sum.itens_qty : 0,
