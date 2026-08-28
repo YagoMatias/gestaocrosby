@@ -45,6 +45,18 @@ const formatCnpj = (cnpj) => {
   return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
 };
 
+const formatDateBR = (isoDate) => {
+  if (!isoDate) return '--';
+  try {
+    const [datePart] = String(isoDate).split('T');
+    const [y, m, d] = datePart.split('-').map((n) => parseInt(n, 10));
+    if (!y || !m || !d) return '--';
+    return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
+  } catch {
+    return '--';
+  }
+};
+
 // Layout da chave: cUF(2) AAMM(4) CNPJ(14) mod(2) serie(3) nNF(9) ...
 const nfDaChave = (chave) => {
   const c = String(chave || '');
@@ -62,12 +74,20 @@ const serieDaChave = (chave) => {
 const LOJAS_DRYLAND = [2, 5, 55, 65, 87, 88, 90, 93, 94, 95, 97, 98];
 
 // Modal de escrituração: e daqui que saem os chamados para o setor fiscal
-const ModalEscrituracao = ({ notas, nomeDaFilial, onFechar, onAbrirChamado }) => {
+const ModalEscrituracao = ({
+  notas,
+  nomeDaFilial,
+  onFechar,
+  onAbrirChamado,
+}) => {
   const [aba, setAba] = useState('pendente');
   const [selecionadas, setSelecionadas] = useState(new Set());
 
   const daAba = useMemo(
-    () => notas.filter((n) => (aba === 'escriturada' ? n.escriturada : !n.escriturada)),
+    () =>
+      notas.filter((n) =>
+        aba === 'escriturada' ? n.escriturada : !n.escriturada,
+      ),
     [notas, aba],
   );
 
@@ -77,7 +97,11 @@ const ModalEscrituracao = ({ notas, nomeDaFilial, onFechar, onAbrirChamado }) =>
     for (const n of daAba) {
       const k = n.emitente_cnpj || 'sem-cnpj';
       if (!m.has(k))
-        m.set(k, { cnpj: n.emitente_cnpj, nome: n.emitente_nome || 'Sem emitente', notas: [] });
+        m.set(k, {
+          cnpj: n.emitente_cnpj,
+          nome: n.emitente_nome || 'Sem emitente',
+          notas: [],
+        });
       m.get(k).notas.push(n);
     }
     return [...m.values()].sort((a, b) => b.notas.length - a.notas.length);
@@ -119,8 +143,16 @@ const ModalEscrituracao = ({ notas, nomeDaFilial, onFechar, onAbrirChamado }) =>
 
         <div className="p-3 border-b border-gray-200 flex items-center gap-2">
           {[
-            ['pendente', 'Pendentes', notas.filter((n) => !n.escriturada).length],
-            ['escriturada', 'Escrituradas', notas.filter((n) => n.escriturada).length],
+            [
+              'pendente',
+              'Pendentes',
+              notas.filter((n) => !n.escriturada).length,
+            ],
+            [
+              'escriturada',
+              'Escrituradas',
+              notas.filter((n) => n.escriturada).length,
+            ],
           ].map(([id, rotulo, qtd]) => (
             <button
               key={id}
@@ -141,29 +173,38 @@ const ModalEscrituracao = ({ notas, nomeDaFilial, onFechar, onAbrirChamado }) =>
           </span>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-3">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-3">
           {grupos.length === 0 ? (
             <div className="text-center py-10 text-sm text-gray-500">
               Nenhuma nota nesta situação
             </div>
           ) : (
             grupos.map((g) => {
-              const todasMarcadas = g.notas.every((n) => selecionadas.has(n.chave_acesso));
+              const todasMarcadas = g.notas.every((n) =>
+                selecionadas.has(n.chave_acesso),
+              );
               return (
-                <div key={g.cnpj || 'sem'} className="mb-3 border border-gray-200 rounded-lg">
+                <div
+                  key={g.cnpj || 'sem'}
+                  className="mb-3 border border-gray-200 rounded-lg"
+                >
                   <div className="bg-gray-50 px-3 py-2 flex items-center gap-2 rounded-t-lg">
                     <input
                       type="checkbox"
                       checked={todasMarcadas}
                       onChange={() => alternarGrupo(g)}
-                      className="cursor-pointer"
+                      className="cursor-pointer shrink-0"
                     />
                     <div className="flex-1 min-w-0">
-                      <div className="text-xs font-bold text-[#000638] truncate">{g.nome}</div>
-                      <div className="text-[10px] text-gray-500">{formatCnpj(g.cnpj)}</div>
+                      <div className="text-xs font-bold text-[#000638] truncate">
+                        {g.nome}
+                      </div>
+                      <div className="text-[10px] text-gray-500 truncate">
+                        {formatCnpj(g.cnpj)}
+                      </div>
                     </div>
-                    <span className="text-[10px] font-bold text-gray-600 bg-gray-200 px-2 py-0.5 rounded">
-                      {g.notas.length}
+                    <span className="shrink-0 text-[10px] font-bold text-gray-600 bg-gray-200 px-2 py-0.5 rounded">
+                      {g.notas.length} nota{g.notas.length > 1 ? 's' : ''}
                     </span>
                   </div>
                   <div className="divide-y divide-gray-100">
@@ -176,24 +217,25 @@ const ModalEscrituracao = ({ notas, nomeDaFilial, onFechar, onAbrirChamado }) =>
                           type="checkbox"
                           checked={selecionadas.has(n.chave_acesso)}
                           onChange={() => alternar(n.chave_acesso)}
-                          className="cursor-pointer"
+                          className="cursor-pointer shrink-0"
                         />
-                        <span className="font-semibold text-gray-800 w-20">
+                        <span className="shrink-0 w-16 font-semibold text-gray-800">
                           NF {nfDaChave(n.chave_acesso)}
                         </span>
-                        <span className="text-gray-500 w-20">
-                          {String(n.data_emissao || '').slice(8, 10)}/
-                          {String(n.data_emissao || '').slice(5, 7)}/
-                          {String(n.data_emissao || '').slice(0, 4)}
+                        <span className="shrink-0 w-20 text-gray-500">
+                          {formatDateBR(n.data_emissao)}
                         </span>
-                        <span className="text-gray-600 flex-1 truncate">
-                          {n.empresa_codigo} - {nomeDaFilial(n)}
+                        <span className="flex-1 min-w-0 truncate text-gray-600">
+                          {n.empresa_codigo} - {nomeDaFilial(n) || '--'}
                         </span>
-                        <span className="text-green-600 font-semibold">
-                          {(parseFloat(n.valor_total) || 0).toLocaleString('pt-BR', {
-                            style: 'currency',
-                            currency: 'BRL',
-                          })}
+                        <span className="shrink-0 w-24 text-right font-semibold text-green-600">
+                          {(parseFloat(n.valor_total) || 0).toLocaleString(
+                            'pt-BR',
+                            {
+                              style: 'currency',
+                              currency: 'BRL',
+                            },
+                          )}
                         </span>
                       </label>
                     ))}
@@ -289,18 +331,6 @@ const ManifestacaoDestinatario = () => {
 
   const nomeDaFilial = (item) =>
     item.empresa_nome || nomePorCodigo[item.empresa_codigo] || '';
-
-  const formatDateBR = (isoDate) => {
-    if (!isoDate) return '--';
-    try {
-      const [datePart] = String(isoDate).split('T');
-      const [y, m, d] = datePart.split('-').map((n) => parseInt(n, 10));
-      if (!y || !m || !d) return '--';
-      return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
-    } catch {
-      return '--';
-    }
-  };
 
   const buscarDados = async () => {
     setLoading(true);
@@ -424,7 +454,9 @@ const ManifestacaoDestinatario = () => {
       return `Nota fiscal ${nf} do dia ${dia} com o destinatario ${dest} pendente de escrituração`;
     });
 
-    const emitentes = [...new Set(notas.map((n) => n.emitente_nome).filter(Boolean))];
+    const emitentes = [
+      ...new Set(notas.map((n) => n.emitente_nome).filter(Boolean)),
+    ];
     const assunto =
       notas.length === 1
         ? `NF ${nfDaChave(notas[0].chave_acesso)} pendente de escrituração`
@@ -433,7 +465,9 @@ const ManifestacaoDestinatario = () => {
 
     const filiais = [...new Set(notas.map((n) => n.empresa_codigo))];
     const loja_cd =
-      filiais.length === 1 && LOJAS_DRYLAND.includes(filiais[0]) ? filiais[0] : null;
+      filiais.length === 1 && LOJAS_DRYLAND.includes(filiais[0])
+        ? filiais[0]
+        : null;
 
     const texto =
       linhas.join('\n') +
@@ -648,46 +682,46 @@ const ManifestacaoDestinatario = () => {
               </span>
             </div>
             <div className="flex items-center gap-2 flex-wrap justify-end">
-            <button
-              type="button"
-              onClick={sincronizarSefaz}
-              disabled={sincronizando}
-              className="flex items-center gap-1 bg-amber-600 text-white px-3 py-1.5 rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors text-xs font-bold shadow-md uppercase"
-              title="Buscar documentos novos na SEFAZ agora"
-            >
-              {sincronizando ? (
-                <Spinner size={12} className="animate-spin" />
-              ) : (
-                <ArrowsClockwise size={12} weight="bold" />
-              )}
-              {sincronizando ? 'Sincronizando...' : 'Sincronizar SEFAZ'}
-            </button>
-            <label
-              className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold shadow-md uppercase transition-colors ${
-                importando
-                  ? 'bg-gray-400 text-white cursor-wait'
-                  : 'bg-indigo-600 text-white hover:bg-indigo-700 cursor-pointer'
-              }`}
-              title="CSV de manifestações do TOTVS: as notas com fatura entram como escrituradas"
-            >
-              {importando ? (
-                <Spinner size={12} className="animate-spin" />
-              ) : (
-                <UploadSimple size={12} weight="bold" />
-              )}
-              {importando ? 'Importando...' : 'Importar Escrituradas'}
-              <input
-                type="file"
-                accept=".csv,text/csv"
-                className="hidden"
-                disabled={!!importando}
-                onChange={(e) => {
-                  const arq = e.target.files?.[0];
-                  e.target.value = '';
-                  importarEscrituradas(arq);
-                }}
-              />
-            </label>
+              <button
+                type="button"
+                onClick={sincronizarSefaz}
+                disabled={sincronizando}
+                className="flex items-center gap-1 bg-amber-600 text-white px-3 py-1.5 rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors text-xs font-bold shadow-md uppercase"
+                title="Buscar documentos novos na SEFAZ agora"
+              >
+                {sincronizando ? (
+                  <Spinner size={12} className="animate-spin" />
+                ) : (
+                  <ArrowsClockwise size={12} weight="bold" />
+                )}
+                {sincronizando ? 'Sincronizando...' : 'Sincronizar SEFAZ'}
+              </button>
+              <label
+                className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold shadow-md uppercase transition-colors ${
+                  importando
+                    ? 'bg-gray-400 text-white cursor-wait'
+                    : 'bg-indigo-600 text-white hover:bg-indigo-700 cursor-pointer'
+                }`}
+                title="CSV de manifestações do TOTVS: as notas com fatura entram como escrituradas"
+              >
+                {importando ? (
+                  <Spinner size={12} className="animate-spin" />
+                ) : (
+                  <UploadSimple size={12} weight="bold" />
+                )}
+                {importando ? 'Importando...' : 'Importar Escrituradas'}
+                <input
+                  type="file"
+                  accept=".csv,text/csv"
+                  className="hidden"
+                  disabled={!!importando}
+                  onChange={(e) => {
+                    const arq = e.target.files?.[0];
+                    e.target.value = '';
+                    importarEscrituradas(arq);
+                  }}
+                />
+              </label>
             </div>
           </div>
 
