@@ -67,6 +67,8 @@ const ManifestacaoDestinatario = () => {
   const [tipoOperacao, setTipoOperacao] = useState('');
   const [situacao, setSituacao] = useState('');
   const [origem, setOrigem] = useState('');
+  const [escrituracao, setEscrituracao] = useState('');
+  const [importando, setImportando] = useState('');
   const [pesquisa, setPesquisa] = useState('');
 
   const [paginaAtual, setPaginaAtual] = useState(1);
@@ -138,6 +140,7 @@ const ManifestacaoDestinatario = () => {
       if (tipoOperacao) params.set('tipoOperacao', tipoOperacao);
       if (situacao) params.set('situacao', situacao);
       if (origem) params.set('origem', origem);
+      if (escrituracao) params.set('escrituracao', escrituracao);
 
       const r = await fetch(`${API_BASE_URL}/api/sefaz/dfe/notas?${params}`);
       const json = await r.json();
@@ -189,6 +192,39 @@ const ManifestacaoDestinatario = () => {
       setAvisoSync(e.message || 'Erro na sincronização');
     } finally {
       setSincronizando(false);
+    }
+  };
+
+  // CSV de manifestacoes do TOTVS: quem tem fatura ja foi escriturado
+  const importarEscrituradas = async (arquivo) => {
+    if (!arquivo) return;
+    setImportando('enviando');
+    setAvisoSync('');
+    try {
+      const fd = new FormData();
+      fd.append('arquivo', arquivo);
+      const r = await fetch(
+        `${API_BASE_URL}/api/sefaz/dfe/importar-escrituradas`,
+        { method: 'POST', body: fd },
+      );
+      const json = await r.json();
+      if (r.ok && json.success) {
+        const d = json.data || {};
+        setAvisoSync(
+          `Escrituração atualizada — ${d.escrituradas} escrituradas, ` +
+            `${d.pendentes} pendentes em ${d.linhasNoArquivo} linhas` +
+            (d.naoEncontradas
+              ? `. ${d.naoEncontradas} linhas do arquivo não bateram com nenhuma nota.`
+              : '.'),
+        );
+        buscarDados();
+      } else {
+        setAvisoSync(json.message || 'Erro ao importar');
+      }
+    } catch (e) {
+      setAvisoSync(e.message || 'Erro ao importar');
+    } finally {
+      setImportando('');
     }
   };
 
@@ -311,6 +347,9 @@ const ManifestacaoDestinatario = () => {
           MANIFESTACAO_LABEL[item.manifestacao] ||
           item.manifestacao_descricao ||
           'Pendente',
+        Escrituração: item.escriturada ? 'ESCRITURADA' : 'PENDENTE',
+        'Nº Fatura': item.nr_fatura || '',
+        'Dt. Fatura': formatDateBR(item.dt_fatura),
         Origem: origemDoRegistro(item.schema_origem),
         'Valor Total': parseFloat(item.valor_total) || 0,
         'Chave de Acesso': item.chave_acesso || '',
@@ -403,7 +442,7 @@ const ManifestacaoDestinatario = () => {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-2 mb-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-8 gap-2 mb-3">
             <div className="lg:col-span-1">
               <FiltroEmpresa
                 empresasSelecionadas={filiaisSelecionadas}
@@ -510,7 +549,7 @@ const ManifestacaoDestinatario = () => {
 
       {/* Cards de Resumo */}
       {dadosCarregados && dadosProcessados.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 mb-4 max-w-7xl mx-auto w-full">
+        <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 mb-4 max-w-7xl mx-auto w-full">
           <div className="bg-white rounded-lg shadow p-3 border border-[#000638]/10">
             <div className="text-xs font-bold text-green-700 mb-1">
               Valor Total
@@ -640,6 +679,7 @@ const ManifestacaoDestinatario = () => {
                       ['tipo_operacao', 'Tipo Op.', 'center'],
                       ['situacao', 'Situação', 'center'],
                       ['manifestacao', 'Manifestação', 'center'],
+                      ['escriturada', 'Escrituração', 'center'],
                       ['schema_origem', 'Origem', 'center'],
                       ['valor_total', 'Valor Total', 'center'],
                     ].map(([campo, label, align]) => (
