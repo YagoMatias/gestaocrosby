@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { API_BASE_URL } from '../config/constants';
@@ -16,6 +17,7 @@ import {
   ClipboardText,
   ArrowsClockwise,
   UploadSimple,
+  X,
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -55,6 +57,179 @@ const serieDaChave = (chave) => {
   return String(parseInt(c.slice(22, 25), 10));
 };
 
+// Lojas que existem no Dryland — o chamado precisa de uma delas.
+// Fora dessa lista o chamado abre sem loja definida e quem abre escolhe.
+const LOJAS_DRYLAND = [2, 5, 55, 65, 87, 88, 90, 93, 94, 95, 97, 98];
+
+// Modal de escrituração: e daqui que saem os chamados para o setor fiscal
+const ModalEscrituracao = ({ notas, nomeDaFilial, onFechar, onAbrirChamado }) => {
+  const [aba, setAba] = useState('pendente');
+  const [selecionadas, setSelecionadas] = useState(new Set());
+
+  const daAba = useMemo(
+    () => notas.filter((n) => (aba === 'escriturada' ? n.escriturada : !n.escriturada)),
+    [notas, aba],
+  );
+
+  // Agrupado por CNPJ do emitente: e o emitente que responde pela nota
+  const grupos = useMemo(() => {
+    const m = new Map();
+    for (const n of daAba) {
+      const k = n.emitente_cnpj || 'sem-cnpj';
+      if (!m.has(k))
+        m.set(k, { cnpj: n.emitente_cnpj, nome: n.emitente_nome || 'Sem emitente', notas: [] });
+      m.get(k).notas.push(n);
+    }
+    return [...m.values()].sort((a, b) => b.notas.length - a.notas.length);
+  }, [daAba]);
+
+  useEffect(() => setSelecionadas(new Set()), [aba]);
+
+  const alternar = (chave) =>
+    setSelecionadas((prev) => {
+      const s = new Set(prev);
+      s.has(chave) ? s.delete(chave) : s.add(chave);
+      return s;
+    });
+
+  const alternarGrupo = (g) => {
+    const chaves = g.notas.map((n) => n.chave_acesso);
+    const todas = chaves.every((c) => selecionadas.has(c));
+    setSelecionadas((prev) => {
+      const s = new Set(prev);
+      chaves.forEach((c) => (todas ? s.delete(c) : s.add(c)));
+      return s;
+    });
+  };
+
+  const escolhidas = daAba.filter((n) => selecionadas.has(n.chave_acesso));
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[92vh] flex flex-col">
+        <div className="bg-[#000638] text-white p-4 rounded-t-xl flex justify-between items-center">
+          <h3 className="text-sm font-bold uppercase tracking-wider flex items-center gap-2">
+            <ClipboardText size={18} weight="bold" />
+            Escrituração das notas
+          </h3>
+          <button onClick={onFechar} className="text-white hover:text-red-300">
+            <X size={20} weight="bold" />
+          </button>
+        </div>
+
+        <div className="p-3 border-b border-gray-200 flex items-center gap-2">
+          {[
+            ['pendente', 'Pendentes', notas.filter((n) => !n.escriturada).length],
+            ['escriturada', 'Escrituradas', notas.filter((n) => n.escriturada).length],
+          ].map(([id, rotulo, qtd]) => (
+            <button
+              key={id}
+              onClick={() => setAba(id)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                aba === id
+                  ? id === 'pendente'
+                    ? 'bg-orange-600 text-white'
+                    : 'bg-teal-600 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {rotulo} ({qtd})
+            </button>
+          ))}
+          <span className="text-xs text-gray-500 ml-auto">
+            {grupos.length} emitente(s) · {daAba.length} nota(s)
+          </span>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-3">
+          {grupos.length === 0 ? (
+            <div className="text-center py-10 text-sm text-gray-500">
+              Nenhuma nota nesta situação
+            </div>
+          ) : (
+            grupos.map((g) => {
+              const todasMarcadas = g.notas.every((n) => selecionadas.has(n.chave_acesso));
+              return (
+                <div key={g.cnpj || 'sem'} className="mb-3 border border-gray-200 rounded-lg">
+                  <div className="bg-gray-50 px-3 py-2 flex items-center gap-2 rounded-t-lg">
+                    <input
+                      type="checkbox"
+                      checked={todasMarcadas}
+                      onChange={() => alternarGrupo(g)}
+                      className="cursor-pointer"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-bold text-[#000638] truncate">{g.nome}</div>
+                      <div className="text-[10px] text-gray-500">{formatCnpj(g.cnpj)}</div>
+                    </div>
+                    <span className="text-[10px] font-bold text-gray-600 bg-gray-200 px-2 py-0.5 rounded">
+                      {g.notas.length}
+                    </span>
+                  </div>
+                  <div className="divide-y divide-gray-100">
+                    {g.notas.map((n) => (
+                      <label
+                        key={n.chave_acesso}
+                        className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-gray-50 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selecionadas.has(n.chave_acesso)}
+                          onChange={() => alternar(n.chave_acesso)}
+                          className="cursor-pointer"
+                        />
+                        <span className="font-semibold text-gray-800 w-20">
+                          NF {nfDaChave(n.chave_acesso)}
+                        </span>
+                        <span className="text-gray-500 w-20">
+                          {String(n.data_emissao || '').slice(8, 10)}/
+                          {String(n.data_emissao || '').slice(5, 7)}/
+                          {String(n.data_emissao || '').slice(0, 4)}
+                        </span>
+                        <span className="text-gray-600 flex-1 truncate">
+                          {n.empresa_codigo} - {nomeDaFilial(n)}
+                        </span>
+                        <span className="text-green-600 font-semibold">
+                          {(parseFloat(n.valor_total) || 0).toLocaleString('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL',
+                          })}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        <div className="p-3 border-t border-gray-200 flex items-center justify-between gap-2">
+          <span className="text-xs text-gray-600">
+            {escolhidas.length} nota(s) selecionada(s)
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onFechar}
+              className="px-4 py-2 text-xs font-bold text-gray-600 hover:text-gray-800"
+            >
+              Fechar
+            </button>
+            <button
+              onClick={() => onAbrirChamado(escolhidas)}
+              disabled={escolhidas.length === 0}
+              className="flex items-center gap-1 px-4 py-2 bg-[#000638] text-white rounded-lg text-xs font-bold uppercase hover:bg-[#fe0000] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <ClipboardText size={14} weight="bold" />
+              Abrir chamado
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const ManifestacaoDestinatario = () => {
   const [dados, setDados] = useState([]);
   const [empresas, setEmpresas] = useState([]);
@@ -70,6 +245,8 @@ const ManifestacaoDestinatario = () => {
   const [origem, setOrigem] = useState('');
   const [escrituracao, setEscrituracao] = useState('');
   const [importando, setImportando] = useState('');
+  const [modalEscrituracao, setModalEscrituracao] = useState(false);
+  const navigate = useNavigate();
   const [pesquisa, setPesquisa] = useState('');
 
   const [paginaAtual, setPaginaAtual] = useState(1);
@@ -232,6 +409,39 @@ const ManifestacaoDestinatario = () => {
   const handleFiltrar = (e) => {
     e.preventDefault();
     buscarDados();
+  };
+
+  // Manda o usuário para a abertura de chamado do Dryland já preenchida.
+  // O chamado é por loja, então só faz sentido prefixar a loja quando todas
+  // as notas escolhidas são da mesma filial — e quando ela existe no Dryland.
+  const abrirChamadoDasNotas = (notas) => {
+    if (!notas.length) return;
+
+    const linhas = notas.map((n) => {
+      const nf = nfDaChave(n.chave_acesso);
+      const dia = formatDateBR(n.data_emissao);
+      const dest = `${n.empresa_codigo} - ${nomeDaFilial(n)}`;
+      return `Nota fiscal ${nf} do dia ${dia} com o destinatario ${dest} pendente de escrituração`;
+    });
+
+    const emitentes = [...new Set(notas.map((n) => n.emitente_nome).filter(Boolean))];
+    const assunto =
+      notas.length === 1
+        ? `NF ${nfDaChave(notas[0].chave_acesso)} pendente de escrituração`
+        : `${notas.length} notas pendentes de escrituração` +
+          (emitentes.length === 1 ? ` — ${emitentes[0]}` : '');
+
+    const filiais = [...new Set(notas.map((n) => n.empresa_codigo))];
+    const loja_cd =
+      filiais.length === 1 && LOJAS_DRYLAND.includes(filiais[0]) ? filiais[0] : null;
+
+    const texto =
+      linhas.join('\n') +
+      (emitentes.length ? `\n\nEmitente(s): ${emitentes.join(', ')}` : '');
+
+    navigate('/tecnologia/chamados-dryland', {
+      state: { novoChamado: { assunto, texto, setor: 'fiscal', loja_cd } },
+    });
   };
 
   const handleSort = (campo) => {
@@ -630,9 +840,17 @@ const ManifestacaoDestinatario = () => {
               {totais.pendentes}
             </div>
           </div>
-          <div className="bg-white rounded-lg shadow p-3 border border-[#000638]/10">
-            <div className="text-xs font-bold text-gray-700 mb-1">
+          <button
+            type="button"
+            onClick={() => setModalEscrituracao(true)}
+            className="bg-white rounded-lg shadow p-3 border border-[#000638]/10 text-left hover:shadow-lg hover:border-[#000638]/40 transition-all cursor-pointer"
+            title="Ver as notas e abrir chamado para o setor fiscal"
+          >
+            <div className="text-xs font-bold text-gray-700 mb-1 flex items-center justify-between">
               Escrituração
+              <span className="text-[9px] font-semibold text-[#000638] normal-case">
+                ver notas →
+              </span>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-sm font-extrabold text-teal-600">
@@ -648,7 +866,7 @@ const ManifestacaoDestinatario = () => {
                 PENDENTES
               </span>
             </div>
-          </div>
+          </button>
           <div className="bg-white rounded-lg shadow p-3 border border-[#000638]/10">
             <div className="text-xs font-bold text-gray-700 mb-1">Origem</div>
             <div className="flex items-center gap-2">
@@ -943,6 +1161,15 @@ const ManifestacaoDestinatario = () => {
           )}
         </div>
       </div>
+
+      {modalEscrituracao && (
+        <ModalEscrituracao
+          notas={dadosProcessados}
+          nomeDaFilial={nomeDaFilial}
+          onFechar={() => setModalEscrituracao(false)}
+          onAbrirChamado={abrirChamadoDasNotas}
+        />
+      )}
     </div>
   );
 };

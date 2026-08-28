@@ -4,6 +4,7 @@
 // mesmas RPCs que o site dryland-missao-separacao usa, sem tocar nele.
 // Layout no padrão HeadCoach (LiberacaoPagamento / SolicitacoesCrosby).
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Ticket,
   Plus,
@@ -32,6 +33,15 @@ import {
   Megaphone,
   Tray,
   UsersThree,
+  Buildings,
+  Wrench,
+  Truck,
+  PauseCircle,
+  FilePdf,
+  FileArrowDown,
+  PaperPlaneTilt,
+  ChatCircleDots,
+  Flag,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import Notification from '../components/ui/Notification';
@@ -63,6 +73,10 @@ const STATUS_CONFIG = {
   em_andamento: { label: 'Em andamento', color: 'bg-emerald-100 text-emerald-800 border-emerald-300', icon: PlayCircle },
   aguardando_solicitante: { label: 'Aguard. solicitante', color: 'bg-yellow-100 text-yellow-800 border-yellow-300', icon: Clock },
   aguardando_responsavel: { label: 'Aguard. responsável', color: 'bg-purple-100 text-purple-800 border-purple-300', icon: UserCircle },
+  aguardando_diretoria: { label: 'Aguard. diretoria', color: 'bg-yellow-100 text-yellow-900 border-yellow-400', icon: Buildings },
+  aguardando_prestador: { label: 'Aguard. prestador', color: 'bg-teal-100 text-teal-800 border-teal-300', icon: Wrench },
+  enviado_loja: { label: 'Enviado p/ loja', color: 'bg-sky-100 text-sky-800 border-sky-300', icon: Truck },
+  pausado: { label: 'Pausado', color: 'bg-orange-100 text-orange-800 border-orange-300', icon: PauseCircle },
   concluido: { label: 'Resolvido', color: 'bg-gray-200 text-gray-700 border-gray-300', icon: CheckCircle },
   cancelado: { label: 'Cancelado', color: 'bg-red-100 text-red-800 border-red-300', icon: XCircle },
 };
@@ -70,6 +84,12 @@ const STATUS_CONFIG = {
 const DIRECAO_CONFIG = {
   adm: { label: 'Cobrança', title: 'Adm cobra a loja', color: 'bg-red-100 text-red-700', icon: Megaphone },
   loja: { label: 'Pedido', title: 'Loja pede pro setor', color: 'bg-blue-100 text-blue-700', icon: Storefront },
+};
+
+// Prioridade (campo novo do Dryland). 'normal' nao ganha selo — so polui a tela.
+const PRIORIDADE_CONFIG = {
+  alta: { label: 'Alta', color: 'bg-amber-100 text-amber-800 border-amber-300' },
+  critica: { label: 'Crítica', color: 'bg-red-600 text-white border-red-700' },
 };
 
 const inputCls =
@@ -151,6 +171,77 @@ function PrazoAltBadge({ chamado, className = '' }) {
       <ClockCounterClockwise size={9} weight="bold" />
       Prazo mudou {n}x
     </span>
+  );
+}
+
+// Prioridade: só aparece quando é alta ou crítica
+function PrioridadeBadge({ chamado, className = '' }) {
+  const cfg = PRIORIDADE_CONFIG[chamado?.prioridade];
+  if (!cfg) return null;
+  return (
+    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border ${T.flag} ${cfg.color} ${className}`}>
+      <Flag size={9} weight="fill" />
+      {cfg.label}
+    </span>
+  );
+}
+
+// Chamado congelado até uma data (status 'pausado' + campo pausado_ate)
+function PausadoBadge({ chamado, className = '' }) {
+  if (!chamado?.pausado_ate) return null;
+  return (
+    <span
+      title="Chamado pausado — volta a correr nesta data"
+      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-800 border border-orange-300 ${T.flag} ${className}`}
+    >
+      <PauseCircle size={9} weight="bold" />
+      Pausado até {fmtData(chamado.pausado_ate)}
+    </span>
+  );
+}
+
+// Um anexo do chamado. O Dryland guarda PDF junto com foto, então renderizar
+// tudo como <img> deixava o PDF como imagem quebrada — cada tipo tem seu visual.
+const ORIGEM_LABEL = {
+  abertura: 'Abertura',
+  comprovante: 'Comprovante',
+  chat: 'Conversa',
+  anexo: 'Anexo',
+};
+
+function AnexoTile({ anexo }) {
+  const legenda = ORIGEM_LABEL[anexo.origem] || 'Anexo';
+  const titulo = `${legenda}${anexo.por ? ` · ${anexo.por}` : ''}${anexo.criado_em ? ` · ${fmtDataHora(anexo.criado_em)}` : ''}`;
+  const selo = (
+    <span className={`absolute left-1 bottom-1 px-1.5 py-0.5 rounded bg-[#000638]/80 text-white ${T.flag}`}>
+      {legenda}
+    </span>
+  );
+  if (anexo.tipo === 'imagem') {
+    return (
+      <a href={anexo.url} target="_blank" rel="noreferrer" title={titulo} className="relative block">
+        <img
+          src={anexo.url}
+          alt={legenda}
+          className="w-24 h-28 object-cover rounded-lg border border-gray-200 hover:ring-2 hover:ring-[#000638] transition-shadow"
+        />
+        {selo}
+      </a>
+    );
+  }
+  const Icon = anexo.tipo === 'pdf' ? FilePdf : FileArrowDown;
+  return (
+    <a
+      href={anexo.url}
+      target="_blank"
+      rel="noreferrer"
+      title={titulo}
+      className="relative w-24 h-28 rounded-lg border border-gray-200 bg-gray-50 hover:bg-gray-100 hover:ring-2 hover:ring-[#000638] flex flex-col items-center justify-center gap-1 transition-colors"
+    >
+      <Icon size={26} weight="bold" className={anexo.tipo === 'pdf' ? 'text-red-600' : 'text-gray-500'} />
+      <span className={`${T.flag} text-gray-600`}>{anexo.tipo === 'pdf' ? 'PDF' : 'Arquivo'}</span>
+      {selo}
+    </a>
   );
 }
 
@@ -265,6 +356,136 @@ const MultiSelectSetores = ({ opcoes, selecionadas, onChange }) => {
   );
 };
 
+// Conversa com a loja. O Dryland guarda isso em 'mensagens' (lado: loja|setor)
+// e é o que a loja lê e responde no celular — diferente do Histórico, que é o
+// log de auditoria (quem mudou status, prazo, responsável).
+function ChatChamado({ mensagens, chamadoId, operador, onEnviado, notify }) {
+  const [texto, setTexto] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState('');
+  const fimRef = useRef(null);
+
+  useEffect(() => {
+    fimRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [mensagens?.length]);
+
+  const enviar = async () => {
+    const msg = texto.trim();
+    if (!msg || enviando) return;
+    setEnviando(true);
+    setErro('');
+    try {
+      const r = await apiJson(`${API}/chamados/${chamadoId}/mensagem`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ texto: msg, por: operador }),
+      });
+      setTexto('');
+      notify?.(
+        r?.avisado === false ? 'warning' : 'success',
+        r?.avisado === false ? 'Mensagem enviada (aviso à loja falhou)' : 'Mensagem enviada',
+      );
+      await onEnviado?.();
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  return (
+    <div className="border-2 border-gray-200 rounded-xl overflow-hidden">
+      <div className="flex items-center gap-1.5 px-3 py-2 bg-gray-50 border-b border-gray-200">
+        <ChatCircleDots size={13} weight="bold" className="text-[#000638]" />
+        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
+          Conversa com a loja
+        </p>
+        <span className={`ml-auto ${T.flag} text-gray-400`}>
+          {mensagens.length} mensagem(ns)
+        </span>
+      </div>
+
+      <div className="max-h-72 overflow-y-auto px-3 py-3 space-y-2 bg-[#f7f8fb]">
+        {mensagens.length === 0 ? (
+          <p className={`${T.flag} text-gray-400 text-center py-6`}>
+            Nenhuma mensagem ainda — escreva abaixo para falar com a loja
+          </p>
+        ) : (
+          mensagens.map((m, i) => {
+            const meu = m.lado === 'setor';
+            return (
+              <div key={m.id || i} className={`flex ${meu ? 'justify-end' : 'justify-start'}`}>
+                <div
+                  className={`max-w-[78%] rounded-2xl px-3 py-2 shadow-sm ${
+                    meu
+                      ? 'bg-[#000638] text-white rounded-br-sm'
+                      : 'bg-white text-gray-800 border border-gray-200 rounded-bl-sm'
+                  }`}
+                >
+                  <p className={`${T.flag} ${meu ? 'text-blue-200' : 'text-gray-400'} mb-0.5`}>
+                    {m.por || (meu ? 'setor' : 'loja')}
+                  </p>
+                  {m.texto && (
+                    <p className="text-[11px] leading-snug whitespace-pre-wrap break-words">
+                      {m.texto}
+                    </p>
+                  )}
+                  {m.anexo_url && (
+                    <a href={m.anexo_url} target="_blank" rel="noreferrer" className="mt-1.5 block">
+                      {m.anexo_tipo === 'imagem' ? (
+                        <img src={m.anexo_url} alt="anexo" className="w-36 rounded-lg border border-black/10" />
+                      ) : (
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg ${T.flag} ${
+                            meu ? 'bg-white/15 text-white' : 'bg-gray-100 text-gray-700'
+                          }`}
+                        >
+                          <FilePdf size={12} weight="bold" /> Abrir anexo
+                        </span>
+                      )}
+                    </a>
+                  )}
+                  <p className={`${T.flag} ${meu ? 'text-blue-200' : 'text-gray-400'} mt-1 text-right`}>
+                    {fmtDataHora(m.criado_em)}
+                  </p>
+                </div>
+              </div>
+            );
+          })
+        )}
+        <div ref={fimRef} />
+      </div>
+
+      <div className="flex items-end gap-2 p-2 border-t border-gray-200 bg-white">
+        <textarea
+          rows={1}
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              enviar();
+            }
+          }}
+          placeholder="escreva para a loja… (enter envia, shift+enter quebra linha)"
+          className="flex-1 resize-none border-2 border-gray-200 rounded-full px-3 py-2 text-xs uppercase tracking-wide focus:outline-none focus:border-[#000638] transition-colors"
+        />
+        <button
+          onClick={enviar}
+          disabled={enviando || !texto.trim()}
+          title="Enviar mensagem"
+          className="shrink-0 w-9 h-9 rounded-full bg-[#000638] text-white flex items-center justify-center hover:bg-[#001060] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          {enviando ? <Spinner size={14} className="animate-spin" /> : <PaperPlaneTilt size={15} weight="fill" />}
+        </button>
+      </div>
+      {erro && (
+        <p className={`${T.flag} text-red-600 px-3 pb-2`}>{erro}</p>
+      )}
+    </div>
+  );
+}
+
 const Section = ({ title, children }) => (
   <div className="bg-gray-50/60 border rounded-lg p-3">
     <p className={`${T.label} mb-2`}>{title}</p>
@@ -294,6 +515,8 @@ function ChamadoModal({ id, meta, operador, onClose, onChanged, notify }) {
     responsavel_nome: '',
     comentario: '',
     status: '',
+    prioridade: '',
+    pausado_ate: '',
   });
 
   const carregar = useCallback(async () => {
@@ -315,6 +538,8 @@ function ChamadoModal({ id, meta, operador, onClose, onChanged, notify }) {
         responsavel_nome: c.responsavel_nome || c.responsavel_sugerido || '',
         comentario: '',
         status: '',
+        prioridade: c.prioridade || 'normal',
+        pausado_ate: c.pausado_ate ? String(c.pausado_ate).slice(0, 10) : '',
       });
     } catch (e) {
       setErro(e.message);
@@ -346,6 +571,11 @@ function ChamadoModal({ id, meta, operador, onClose, onChanged, notify }) {
   };
 
   const prazoMudou = !!form.prazo && form.prazo !== prazoOrig;
+  // O Dryland só grava pausado_ate quando o status é 'pausado' — mandar a data
+  // sozinha volta ok:true e é silenciosamente ignorada. Então o campo só
+  // aparece (e só é enviado) quando o chamado está/vai ficar pausado.
+  const statusEfetivo = form.status || detalhe?.chamado?.status;
+  const ehPausado = statusEfetivo === 'pausado';
 
   const salvar = () => {
     // o Dryland só aceita mudança de prazo com motivo (mín. 5 letras) — a loja lê
@@ -359,6 +589,12 @@ function ChamadoModal({ id, meta, operador, onClose, onChanged, notify }) {
     if (prazoMudou) patch.prazo_justificativa = form.prazo_justificativa.trim();
     if (form.comentario.trim()) patch.comentario = form.comentario.trim();
     if (form.status) patch.status = form.status;
+    if (form.prioridade) patch.prioridade = form.prioridade;
+    if (ehPausado && form.pausado_ate) {
+      patch.pausado_ate = form.pausado_ate;
+      // garante que o status vai junto: sem ele a RPC ignora a data
+      patch.status = 'pausado';
+    }
     enviar(patch, { msg: 'Alterações salvas' });
   };
 
@@ -454,6 +690,8 @@ function ChamadoModal({ id, meta, operador, onClose, onChanged, notify }) {
                   <DirecaoBadge direcao={c.direcao} />
                   <PrazoBadge chamado={c} />
                   <PrazoAltBadge chamado={c} />
+                  <PrioridadeBadge chamado={c} />
+                  <PausadoBadge chamado={c} />
                   {c.prazo_contestado && (
                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-orange-300 bg-orange-100 text-orange-700 ${T.badge}`}>
                       <Warning size={11} weight="bold" /> Loja reclamou do prazo
@@ -517,16 +755,10 @@ function ChamadoModal({ id, meta, operador, onClose, onChanged, notify }) {
 
               {detalhe.anexos.length > 0 && (
                 <div>
-                  <p className={`${T.label} mb-1.5`}>Fotos anexadas ({detalhe.anexos.length})</p>
+                  <p className={`${T.label} mb-1.5`}>Fotos e anexos ({detalhe.anexos.length})</p>
                   <div className="flex flex-wrap gap-2">
                     {detalhe.anexos.map((a, i) => (
-                      <a key={i} href={a.url} target="_blank" rel="noreferrer" title={a.por || ''}>
-                        <img
-                          src={a.url}
-                          alt=""
-                          className="w-20 h-20 object-cover rounded-lg border border-gray-200 hover:ring-2 hover:ring-[#000638] transition-shadow"
-                        />
-                      </a>
+                      <AnexoTile key={a.path || i} anexo={a} />
                     ))}
                   </div>
                 </div>
@@ -575,6 +807,32 @@ function ChamadoModal({ id, meta, operador, onClose, onChanged, notify }) {
                       ))}
                     </select>
                   </div>
+                  <div>
+                    <ELabel>Prioridade</ELabel>
+                    <select
+                      value={form.prioridade}
+                      onChange={(e) => setForm((f) => ({ ...f, prioridade: e.target.value }))}
+                      className={inpCls}
+                    >
+                      {(meta.prioridades || []).map((pr) => (
+                        <option key={pr.id} value={pr.id}>{pr.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {ehPausado && (
+                    <div>
+                      <ELabel>Pausado até</ELabel>
+                      <input
+                        type="date"
+                        value={form.pausado_ate}
+                        onChange={(e) => setForm((f) => ({ ...f, pausado_ate: e.target.value }))}
+                        className={`${inpCls} border-orange-300 bg-orange-50`}
+                      />
+                      <p className={`${T.flag} text-orange-600 mt-1`}>
+                        O prazo para de correr até essa data
+                      </p>
+                    </div>
+                  )}
                 </div>
                 {prazoMudou && (
                   <div className="rounded-lg border-2 border-amber-300 bg-amber-50 p-3">
@@ -614,6 +872,14 @@ function ChamadoModal({ id, meta, operador, onClose, onChanged, notify }) {
                   <Warning size={16} /> {erro}
                 </div>
               )}
+
+              <ChatChamado
+                mensagens={detalhe.mensagens || []}
+                chamadoId={id}
+                operador={operador}
+                onEnviado={carregar}
+                notify={notify}
+              />
 
               {detalhe.eventos.length > 0 && (
                 <div>
@@ -677,13 +943,22 @@ function ChamadoModal({ id, meta, operador, onClose, onChanged, notify }) {
 // ──────────────────────────────────────────────
 // Modal: abrir chamado novo
 // ──────────────────────────────────────────────
-function NovoChamadoModal({ meta, operador, onClose, onCreated, notify }) {
+function NovoChamadoModal({ meta, operador, onClose, onCreated, notify, inicial }) {
   const setoresReais = meta.setores.filter((s) => s.id !== 'loja');
+  // `inicial` vem de quem manda abrir o chamado ja preenchido (hoje, a tela de
+  // Manifestacao do Destinatario com as notas pendentes de escrituracao)
+  const lojaInicial = meta.lojas.some((l) => String(l.cd) === String(inicial?.loja_cd))
+    ? String(inicial.loja_cd)
+    : String(meta.lojas[0]?.cd || '');
   const [form, setForm] = useState({
-    loja_cd: String(meta.lojas[0]?.cd || ''),
-    assunto: '',
-    texto: '',
-    setor: setoresReais.find((s) => s.id === 'tecnologia')?.id || setoresReais[0]?.id || 'tecnologia',
+    loja_cd: lojaInicial,
+    assunto: inicial?.assunto || '',
+    texto: inicial?.texto || '',
+    setor:
+      setoresReais.find((s) => s.id === inicial?.setor)?.id ||
+      setoresReais.find((s) => s.id === 'tecnologia')?.id ||
+      setoresReais[0]?.id ||
+      'tecnologia',
     direcao: 'loja',
   });
   const [erro, setErro] = useState('');
@@ -935,11 +1210,23 @@ export default function ChamadosDryland() {
   const [fVenc, setFVenc] = useState(false);
   const [fRec, setFRec] = useState(false);
   const [fPrazoAlt, setFPrazoAlt] = useState(false);
+  const [fPrioridade, setFPrioridade] = useState(false);
   const [busca, setBusca] = useState('');
   const [ordenacao, setOrdenacao] = useState({ coluna: 'prazo', dir: 'asc' });
 
   const [detalheId, setDetalheId] = useState(null);
   const [novoAberto, setNovoAberto] = useState(false);
+  // Outra tela pode mandar abrir o chamado ja preenchido, via state da rota
+  const location = useLocation();
+  const [novoInicial, setNovoInicial] = useState(null);
+  useEffect(() => {
+    const pre = location.state?.novoChamado;
+    if (!pre) return;
+    setNovoInicial(pre);
+    setNovoAberto(true);
+    // limpa o state para o modal nao reabrir a cada re-render/refresh
+    window.history.replaceState({}, '');
+  }, [location.state]);
   const [previaResp, setPreviaResp] = useState(null);
   const [carregandoPrevia, setCarregandoPrevia] = useState(false);
 
@@ -992,6 +1279,7 @@ export default function ChamadosDryland() {
     fVenc ||
     fRec ||
     fPrazoAlt ||
+    fPrioridade ||
     busca ||
     fStatus !== 'abertos' ||
     fSetores.length !== SETORES_PADRAO.length ||
@@ -1004,6 +1292,7 @@ export default function ChamadosDryland() {
     setFVenc(false);
     setFRec(false);
     setFPrazoAlt(false);
+    setFPrioridade(false);
     setBusca('');
     setFStatus('abertos');
   };
@@ -1029,6 +1318,7 @@ export default function ChamadosDryland() {
       if (fRec && !c.prazo_contestado) return false;
       // mesma regra do card do Dryland: teve prazo empurrado e ainda não foi concluído
       if (fPrazoAlt && !(Number(c.prazo_alteracoes || 0) > 0 && c.status !== 'concluido')) return false;
+      if (fPrioridade && !['alta', 'critica'].includes(c.prioridade)) return false;
       if (q && !`${c.assunto || ''} ${c.loja_nome || ''} ${c.responsavel_nome || ''} #${c.numero}`.toLowerCase().includes(q)) return false;
       return true;
     });
@@ -1055,7 +1345,7 @@ export default function ChamadosDryland() {
       if (typeof va === 'string') return va.localeCompare(vb) * mult;
       return (va - vb) * mult;
     });
-  }, [base, fLoja, fStatus, fDirecao, fVenc, fRec, fPrazoAlt, busca, ordenacao]);
+  }, [base, fLoja, fStatus, fDirecao, fVenc, fRec, fPrazoAlt, fPrioridade, busca, ordenacao]);
 
   const kpis = useMemo(() => {
     const ab = base.filter((c) => c.status !== 'concluido' && c.status !== 'cancelado');
@@ -1254,6 +1544,10 @@ export default function ChamadosDryland() {
             <input type="checkbox" checked={fPrazoAlt} onChange={(e) => setFPrazoAlt(e.target.checked)} className="w-3.5 h-3.5 cursor-pointer accent-[#000638]" />
             Só com prazo alterado
           </label>
+          <label className={`flex items-center gap-1.5 ${T.flag} text-gray-600 cursor-pointer`}>
+            <input type="checkbox" checked={fPrioridade} onChange={(e) => setFPrioridade(e.target.checked)} className="w-3.5 h-3.5 cursor-pointer accent-[#000638]" />
+            Só alta / crítica
+          </label>
           <span className={`ml-auto ${T.flag} text-gray-400`}>
             {filtrados.length} chamado(s) encontrado(s)
           </span>
@@ -1314,6 +1608,8 @@ export default function ChamadosDryland() {
                         </span>
                       )}
                       <PrazoAltBadge chamado={c} className="ml-1.5" />
+                      <PrioridadeBadge chamado={c} className="ml-1.5" />
+                      <PausadoBadge chamado={c} className="ml-1.5" />
                     </td>
                     <td className={`${T.td} whitespace-nowrap`}>{c.loja_nome}</td>
                     <td className="px-2 py-2 whitespace-nowrap">
@@ -1360,9 +1656,13 @@ export default function ChamadosDryland() {
         <NovoChamadoModal
           meta={meta}
           operador={operador}
-          onClose={() => setNovoAberto(false)}
+          onClose={() => {
+            setNovoAberto(false);
+            setNovoInicial(null);
+          }}
           onCreated={carregar}
           notify={notify}
+          inicial={novoInicial}
         />
       )}
       {previaResp && (
