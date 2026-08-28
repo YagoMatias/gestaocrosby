@@ -57,7 +57,6 @@ const serieDaChave = (chave) => {
 const ManifestacaoDestinatario = () => {
   const [dados, setDados] = useState([]);
   const [empresas, setEmpresas] = useState([]);
-  const [cnpjsSelecionados, setCnpjsSelecionados] = useState([]);
   const [filiaisSelecionadas, setFiliaisSelecionadas] = useState([]);
   const [loading, setLoading] = useState(false);
   const [sincronizando, setSincronizando] = useState(false);
@@ -86,16 +85,13 @@ const ManifestacaoDestinatario = () => {
     });
   }, []);
 
-  // Carregar empresas (CNPJs com certificado)
+  // Filiais consultadas na SEFAZ (código + nome do TOTVS)
   useEffect(() => {
     const carregar = async () => {
       try {
         const r = await fetch(`${API_BASE_URL}/api/sefaz/dfe/empresas`);
         const json = await r.json();
-        if (json.success && Array.isArray(json.data)) {
-          setEmpresas(json.data);
-          setCnpjsSelecionados(json.data.map((e) => e.cnpj));
-        }
+        if (json.success && Array.isArray(json.data)) setEmpresas(json.data);
       } catch (e) {
         console.error('Erro ao carregar empresas:', e);
       }
@@ -103,13 +99,16 @@ const ManifestacaoDestinatario = () => {
     carregar();
   }, []);
 
-  const descricaoPorCnpj = useMemo(() => {
+  const nomePorCodigo = useMemo(() => {
     const m = {};
     empresas.forEach((e) => {
-      m[e.cnpj] = e.descricao;
+      if (e.codigo) m[e.codigo] = e.nome;
     });
     return m;
   }, [empresas]);
+
+  const nomeDaFilial = (item) =>
+    item.empresa_nome || nomePorCodigo[item.empresa_codigo] || '';
 
   const formatDateBR = (isoDate) => {
     if (!isoDate) return '--';
@@ -129,8 +128,6 @@ const ManifestacaoDestinatario = () => {
     setPaginaAtual(1);
     try {
       const params = new URLSearchParams();
-      if (cnpjsSelecionados.length > 0)
-        params.set('cnpjs', cnpjsSelecionados.join(','));
       const codigosFiliais = filiaisSelecionadas
         .map((f) => parseInt(f.cd_empresa))
         .filter((c) => !isNaN(c));
@@ -200,12 +197,6 @@ const ManifestacaoDestinatario = () => {
     buscarDados();
   };
 
-  const toggleCnpj = (cnpj) => {
-    setCnpjsSelecionados((prev) =>
-      prev.includes(cnpj) ? prev.filter((c) => c !== cnpj) : [...prev, cnpj],
-    );
-  };
-
   const handleSort = (campo) => {
     setOrdenacao((prev) => ({
       campo,
@@ -235,7 +226,7 @@ const ManifestacaoDestinatario = () => {
           item.emitente_cnpj,
           item.chave_acesso,
           nfDaChave(item.chave_acesso),
-          descricaoPorCnpj[item.cnpj_destinatario],
+          nomeDaFilial(item),
           item.cnpj_destinatario,
           item.empresa_codigo,
           origemDoRegistro(item.schema_origem),
@@ -267,7 +258,7 @@ const ManifestacaoDestinatario = () => {
     }
 
     return filtrados;
-  }, [dados, ordenacao, pesquisa, descricaoPorCnpj]);
+  }, [dados, ordenacao, pesquisa, nomePorCodigo]);
 
   const totalPages = Math.ceil(dadosProcessados.length / itensPorPagina);
 
@@ -301,11 +292,9 @@ const ManifestacaoDestinatario = () => {
     }
     try {
       const dadosParaExportar = dadosProcessados.map((item) => ({
-        Destinatário:
-          descricaoPorCnpj[item.cnpj_destinatario] ||
-          formatCnpj(item.cnpj_destinatario),
-        'CNPJ Destinatário': formatCnpj(item.cnpj_destinatario),
         Filial: item.empresa_codigo ?? '',
+        Destinatário: nomeDaFilial(item),
+        'CNPJ Destinatário': formatCnpj(item.cnpj_destinatario),
         'Data Emissão': formatDateBR(item.data_emissao),
         'Nº NF': nfDaChave(item.chave_acesso),
         Série: serieDaChave(item.chave_acesso),
@@ -412,35 +401,6 @@ const ManifestacaoDestinatario = () => {
               )}
               {sincronizando ? 'Sincronizando...' : 'Sincronizar SEFAZ'}
             </button>
-          </div>
-
-          {/* Empresas (CNPJs com certificado) */}
-          <div className="mb-3">
-            <label className="block text-xs font-semibold mb-1 text-[#000638]">
-              Empresas
-            </label>
-            <div className="flex flex-wrap gap-1.5">
-              {empresas.length === 0 && (
-                <span className="text-xs text-gray-400">
-                  Nenhum certificado configurado no servidor
-                </span>
-              )}
-              {empresas.map((e) => (
-                <button
-                  key={e.cnpj}
-                  type="button"
-                  onClick={() => toggleCnpj(e.cnpj)}
-                  className={`px-2 py-1 rounded-full text-xs font-medium border transition-colors ${
-                    cnpjsSelecionados.includes(e.cnpj)
-                      ? 'bg-[#000638] text-white border-[#000638]'
-                      : 'bg-white text-gray-600 border-gray-300 hover:border-[#000638]'
-                  }`}
-                  title={formatCnpj(e.cnpj)}
-                >
-                  {e.descricao}
-                </button>
-              ))}
-            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-2 mb-3">
@@ -672,8 +632,8 @@ const ManifestacaoDestinatario = () => {
                 <thead className="bg-[#000638] text-white text-xs uppercase tracking-wider">
                   <tr>
                     {[
-                      ['cnpj_destinatario', 'Destinatário', 'left'],
                       ['empresa_codigo', 'Filial', 'center'],
+                      ['empresa_nome', 'Destinatário', 'left'],
                       ['data_emissao', 'Data Emissão', 'center'],
                       ['chave_acesso', 'Nº NF', 'center'],
                       ['emitente_nome', 'Emitente', 'left'],
@@ -707,12 +667,16 @@ const ManifestacaoDestinatario = () => {
                       key={`${item.cnpj_destinatario}-${item.chave_acesso}-${index}`}
                       className="text-xs odd:bg-white even:bg-gray-50 hover:bg-gray-100 transition-colors"
                     >
-                      <td className="text-left text-gray-900 px-2 py-2">
-                        {descricaoPorCnpj[item.cnpj_destinatario] ||
-                          formatCnpj(item.cnpj_destinatario)}
+                      <td className="text-center px-2 py-2">
+                        <span className="inline-block px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 font-bold">
+                          {item.empresa_codigo ?? '--'}
+                        </span>
                       </td>
-                      <td className="text-center text-gray-900 px-2 py-2">
-                        {item.empresa_codigo ?? '--'}
+                      <td className="text-left text-gray-900 px-2 py-2">
+                        <div>{nomeDaFilial(item) || '--'}</div>
+                        <div className="text-[10px] text-gray-400">
+                          {formatCnpj(item.cnpj_destinatario)}
+                        </div>
                       </td>
                       <td className="text-center text-gray-900 px-2 py-2">
                         {formatDateBR(item.data_emissao)}
