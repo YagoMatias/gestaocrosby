@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import FiltroEmpresa from '../components/FiltroEmpresa';
 import {
   ArrowRight,
   Buildings,
@@ -275,6 +276,7 @@ const CreditosClientes = () => {
     await carregarFiliais();
     setEdicaoLimite({
       novo: true,
+      empresa: null,
       branchCode: '',
       financeiro: '',
       comercial: '',
@@ -845,30 +847,43 @@ const CreditosClientes = () => {
                   <label className="mb-1 block text-xs font-semibold text-[#000638]">
                     Empresa
                   </label>
-                  <select
-                    value={edicaoLimite.branchCode}
-                    onChange={(e) =>
-                      setEdicaoLimite((p) => ({ ...p, branchCode: e.target.value }))
+                  {/* Mesmo seletor das demais telas: mostra codigo e nome.
+                      Aqui a escolha e unica, entao fica sempre a ultima. */}
+                  <FiltroEmpresa
+                    empresasSelecionadas={
+                      edicaoLimite.empresa ? [edicaoLimite.empresa] : []
                     }
-                    className="w-full rounded-lg border border-[#000638]/30 bg-[#f8f9fb] px-3 py-2 text-sm text-[#000638] focus:outline-none focus:ring-2 focus:ring-[#000638]"
-                  >
-                    <option value="">Selecione a empresa...</option>
-                    {(filiaisCodigos.length > 0
-                      ? filiaisCodigos
-                      : DEFAULT_BRANCH_CODES
-                    ).map((codigo) => (
-                      <option key={codigo} value={codigo}>
-                        {codigo}
-                        {saldo.values?.some(
-                          (v) =>
-                            Number(v.branchCode) === Number(codigo) &&
-                            Number(v.limitValue || 0) !== 0,
-                        )
-                          ? ' — ja possui limite'
-                          : ''}
-                      </option>
-                    ))}
-                  </select>
+                    onSelectEmpresas={(lista) => {
+                      const empresa = lista.length
+                        ? lista[lista.length - 1]
+                        : null;
+                      setEdicaoLimite((p) => ({
+                        ...p,
+                        empresa,
+                        branchCode: empresa ? empresa.cd_empresa : '',
+                      }));
+                    }}
+                  />
+                  {edicaoLimite.empresa && (
+                    <p className="mt-1 text-[11px] text-gray-500">
+                      Gravando na empresa{' '}
+                      <span className="font-semibold text-[#000638]">
+                        {edicaoLimite.empresa.cd_empresa} —{' '}
+                        {edicaoLimite.empresa.nm_grupoempresa}
+                      </span>
+                      {saldo.values?.some(
+                        (v) =>
+                          Number(v.branchCode) ===
+                            Number(edicaoLimite.empresa.cd_empresa) &&
+                          Number(v.limitValue || 0) !== 0,
+                      ) && (
+                        <span className="text-amber-600">
+                          {' '}
+                          (ja possui limite — sera substituido)
+                        </span>
+                      )}
+                    </p>
+                  )}
                 </div>
               )}
               <div>
