@@ -11,6 +11,7 @@ import {
   CaretDown,
   CaretUp,
   PencilSimple,
+  Plus,
   X,
 } from '@phosphor-icons/react';
 
@@ -269,9 +270,21 @@ const CreditosClientes = () => {
     });
   }, [saldo.values, sortField, sortDir]);
 
+  const abrirNovoLimite = async () => {
+    setMsgLimite(null);
+    await carregarFiliais();
+    setEdicaoLimite({
+      novo: true,
+      branchCode: '',
+      financeiro: '',
+      comercial: '',
+    });
+  };
+
   const abrirEdicaoLimite = (value) => {
     setMsgLimite(null);
     setEdicaoLimite({
+      novo: false,
       branchCode: value.branchCode,
       // O TOTVS nao expoe o limite comercial em nenhuma consulta; os dois
       // campos sao gravados juntos, partindo do financeiro atual
@@ -282,6 +295,11 @@ const CreditosClientes = () => {
 
   const salvarLimite = async () => {
     if (!edicaoLimite || !clienteSelecionado) return;
+    const filial = parseInt(edicaoLimite.branchCode, 10);
+    if (isNaN(filial) || filial <= 0) {
+      setMsgLimite({ tipo: 'erro', texto: 'Selecione a empresa.' });
+      return;
+    }
     const financeiro = Number(String(edicaoLimite.financeiro).replace(',', '.'));
     const comercial = Number(String(edicaoLimite.comercial).replace(',', '.'));
     if (isNaN(financeiro) || financeiro < 0 || isNaN(comercial) || comercial < 0) {
@@ -306,7 +324,7 @@ const CreditosClientes = () => {
           personType: isPJ ? 'PJ' : 'PF',
           [isPJ ? 'cnpj' : 'cpf']: doc,
           name: saldo.name || clienteSelecionado.name,
-          branchCode: edicaoLimite.branchCode,
+          branchCode: filial,
           limitValue: financeiro,
           saleLimitValue: comercial,
         }),
@@ -317,7 +335,7 @@ const CreditosClientes = () => {
       }
       setMsgLimite({
         tipo: 'ok',
-        texto: `Limite da filial ${edicaoLimite.branchCode} atualizado.`,
+        texto: `Limite da filial ${filial} gravado.`,
       });
       setEdicaoLimite(null);
       await consultarSaldo(clienteSelecionado);
@@ -643,15 +661,25 @@ const CreditosClientes = () => {
                       Detalhamento por Filial
                     </h3>
                     <p className="text-xs text-gray-400 mt-0.5">
-                      Filiais com valores de CREDEV ou Adiantamento
+                      Filiais com CREDEV, Adiantamento ou Limite
                     </p>
                   </div>
-                  {filiaisComValor.length > 0 && (
-                    <span className="inline-flex items-center rounded-full bg-[#000638] px-2.5 py-1 text-[10px] font-bold text-white tracking-wide">
-                      {filiaisComValor.length}{' '}
-                      {filiaisComValor.length === 1 ? 'filial' : 'filiais'}
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {filiaisComValor.length > 0 && (
+                      <span className="inline-flex items-center rounded-full bg-[#000638] px-2.5 py-1 text-[10px] font-bold text-white tracking-wide">
+                        {filiaisComValor.length}{' '}
+                        {filiaisComValor.length === 1 ? 'filial' : 'filiais'}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={abrirNovoLimite}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-700"
+                    >
+                      <Plus size={13} weight="bold" />
+                      Adicionar limite
+                    </button>
+                  </div>
                 </div>
 
                 {filiaisComValor.length > 0 ? (
@@ -795,7 +823,9 @@ const CreditosClientes = () => {
             <div className="flex items-start justify-between bg-[#000638] px-5 py-4">
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-white/70">
-                  Limite de credito — filial {edicaoLimite.branchCode}
+                  {edicaoLimite.novo
+                    ? 'Adicionar limite de credito'
+                    : `Limite de credito — filial ${edicaoLimite.branchCode}`}
                 </p>
                 <h3 className="text-base font-bold leading-tight text-white">
                   {saldo.name || 'Cliente'}
@@ -810,6 +840,37 @@ const CreditosClientes = () => {
             </div>
 
             <div className="space-y-3 px-5 py-4">
+              {edicaoLimite.novo && (
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-[#000638]">
+                    Empresa
+                  </label>
+                  <select
+                    value={edicaoLimite.branchCode}
+                    onChange={(e) =>
+                      setEdicaoLimite((p) => ({ ...p, branchCode: e.target.value }))
+                    }
+                    className="w-full rounded-lg border border-[#000638]/30 bg-[#f8f9fb] px-3 py-2 text-sm text-[#000638] focus:outline-none focus:ring-2 focus:ring-[#000638]"
+                  >
+                    <option value="">Selecione a empresa...</option>
+                    {(filiaisCodigos.length > 0
+                      ? filiaisCodigos
+                      : DEFAULT_BRANCH_CODES
+                    ).map((codigo) => (
+                      <option key={codigo} value={codigo}>
+                        {codigo}
+                        {saldo.values?.some(
+                          (v) =>
+                            Number(v.branchCode) === Number(codigo) &&
+                            Number(v.limitValue || 0) !== 0,
+                        )
+                          ? ' — ja possui limite'
+                          : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="mb-1 block text-xs font-semibold text-[#000638]">
                   Limite financeiro
@@ -841,9 +902,9 @@ const CreditosClientes = () => {
                 />
               </div>
               <p className="text-[11px] leading-snug text-gray-500">
-                O TOTVS nao devolve o limite comercial em consulta — ele vem
-                preenchido com o valor do financeiro e os dois sao gravados
-                juntos. O limite mensal nao e alterado.
+                {edicaoLimite.novo
+                  ? 'Informe os dois limites. Gravar numa empresa nao altera as demais. O limite mensal nao e afetado.'
+                  : 'O TOTVS nao devolve o limite comercial em consulta — ele vem preenchido com o valor do financeiro e os dois sao gravados juntos. O limite mensal nao e alterado.'}
               </p>
               {msgLimite && (
                 <div
