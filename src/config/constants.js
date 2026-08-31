@@ -123,13 +123,13 @@ export const USER_ROLES = {
   FRANQUIAS: 'franquias',
 };
 
+// Perfis oficiais do sistema: Proprietário, Administrador, Gerente, Padrão e
+// Franquias. Perfis antigos (user/vendedor) foram migrados para Padrão (guest).
 export const USER_ROLE_LABELS = {
   [USER_ROLES.OWNER]: 'Proprietário',
   [USER_ROLES.ADMIN]: 'Administrador',
   [USER_ROLES.MANAGER]: 'Gerente',
-  [USER_ROLES.USER]: 'Financeiro',
   [USER_ROLES.GUEST]: 'Padrão',
-  [USER_ROLES.VENDEDOR]: 'Vendedor',
   [USER_ROLES.FRANQUIAS]: 'Franquias',
 };
 
@@ -137,8 +137,13 @@ export const USER_ROLE_COLORS = {
   [USER_ROLES.OWNER]: 'bg-purple-100 text-purple-800',
   [USER_ROLES.ADMIN]: 'bg-red-100 text-red-800',
   [USER_ROLES.MANAGER]: 'bg-orange-100 text-orange-800',
-  [USER_ROLES.USER]: 'bg-green-100 text-green-800',
   [USER_ROLES.GUEST]: 'bg-gray-100 text-gray-800',
-  [USER_ROLES.VENDEDOR]: 'bg-emerald-100 text-emerald-800',
   [USER_ROLES.FRANQUIAS]: 'bg-blue-100 text-blue-800',
 };
+
+// Perfis que podem ser gestores de setor
+export const GESTOR_ELIGIBLE_ROLES = [
+  USER_ROLES.OWNER,
+  USER_ROLES.ADMIN,
+  USER_ROLES.MANAGER,
+];

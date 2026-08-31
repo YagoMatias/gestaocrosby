@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../components/AuthContext';
 import { usePermissions } from '../hooks/usePermissions';
+import { getSetoresComMembros } from '../services/setoresService';
+import { USER_ROLE_LABELS } from '../config/constants';
 import {
   Card,
   CardContent,
@@ -549,7 +551,9 @@ const GerenciadorAcessos = () => {
   // Estados
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [searchUser, setSearchUser] = useState('');
-  const [filterRole, setFilterRole] = useState(''); // Novo: filtro por role
+  const [filterRole, setFilterRole] = useState(''); // Filtro por perfil
+  const [filterSetor, setFilterSetor] = useState(''); // Filtro por setor
+  const [setores, setSetores] = useState([]);
   const [selectedPages, setSelectedPages] = useState([]);
   const [mode, setMode] = useState('individual'); // 'individual' ou 'bulk'
   const [saving, setSaving] = useState(false);
@@ -589,7 +593,31 @@ const GerenciadorAcessos = () => {
     loadUsersWithPermissions();
   }, [loadUsersWithPermissions]);
 
-  // Filtrar usuários pela busca e role
+  // Carregar setores ao montar
+  useEffect(() => {
+    const loadSetores = async () => {
+      const { data } = await getSetoresComMembros();
+      setSetores(data || []);
+    };
+    loadSetores();
+  }, []);
+
+  // Mapa user_id → nomes de setores (membro ou gestor)
+  const setoresPorUsuario = useMemo(() => {
+    const map = {};
+    const add = (userId, nome) => {
+      if (!userId) return;
+      if (!map[userId]) map[userId] = [];
+      if (!map[userId].includes(nome)) map[userId].push(nome);
+    };
+    setores.forEach((s) => {
+      add(s.gestor_id, s.nome);
+      s.membros.forEach((m) => add(m.user_id, s.nome));
+    });
+    return map;
+  }, [setores]);
+
+  // Filtrar usuários pela busca, perfil e setor
   const filteredUsers = useMemo(() => {
     let filtered = users;
 
@@ -604,13 +632,20 @@ const GerenciadorAcessos = () => {
       );
     }
 
-    // Filtrar por role
+    // Filtrar por perfil
     if (filterRole) {
       filtered = filtered.filter((u) => u.role === filterRole);
     }
 
+    // Filtrar por setor
+    if (filterSetor) {
+      filtered = filtered.filter((u) =>
+        (setoresPorUsuario[u.id] || []).includes(filterSetor),
+      );
+    }
+
     return filtered;
-  }, [users, searchUser, filterRole]);
+  }, [users, searchUser, filterRole, filterSetor, setoresPorUsuario]);
 
   // Agrupar páginas por categoria
   const pagesByCategory = useMemo(() => {
@@ -786,32 +821,20 @@ const GerenciadorAcessos = () => {
     }
   };
 
-  // Cores dos badges por role
+  // Cores dos badges por perfil (Proprietário, Administrador, Gerente,
+  // Padrão e Franquias — perfis legados caem no visual de Padrão)
   const getRoleBadgeColor = (role) => {
     const colors = {
       owner: 'bg-purple-100 text-purple-700 border-purple-300',
       admin: 'bg-red-100 text-red-700 border-red-300',
       manager: 'bg-orange-100 text-orange-700 border-orange-300',
-      user: 'bg-blue-100 text-blue-700 border-blue-300',
-      vendedor: 'bg-green-100 text-green-700 border-green-300',
-      franquias: 'bg-teal-100 text-teal-700 border-teal-300',
       guest: 'bg-gray-100 text-gray-700 border-gray-300',
+      franquias: 'bg-teal-100 text-teal-700 border-teal-300',
     };
     return colors[role] || colors.guest;
   };
 
-  const getRoleLabel = (role) => {
-    const labels = {
-      owner: 'Proprietário',
-      admin: 'Admin',
-      manager: 'Gerente',
-      user: 'Financeiro',
-      vendedor: 'Vendedor',
-      franquias: 'Franquia',
-      guest: 'Convidado',
-    };
-    return labels[role] || role;
-  };
+  const getRoleLabel = (role) => USER_ROLE_LABELS[role] || role;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-4">
@@ -933,21 +956,33 @@ const GerenciadorAcessos = () => {
                   />
                 </div>
 
-                {/* Filtro por Role */}
-                <select
-                  value={filterRole}
-                  onChange={(e) => setFilterRole(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">Todos os perfis</option>
-                  <option value="owner">👑 Proprietário</option>
-                  <option value="admin">🔴 Admin</option>
-                  <option value="manager">🟠 Gerente</option>
-                  <option value="user">🔵 Financeiro</option>
-                  <option value="vendedor">🟢 Vendedor</option>
-                  <option value="franquias">🏬 Franquia</option>
-                  <option value="guest">⚪ Convidado</option>
-                </select>
+                {/* Filtros por Perfil e Setor */}
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    value={filterRole}
+                    onChange={(e) => setFilterRole(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">Todos os perfis</option>
+                    <option value="owner">👑 Proprietário</option>
+                    <option value="admin">🔴 Administrador</option>
+                    <option value="manager">🟠 Gerente</option>
+                    <option value="guest">⚪ Padrão</option>
+                    <option value="franquias">🏬 Franquias</option>
+                  </select>
+                  <select
+                    value={filterSetor}
+                    onChange={(e) => setFilterSetor(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="">Todos os setores</option>
+                    {setores.map((s) => (
+                      <option key={s.id} value={s.nome}>
+                        {s.nome}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
                 {/* Botões de seleção em massa (apenas no modo bulk) */}
                 {mode === 'bulk' && filteredUsers.length > 0 && (
@@ -1012,7 +1047,7 @@ const GerenciadorAcessos = () => {
                             <p className="text-xs text-gray-600 truncate mb-1">
                               {u.email}
                             </p>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span
                                 className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${getRoleBadgeColor(
                                   u.role,
@@ -1023,6 +1058,26 @@ const GerenciadorAcessos = () => {
                               <span className="text-[10px] text-gray-500">
                                 {u.permissionsCount} páginas
                               </span>
+                              {(setoresPorUsuario[u.id] || [])
+                                .slice(0, 2)
+                                .map((nome) => (
+                                  <span
+                                    key={nome}
+                                    className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-100"
+                                  >
+                                    {nome}
+                                  </span>
+                                ))}
+                              {(setoresPorUsuario[u.id] || []).length > 2 && (
+                                <span
+                                  className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-500"
+                                  title={(setoresPorUsuario[u.id] || [])
+                                    .slice(2)
+                                    .join(', ')}
+                                >
+                                  +{(setoresPorUsuario[u.id] || []).length - 2}
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
