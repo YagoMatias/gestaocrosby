@@ -470,6 +470,8 @@ export default function ControleChips() {
   const [filtroSetor, setFiltroSetor] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editando, setEditando] = useState(null);
+  const [verificando, setVerificando] = useState(false);
+  const [resultadoVerif, setResultadoVerif] = useState(null);
 
   const carregar = useCallback(async () => {
     setLoading(true);
@@ -495,6 +497,31 @@ export default function ControleChips() {
   }, [busca, filtroStatus, filtroOperadora, filtroSetor]);
 
   useEffect(() => { carregar(); }, [carregar]);
+
+  // Verifica CADA número no WhatsApp (via uazapi) e atualiza tem_whatsapp.
+  // Retorna os que NÃO têm WhatsApp. Pode levar 1-2 min (checa um a um).
+  const verificarWhatsapp = async () => {
+    if (verificando) return;
+    if (!confirm('Verificar todos os números no WhatsApp? Pode levar 1-2 minutos (checa um a um na uazapi).')) return;
+    setVerificando(true);
+    setResultadoVerif(null);
+    setErro('');
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/tech/chips/verificar-whatsapp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ somenteAtivos: true }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j?.success) throw new Error(j?.message || 'Falha na verificação');
+      setResultadoVerif(j.data);
+      await carregar();
+    } catch (e) {
+      setErro(`Verificação WhatsApp: ${e.message}`);
+    } finally {
+      setVerificando(false);
+    }
+  };
 
   const remover = async (chip) => {
     if (!confirm(`Remover o chip ${chip.numero}?`)) return;
@@ -657,6 +684,16 @@ export default function ControleChips() {
               {setoresDisponiveis.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
+          {/* Verificar WhatsApp — checa cada número na uazapi */}
+          <button
+            onClick={verificarWhatsapp}
+            disabled={verificando}
+            title="Checa cada número no WhatsApp e atualiza o campo. Pode levar 1-2 min."
+            className="inline-flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed text-white px-4 py-2.5 rounded-lg text-xs font-bold shadow-md hover:shadow-lg transition-all uppercase tracking-wide font-barlow whitespace-nowrap"
+          >
+            <WhatsappLogo size={14} weight="bold" />
+            {verificando ? 'Verificando…' : 'Verificar WhatsApp'}
+          </button>
           {/* Botão "Novo chip" — ação primária */}
           <button
             onClick={() => { setEditando(null); setShowModal(true); }}
@@ -665,6 +702,30 @@ export default function ControleChips() {
             <Plus size={14} weight="bold" /> Novo chip
           </button>
         </div>
+
+        {/* Resultado da verificação de WhatsApp */}
+        {resultadoVerif && (
+          <div className="mx-3 mb-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+            <div className="flex items-center gap-3 flex-wrap text-xs font-semibold text-gray-700 font-barlow">
+              <span className="text-emerald-700">
+                ✓ {resultadoVerif.com_whatsapp} com WhatsApp
+              </span>
+              <span className="text-rose-700">
+                ✕ {resultadoVerif.sem_whatsapp} SEM WhatsApp
+              </span>
+              <span className="text-gray-500">
+                {resultadoVerif.atualizados} atualizados · {resultadoVerif.total} checados
+                {resultadoVerif.erros > 0 && ` · ${resultadoVerif.erros} erro(s)`}
+              </span>
+            </div>
+            {resultadoVerif.numeros_sem_whatsapp?.length > 0 && (
+              <div className="mt-2 text-[11px] text-gray-600 font-barlow">
+                <span className="font-bold text-rose-700">Sem WhatsApp: </span>
+                {resultadoVerif.numeros_sem_whatsapp.join(' · ')}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Chips de filtros ativos */}
         {filtrosAtivos.length > 0 && (
