@@ -363,6 +363,12 @@ const painelVendasItems = [
 
 const varejo = [
   {
+    name: 'Forecast Varejo',
+    href: '/forecast-canal/varejo',
+    icon: Trophy,
+    color: 'text-emerald-600',
+  },
+  {
     name: 'Etiquetas de Preço',
     href: '/tecnologia/etiquetas-preco',
     icon: Tag,
@@ -489,6 +495,12 @@ const marketing = [
 
 const multimarcas = [
   {
+    name: 'Forecast Multimarcas',
+    href: '/forecast-canal/multimarcas',
+    icon: Trophy,
+    color: 'text-indigo-600',
+  },
+  {
     name: 'Inadimplentes Multimarcas',
     href: '/inadimplentes-multimarcas',
     icon: ChartBar,
@@ -522,6 +534,12 @@ const multimarcas = [
 
 const revenda = [
   {
+    name: 'Forecast Revenda',
+    href: '/forecast-canal/revenda',
+    icon: Trophy,
+    color: 'text-cyan-600',
+  },
+  {
     name: 'Inadimplentes Revenda',
     href: '/inadimplentes-revenda',
     icon: ChartBar,
@@ -530,6 +548,12 @@ const revenda = [
 ];
 
 const franquias = [
+  {
+    name: 'Forecast Franquias',
+    href: '/forecast-canal/franquias',
+    icon: Trophy,
+    color: 'text-amber-600',
+  },
   {
     name: 'Compras Franquias',
     href: '/compras-franquias',

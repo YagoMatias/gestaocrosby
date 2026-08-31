@@ -9,6 +9,7 @@ import {
 import PageTitle from '../components/ui/PageTitle';
 import useApiClient from '../hooks/useApiClient';
 import useFreshFetch from '../hooks/useFreshFetch';
+import { CompeticaoTodosCanais } from '../components/forecast/CompeticaoCanais';
 
 const formatBRL = (v) =>
   Number(v || 0).toLocaleString('pt-BR', {
@@ -185,17 +186,21 @@ export default function PainelVendas() {
   // VAREJO: primeiro nível é a lista de filiais (dados do painel oficial,
   // mesma fonte do Ranking de Faturamento)
   const abrirFiliais = (titulo) => {
-    const filiais = varejoPainel.map((b) => ({
-      branch: b.branch_code,
-      qtd: b.qtd,
-      valor: b.valor,
-      vendedores: (b.sellers || []).map((s) => ({
-        code: s.seller_code,
-        nome: s.seller_name,
-        qtd: s.qtd,
-        valor: s.valor,
-      })),
-    }));
+    const filiais = varejoPainel
+      .map((b) => ({
+        branch: b.branch_code,
+        qtd: b.qtd,
+        valor: b.valor,
+        vendedores: (b.sellers || [])
+          .map((s) => ({
+            code: s.seller_code,
+            nome: s.seller_name,
+            qtd: s.qtd,
+            valor: s.valor,
+          }))
+          .sort((a, b) => b.valor - a.valor),
+      }))
+      .sort((a, b) => b.valor - a.valor);
     pushView({ tipo: 'filiais', titulo, filiais });
   };
 
@@ -395,6 +400,9 @@ export default function PainelVendas() {
             </div>
           );
         })()}
+
+      {/* Competição de vendas — mês/semana correntes, todos os canais */}
+      <CompeticaoTodosCanais />
 
       {/* Modal de drill (filiais → vendedores → vendas) */}
       {viewAtual && (

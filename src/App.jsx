@@ -118,6 +118,7 @@ const FaturamentoHistorico = lazy(() => import('./pages/FaturamentoHistorico'));
 const DashboardVendas = lazy(() => import('./pages/DashboardVendas'));
 const Forecast = lazy(() => import('./pages/Forecast'));
 const NewForecast = lazy(() => import('./pages/NewForecast'));
+const ForecastCanal = lazy(() => import('./pages/ForecastCanal'));
 const ControleChips = lazy(() => import('./pages/ControleChips'));
 const ChamadosDryland = lazy(() => import('./pages/ChamadosDryland'));
 const MonitoramentoTotvs = lazy(() => import('./pages/MonitoramentoTotvs'));
@@ -291,6 +292,7 @@ const protectedRoutes = [
   { path: '/crm-vendas', component: CRMVendas },
   { path: '/forecast', component: Forecast },
   { path: '/new-forecast', component: NewForecast },
+  { path: '/forecast-canal/:canal', component: ForecastCanal },
   // URLs antigas — caem na mesma página (hub) mas abrem aba correta via query
   { path: '/faturamento-canal', component: Forecast },
   { path: '/crm/competicao', component: PainelCompeticao },

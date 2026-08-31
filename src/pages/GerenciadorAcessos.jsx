@@ -266,6 +266,11 @@ const AVAILABLE_PAGES = [
   },
 
   // ─── Varejo ─────────────────────────────────────────────────
+  {
+    path: '/forecast-canal/varejo',
+    name: 'Forecast Varejo (Competição)',
+    category: 'Varejo',
+  },
   { path: '/dashboard-varejo', name: 'Dashboard Varejo', category: 'Varejo' },
   { path: '/metas-varejo', name: 'Metas Varejo', category: 'Varejo' },
   {
@@ -304,6 +309,11 @@ const AVAILABLE_PAGES = [
 
   // ─── Multimarcas ────────────────────────────────────────────
   {
+    path: '/forecast-canal/multimarcas',
+    name: 'Forecast Multimarcas (Competição)',
+    category: 'Multimarcas',
+  },
+  {
     path: '/inadimplentes-multimarcas',
     name: 'Inadimplentes Multimarcas',
     category: 'Multimarcas',
@@ -327,12 +337,22 @@ const AVAILABLE_PAGES = [
 
   // ─── Revenda ────────────────────────────────────────────────
   {
+    path: '/forecast-canal/revenda',
+    name: 'Forecast Revenda (Competição)',
+    category: 'Revenda',
+  },
+  {
     path: '/inadimplentes-revenda',
     name: 'Inadimplentes Revenda',
     category: 'Revenda',
   },
 
   // ─── Franquias ──────────────────────────────────────────────
+  {
+    path: '/forecast-canal/franquias',
+    name: 'Forecast Franquias (Competição)',
+    category: 'Franquias',
+  },
   {
     path: '/compras-franquias',
     name: 'Compras Franquias',

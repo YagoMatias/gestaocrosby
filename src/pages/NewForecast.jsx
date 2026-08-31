@@ -529,8 +529,74 @@ const NewForecast = () => {
     }
   };
 
+  // Consolidado de TODAS as semanas — usado no clique da coluna "Realizado".
+  const drillTotal = useMemo(() => {
+    const vendedores = {};
+    const varejoMap = new Map();
+    const expedicao = [];
+    for (const w of semanasDef) {
+      const d = drillData[`s${w.s}`];
+      if (!d) continue;
+      for (const [code, v] of Object.entries(d.vendedores || {})) {
+        const cur = vendedores[code] || {
+          seller_code: v.seller_code,
+          seller_name: v.seller_name,
+          qtd: 0,
+          valor: 0,
+          vendas: [],
+        };
+        if (v.seller_name) cur.seller_name = v.seller_name;
+        cur.qtd += v.qtd || 0;
+        cur.valor = Math.round((cur.valor + (v.valor || 0)) * 100) / 100;
+        cur.vendas = [...cur.vendas, ...(v.vendas || [])];
+        vendedores[code] = cur;
+      }
+      for (const l of d.varejo || []) {
+        const cur = varejoMap.get(l.branch_code) || {
+          branch_code: l.branch_code,
+          qtd: 0,
+          valor: 0,
+          sellersMap: new Map(),
+        };
+        cur.qtd += l.qtd || 0;
+        cur.valor = Math.round((cur.valor + (l.valor || 0)) * 100) / 100;
+        for (const s of l.sellers || []) {
+          const sc = cur.sellersMap.get(s.seller_code) || {
+            seller_code: s.seller_code,
+            seller_name: s.seller_name,
+            qtd: 0,
+            valor: 0,
+          };
+          if (s.seller_name) sc.seller_name = s.seller_name;
+          sc.qtd += s.qtd || 0;
+          sc.valor = Math.round((sc.valor + (s.valor || 0)) * 100) / 100;
+          cur.sellersMap.set(s.seller_code, sc);
+        }
+        varejoMap.set(l.branch_code, cur);
+      }
+      expedicao.push(...(d.expedicao || []));
+    }
+    const varejo = [...varejoMap.values()]
+      .map((l) => ({
+        branch_code: l.branch_code,
+        qtd: l.qtd,
+        valor: l.valor,
+        sellers: [...l.sellersMap.values()].sort((a, b) => b.valor - a.valor),
+      }))
+      .sort((a, b) => b.valor - a.valor);
+    return { vendedores, varejo, expedicao };
+  }, [drillData, semanasDef]);
+
   // ─── Drill ──────────────────────────────────────────────────────────────
-  const weekKeyOf = (w) => `${w.datemin}|${w.datemax}`;
+  // week === null → período inteiro (clique na coluna "Realizado")
+  const janela = (w) =>
+    w
+      ? { datemin: w.datemin, datemax: w.datemax }
+      : { datemin: periodo.ini, datemax: periodo.fim };
+  const weekKeyOf = (w) => {
+    const j = janela(w);
+    return `${j.datemin}|${j.datemax}`;
+  };
 
   // Nível 3 do varejo: clientes de um vendedor de loja (único fetch sob demanda)
   const fetchVendasVarejo = (sellerCode, w) => {
@@ -540,8 +606,7 @@ const NewForecast = () => {
       .salePanelFaturamentoVendedorDetalhe({
         seller_code: sellerCode,
         filtroempresa: [],
-        datemin: w.datemin,
-        datemax: w.datemax,
+        ...janela(w),
       })
       .then((r) => {
         const p = r?.data ?? r;
@@ -557,6 +622,10 @@ const NewForecast = () => {
 
   const abrirCelula = (c, w) => {
     setDrill({ canal: c, week: w, stack: [{ tipo: 'root' }] });
+  };
+  // Coluna "Realizado": mesmo drill, consolidando todas as semanas
+  const abrirRealizado = (c) => {
+    setDrill({ canal: c, week: null, stack: [{ tipo: 'root' }] });
   };
   const pushView = (v) =>
     setDrill((d) => (d ? { ...d, stack: [...d.stack, v] } : d));
@@ -581,8 +650,9 @@ const NewForecast = () => {
     if (!drill) return null;
     const { canal: c, week: w } = drill;
     const view = drill.stack[drill.stack.length - 1];
-    const kSem = `s${w.s}`;
-    const dSem = drillData[kSem]; // {vendedores, varejo, expedicao} | undefined
+    // week null = coluna "Realizado" → consolidado de todas as semanas
+    const kSem = w ? `s${w.s}` : null;
+    const dSem = w ? drillData[kSem] : drillTotal;
 
     const thCls = 'px-3 py-1.5 font-semibold text-[#000638] border-b';
 
@@ -749,7 +819,7 @@ const NewForecast = () => {
     const valorPainel = autoValue(c, kSem);
     const ovr = store.overrides?.[c.canal]?.[kSem];
 
-    const blocoAjuste = (
+    const blocoAjuste = !w ? null : (
       <div className="mb-4 border border-[#000638]/10 rounded-lg p-3 bg-[#f8f9fb]">
         <div className="flex flex-wrap items-end gap-3">
           <div>
@@ -825,7 +895,9 @@ const NewForecast = () => {
     } else if (c.varejo) {
       if (!dSem) corpo = carregando;
       else {
-        const lojas = dSem.varejo || [];
+        const lojas = [...(dSem.varejo || [])].sort(
+          (a, b) => b.valor - a.valor,
+        );
         corpo = (
           <table className="w-full text-xs text-left border-collapse">
             <thead>
@@ -845,12 +917,14 @@ const NewForecast = () => {
                       tipo: 'vendedores',
                       titulo: nomeFilial(l.branch_code),
                       filial: l.branch_code,
-                      vendedores: (l.sellers || []).map((s) => ({
-                        code: s.seller_code,
-                        nome: s.seller_name,
-                        qtd: s.qtd,
-                        valor: s.valor,
-                      })),
+                      vendedores: (l.sellers || [])
+                        .map((s) => ({
+                          code: s.seller_code,
+                          nome: s.seller_name,
+                          qtd: s.qtd,
+                          valor: s.valor,
+                        }))
+                        .sort((a, b) => b.valor - a.valor),
                     })
                   }
                   className="border-b last:border-0 hover:bg-gray-50 cursor-pointer"
@@ -875,7 +949,8 @@ const NewForecast = () => {
       else {
         const rows = (c.codes || [])
           .map((code) => dSem.vendedores?.[code])
-          .filter(Boolean);
+          .filter(Boolean)
+          .sort((a, b) => b.valor - a.valor);
         // canal de vendedor único (ex: Ricardo Eletro, BlueCred) — vai direto
         // aos clientes, sem passar pela lista de vendedores
         if (c.direto) {
@@ -1287,7 +1362,17 @@ const NewForecast = () => {
                       linhaFoco ? 'bg-violet-100' : 'bg-[#000638]/5'
                     }`}
                   >
-                    {fmtValor(realizado, c.qtd)}
+                    {c.fonte ? (
+                      <button
+                        onClick={() => abrirRealizado(c)}
+                        title="Ver o consolidado do período"
+                        className="w-full text-right rounded-md px-1 py-0.5 hover:bg-[#000638]/10 hover:ring-1 hover:ring-[#000638]/20 transition"
+                      >
+                        {fmtValor(realizado, c.qtd)}
+                      </button>
+                    ) : (
+                      fmtValor(realizado, c.qtd)
+                    )}
                   </td>
                   <td className="px-1 py-1">
                     <MoneyInput
@@ -1380,8 +1465,9 @@ const NewForecast = () => {
                   {drillView?.titulo || drill.canal.canal}
                   <span className="text-gray-400 font-normal normal-case">
                     {' '}
-                    — Semana {drill.week.s} ({ddmm(drill.week.datemin)}–
-                    {ddmm(drill.week.datemax)})
+                    {drill.week
+                      ? `— Semana ${drill.week.s} (${ddmm(drill.week.datemin)}–${ddmm(drill.week.datemax)})`
+                      : `— Realizado (${ddmm(periodo.ini)}–${ddmm(periodo.fim)})`}
                   </span>
                 </h2>
               </div>
