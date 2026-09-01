@@ -181,3 +181,36 @@ export const getUserSetoresMap = async () => {
 
   return { data: map, error: null };
 };
+
+/**
+ * Retorna os NOMES dos setores de um usuário (como membro ou como gestor).
+ * Leitura liberada para qualquer usuário autenticado pelas policies de RLS.
+ * @param {string} userId
+ * @returns {Promise<{data: Array<string>, error: Error}>}
+ */
+export const getSetoresDoUsuario = async (userId) => {
+  if (!userId) return { data: [], error: null };
+
+  try {
+    const [vinculosRes, setoresRes] = await Promise.all([
+      supabase.from('setor_usuarios').select('setor_id').eq('user_id', userId),
+      supabase.from('setores').select('id, nome, gestor_id'),
+    ]);
+
+    if (vinculosRes.error) throw vinculosRes.error;
+    if (setoresRes.error) throw setoresRes.error;
+
+    const idsComoMembro = new Set(
+      (vinculosRes.data || []).map((v) => v.setor_id),
+    );
+
+    const nomes = (setoresRes.data || [])
+      .filter((s) => idsComoMembro.has(s.id) || s.gestor_id === userId)
+      .map((s) => s.nome);
+
+    return { data: nomes, error: null };
+  } catch (error) {
+    console.error('Erro ao buscar setores do usuário:', error);
+    return { data: [], error };
+  }
+};

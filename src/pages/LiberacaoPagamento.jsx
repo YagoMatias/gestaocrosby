@@ -11,6 +11,7 @@ import { supabase } from '../lib/supabase';
 import { API_BASE_URL } from '../config/constants';
 import CENTROS_CUSTO from '../config/centrosCusto.json';
 import { useAuth } from '../components/AuthContext';
+import { useSetoresUsuario } from '../hooks/useSetoresUsuario';
 import PageTitle from '../components/ui/PageTitle';
 import {
   gerarArquivoRemessaSicredi,
@@ -2822,8 +2823,12 @@ const FiltroDespesaMultiSelect = ({ opcoes, selecionadas, onChange }) => {
 // ─── Página principal ──────────────────────────────────
 const LiberacaoPagamento = () => {
   const { user, hasAnyRole } = useAuth() || {};
+  const { temSetor } = useSetoresUsuario();
   const isAdmin = hasAnyRole?.(['owner', 'admin']) || false;
-  const isFinanceiro = hasAnyRole?.(['user']) || false;
+  // Movimentar duplicatas (pagar, aprovar, alterar status) e liberado para
+  // quem esta no setor FINANCEIRO. O role 'user' e o perfil Financeiro legado,
+  // mantido so para nao travar quem ainda nao foi vinculado ao setor.
+  const isFinanceiro = temSetor('FINANCEIRO') || hasAnyRole?.(['user']) || false;
 
   const [titulos, setTitulos] = useState([]);
   const [loading, setLoading] = useState(true);
