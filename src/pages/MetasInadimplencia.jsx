@@ -110,6 +110,13 @@ const formatMesLabel = (key) => {
 const isTituloPago = (item) =>
   !!item.dt_liq || (parseFloat(item.vl_pago) || 0) > 0;
 
+// dischargeType 9 = "Baixa por renegociação" (tp_baixa no mapeamento do
+// backend). O título foi quitado sem entrada de dinheiro: o saldo migrou
+// para um título novo, que aparece na série pelo vencimento dele.
+const TP_BAIXA_RENEGOCIACAO = 9;
+const ehRenegociacao = (item) =>
+  Number(item.tp_baixa) === TP_BAIXA_RENEGOCIACAO;
+
 // Tipo de carteira efetivo, igual ao Dashboard de Contas a Receber:
 // portador SAFRA/DALILA conta como DESCONTADA (2), senão vale o tp_cobranca
 // (0 = não está em cobrança, 1 = simples, 2 = descontada).
@@ -255,8 +262,15 @@ const MetasInadimplencia = () => {
       const soFatura = (item) =>
         item.tp_documento === 1 || item.tp_documento === '1';
 
-      const itensVencendo = (resultVencendo.data?.items || []).filter(soFatura);
-      const itensPagos = (resultPagos.data?.items || []).filter(soFatura);
+      // Título quitado por renegociação não é meta cumprida nem dívida
+      // viva: o saldo virou outro título. Some das duas séries para não
+      // inflar o pago nem contar a dívida duas vezes.
+      const valeParaMeta = (item) => soFatura(item) && !ehRenegociacao(item);
+
+      const itensVencendo = (resultVencendo.data?.items || []).filter(
+        valeParaMeta,
+      );
+      const itensPagos = (resultPagos.data?.items || []).filter(valeParaMeta);
 
       setVencendo(itensVencendo);
       setPagos(itensPagos);
@@ -562,9 +576,9 @@ const MetasInadimplencia = () => {
             Configurações para análise de Metas de Inadimplência
           </div>
           <span className="text-xs text-gray-500 mt-1">
-            Considera apenas faturas de clientes Multimarcas e Franquias. O
-            período filtra o vencimento e o pagamento dos boletos, e é sempre
-            expandido para meses completos
+            Considera apenas faturas de clientes Multimarcas e Franquias,
+            fora as baixadas por renegociação. O período filtra o vencimento e
+            o pagamento dos boletos, e é sempre expandido para meses completos
           </span>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4 gap-2 mb-3 mt-4">
