@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
+import { useSetoresUsuario } from '../hooks/useSetoresUsuario';
 import { supabaseAdmin } from '../lib/supabase';
 import { API_BASE_URL } from '../config/constants';
 import CadastrarFornecedorModal from '../components/CadastrarFornecedorModal';
@@ -320,6 +321,7 @@ const extrairErrosAmigaveis = (sol) => {
 // =====================================================================
 const SolicitacoesCrosby = () => {
   const { user } = useAuth();
+  const { temSetor } = useSetoresUsuario();
   const [solicitacoes, setSolicitacoes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [notification, setNotification] = useState(null);
@@ -350,12 +352,17 @@ const SolicitacoesCrosby = () => {
   const formularioUrl = `${window.location.origin}/formulario-solicitacoes`;
 
   // Permissões
-  // • isGestor   → todos os usuários com acesso à página podem aprovar como gestor
-  // • isFinanceiro → APENAS owner, admin e financeiro (role='user') — ÚNICOS que podem enviar ao TOTVS
+  // • isGestor     → todos os usuários com acesso à página podem aprovar como gestor
+  // • isAdmin      → owner e admin: excluir solicitações e ver o RH (dados sensíveis)
+  // • isFinanceiro → quem envia ao TOTVS, aprova como financeiro e libera pagamento:
+  //                  admin + quem está no setor FINANCEIRO. NÃO inclui 'manager'
+  //                  avulso — gestor sem o setor nunca envia ao TOTVS.
+  // O role 'user' é o perfil Financeiro legado, mantido só como fallback até
+  // todo mundo estar vinculado ao setor.
   const role = user?.role || user?.user_metadata?.role;
-  const isAdmin = role === 'owner' || role === 'admin' || role === 'user'; // owner + admin + financeiro
+  const isAdmin = role === 'owner' || role === 'admin' || role === 'user';
   const isGestor = !!user; // todos os usuários autenticados podem aprovar como gestor
-  const isFinanceiro = isAdmin; // NÃO inclui 'manager' — gestor nunca envia ao TOTVS
+  const isFinanceiro = isAdmin || temSetor('FINANCEIRO');
   const canVerRH =
     isAdmin || user?.allowedPages?.includes('/solicitacoes-crosby-rh');
 

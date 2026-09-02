@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../components/AuthContext';
+import { useSetoresUsuario } from '../hooks/useSetoresUsuario';
 import { supabaseAdmin } from '../lib/supabase';
 import { API_BASE_URL } from '../config/constants';
 import PageTitle from '../components/ui/PageTitle';
@@ -145,6 +146,7 @@ const lblCls =
 // =====================================================================
 const SolicitacoesCrosbyComprasManutencao = () => {
   const { user } = useAuth();
+  const { temSetor } = useSetoresUsuario();
   const [solicitacoes, setSolicitacoes] = useState([]);
   const [loading, setLoading] = useState(false);
   const [notification, setNotification] = useState(null);
@@ -160,13 +162,13 @@ const SolicitacoesCrosbyComprasManutencao = () => {
   const [busca, setBusca] = useState('');
   const [modalDetalhe, setModalDetalhe] = useState(null);
 
+  // O role 'user' e o perfil Financeiro legado, mantido so como fallback ate
+  // todo mundo estar vinculado ao setor FINANCEIRO.
   const role = user?.role || user?.user_metadata?.role;
-  const isAdmin = role === 'owner' || role === 'admin' || role === 'user';
-  const podeAlterar =
-    role === 'owner' ||
-    role === 'admin' ||
-    role === 'user' ||
-    role === 'manager';
+  const ehFinanceiro = role === 'user' || temSetor('FINANCEIRO');
+  // isAdmin aqui e o gate de "financeiro/admin" que envia ao TOTVS
+  const isAdmin = role === 'owner' || role === 'admin' || ehFinanceiro;
+  const podeAlterar = isAdmin || role === 'manager';
 
   const userNome =
     user?.name ||
