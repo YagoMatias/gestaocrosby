@@ -904,6 +904,8 @@ export default function LeadGeneration({ erpData, modulo, vendedoresMap, onChatL
   const [vendedorSel, setVendedorSel] = useState(null);
   const [categoriaSel, setCategoriaSel] = useState('ativo');
   const [busca, setBusca] = useState('');
+  // "Baixa": esconde da lista quem já foi contatado hoje (contato registrado).
+  const [ocultarContatados, setOcultarContatados] = useState(true);
   const [showRegistrar, setShowRegistrar] = useState(null); // {cliente, categoria}
   const [showHistorico, setShowHistorico] = useState(null);
   const [showUltimaCompra, setShowUltimaCompra] = useState(null);
@@ -1083,11 +1085,42 @@ export default function LeadGeneration({ erpData, modulo, vendedoresMap, onChatL
     });
   }, [erpData, categoriaSel, vendedorSel, topClientes, aniversariantes, cashbackList]);
 
-  // Aplica busca
+  // Data local (BRT) de hoje no formato YYYY-MM-DD
+  const hojeStr = useMemo(() => {
+    const n = new Date();
+    return new Date(n.getTime() - n.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 10);
+  }, []);
+
+  // Helper: cliente foi contatado HOJE? (usado pela "baixa")
+  const contatadoHoje = useCallback(
+    (c) => {
+      const pc = c.cod || c.person_code;
+      const contato = callsByPerson[pc];
+      if (!contato?.data_contato) return false;
+      const dc = new Date(contato.data_contato);
+      const dcLocal = new Date(dc.getTime() - dc.getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(0, 10);
+      return dcLocal === hojeStr;
+    },
+    [callsByPerson, hojeStr],
+  );
+
+  // Quantos da categoria já receberam baixa hoje (para o rótulo do toggle)
+  const qtdContatadosHoje = useMemo(
+    () => clientesDaCategoria.filter(contatadoHoje).length,
+    [clientesDaCategoria, contatadoHoje],
+  );
+
+  // Aplica "baixa" (esconde contatados hoje) + busca
   const clientesFiltrados = useMemo(() => {
-    if (!busca) return clientesDaCategoria;
+    let lista = clientesDaCategoria;
+    if (ocultarContatados) lista = lista.filter((c) => !contatadoHoje(c));
+    if (!busca) return lista;
     const q = busca.toLowerCase();
-    return clientesDaCategoria.filter((c) => {
+    return lista.filter((c) => {
       const nome = (c.nome || c.person_nome || '').toLowerCase();
       const fone = cleanPhone(c.fone || c.person_telefone || '');
       const cidade = (c.cidade || c.person_cidade || '').toLowerCase();
@@ -1097,7 +1130,7 @@ export default function LeadGeneration({ erpData, modulo, vendedoresMap, onChatL
         cidade.includes(q)
       );
     });
-  }, [clientesDaCategoria, busca]);
+  }, [clientesDaCategoria, busca, ocultarContatados, contatadoHoje]);
 
   // Stats por categoria
   const statsCategoria = useMemo(() => {
@@ -1237,11 +1270,26 @@ export default function LeadGeneration({ erpData, modulo, vendedoresMap, onChatL
         </div>
       ) : (
         <div>
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
             <p className="text-[11px] text-gray-500">
               Mostrando <span className="font-bold tabular-nums">{clientesFiltrados.length}</span>{' '}
               {clientesFiltrados.length === 1 ? 'cliente' : 'clientes'}
             </p>
+            {/* Baixa: esconde/mostra os já contatados hoje */}
+            <label className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-600 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={ocultarContatados}
+                onChange={(e) => setOcultarContatados(e.target.checked)}
+                className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5"
+              />
+              Ocultar já contatados hoje
+              {qtdContatadosHoje > 0 && (
+                <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0.5 rounded-full text-[10px] font-bold">
+                  {qtdContatadosHoje} com baixa
+                </span>
+              )}
+            </label>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
             {clientesFiltrados.slice(0, 100).map((c) => {
