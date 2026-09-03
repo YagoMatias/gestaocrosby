@@ -911,6 +911,7 @@ export default function LeadGeneration({ erpData, modulo, vendedoresMap, onChatL
   const [showUltimaCompra, setShowUltimaCompra] = useState(null);
   const [topClientes, setTopClientes] = useState([]);
   const [loadingTop, setLoadingTop] = useState(false);
+  const [erroTop, setErroTop] = useState('');
   const [aniversariantes, setAniversariantes] = useState([]);
   const [cashbackList, setCashbackList] = useState([]);
   // Cashback é caro (consulta saldo no TOTVS por cliente) e só carrega ao abrir
@@ -955,11 +956,19 @@ export default function LeadGeneration({ erpData, modulo, vendedoresMap, onChatL
       return;
     }
     setLoadingTop(true);
+    setErroTop('');
     apiGet(
       `/api/crm/lead-generation/top-clientes?vendedor_code=${vendedorSel.code}&modulo=${encodeURIComponent(modulo)}&limit=50`,
     )
-      .then((d) => setTopClientes(d?.clientes || []))
-      .catch(() => setTopClientes([]))
+      .then((d) => {
+        setTopClientes(d?.clientes || []);
+        setErroTop('');
+      })
+      .catch((e) => {
+        // Não zera silenciosamente: surge o erro pro usuário poder tentar de novo
+        setTopClientes([]);
+        setErroTop(e?.message || 'Falha ao carregar top clientes');
+      })
       .finally(() => setLoadingTop(false));
   }, [vendedorSel, modulo, refreshKey]);
 
@@ -1258,7 +1267,21 @@ export default function LeadGeneration({ erpData, modulo, vendedoresMap, onChatL
       </div>
 
       {/* Lista de clientes */}
-      {(loadingTop && categoriaSel === 'top') ? (
+      {erroTop && categoriaSel === 'top' ? (
+        <div className="bg-white border border-red-200 rounded-xl p-8 text-center">
+          <Warning size={32} weight="duotone" className="mx-auto mb-2 text-red-400" />
+          <p className="text-sm font-semibold text-red-600">
+            Não foi possível carregar os top clientes
+          </p>
+          <p className="text-[11px] text-gray-400 mt-1 max-w-md mx-auto">{erroTop}</p>
+          <button
+            onClick={() => setRefreshKey((k) => k + 1)}
+            className="mt-3 inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg"
+          >
+            Tentar de novo
+          </button>
+        </div>
+      ) : (loadingTop && categoriaSel === 'top') ? (
         <div className="bg-white rounded-xl p-12 text-center text-gray-400">
           <Spinner size={28} className="animate-spin mx-auto mb-2" />
           <p className="text-sm">Carregando top clientes...</p>
