@@ -44,6 +44,12 @@ import {
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
 import { useAuth } from '../components/AuthContext';
+import {
+  portalConnect,
+  portalDisconnect,
+  portalTags,
+  portalClear,
+} from '../utils/portalApi';
 
 const fmtBRL = (v) =>
   Number(v || 0).toLocaleString('pt-BR', {
@@ -358,7 +364,7 @@ const OrcamentoRFID = () => {
     setDraftId(null);
     processedEpcs.current = new Set();
     try {
-      await fetch(`${API_BASE_URL}/api/portal-rfid/clear`, { method: 'POST' });
+      await portalClear();
     } catch {
       /* segue */
     }
@@ -377,9 +383,7 @@ const OrcamentoRFID = () => {
       (d.items || []).flatMap((i) => i.epcs || []),
     );
     try {
-      await fetch(`${API_BASE_URL}/api/portal-rfid/clear`, {
-        method: 'POST',
-      });
+      await portalClear();
     } catch {
       /* segue */
     }
@@ -476,17 +480,14 @@ const OrcamentoRFID = () => {
     }
     setPortalBusy(true);
     try {
-      const r = await fetch(`${API_BASE_URL}/api/portal-rfid/connect`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: '{}',
-      });
-      const j = await r.json();
-      if (!r.ok || !j.success)
-        showToast('erro', j?.message || 'Falha ao ligar');
+      const j = await portalConnect({});
+      if (!j.success) showToast('erro', j?.message || 'Falha ao ligar');
       else setPortalStatus(j.data);
     } catch (e) {
-      showToast('erro', `Backend indisponível: ${e.message}`);
+      showToast(
+        'erro',
+        `Portal indisponível — instale/inicie o Agente do Portal nesta máquina (${e.message})`,
+      );
     } finally {
       setPortalBusy(false);
     }
@@ -495,10 +496,7 @@ const OrcamentoRFID = () => {
   const desligarPortal = useCallback(async () => {
     setPortalBusy(true);
     try {
-      const r = await fetch(`${API_BASE_URL}/api/portal-rfid/disconnect`, {
-        method: 'POST',
-      });
-      const j = await r.json();
+      const j = await portalDisconnect();
       if (j?.data) setPortalStatus(j.data);
     } catch {
       /* segue */
@@ -607,12 +605,11 @@ const OrcamentoRFID = () => {
     }
   }, [manualCode, manualBusy, mergeProduto, showToast]);
 
-  // Polling do portal
+  // Polling do portal (agente local quando existir, senão backend)
   useEffect(() => {
     const timer = setInterval(async () => {
       try {
-        const r = await fetch(`${API_BASE_URL}/api/portal-rfid/tags`);
-        const j = await r.json();
+        const j = await portalTags();
         if (!j?.data) return;
         setPortalStatus(j.data.status);
         for (const t of j.data.tags || []) {

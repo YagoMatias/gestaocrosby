@@ -15,7 +15,12 @@ import {
   CheckCircle,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
-import { API_BASE_URL } from '../config/constants';
+import {
+  portalConnect,
+  portalDisconnect,
+  portalTags,
+  portalClear,
+} from '../utils/portalApi';
 
 const fmtHora = (ts) =>
   new Date(ts).toLocaleTimeString('pt-BR', {
@@ -51,8 +56,7 @@ const PortalRFID = () => {
 
   const poll = useCallback(async () => {
     try {
-      const r = await fetch(`${API_BASE_URL}/api/portal-rfid/tags`);
-      const j = await r.json();
+      const j = await portalTags();
       if (j?.data) {
         setStatus(j.data.status);
         setTags(j.data.tags || []);
@@ -73,16 +77,11 @@ const PortalRFID = () => {
     setBusy(true);
     setErro('');
     try {
-      const r = await fetch(`${API_BASE_URL}/api/portal-rfid/connect`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ host }),
-      });
-      const j = await r.json();
-      if (!r.ok || !j.success) setErro(j?.message || 'Falha ao ligar o portal');
+      const j = await portalConnect({ host });
+      if (!j.success) setErro(j?.message || 'Falha ao ligar o portal');
       else setStatus(j.data);
     } catch (e) {
-      setErro(`Backend indisponível: ${e.message}`);
+      setErro(`Portal indisponível (agente/backend fora): ${e.message}`);
     } finally {
       setBusy(false);
     }
@@ -91,10 +90,7 @@ const PortalRFID = () => {
   const desligar = useCallback(async () => {
     setBusy(true);
     try {
-      const r = await fetch(`${API_BASE_URL}/api/portal-rfid/disconnect`, {
-        method: 'POST',
-      });
-      const j = await r.json();
+      const j = await portalDisconnect();
       if (j?.data) setStatus(j.data);
     } catch {
       /* segue */
@@ -105,7 +101,7 @@ const PortalRFID = () => {
 
   const limpar = useCallback(async () => {
     try {
-      await fetch(`${API_BASE_URL}/api/portal-rfid/clear`, { method: 'POST' });
+      await portalClear();
       setTags([]);
     } catch {
       /* segue */
