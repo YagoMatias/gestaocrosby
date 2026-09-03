@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import PageTitle from '../components/ui/PageTitle';
 import { useAuth } from '../components/AuthContext';
+import { useSetoresUsuario } from '../hooks/useSetoresUsuario';
 import { supabase } from '../lib/supabase';
 import ClientePerfilModal from '../components/ClientePerfilModal';
 import { TotvsURL } from '../config/constants';
@@ -28,7 +29,9 @@ import {
 const BUCKET_DOCS = 'clientes-confianca';
 const SUPABASE_PUBLIC = 'https://dorztqiunewggydvkjnf.supabase.co';
 
-// Roles que podem CONCLUIR a análise (definir limite)
+// Roles que podem CONCLUIR a análise (definir limite). O role 'user' é o
+// perfil Financeiro legado, mantido só como fallback até todo mundo estar
+// vinculado ao setor FINANCEIRO — quem está no setor também analisa.
 const ROLES_PODE_ANALISAR = ['owner', 'admin', 'user', 'manager'];
 
 function fmtMoeda(v) {
@@ -121,8 +124,10 @@ function TotvsSyncBadge({ status, message }) {
 
 export default function AnaliseCreditoMultimarcas() {
   const { user } = useAuth();
+  const { temSetor } = useSetoresUsuario();
   const userRole = user?.role || user?.user_metadata?.role || 'guest';
-  const podeAnalisar = ROLES_PODE_ANALISAR.includes(userRole);
+  const podeAnalisar =
+    ROLES_PODE_ANALISAR.includes(userRole) || temSetor('FINANCEIRO');
 
   const [tabAtiva, setTabAtiva] = useState('solicitar');
 
