@@ -7,35 +7,43 @@
 // (localhost é contexto seguro), então o agente funciona até na produção.
 import { API_BASE_URL } from '../config/constants';
 
-const AGENT_BASE = 'http://127.0.0.1:7070';
-let agentAvailable = null; // null = ainda não testado
+// O agente tenta estas portas em ordem (algumas máquinas têm a 7070
+// reservada pelo Windows/Hyper-V) — a página procura em todas em paralelo.
+const AGENT_PORTS = [7070, 7171, 27070];
+let agentBase = null; // url do agente encontrado, ou false
 let lastCheck = 0;
 
 async function checkAgent() {
   const now = Date.now();
   // Revalida a cada 30s (agente pode subir/cair com a página aberta)
-  if (agentAvailable !== null && now - lastCheck < 30000) return agentAvailable;
+  if (agentBase !== null && now - lastCheck < 30000) return agentBase;
   lastCheck = now;
-  try {
+  const probes = AGENT_PORTS.map(async (p) => {
     const ctl = new AbortController();
     const t = setTimeout(() => ctl.abort(), 800);
-    const r = await fetch(`${AGENT_BASE}/health`, { signal: ctl.signal });
-    clearTimeout(t);
-    agentAvailable = r.ok;
-  } catch {
-    agentAvailable = false;
-  }
-  return agentAvailable;
+    try {
+      const r = await fetch(`http://127.0.0.1:${p}/health`, {
+        signal: ctl.signal,
+      });
+      clearTimeout(t);
+      if (r.ok) return `http://127.0.0.1:${p}`;
+    } catch {
+      /* porta sem agente */
+    }
+    return null;
+  });
+  const results = await Promise.all(probes);
+  agentBase = results.find(Boolean) || false;
+  return agentBase;
 }
 
 async function base() {
-  return (await checkAgent())
-    ? AGENT_BASE
-    : `${API_BASE_URL}/api/portal-rfid`;
+  const agent = await checkAgent();
+  return agent || `${API_BASE_URL}/api/portal-rfid`;
 }
 
 export async function portalUsandoAgente() {
-  return checkAgent();
+  return Boolean(await checkAgent());
 }
 
 export async function portalConnect(body = {}) {
