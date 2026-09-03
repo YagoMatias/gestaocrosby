@@ -494,6 +494,16 @@ const AVAILABLE_PAGES = [
     category: 'Tecnologia',
   },
   {
+    path: '/tecnologia/portal-rfid',
+    name: 'Portal RFID',
+    category: 'Tecnologia',
+  },
+  {
+    path: '/tecnologia/orcamento-rfid',
+    name: 'Orçamento RFID',
+    category: 'Tecnologia',
+  },
+  {
     path: '/tecnologia/etiquetas-preco',
     name: 'Etiquetas de Preço',
     category: 'Tecnologia',

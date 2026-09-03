@@ -79,6 +79,9 @@ const InadimplentesFranquias = lazy(
 );
 const RecuperacaoCredito = lazy(() => import('./pages/RecuperacaoCredito'));
 const DRE = lazy(() => import('./pages/DRE'));
+const DespesasGerais = lazy(
+  () => import('./pages/despesasgerais/DespesasGerais'),
+);
 const GerenciadorAcessos = lazy(() => import('./pages/GerenciadorAcessos'));
 const GerenciadorAvisos = lazy(() => import('./pages/GerenciadorAvisos'));
 const ConsultaCliente = lazy(() => import('./pages/ConsultaCliente'));
@@ -125,6 +128,8 @@ const MonitoramentoTotvs = lazy(() => import('./pages/MonitoramentoTotvs'));
 const InventarioPatrimonio = lazy(() => import('./pages/InventarioPatrimonio'));
 const LeituraRFID = lazy(() => import('./pages/LeituraRFID'));
 const PDVRfid = lazy(() => import('./pages/PDVRfid'));
+const PortalRFID = lazy(() => import('./pages/PortalRFID'));
+const OrcamentoRFID = lazy(() => import('./pages/OrcamentoRFID'));
 const EtiquetasPreco = lazy(() => import('./pages/EtiquetasPreco'));
 const CotacaoCompras = lazy(() => import('./pages/CotacaoCompras'));
 const ClientesPorEmpresa = lazy(() => import('./pages/ClientesPorEmpresa'));
@@ -197,6 +202,8 @@ const protectedRoutes = [
   },
   { path: '/tecnologia/leitura-rfid', component: LeituraRFID },
   { path: '/tecnologia/pdv-rfid', component: PDVRfid },
+  { path: '/tecnologia/portal-rfid', component: PortalRFID },
+  { path: '/tecnologia/orcamento-rfid', component: OrcamentoRFID },
   { path: '/tecnologia/etiquetas-preco', component: EtiquetasPreco },
   { path: '/tecnologia/cotacao-compras', component: CotacaoCompras },
   { path: '/tecnologia/clientes-por-empresa', component: ClientesPorEmpresa },
@@ -247,6 +254,8 @@ const protectedRoutes = [
   { path: '/ranking-faturamento', component: RankingFaturamento },
   { path: '/ranking-compras-franquias', component: RankingComprasFranquias },
   { path: '/dre', component: DRE },
+  { path: '/despesas-gerais', component: DespesasGerais },
+  { path: '/despesas-gerais/:pagina', component: DespesasGerais },
   { path: '/automacao-financeiro', component: AutomacaoFinanceiro },
   { path: '/compras-franquias', component: ComprasFranquias },
   { path: '/credev-varejo', component: CredevVarejo },

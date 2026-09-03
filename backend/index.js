@@ -1,10 +1,10 @@
-import express from 'express';
+﻿import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
 
-// ─── Rotas existentes ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Rotas existentes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 import chatRoutes from './routes/chat.routes.js';
 import whatsappRoutes from './routes/whatsapp.routes.js';
 import financialRoutes from './routes/batidacarteira.routes.js';
@@ -35,24 +35,24 @@ import { installTotvsTracker } from './services/totvsAxiosInterceptor.js';
 // Instala interceptor que rastreia chamadas TOTVS (antes de qualquer rota)
 installTotvsTracker();
 
-// ─── Safety net global ─────────────────────────────────────────────────
-// Evita que erros não-tratados (ex: pg.Pool 'error', websocket reconnect,
-// timer rejeitado) DERRUBEM o processo Node inteiro. Em produção, queremos
-// log + continuar — não crashar e perder todas as requests em vôo.
+// â”€â”€â”€ Safety net global â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Evita que erros nÃ£o-tratados (ex: pg.Pool 'error', websocket reconnect,
+// timer rejeitado) DERRUBEM o processo Node inteiro. Em produÃ§Ã£o, queremos
+// log + continuar â€” nÃ£o crashar e perder todas as requests em vÃ´o.
 process.on('uncaughtException', (err, origin) => {
   console.error(
-    `🚨 [uncaughtException] ${origin}:`,
+    `ðŸš¨ [uncaughtException] ${origin}:`,
     err?.message || err,
     err?.stack?.split('\n').slice(0, 3).join('\n') || '',
   );
 });
 process.on('unhandledRejection', (reason, promise) => {
   const msg = reason instanceof Error ? reason.message : String(reason);
-  console.error(`🚨 [unhandledRejection]`, msg);
+  console.error(`ðŸš¨ [unhandledRejection]`, msg);
 });
 
 
-// ─── Rotas TOTVS (separadas por domínio) ────────────────────────────────────────────
+// â”€â”€â”€ Rotas TOTVS (separadas por domÃ­nio) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 import authRouter from './totvsrouter/auth.js';
 import fiscalRouter from './totvsrouter/fiscal.js';
 import clientesRouter from './totvsrouter/clientes.js';
@@ -63,6 +63,7 @@ import estoqueRouter from './totvsrouter/estoque.js';
 import painelVendasRouter from './totvsrouter/painelVendas.js';
 import voucherRouter from './totvsrouter/voucher.js';
 import pdvRouter from './totvsrouter/pdv.js';
+import portalRfidRoutes from './routes/portalRfid.routes.js';
 import { iniciarJobFaturamentoDiario } from './jobs/faturamento-diario.job.js';
 import { iniciarJobForecastRefYoy } from './jobs/forecast-ref-yoy.job.js';
 import { iniciarJobForecastWhatsapp } from './jobs/forecast-whatsapp.job.js';
@@ -111,7 +112,7 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// ─── Montar rotas TOTVS (/api/totvs/*) ───────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Montar rotas TOTVS (/api/totvs/*) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.use('/api/totvs', authRouter); // GET /token, POST /auth
 app.use('/api/totvs', fiscalRouter); // boleto, DANFE, XML, NFs, movimentos fiscais
 app.use('/api/totvs', clientesRouter); // legal-entity, individual, clientes, sync
@@ -121,36 +122,37 @@ app.use('/api/totvs', financeiroRouter); // accounts-receivable, accounts-payabl
 app.use('/api/totvs', estoqueRouter); // best-selling-products, product-balances
 app.use('/api/totvs', painelVendasRouter); // sale-panel/*, seller-panel/*
 app.use('/api/totvs', voucherRouter); // vouchers/usage-enriched
-app.use('/api/totvs', pdvRouter); // PDV RFID — produto por código/EPC, condições, transação
+app.use('/api/totvs', pdvRouter); // PDV RFID â€” produto por cÃ³digo/EPC, condiÃ§Ãµes, transaÃ§Ã£o
+app.use('/api/portal-rfid', portalRfidRoutes); // Portal RFID Chainway UR4 (bridge TCP)
 
-// ─── Demais rotas ───────────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Demais rotas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.use('/api/chat', chatRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/financial', financialRoutes); // batida-carteira upload
 app.use('/api/financial', financialCredevRoutes); // credev/adiantamento por franquia (TOTVS)
-app.use('/api/catalogo', catalogoRoutes); // catálogo virtual
+app.use('/api/catalogo', catalogoRoutes); // catÃ¡logo virtual
 app.use('/api/meta', metaRoutes); // WhatsApp Official (Meta Graph API)
 app.use('/api/evolution', evolutionRoutes); // Evolution WhatsApp conversations
 app.use('/api/autentique', autentiqueRoutes); // Autentique assinatura digital (termo-credito, CRUD documentos)
 app.use('/api/crm', crmRoutes); // CRM: leads (ClickUp), inst-check-bulk, msgs, roubos, IA
-app.use('/api/fila', filaRoutes); // Fila da Vez (varejo) — admin + público (PIN)
-app.use('/api/sefaz/dfe', sefazDfeRoutes); // Manifestação do Destinatário (SEFAZ Distribuição DFe)
-app.use('/api/forecast', forecastRoutes); // Forecast — Promessa Semanal por Canal
-app.use('/api/bluecard', bluecardRoutes); // BlueCard — leads da LP /lp/bluecard
-app.use('/api/wix', wixRoutes); // Wix — sync de pedidos do e-commerce
-app.use('/api/expedicao-showroom', expedicaoShowroomRoutes); // Expedição Showroom — controle envios
-app.use('/api/faturamento-historico', faturamentoHistoricoRoutes); // Faturamento histórico diário por canal
-app.use('/api/faturamento-transacao', faturamentoTransacaoRoutes); // Faturamento histórico por NF (transação)
-app.use('/api/tech', techRoutes); // Tecnologia — Controle de chips, etc
+app.use('/api/fila', filaRoutes); // Fila da Vez (varejo) â€” admin + pÃºblico (PIN)
+app.use('/api/sefaz/dfe', sefazDfeRoutes); // ManifestaÃ§Ã£o do DestinatÃ¡rio (SEFAZ DistribuiÃ§Ã£o DFe)
+app.use('/api/forecast', forecastRoutes); // Forecast â€” Promessa Semanal por Canal
+app.use('/api/bluecard', bluecardRoutes); // BlueCard â€” leads da LP /lp/bluecard
+app.use('/api/wix', wixRoutes); // Wix â€” sync de pedidos do e-commerce
+app.use('/api/expedicao-showroom', expedicaoShowroomRoutes); // ExpediÃ§Ã£o Showroom â€” controle envios
+app.use('/api/faturamento-historico', faturamentoHistoricoRoutes); // Faturamento histÃ³rico diÃ¡rio por canal
+app.use('/api/faturamento-transacao', faturamentoTransacaoRoutes); // Faturamento histÃ³rico por NF (transaÃ§Ã£o)
+app.use('/api/tech', techRoutes); // Tecnologia â€” Controle de chips, etc
 app.use('/api/monitoring', monitoringRoutes); // Monitoramento consumo TOTVS
-app.use('/api/conciliacao-stone', conciliacaoStoneRoutes); // Conciliação Stone (cartões)
-app.use('/api/dryland', drylandChamadosRoutes); // Dryland — chamados da rede (ponte Supabase, sem tocar no Dryland)
-app.use('/api/uazapi-sync', uazapiSyncRoutes); // sync diário UAzapi → Postgres
-app.use('/api/automacao', automacaoRoutes); // Automação Financeiro — cobrança de boletos (WhatsApp)
+app.use('/api/conciliacao-stone', conciliacaoStoneRoutes); // ConciliaÃ§Ã£o Stone (cartÃµes)
+app.use('/api/dryland', drylandChamadosRoutes); // Dryland â€” chamados da rede (ponte Supabase, sem tocar no Dryland)
+app.use('/api/uazapi-sync', uazapiSyncRoutes); // sync diÃ¡rio UAzapi â†’ Postgres
+app.use('/api/automacao', automacaoRoutes); // AutomaÃ§Ã£o Financeiro â€” cobranÃ§a de boletos (WhatsApp)
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('❌ Unhandled error:', err.message);
+  console.error('âŒ Unhandled error:', err.message);
   res.status(err.status || 500).json({
     success: false,
     message: err.message || 'Erro interno do servidor',
@@ -160,15 +162,15 @@ app.use((err, req, res, next) => {
 
 // Iniciar servidor
 app.listen(PORT, async () => {
-  console.log(`✅ Server running on port ${PORT}`);
-  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`âœ… Server running on port ${PORT}`);
+  console.log(`ðŸŒ Environment: ${process.env.NODE_ENV || 'development'}`);
   initializeWhatsApp();
   try {
     const { startPesPessoaScheduler } =
       await import('./utils/syncPesPessoa.js');
     startPesPessoaScheduler();
   } catch (err) {
-    console.error('❌ Falha ao iniciar scheduler pes_pessoa:', err.message);
+    console.error('âŒ Falha ao iniciar scheduler pes_pessoa:', err.message);
   }
   iniciarJobFaturamentoDiario();
   iniciarJobForecastRefYoy();
@@ -177,8 +179,8 @@ app.listen(PORT, async () => {
   iniciarTransacaoHistoricoSync();
   iniciarPessoasBluecredSync();
   iniciarBluecardStatsSync();
-  // Pré-instala o Chrome do Puppeteer em background (pra gerar PDF do termo
-  // de crédito) — evita travar a 1ª requisição esperando o download.
+  // PrÃ©-instala o Chrome do Puppeteer em background (pra gerar PDF do termo
+  // de crÃ©dito) â€” evita travar a 1Âª requisiÃ§Ã£o esperando o download.
   prewarmChrome().catch((e) =>
     console.error('[boot] prewarmChrome falhou:', e.message),
   );
@@ -196,7 +198,7 @@ app.listen(PORT, async () => {
   iniciarJobBoletoCobranca();
   iniciarJobDrylandChamados();
 
-  // Retoma campanhas WhatsApp travadas após restart (reseta processing → pending)
+  // Retoma campanhas WhatsApp travadas apÃ³s restart (reseta processing â†’ pending)
   (async () => {
     try {
       const { default: supabase } = await import('./config/supabase.js');
@@ -205,7 +207,7 @@ app.listen(PORT, async () => {
         .update({ status: 'pending' }, { count: 'exact' })
         .in('status', ['processing', 'retrying']);
       if (count > 0) {
-        console.log(`🔄 [boot] ${count} mensagens travadas resetadas pra pending — worker vai retomar`);
+        console.log(`ðŸ”„ [boot] ${count} mensagens travadas resetadas pra pending â€” worker vai retomar`);
         // Dispara worker pra cada campanha distinta com pendentes
         const { data: campanhas } = await supabase
           .from('message_queue')
@@ -226,7 +228,7 @@ app.listen(PORT, async () => {
             );
           }
         }
-        if (seen.size > 0) console.log(`🚀 [boot] retomando ${seen.size} campanhas`);
+        if (seen.size > 0) console.log(`ðŸš€ [boot] retomando ${seen.size} campanhas`);
       }
     } catch (e) {
       console.warn(`[boot resume] erro: ${e.message}`);
@@ -234,8 +236,8 @@ app.listen(PORT, async () => {
   })();
 });
 
-// Endpoint manual pra disparar a provisão automática (Contas a Pagar → Liberação)
-// ?dryRun=1 apenas loga o que faria (não insere). Aguarda e retorna o resumo.
+// Endpoint manual pra disparar a provisÃ£o automÃ¡tica (Contas a Pagar â†’ LiberaÃ§Ã£o)
+// ?dryRun=1 apenas loga o que faria (nÃ£o insere). Aguarda e retorna o resumo.
 app.post('/api/jobs/provisao-liberacao/run', async (req, res) => {
   const dryRun = req.query.dryRun === '1' || req.body?.dryRun === true;
   try {
@@ -247,18 +249,18 @@ app.post('/api/jobs/provisao-liberacao/run', async (req, res) => {
   }
 });
 
-// Endpoint manual pra disparar conversão
+// Endpoint manual pra disparar conversÃ£o
 app.post('/api/forecast/sync-template-conversao', async (req, res) => {
   executarConversaoTemplate().catch((e) =>
     console.error('[template-conversao] manual erro:', e.message),
   );
-  res.json({ success: true, message: 'Conversão de templates disparada em background' });
+  res.json({ success: true, message: 'ConversÃ£o de templates disparada em background' });
 });
 
 // Endpoints manuais para disparar sync de pes_pessoa
 app.post('/api/forecast/sync-pes-pessoa', async (req, res) => {
   const { mode = 'delta', hoursBack = 48 } = req.body || {};
-  // Não aguarda — roda em background
+  // NÃ£o aguarda â€” roda em background
   if (mode === 'full') {
     syncPesPessoaFull().catch((e) => console.error('[sync-pes-pessoa full] erro:', e.message));
   } else {

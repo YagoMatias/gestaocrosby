@@ -54,6 +54,7 @@ import {
   Gavel,
   Broadcast,
   Tag,
+  WifiHigh,
 } from '@phosphor-icons/react';
 
 // Componentes de ícones modernos
@@ -296,10 +297,75 @@ const financeiro = [
   },
   {
     name: 'DRE',
-    href: '/dre',
+    href: '#',
     icon: ChartBar,
     color: 'text-purple-600',
     roles: ['owner', 'admin', 'manager', 'user'],
+    children: [
+      {
+        name: 'DRE Gerencial',
+        href: '/dre',
+        icon: ChartBar,
+        color: 'text-purple-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
+        name: 'Visão Geral',
+        href: '/despesas-gerais/visao-geral',
+        icon: ChartPieSlice,
+        color: 'text-purple-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
+        name: 'DRE Analítica',
+        href: '/despesas-gerais/dre-analitica',
+        icon: FileText,
+        color: 'text-purple-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
+        name: 'Gráficos',
+        href: '/despesas-gerais/graficos',
+        icon: ChartLineUp,
+        color: 'text-purple-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
+        name: 'Análise Horizontal',
+        href: '/despesas-gerais/analise-horizontal',
+        icon: TrendUp,
+        color: 'text-purple-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
+        name: 'Análise Vertical',
+        href: '/despesas-gerais/analise-vertical',
+        icon: ChartBar,
+        color: 'text-purple-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
+        name: 'Correções DRE',
+        href: '/despesas-gerais/correcoes',
+        icon: ClipboardText,
+        color: 'text-amber-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
+        name: 'Corte de Custo',
+        href: '/despesas-gerais/corte',
+        icon: Target,
+        color: 'text-red-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
+        name: 'Contas Sintéticas',
+        href: '/despesas-gerais/headcoach',
+        icon: Article,
+        color: 'text-purple-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+    ],
   },
   {
     name: 'Automação Financeiro',
@@ -682,6 +748,18 @@ const tecnologiaItems = [
     href: '/tecnologia/pdv-rfid',
     icon: ShoppingCart,
     color: 'text-emerald-600',
+  },
+  {
+    name: 'Portal RFID',
+    href: '/tecnologia/portal-rfid',
+    icon: WifiHigh,
+    color: 'text-blue-600',
+  },
+  {
+    name: 'Orçamento RFID',
+    href: '/tecnologia/orcamento-rfid',
+    icon: Tag,
+    color: 'text-purple-600',
   },
   {
     name: 'Etiquetas de Preço',
