@@ -17,10 +17,12 @@ import {
   SimCard,
   Plugs,
   WhatsappLogo,
+  DownloadSimple,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
 import { useAuth } from '../components/AuthContext';
+import * as XLSX from 'xlsx';
 
 const OPERADORAS = [
   { value: 'claro', label: 'Claro' },
@@ -468,6 +470,7 @@ export default function ControleChips() {
   const [filtroStatus, setFiltroStatus] = useState('');
   const [filtroOperadora, setFiltroOperadora] = useState('');
   const [filtroSetor, setFiltroSetor] = useState('');
+  const [filtroWhatsapp, setFiltroWhatsapp] = useState(''); // '' | 'sem' | 'com'
   const [showModal, setShowModal] = useState(false);
   const [editando, setEditando] = useState(null);
   const [verificando, setVerificando] = useState(false);
@@ -563,11 +566,58 @@ export default function ControleChips() {
     [chips],
   );
 
+  // Filtro de WhatsApp aplicado no cliente (tem_whatsapp já vem em cada chip)
+  const chipsFiltrados = useMemo(() => {
+    if (filtroWhatsapp === 'sem') return chips.filter((c) => !c.tem_whatsapp);
+    if (filtroWhatsapp === 'com') return chips.filter((c) => !!c.tem_whatsapp);
+    return chips;
+  }, [chips, filtroWhatsapp]);
+
+  // Exporta a lista visível (respeitando todos os filtros) para Excel
+  const exportarExcel = () => {
+    const rows = chipsFiltrados.map((c) => ({
+      Número: c.numero || '',
+      Responsável: c.responsavel || '',
+      Setor: c.setor || '',
+      'Local de uso': c.local_uso || '',
+      Operadora: operadoraLabel(c.operadora) || '',
+      Plano: c.plano || '',
+      'Valor mensal': c.valor_plano != null ? Number(c.valor_plano) : '',
+      Status: statusInfo(c.status).label || c.status || '',
+      'Tem API': c.tem_api ? 'Sim' : 'Não',
+      'Tem WhatsApp': c.tem_whatsapp ? 'Sim' : 'Não',
+      'WhatsApp verificado em': c.whatsapp_verificado_em
+        ? new Date(c.whatsapp_verificado_em).toLocaleString('pt-BR')
+        : '',
+      'Data aquisição': c.data_aquisicao || '',
+      'Data cancelamento': c.data_cancelamento || '',
+      'Motivo cancelamento': c.motivo_cancelamento || '',
+      ICCID: c.iccid || '',
+      Observação: c.observacao || '',
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Chips');
+    const hoje = new Date().toISOString().slice(0, 10);
+    const suf =
+      filtroWhatsapp === 'sem'
+        ? '-sem-whatsapp'
+        : filtroWhatsapp === 'com'
+          ? '-com-whatsapp'
+          : '';
+    XLSX.writeFile(wb, `chips${suf}-${hoje}.xlsx`);
+  };
+
   // Filtros ativos (para mostrar como chips removíveis)
   const filtrosAtivos = [
     filtroStatus && { key: 'status', label: statusInfo(filtroStatus).label, clear: () => setFiltroStatus('') },
     filtroOperadora && { key: 'op', label: OPERADORAS.find((o) => o.value === filtroOperadora)?.label, clear: () => setFiltroOperadora('') },
     filtroSetor && { key: 'set', label: filtroSetor, clear: () => setFiltroSetor('') },
+    filtroWhatsapp && {
+      key: 'wpp',
+      label: filtroWhatsapp === 'sem' ? 'Sem WhatsApp' : 'Com WhatsApp',
+      clear: () => setFiltroWhatsapp(''),
+    },
     busca && { key: 'q', label: `"${busca}"`, clear: () => setBusca('') },
   ].filter(Boolean);
 
@@ -683,6 +733,15 @@ export default function ControleChips() {
               <option value="">Setor</option>
               {setoresDisponiveis.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
+            <select
+              value={filtroWhatsapp}
+              onChange={(e) => setFiltroWhatsapp(e.target.value)}
+              className="border border-gray-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#000638]/30 focus:border-[#000638]/60 bg-gray-50 text-[#000638] text-xs font-semibold font-barlow"
+            >
+              <option value="">WhatsApp</option>
+              <option value="sem">Sem WhatsApp</option>
+              <option value="com">Com WhatsApp</option>
+            </select>
           </div>
           {/* Verificar WhatsApp — checa cada número na uazapi */}
           <button
@@ -693,6 +752,16 @@ export default function ControleChips() {
           >
             <WhatsappLogo size={14} weight="bold" />
             {verificando ? 'Verificando…' : 'Verificar WhatsApp'}
+          </button>
+          {/* Exportar Excel — respeita os filtros ativos */}
+          <button
+            onClick={exportarExcel}
+            disabled={chipsFiltrados.length === 0}
+            title="Exporta a lista visível (com os filtros aplicados) para Excel"
+            className="inline-flex items-center justify-center gap-1.5 bg-white border border-emerald-300 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2.5 rounded-lg text-xs font-bold shadow-sm transition-all uppercase tracking-wide font-barlow whitespace-nowrap"
+          >
+            <DownloadSimple size={14} weight="bold" />
+            Exportar
           </button>
           {/* Botão "Novo chip" — ação primária */}
           <button
@@ -744,7 +813,7 @@ export default function ControleChips() {
               </button>
             ))}
             <button
-              onClick={() => { setBusca(''); setFiltroStatus(''); setFiltroOperadora(''); setFiltroSetor(''); }}
+              onClick={() => { setBusca(''); setFiltroStatus(''); setFiltroOperadora(''); setFiltroSetor(''); setFiltroWhatsapp(''); }}
               className="ml-auto text-[10px] font-semibold text-gray-500 hover:text-rose-600 uppercase tracking-wide font-barlow"
             >
               Limpar tudo
@@ -763,7 +832,7 @@ export default function ControleChips() {
           </div>
           <h2 className="text-sm font-bold text-white font-barlow">Chips cadastrados</h2>
           <span className="ml-auto inline-flex items-center gap-1.5 bg-white/10 text-white text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full font-barlow">
-            {chips.length} chip{chips.length !== 1 ? 's' : ''}
+            {chipsFiltrados.length} chip{chipsFiltrados.length !== 1 ? 's' : ''}
           </span>
         </div>
 
@@ -772,7 +841,7 @@ export default function ControleChips() {
             <Spinner size={36} className="animate-spin mb-3 text-[#000638]/40" />
             <p className="text-sm font-semibold font-barlow">Carregando chips...</p>
           </div>
-        ) : chips.length === 0 ? (
+        ) : chipsFiltrados.length === 0 ? (
           <div className="text-center py-20 px-4">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gray-100 mb-3">
               <DeviceMobile size={32} weight="light" className="text-gray-400" />
@@ -796,7 +865,7 @@ export default function ControleChips() {
             </div>
 
             <div className="divide-y divide-gray-100">
-              {chips.map((c) => {
+              {chipsFiltrados.map((c) => {
                 const st = statusInfo(c.status);
                 const opColor = OPERADORA_COLOR[c.operadora] || OPERADORA_COLOR.outras;
                 return (
