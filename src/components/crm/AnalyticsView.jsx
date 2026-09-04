@@ -1250,26 +1250,40 @@ function KpiCard({
 }) {
   const COLORS = {
     green: {
-      from: 'from-emerald-400',
       bg: 'bg-emerald-100',
       text: 'text-emerald-600',
+      bar: 'bg-emerald-500',
+      tint: 'from-emerald-50/70',
     },
-    blue: { from: 'from-blue-400', bg: 'bg-blue-100', text: 'text-blue-600' },
+    blue: {
+      bg: 'bg-blue-100',
+      text: 'text-blue-600',
+      bar: 'bg-blue-500',
+      tint: 'from-blue-50/70',
+    },
     indigo: {
-      from: 'from-indigo-400',
       bg: 'bg-indigo-100',
       text: 'text-indigo-600',
+      bar: 'bg-indigo-500',
+      tint: 'from-indigo-50/70',
     },
-    rose: { from: 'from-rose-400', bg: 'bg-rose-100', text: 'text-rose-600' },
+    rose: {
+      bg: 'bg-rose-100',
+      text: 'text-rose-600',
+      bar: 'bg-rose-500',
+      tint: 'from-rose-50/70',
+    },
     amber: {
-      from: 'from-amber-400',
       bg: 'bg-amber-100',
       text: 'text-amber-600',
+      bar: 'bg-amber-500',
+      tint: 'from-amber-50/70',
     },
     violet: {
-      from: 'from-violet-400',
       bg: 'bg-violet-100',
       text: 'text-violet-600',
+      bar: 'bg-violet-500',
+      tint: 'from-violet-50/70',
     },
   };
   const t = COLORS[color] || COLORS.blue;
@@ -1277,11 +1291,9 @@ function KpiCard({
   return (
     <Tag
       onClick={onClick}
-      className={`bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-1 relative overflow-hidden text-left ${onClick ? 'cursor-pointer hover:border-indigo-300 hover:shadow-md transition' : ''}`}
+      className={`border border-gray-200 rounded-xl p-4 pl-5 flex flex-col gap-1 relative overflow-hidden text-left bg-gradient-to-b ${t.tint} to-white ${onClick ? 'cursor-pointer hover:border-indigo-300 hover:shadow-md transition' : ''}`}
     >
-      <span
-        className={`absolute inset-y-0 left-0 w-1 bg-gradient-to-b ${t.from} to-transparent`}
-      />
+      <span className={`absolute inset-y-0 left-0 w-1.5 ${t.bar}`} />
       <div className="flex items-center gap-2 text-gray-500">
         <span
           className={`inline-flex items-center justify-center w-7 h-7 rounded-lg ${t.bg}`}
@@ -1315,7 +1327,7 @@ function KpiCard({
           </span>
         )}
       </div>
-      <span className={`text-xl font-bold tabular-nums ${t.text}`}>
+      <span className={`text-2xl font-bold tabular-nums leading-tight ${t.text}`}>
         {valor}
       </span>
       {subValor && !loading && (
