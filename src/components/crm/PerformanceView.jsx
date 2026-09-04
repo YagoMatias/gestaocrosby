@@ -1471,6 +1471,23 @@ function SellersTotalsTable({
     };
   }, [filtrados]);
 
+  // Maior faturamento do grupo — usado na micro-barra de comparação.
+  const maxFat = useMemo(
+    () =>
+      filtrados.reduce((m, r) => Math.max(m, Number(r.invoice_value) || 0), 0),
+    [filtrados],
+  );
+
+  // Ranking por faturamento (estável, independe da coluna de ordenação atual).
+  // Usado para as medalhas do top-3 ao lado do nome do vendedor.
+  const fatRank = useMemo(() => {
+    const m = new Map();
+    [...filtrados]
+      .sort((a, b) => (Number(b.invoice_value) || 0) - (Number(a.invoice_value) || 0))
+      .forEach((s, i) => m.set(s.seller_code, i + 1));
+    return m;
+  }, [filtrados]);
+
   const toggleSort = (col) => {
     if (sortCol === col) setSortAsc(!sortAsc);
     else {
@@ -1549,61 +1566,59 @@ function SellersTotalsTable({
         ) : (
           <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
             <table className="w-full text-xs">
-              <thead className="bg-gray-100 sticky top-0 border-b border-gray-200">
-                <tr>
-                  <th className="text-left px-3 py-2 text-gray-500 font-semibold">
-                    #
-                  </th>
+              <thead className="sticky top-0 z-10 bg-gradient-to-r from-[#000638] to-[#1a1f5a] shadow-sm">
+                <tr className="text-[10px] uppercase tracking-wider text-blue-100/80">
+                  <th className="text-left px-3 py-2.5 font-bold w-[44px]">#</th>
                   <th
-                    className="text-left px-3 py-2 text-gray-600 font-semibold cursor-pointer hover:text-[#000638] select-none"
+                    className="text-left px-3 py-2.5 font-bold cursor-pointer hover:text-white select-none transition-colors"
                     onClick={() => toggleSort('seller_name')}
                   >
                     Vendedor <SortIcon col="seller_name" />
                   </th>
                   <th
-                    className="text-left px-3 py-2 text-gray-600 font-semibold cursor-pointer hover:text-[#000638] select-none"
+                    className="text-left px-3 py-2.5 font-bold cursor-pointer hover:text-white select-none transition-colors"
                     onClick={() => toggleSort('branch_name')}
                   >
                     Loja <SortIcon col="branch_name" />
                   </th>
                   <th
-                    className="text-right px-3 py-2 text-[#000638] font-semibold cursor-pointer hover:text-[#000638] select-none bg-[#000638]/[0.04]"
+                    className="text-right px-3 py-2.5 font-bold text-white cursor-pointer hover:text-white select-none bg-white/10"
                     onClick={() => toggleSort('invoice_value')}
                   >
                     Faturamento <SortIcon col="invoice_value" />
                   </th>
                   <th
-                    className="text-right px-3 py-2 text-gray-500 font-semibold cursor-pointer hover:text-[#000638] select-none"
+                    className="text-right px-3 py-2.5 font-bold cursor-pointer hover:text-white select-none transition-colors"
                     onClick={() => toggleSort('invoice_qty')}
                   >
                     Vendas <SortIcon col="invoice_qty" />
                   </th>
                   <th
-                    className="text-right px-3 py-2 text-gray-500 font-semibold cursor-pointer hover:text-[#000638] select-none"
+                    className="text-right px-3 py-2.5 font-bold cursor-pointer hover:text-white select-none transition-colors"
                     onClick={() => toggleSort('itens_qty')}
                   >
                     Peças <SortIcon col="itens_qty" />
                   </th>
                   <th
-                    className="text-right px-3 py-2 text-gray-500 font-semibold cursor-pointer hover:text-[#000638] select-none"
+                    className="text-right px-3 py-2.5 font-bold cursor-pointer hover:text-white select-none transition-colors"
                     onClick={() => toggleSort('tm')}
                   >
                     TM <SortIcon col="tm" />
                   </th>
                   <th
-                    className="text-right px-3 py-2 text-gray-500 font-semibold cursor-pointer hover:text-[#000638] select-none"
+                    className="text-right px-3 py-2.5 font-bold cursor-pointer hover:text-white select-none transition-colors"
                     onClick={() => toggleSort('pa')}
                   >
                     PA <SortIcon col="pa" />
                   </th>
                   <th
-                    className="text-right px-3 py-2 text-gray-500 font-semibold cursor-pointer hover:text-[#000638] select-none"
+                    className="text-right px-3 py-2.5 font-bold cursor-pointer hover:text-white select-none transition-colors"
                     onClick={() => toggleSort('pmpv')}
                   >
                     PMPV <SortIcon col="pmpv" />
                   </th>
                   <th
-                    className="text-right px-3 py-2 text-gray-500 font-semibold cursor-pointer hover:text-[#000638] select-none"
+                    className="text-right px-3 py-2.5 font-bold cursor-pointer hover:text-white select-none transition-colors"
                     onClick={() => toggleSort('pct_meta_mensal')}
                     title={`Meta mensal · ${periodoMensalKey || ''}`}
                   >
@@ -1613,7 +1628,7 @@ function SellersTotalsTable({
                     </span>
                   </th>
                   <th
-                    className="text-right px-3 py-2 text-gray-500 font-semibold cursor-pointer hover:text-[#000638] select-none"
+                    className="text-right px-3 py-2.5 font-bold cursor-pointer hover:text-white select-none transition-colors"
                     onClick={() => toggleSort('pct_meta_semanal')}
                     title={`Meta semanal · ${periodoSemanalKey || ''}`}
                   >
@@ -1623,7 +1638,7 @@ function SellersTotalsTable({
                     </span>
                   </th>
                   <th
-                    className="text-right px-3 py-2 text-gray-500 font-semibold cursor-pointer hover:text-[#000638] select-none"
+                    className="text-right px-3 py-2.5 font-bold cursor-pointer hover:text-white select-none transition-colors"
                     onClick={() => toggleSort('openings')}
                   >
                     <span className="flex items-center justify-end gap-1">
@@ -1632,7 +1647,7 @@ function SellersTotalsTable({
                     </span>
                   </th>
                   <th
-                    className="text-right px-3 py-2 text-gray-500 font-semibold cursor-pointer hover:text-[#000638] select-none"
+                    className="text-right px-3 py-2.5 font-bold cursor-pointer hover:text-white select-none transition-colors"
                     onClick={() => toggleSort('reativacoes')}
                   >
                     <span className="flex items-center justify-end gap-1">
@@ -1640,7 +1655,7 @@ function SellersTotalsTable({
                       <SortIcon col="reativacoes" />
                     </span>
                   </th>
-                  <th className="text-center px-3 py-2 text-gray-500 font-semibold w-[60px]" />
+                  <th className="text-center px-3 py-2.5 font-bold w-[60px]" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -1651,16 +1666,31 @@ function SellersTotalsTable({
                       idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'
                     } hover:bg-[#000638]/[0.04]`}
                   >
-                    <td className="px-3 py-2 text-gray-400 font-mono">
+                    <td className="px-3 py-2 text-gray-400 font-mono tabular-nums">
                       {idx + 1}
                     </td>
-                    <td className="px-3 py-2 font-semibold text-gray-800 max-w-[200px] truncate">
-                      {s.seller_name}
-                      {s._inativo && (
-                        <span className="text-gray-400 font-normal text-[10px] ml-1">
-                          (inativo)
-                        </span>
-                      )}
+                    <td className="px-3 py-2 font-semibold text-gray-800 max-w-[220px]">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        {(() => {
+                          const r = fatRank.get(s.seller_code);
+                          const medal =
+                            r === 1 ? '🥇' : r === 2 ? '🥈' : r === 3 ? '🥉' : null;
+                          return medal ? (
+                            <span
+                              className="text-sm leading-none shrink-0"
+                              title={`${r}º em faturamento`}
+                            >
+                              {medal}
+                            </span>
+                          ) : null;
+                        })()}
+                        <span className="truncate">{s.seller_name}</span>
+                        {s._inativo && (
+                          <span className="text-gray-400 font-normal text-[10px] shrink-0">
+                            (inativo)
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-3 py-2 text-gray-700 whitespace-nowrap">
                       {s.branch_name ? (
@@ -1676,8 +1706,20 @@ function SellersTotalsTable({
                         <span className="text-gray-300">—</span>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-right font-bold text-[#000638] bg-[#000638]/[0.025]">
-                      {fmtMoeda(s.invoice_value)}
+                    <td className="px-3 py-2 text-right bg-[#000638]/[0.025]">
+                      <div className="font-bold text-[#000638] tabular-nums">
+                        {fmtMoeda(s.invoice_value)}
+                      </div>
+                      {maxFat > 0 && (Number(s.invoice_value) || 0) > 0 && (
+                        <div className="mt-1 h-1 w-full rounded-full bg-gray-200/70 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-[#000638] to-indigo-500"
+                            style={{
+                              width: `${Math.max(3, ((Number(s.invoice_value) || 0) / maxFat) * 100)}%`,
+                            }}
+                          />
+                        </div>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-right text-gray-700">
                       {fmtNum(s.invoice_qty)}
