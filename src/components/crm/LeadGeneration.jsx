@@ -69,6 +69,12 @@ const CATEGORIAS = [
   { key: 'top', label: 'Top Clientes', icon: Trophy, color: '#f97316', bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200' },
 ];
 
+// Categorias que dependem da carteira do ERP (TOTVS). As demais
+// (top, aniversariante) vêm do Supabase e abrem sem esperar o ERP.
+// Cashback também precisa do ERP: a lista de clientes do vendedor sai da
+// carteira (persons = clientes do vendedor) antes de consultar o saldo.
+const CATEGORIAS_ERP = new Set(['ativo', 'a_inativar', 'inativo', 'cashback']);
+
 const fmtMoeda = (v) =>
   Number(v || 0).toLocaleString('pt-BR', {
     style: 'currency',
@@ -1195,17 +1201,10 @@ export default function LeadGeneration({ erpData, modulo, vendedoresMap, onChatL
     return out;
   }, [erpData, vendedorSel, aniversariantes, cashbackList, topClientes]);
 
-  if (!erpData?.clientes) {
-    return (
-      <div className="bg-white border border-gray-200 rounded-xl p-12 text-center">
-        <Phone size={48} weight="duotone" className="mx-auto text-gray-300 mb-3" />
-        <p className="text-sm font-semibold text-[#000638]">Carteira não carregada</p>
-        <p className="text-xs text-gray-500 mt-1">
-          Aguarde o ERP carregar (botão ERP TOTVS no topo) para começar.
-        </p>
-      </div>
-    );
-  }
+  // Só as categorias do ERP ficam bloqueadas enquanto a carteira carrega.
+  // Top Clientes / Aniversariantes / Cashback (Supabase) abrem na hora.
+  const erpPendente = !erpData?.clientes;
+  const categoriaPrecisaErp = CATEGORIAS_ERP.has(categoriaSel);
 
   return (
     <div className="space-y-4">
@@ -1302,7 +1301,20 @@ export default function LeadGeneration({ erpData, modulo, vendedoresMap, onChatL
       </div>
 
       {/* Lista de clientes */}
-      {erroTop && categoriaSel === 'top' ? (
+      {erpPendente && categoriaPrecisaErp ? (
+        <div className="bg-white border border-gray-200 rounded-xl p-12 text-center">
+          <Spinner size={28} className="animate-spin mx-auto mb-3 text-emerald-500" />
+          <p className="text-sm font-semibold text-[#000638]">
+            Carteira do ERP carregando…
+          </p>
+          <p className="text-xs text-gray-500 mt-1">
+            Esta categoria depende do ERP TOTVS. Enquanto isso, use{' '}
+            <span className="font-semibold text-orange-600">Top Clientes</span> ou{' '}
+            <span className="font-semibold text-pink-600">Aniversariantes</span>,
+            que abrem na hora.
+          </p>
+        </div>
+      ) : erroTop && categoriaSel === 'top' ? (
         <div className="bg-white border border-red-200 rounded-xl p-8 text-center">
           <Warning size={32} weight="duotone" className="mx-auto mb-2 text-red-400" />
           <p className="text-sm font-semibold text-red-600">
