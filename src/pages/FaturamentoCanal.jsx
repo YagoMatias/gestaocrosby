@@ -1853,7 +1853,7 @@ function BlueCredTransacoesModal({ isOpen, onClose, datemin, datemax }) {
   );
 }
 
-// ─── Componente: card BlueCard (envios via ClickUp) ─────────────────────────
+// ─── Componente: card BlueCard (envios — fonte: Supabase bluecard_leads) ─────
 const BlueCardCard = React.memo(function BlueCardCard({ count }) {
   return (
     <div className="rounded-xl border border-indigo-200 bg-gradient-to-br from-indigo-50 to-blue-50 p-4 flex flex-col gap-2 hover:shadow-md transition-shadow relative overflow-hidden">
@@ -1878,9 +1878,6 @@ const BlueCardCard = React.memo(function BlueCardCard({ count }) {
           </div>
           <div className="text-xs text-gray-500">
             {count === 1 ? 'cartão enviado' : 'cartões enviados'}
-          </div>
-          <div className="text-[10px] text-indigo-600/70 font-medium mt-1">
-            via ClickUp
           </div>
         </>
       )}
