@@ -7,6 +7,7 @@ import React, {
   lazy,
   Suspense,
 } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   ArrowsClockwise,
   Database,
@@ -110,6 +111,16 @@ export default function CRMVendas() {
   const [modulo, setModulo] = useState('multimarcas');
   const [tab, setTab] = useState('painel');
   const canalPrincipal = canalPrincipalDe(modulo);
+  const [searchParams] = useSearchParams();
+  // O canal vem da URL (?canal=varejo) — as abas de canal ficam no sidebar.
+  useEffect(() => {
+    const canal = (searchParams.get('canal') || '').toLowerCase();
+    if (['multimarcas', 'varejo', 'revenda'].includes(canal)) {
+      setModulo(canal);
+      setTab((t) => (t === 'painel' ? 'abertura' : t));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
   const [subTab, setSubTab] = useState('funil');
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
@@ -651,7 +662,7 @@ export default function CRMVendas() {
       <PageTitle
         icon={ChartBar}
         title="CRM de Vendas"
-        subtitle="Gestão de leads e carteira • ClickUp + Evolution + TOTVS"
+        subtitle="Gestão de leads e carteira"
       />
 
       {/* ═══ CARD DE CONTROLES ════════════════════════════════════════════ */}
@@ -676,28 +687,17 @@ export default function CRMVendas() {
               <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mr-1">
                 Canal
               </span>
-              {/* Canais principais (sub-abas): Multimarcas · Varejo · Revenda */}
-              {CANAIS_PRINCIPAIS.map((m) => {
-                const ativo = canalPrincipal === m.key && tab !== 'painel';
-                return (
-                  <button
-                    key={m.key}
-                    onClick={() => {
-                      // Ao trocar de canal, volta pro módulo base do canal
-                      setModulo(m.key);
-                      if (tab === 'painel') setTab('abertura');
-                    }}
-                    className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center gap-1 ${
-                      ativo
-                        ? 'bg-gradient-to-r from-[#000638] to-[#1a1f5a] text-white shadow-md shadow-[#000638]/30'
-                        : 'text-gray-600 hover:text-[#000638] hover:bg-[#000638]/5 border border-gray-200'
-                    }`}
-                  >
-                    <span>{m.icon}</span>
-                    {m.label}
-                  </button>
-                );
-              })}
+              {/* Canal ativo (a troca de canal é feita pelas abas do sidebar) */}
+              {tab !== 'painel' &&
+                (() => {
+                  const info = CANAIS_PRINCIPAIS.find((c) => c.key === canalPrincipal);
+                  return (
+                    <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-gradient-to-r from-[#000638] to-[#1a1f5a] text-white shadow-md shadow-[#000638]/30">
+                      <span>{info?.icon}</span>
+                      {info?.label || canalPrincipal}
+                    </span>
+                  );
+                })()}
               {/* Sub-canais de Multimarcas (Geral / Inbound David / Rafael) */}
               {canalPrincipal === 'multimarcas' && tab !== 'painel' && (
                 <>

@@ -385,9 +385,29 @@ const painelVendasItems = [
   },
   {
     name: 'CRM de Vendas',
-    href: '/crm-vendas',
+    href: '#',
     icon: Storefront,
     color: 'text-emerald-600',
+    children: [
+      {
+        name: 'Multimarcas',
+        href: '/crm-vendas?canal=multimarcas',
+        icon: Storefront,
+        color: 'text-emerald-600',
+      },
+      {
+        name: 'Varejo',
+        href: '/crm-vendas?canal=varejo',
+        icon: ShoppingCart,
+        color: 'text-blue-600',
+      },
+      {
+        name: 'Revenda',
+        href: '/crm-vendas?canal=revenda',
+        icon: Package,
+        color: 'text-orange-600',
+      },
+    ],
   },
   {
     name: 'Forecast',
@@ -1111,8 +1131,11 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
     (href) => {
       if (!user) return false;
       if (user.allowedPages === '*') return true;
+      // Ignora a query string: a permissão é da página (ex.: /crm-vendas),
+      // não muda por causa do ?canal=... usado pelas abas de canal.
+      const path = String(href).split('?')[0];
       if (user.allowedPages && Array.isArray(user.allowedPages)) {
-        return user.allowedPages.includes(href);
+        return user.allowedPages.includes(path);
       }
       return false;
     },
