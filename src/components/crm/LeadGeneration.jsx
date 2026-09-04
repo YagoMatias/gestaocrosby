@@ -70,10 +70,8 @@ const CATEGORIAS = [
 ];
 
 // Categorias que dependem da carteira do ERP (TOTVS). As demais
-// (top, aniversariante) vêm do Supabase e abrem sem esperar o ERP.
-// Cashback também precisa do ERP: a lista de clientes do vendedor sai da
-// carteira (persons = clientes do vendedor) antes de consultar o saldo.
-const CATEGORIAS_ERP = new Set(['ativo', 'a_inativar', 'inativo', 'cashback']);
+// (top, aniversariante, cashback) vêm do Supabase e abrem sem esperar o ERP.
+const CATEGORIAS_ERP = new Set(['ativo', 'a_inativar', 'inativo']);
 
 const fmtMoeda = (v) =>
   Number(v || 0).toLocaleString('pt-BR', {
@@ -1022,24 +1020,20 @@ export default function LeadGeneration({ erpData, modulo, vendedoresMap, onChatL
   }, [categoriaSel, modulo, refreshKey]);
 
   // ── Carregar lista de cashback ──
-  // Backend exige `persons: [{code}]`. Geramos a lista a partir da carteira
-  // do vendedor selecionado (somente clientes desse vendedor).
+  // Não depende do ERP: os clientes do vendedor saem do Supabase
+  // (notas_fiscais.dealer_code) dentro do próprio endpoint, que então
+  // consulta os saldos no TOTVS.
   useEffect(() => {
     if (categoriaSel !== 'cashback') return;
-    if (!vendedorSel || !erpData?.clientes) {
+    if (!vendedorSel) {
       setCashbackList([]);
       setCashbackCarregado(true);
       return;
     }
-    const persons = erpData.clientes
-      .filter((c) => c.vendedorCode === vendedorSel.code && c.cod)
-      .map((c) => ({ code: c.cod }));
-    if (persons.length === 0) {
-      setCashbackList([]);
-      setCashbackCarregado(true);
-      return;
-    }
-    apiPost('/api/crm/cashback-balances', { persons, modulo })
+    setCashbackCarregado(false);
+    apiGet(
+      `/api/crm/lead-generation/cashback-vendedor?vendedor_code=${vendedorSel.code}&modulo=${encodeURIComponent(modulo)}`,
+    )
       .then((d) => {
         // Resposta: { total, clientes: { [code]: {nome, telefone, balance, ...} } }
         const dict = d?.clientes || {};
@@ -1054,7 +1048,7 @@ export default function LeadGeneration({ erpData, modulo, vendedoresMap, onChatL
       })
       .catch(() => setCashbackList([]))
       .finally(() => setCashbackCarregado(true));
-  }, [categoriaSel, modulo, vendedorSel, erpData?.clientes, refreshKey]);
+  }, [categoriaSel, modulo, vendedorSel, refreshKey]);
 
   // ── Carregar últimas ligações pra colocar timestamps nos cards ──
   useEffect(() => {
@@ -1309,9 +1303,10 @@ export default function LeadGeneration({ erpData, modulo, vendedoresMap, onChatL
           </p>
           <p className="text-xs text-gray-500 mt-1">
             Esta categoria depende do ERP TOTVS. Enquanto isso, use{' '}
-            <span className="font-semibold text-orange-600">Top Clientes</span> ou{' '}
-            <span className="font-semibold text-pink-600">Aniversariantes</span>,
-            que abrem na hora.
+            <span className="font-semibold text-orange-600">Top Clientes</span>,{' '}
+            <span className="font-semibold text-pink-600">Aniversariantes</span> ou{' '}
+            <span className="font-semibold text-violet-600">Cashback</span>, que
+            abrem na hora.
           </p>
         </div>
       ) : erroTop && categoriaSel === 'top' ? (
