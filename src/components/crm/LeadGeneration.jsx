@@ -587,9 +587,34 @@ function ClienteCard({ cliente, categoria, onRegistrar, onHistorico, onChatLead,
   const cor = avatarColor(cliente.nome || cliente.person_nome);
   const nome = cliente.nome || cliente.person_nome || 'Sem nome';
   const fone = cliente.fone || cliente.person_telefone;
+  const catInfo = CATEGORIAS.find((x) => x.key === categoria);
+  const accent = catInfo?.color || '#6366f1';
+  // Contato registrado HOJE → deixa a "baixa" visível no próprio card.
+  const contatadoHoje = (() => {
+    if (!ultimoContato?.data_contato) return false;
+    const d = new Date(ultimoContato.data_contato);
+    if (isNaN(d.getTime())) return false;
+    const n = new Date();
+    return (
+      d.getFullYear() === n.getFullYear() &&
+      d.getMonth() === n.getMonth() &&
+      d.getDate() === n.getDate()
+    );
+  })();
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-3 hover:border-indigo-300 hover:shadow-md transition">
+    <div
+      className={`relative overflow-hidden rounded-xl border p-3 pl-3.5 transition ${
+        contatadoHoje
+          ? 'border-emerald-300 ring-1 ring-emerald-200 bg-emerald-50/30'
+          : 'border-gray-200 bg-white hover:border-indigo-300 hover:shadow-md'
+      }`}
+    >
+      {/* Faixa lateral da categoria */}
+      <span
+        className="absolute inset-y-0 left-0 w-1"
+        style={{ background: accent }}
+      />
       <div className="flex items-start gap-2.5 mb-2.5">
         <span
           className="shrink-0 w-9 h-9 rounded-full text-white text-xs font-bold flex items-center justify-center shadow-sm"
@@ -653,15 +678,25 @@ function ClienteCard({ cliente, categoria, onRegistrar, onHistorico, onChatLead,
 
       {/* Último contato */}
       {ultimoContato && (
-        <div className="bg-gray-50 rounded-md px-2 py-1.5 mb-2 text-[10px] flex items-center gap-1.5">
-          {ultimoContato.atendida ? (
+        <div
+          className={`rounded-md px-2 py-1.5 mb-2 text-[10px] flex items-center gap-1.5 ${
+            contatadoHoje
+              ? 'bg-emerald-100 text-emerald-800 font-semibold'
+              : 'bg-gray-50 text-gray-600'
+          }`}
+        >
+          {contatadoHoje ? (
+            <CheckCircle size={11} weight="fill" className="text-emerald-600" />
+          ) : ultimoContato.atendida ? (
             <PhoneCall size={10} weight="fill" className="text-emerald-600" />
           ) : (
             <PhoneDisconnect size={10} weight="fill" className="text-red-500" />
           )}
-          <span className="text-gray-600">
-            Último contato:{' '}
-            <span className="font-semibold">{fmtData(ultimoContato.data_contato)}</span>
+          <span>
+            {contatadoHoje ? 'Contatado hoje' : 'Último contato'}:{' '}
+            <span className="font-semibold">
+              {fmtData(ultimoContato.data_contato)}
+            </span>
           </span>
         </div>
       )}

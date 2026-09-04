@@ -86,42 +86,56 @@ const KPI_COLOR_TOKENS = {
     iconText: 'text-emerald-600',
     value: 'text-emerald-600',
     accent: 'from-emerald-400',
+    bar: 'bg-emerald-500',
+    tint: 'from-emerald-50/70',
   },
   blue: {
     iconBg: 'bg-blue-100',
     iconText: 'text-blue-600',
     value: 'text-blue-600',
     accent: 'from-blue-400',
+    bar: 'bg-blue-500',
+    tint: 'from-blue-50/70',
   },
   purple: {
     iconBg: 'bg-violet-100',
     iconText: 'text-violet-600',
     value: 'text-violet-600',
     accent: 'from-violet-400',
+    bar: 'bg-violet-500',
+    tint: 'from-violet-50/70',
   },
   indigo: {
     iconBg: 'bg-indigo-100',
     iconText: 'text-indigo-600',
     value: 'text-indigo-600',
     accent: 'from-indigo-400',
+    bar: 'bg-indigo-500',
+    tint: 'from-indigo-50/70',
   },
   amber: {
     iconBg: 'bg-amber-100',
     iconText: 'text-amber-600',
     value: 'text-amber-700',
     accent: 'from-amber-400',
+    bar: 'bg-amber-500',
+    tint: 'from-amber-50/70',
   },
   rose: {
     iconBg: 'bg-rose-100',
     iconText: 'text-rose-600',
     value: 'text-rose-600',
     accent: 'from-rose-400',
+    bar: 'bg-rose-500',
+    tint: 'from-rose-50/70',
   },
   sky: {
     iconBg: 'bg-sky-100',
     iconText: 'text-sky-600',
     value: 'text-sky-600',
     accent: 'from-sky-400',
+    bar: 'bg-sky-500',
+    tint: 'from-sky-50/70',
   },
 };
 
@@ -139,7 +153,9 @@ function KpiCard({
   const tokens = (color && KPI_COLOR_TOKENS[color]) || null;
   return (
     <div
-      className={`bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-1 relative overflow-hidden ${
+      className={`border border-gray-200 rounded-xl p-4 pl-5 flex flex-col gap-1 relative overflow-hidden ${
+        tokens ? `bg-gradient-to-b ${tokens.tint} to-white` : 'bg-white'
+      } ${
         clickable
           ? 'cursor-pointer hover:border-[#000638]/40 hover:shadow-md hover:-translate-y-0.5 transition'
           : ''
@@ -151,7 +167,7 @@ function KpiCard({
       {/* Faixa colorida lateral */}
       {tokens && (
         <span
-          className={`absolute inset-y-0 left-0 w-1 bg-gradient-to-b ${tokens.accent} to-transparent`}
+          className={`absolute inset-y-0 left-0 w-1.5 ${tokens.bar}`}
         />
       )}
       {loading && (
@@ -191,7 +207,7 @@ function KpiCard({
         </div>
       ) : (
         <span
-          className={`text-xl font-bold tabular-nums ${
+          className={`text-2xl font-bold tabular-nums leading-tight ${
             tokens ? tokens.value : 'text-[#000638]'
           }`}
         >
