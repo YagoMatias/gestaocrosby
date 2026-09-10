@@ -89,6 +89,11 @@ function ConfrontoCard({ c }) {
             <div className={`mt-1 text-base font-extrabold tabular-nums ${winA ? 'text-white' : 'text-white/55'}`}>
               {fmtBRL(a.invoice_value)}
             </div>
+            {winA && (
+              <span className="inline-flex items-center gap-1 mt-1 bg-amber-400/20 text-amber-300 border border-amber-400/50 text-[8px] font-black uppercase tracking-[0.15em] px-1.5 py-0.5 rounded">
+                <Crown size={8} weight="fill" /> Vencedor
+              </span>
+            )}
           </div>
 
           {/* VS */}
@@ -119,6 +124,11 @@ function ConfrontoCard({ c }) {
             <div className={`mt-1 text-base font-extrabold tabular-nums ${winB ? 'text-white' : 'text-white/55'}`}>
               {fmtBRL(b.invoice_value)}
             </div>
+            {winB && (
+              <span className="inline-flex items-center gap-1 mt-1 bg-amber-400/20 text-amber-300 border border-amber-400/50 text-[8px] font-black uppercase tracking-[0.15em] px-1.5 py-0.5 rounded">
+                <Crown size={8} weight="fill" /> Vencedor
+              </span>
+            )}
           </div>
         </div>
 
