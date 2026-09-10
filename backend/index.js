@@ -1,10 +1,10 @@
-﻿import express from 'express';
+import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
 
-// â”€â”€â”€ Rotas existentes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Rotas existentes ────────────────────────────────────────────────────────────────────
 import chatRoutes from './routes/chat.routes.js';
 import whatsappRoutes from './routes/whatsapp.routes.js';
 import financialRoutes from './routes/batidacarteira.routes.js';
@@ -17,6 +17,7 @@ import crmRoutes, { iniciarCronSyncLeadsCompras } from './routes/crm.routes.js';
 import filaRoutes from './routes/fila.routes.js';
 import forecastRoutes from './routes/forecast.routes.js';
 import bluecardRoutes, { iniciarBluecardStatsSync } from './routes/bluecard.routes.js';
+import bluecardIntegracaoRoutes from './routes/bluecardIntegracao.routes.js';
 import wixRoutes from './routes/wix.routes.js';
 import expedicaoShowroomRoutes from './routes/expedicaoShowroom.routes.js';
 import faturamentoHistoricoRoutes from './routes/faturamentoHistorico.routes.js';
@@ -24,8 +25,10 @@ import faturamentoTransacaoRoutes from './routes/faturamentoTransacao.routes.js'
 import techRoutes from './routes/tech.routes.js';
 import uazapiSyncRoutes from './routes/uazapiSync.routes.js';
 import automacaoRoutes from './routes/automacao.routes.js';
+import smsRoutes from './routes/sms.routes.js';
 import monitoringRoutes from './routes/monitoring.routes.js';
 import conciliacaoStoneRoutes from './routes/conciliacaoStone.routes.js';
+import vagasRoutes from './routes/vagas.routes.js';
 import drylandChamadosRoutes from './routes/drylandChamados.routes.js';
 import { iniciarCronUazapiSync } from './services/uazapiSync.js';
 import { iniciarUazapiMonitor } from './services/uazapiMonitor.js';
@@ -35,24 +38,24 @@ import { installTotvsTracker } from './services/totvsAxiosInterceptor.js';
 // Instala interceptor que rastreia chamadas TOTVS (antes de qualquer rota)
 installTotvsTracker();
 
-// â”€â”€â”€ Safety net global â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// Evita que erros nÃ£o-tratados (ex: pg.Pool 'error', websocket reconnect,
-// timer rejeitado) DERRUBEM o processo Node inteiro. Em produÃ§Ã£o, queremos
-// log + continuar â€” nÃ£o crashar e perder todas as requests em vÃ´o.
+// ─── Safety net global ─────────────────────────────────────────────────
+// Evita que erros não-tratados (ex: pg.Pool 'error', websocket reconnect,
+// timer rejeitado) DERRUBEM o processo Node inteiro. Em produção, queremos
+// log + continuar — não crashar e perder todas as requests em vôo.
 process.on('uncaughtException', (err, origin) => {
   console.error(
-    `ðŸš¨ [uncaughtException] ${origin}:`,
+    `🚨 [uncaughtException] ${origin}:`,
     err?.message || err,
     err?.stack?.split('\n').slice(0, 3).join('\n') || '',
   );
 });
 process.on('unhandledRejection', (reason, promise) => {
   const msg = reason instanceof Error ? reason.message : String(reason);
-  console.error(`ðŸš¨ [unhandledRejection]`, msg);
+  console.error(`🚨 [unhandledRejection]`, msg);
 });
 
 
-// â”€â”€â”€ Rotas TOTVS (separadas por domÃ­nio) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Rotas TOTVS (separadas por domínio) ────────────────────────────────────────────
 import authRouter from './totvsrouter/auth.js';
 import fiscalRouter from './totvsrouter/fiscal.js';
 import clientesRouter from './totvsrouter/clientes.js';
@@ -91,6 +94,13 @@ import {
 } from './jobs/provisao-liberacao.job.js';
 import { iniciarJobBoletoCobranca } from './jobs/boleto-cobranca.job.js';
 import { iniciarJobDrylandChamados } from './jobs/dryland-chamados-notificacao.job.js';
+import { iniciarBluecardPagamentosSync } from './jobs/bluecard-pagamentos-sync.job.js';
+import { iniciarBluecardLimiteWatchdog } from './jobs/bluecard-limite.job.js';
+import { iniciarJobEsteiraProtesto } from './jobs/esteira-protesto.job.js';
+import {
+  iniciarJobContratoAluguelVencimento,
+  executarContratoAluguelVencimento,
+} from './jobs/contrato-aluguel-vencimento.job.js';
 
 // =============================================================================
 // SERVER SETUP
@@ -104,7 +114,16 @@ app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
 app.use(compression());
 app.use(morgan('combined'));
-app.use(express.json({ limit: '50mb' }));
+// verify: guarda os bytes CRUS do corpo em req.rawBody — a assinatura HMAC da
+// integração BlueCard cobre o corpo exato; re-serializar JSON mudaria o hash.
+app.use(
+  express.json({
+    limit: '50mb',
+    verify: (req, _res, buf) => {
+      req.rawBody = buf;
+    },
+  }),
+);
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Health check
@@ -112,7 +131,7 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// â”€â”€â”€ Montar rotas TOTVS (/api/totvs/*) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Montar rotas TOTVS (/api/totvs/*) ───────────────────────────────────────────────────────────────────
 app.use('/api/totvs', authRouter); // GET /token, POST /auth
 app.use('/api/totvs', fiscalRouter); // boleto, DANFE, XML, NFs, movimentos fiscais
 app.use('/api/totvs', clientesRouter); // legal-entity, individual, clientes, sync
@@ -122,37 +141,40 @@ app.use('/api/totvs', financeiroRouter); // accounts-receivable, accounts-payabl
 app.use('/api/totvs', estoqueRouter); // best-selling-products, product-balances
 app.use('/api/totvs', painelVendasRouter); // sale-panel/*, seller-panel/*
 app.use('/api/totvs', voucherRouter); // vouchers/usage-enriched
-app.use('/api/totvs', pdvRouter); // PDV RFID â€” produto por cÃ³digo/EPC, condiÃ§Ãµes, transaÃ§Ã£o
+app.use('/api/totvs', pdvRouter); // PDV RFID — produto por código/EPC, condições, transação
 app.use('/api/portal-rfid', portalRfidRoutes); // Portal RFID Chainway UR4 (bridge TCP)
 
-// â”€â”€â”€ Demais rotas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Demais rotas ───────────────────────────────────────────────────────────────────────────
 app.use('/api/chat', chatRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/financial', financialRoutes); // batida-carteira upload
 app.use('/api/financial', financialCredevRoutes); // credev/adiantamento por franquia (TOTVS)
-app.use('/api/catalogo', catalogoRoutes); // catÃ¡logo virtual
+app.use('/api/catalogo', catalogoRoutes); // catálogo virtual
 app.use('/api/meta', metaRoutes); // WhatsApp Official (Meta Graph API)
 app.use('/api/evolution', evolutionRoutes); // Evolution WhatsApp conversations
 app.use('/api/autentique', autentiqueRoutes); // Autentique assinatura digital (termo-credito, CRUD documentos)
 app.use('/api/crm', crmRoutes); // CRM: leads (ClickUp), inst-check-bulk, msgs, roubos, IA
-app.use('/api/fila', filaRoutes); // Fila da Vez (varejo) â€” admin + pÃºblico (PIN)
-app.use('/api/sefaz/dfe', sefazDfeRoutes); // ManifestaÃ§Ã£o do DestinatÃ¡rio (SEFAZ DistribuiÃ§Ã£o DFe)
-app.use('/api/forecast', forecastRoutes); // Forecast â€” Promessa Semanal por Canal
-app.use('/api/bluecard', bluecardRoutes); // BlueCard â€” leads da LP /lp/bluecard
-app.use('/api/wix', wixRoutes); // Wix â€” sync de pedidos do e-commerce
-app.use('/api/expedicao-showroom', expedicaoShowroomRoutes); // ExpediÃ§Ã£o Showroom â€” controle envios
-app.use('/api/faturamento-historico', faturamentoHistoricoRoutes); // Faturamento histÃ³rico diÃ¡rio por canal
-app.use('/api/faturamento-transacao', faturamentoTransacaoRoutes); // Faturamento histÃ³rico por NF (transaÃ§Ã£o)
-app.use('/api/tech', techRoutes); // Tecnologia â€” Controle de chips, etc
+app.use('/api/fila', filaRoutes); // Fila da Vez (varejo) — admin + público (PIN)
+app.use('/api/sefaz/dfe', sefazDfeRoutes); // Manifestação do Destinatário (SEFAZ Distribuição DFe)
+app.use('/api/forecast', forecastRoutes); // Forecast — Promessa Semanal por Canal
+app.use('/api/bluecard', bluecardRoutes); // BlueCard — leads da LP /lp/bluecard
+app.use('/api/bluecard', bluecardIntegracaoRoutes); // BlueCard — integração crediário (webhook + reconciliação, HMAC)
+app.use('/api/wix', wixRoutes); // Wix — sync de pedidos do e-commerce
+app.use('/api/expedicao-showroom', expedicaoShowroomRoutes); // Expedição Showroom — controle envios
+app.use('/api/faturamento-historico', faturamentoHistoricoRoutes); // Faturamento histórico diário por canal
+app.use('/api/faturamento-transacao', faturamentoTransacaoRoutes); // Faturamento histórico por NF (transação)
+app.use('/api/tech', techRoutes); // Tecnologia — Controle de chips, etc
 app.use('/api/monitoring', monitoringRoutes); // Monitoramento consumo TOTVS
-app.use('/api/conciliacao-stone', conciliacaoStoneRoutes); // ConciliaÃ§Ã£o Stone (cartÃµes)
-app.use('/api/dryland', drylandChamadosRoutes); // Dryland â€” chamados da rede (ponte Supabase, sem tocar no Dryland)
-app.use('/api/uazapi-sync', uazapiSyncRoutes); // sync diÃ¡rio UAzapi â†’ Postgres
-app.use('/api/automacao', automacaoRoutes); // AutomaÃ§Ã£o Financeiro â€” cobranÃ§a de boletos (WhatsApp)
+app.use('/api/conciliacao-stone', conciliacaoStoneRoutes); // Conciliação Stone (cartões)
+app.use('/api/uazapi-sync', uazapiSyncRoutes); // sync diário UAzapi → Postgres
+app.use('/api/automacao', automacaoRoutes); // Automação Financeiro — cobrança de boletos (WhatsApp)
+app.use('/api/sms', smsRoutes); // SMS DisparoPro — Call Center de cobrança
+app.use('/api/vagas', vagasRoutes); // RH — Banco de Talentos (vagas + inscrições, LP /vagas/:slug)
+app.use('/api/dryland', drylandChamadosRoutes); // Dryland — chamados da rede (ponte Supabase, sem tocar no Dryland)
 
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('âŒ Unhandled error:', err.message);
+  console.error('❌ Unhandled error:', err.message);
   res.status(err.status || 500).json({
     success: false,
     message: err.message || 'Erro interno do servidor',
@@ -162,15 +184,15 @@ app.use((err, req, res, next) => {
 
 // Iniciar servidor
 app.listen(PORT, async () => {
-  console.log(`âœ… Server running on port ${PORT}`);
-  console.log(`ðŸŒ Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`✅ Server running on port ${PORT}`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   initializeWhatsApp();
   try {
     const { startPesPessoaScheduler } =
       await import('./utils/syncPesPessoa.js');
     startPesPessoaScheduler();
   } catch (err) {
-    console.error('âŒ Falha ao iniciar scheduler pes_pessoa:', err.message);
+    console.error('❌ Falha ao iniciar scheduler pes_pessoa:', err.message);
   }
   iniciarJobFaturamentoDiario();
   iniciarJobForecastRefYoy();
@@ -179,8 +201,8 @@ app.listen(PORT, async () => {
   iniciarTransacaoHistoricoSync();
   iniciarPessoasBluecredSync();
   iniciarBluecardStatsSync();
-  // PrÃ©-instala o Chrome do Puppeteer em background (pra gerar PDF do termo
-  // de crÃ©dito) â€” evita travar a 1Âª requisiÃ§Ã£o esperando o download.
+  // Pré-instala o Chrome do Puppeteer em background (pra gerar PDF do termo
+  // de crédito) — evita travar a 1ª requisição esperando o download.
   prewarmChrome().catch((e) =>
     console.error('[boot] prewarmChrome falhou:', e.message),
   );
@@ -198,9 +220,13 @@ app.listen(PORT, async () => {
   iniciarJobConversaoTemplate();
   iniciarJobProvisaoLiberacao();
   iniciarJobBoletoCobranca();
+  iniciarBluecardPagamentosSync();
+  iniciarBluecardLimiteWatchdog();
+  iniciarJobEsteiraProtesto();
+  iniciarJobContratoAluguelVencimento();
   iniciarJobDrylandChamados();
 
-  // Retoma campanhas WhatsApp travadas apÃ³s restart (reseta processing â†’ pending)
+  // Retoma campanhas WhatsApp travadas após restart (reseta processing → pending)
   (async () => {
     try {
       const { default: supabase } = await import('./config/supabase.js');
@@ -209,7 +235,7 @@ app.listen(PORT, async () => {
         .update({ status: 'pending' }, { count: 'exact' })
         .in('status', ['processing', 'retrying']);
       if (count > 0) {
-        console.log(`ðŸ”„ [boot] ${count} mensagens travadas resetadas pra pending â€” worker vai retomar`);
+        console.log(`🔄 [boot] ${count} mensagens travadas resetadas pra pending — worker vai retomar`);
         // Dispara worker pra cada campanha distinta com pendentes
         const { data: campanhas } = await supabase
           .from('message_queue')
@@ -230,7 +256,7 @@ app.listen(PORT, async () => {
             );
           }
         }
-        if (seen.size > 0) console.log(`ðŸš€ [boot] retomando ${seen.size} campanhas`);
+        if (seen.size > 0) console.log(`🚀 [boot] retomando ${seen.size} campanhas`);
       }
     } catch (e) {
       console.warn(`[boot resume] erro: ${e.message}`);
@@ -238,8 +264,8 @@ app.listen(PORT, async () => {
   })();
 });
 
-// Endpoint manual pra disparar a provisÃ£o automÃ¡tica (Contas a Pagar â†’ LiberaÃ§Ã£o)
-// ?dryRun=1 apenas loga o que faria (nÃ£o insere). Aguarda e retorna o resumo.
+// Endpoint manual pra disparar a provisão automática (Contas a Pagar → Liberação)
+// ?dryRun=1 apenas loga o que faria (não insere). Aguarda e retorna o resumo.
 app.post('/api/jobs/provisao-liberacao/run', async (req, res) => {
   const dryRun = req.query.dryRun === '1' || req.body?.dryRun === true;
   try {
@@ -251,18 +277,31 @@ app.post('/api/jobs/provisao-liberacao/run', async (req, res) => {
   }
 });
 
-// Endpoint manual pra disparar conversÃ£o
+// Endpoint manual pro alerta de vencimento de contrato de aluguel
+// ?dryRun=1 apenas loga o que faria (não notifica nem marca o dedupe).
+app.post('/api/jobs/contrato-aluguel/run', async (req, res) => {
+  const dryRun = req.query.dryRun === '1' || req.body?.dryRun === true;
+  try {
+    const resultado = await executarContratoAluguelVencimento({ dryRun });
+    res.json({ success: true, resultado });
+  } catch (e) {
+    console.error('[contrato-aluguel manual] erro:', e.message);
+    res.status(500).json({ success: false, message: e.message });
+  }
+});
+
+// Endpoint manual pra disparar conversão
 app.post('/api/forecast/sync-template-conversao', async (req, res) => {
   executarConversaoTemplate().catch((e) =>
     console.error('[template-conversao] manual erro:', e.message),
   );
-  res.json({ success: true, message: 'ConversÃ£o de templates disparada em background' });
+  res.json({ success: true, message: 'Conversão de templates disparada em background' });
 });
 
 // Endpoints manuais para disparar sync de pes_pessoa
 app.post('/api/forecast/sync-pes-pessoa', async (req, res) => {
   const { mode = 'delta', hoursBack = 48 } = req.body || {};
-  // NÃ£o aguarda â€” roda em background
+  // Não aguarda — roda em background
   if (mode === 'full') {
     syncPesPessoaFull().catch((e) => console.error('[sync-pes-pessoa full] erro:', e.message));
   } else {
