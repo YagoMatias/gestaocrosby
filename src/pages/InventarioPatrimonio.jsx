@@ -687,9 +687,11 @@ function TermoModal({ items, emissor, onClose }) {
   .assin { margin-top:60px; display:grid; grid-template-columns:1fr 1fr; gap:48px; }
   .assin .linha { border-top:1px solid #333; padding-top:6px; text-align:center; font-size:12px; }
   .rodape { margin-top:32px; text-align:center; color:#888; font-size:10px; }
+  .logo { display:block; margin:0 auto 14px; height:46px; width:auto; }
   @media print { body { margin:18mm; } }
 </style></head>
 <body>
+  <img class="logo" src="${window.location.origin}/crosbyazul.png" alt="Crosby" />
   <h1>TERMO DE RESPONSABILIDADE DE BENS E EQUIPAMENTOS</h1>
   <div class="sub">Grupo Crosby — Inventário de Patrimônio</div>
 
