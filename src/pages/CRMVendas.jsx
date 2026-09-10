@@ -115,9 +115,15 @@ export default function CRMVendas() {
   // O canal vem da URL (?canal=varejo) — as abas de canal ficam no sidebar.
   useEffect(() => {
     const canal = (searchParams.get('canal') || '').toLowerCase();
+    const view = (searchParams.get('view') || '').toLowerCase();
     if (['multimarcas', 'varejo', 'revenda'].includes(canal)) {
       setModulo(canal);
-      setTab((t) => (t === 'painel' ? 'abertura' : t));
+      // ?view=reuniao (varejo) abre direto a aba Performance, onde vive a Reunião
+      if (canal === 'varejo' && view === 'reuniao') {
+        setTab('performance');
+      } else {
+        setTab((t) => (t === 'painel' ? 'abertura' : t));
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);

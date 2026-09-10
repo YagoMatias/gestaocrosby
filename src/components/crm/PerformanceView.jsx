@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useCallback, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Trophy,
   TrendUp,
@@ -2784,6 +2785,15 @@ export default function PerformanceView({
 
   // Toggle de aba dentro do VAREJO: 'geral' (atual) | 'reuniao' (novo)
   const [varejoView, setVarejoView] = useState('geral');
+  // Deep-link do sidebar: ?view=reuniao (ou fila) no varejo abre direto a aba;
+  // sem ?view volta pra "geral". Só reage à URL (toggles in-page não a mudam).
+  const [searchParams] = useSearchParams();
+  useEffect(() => {
+    if (modulo !== 'varejo') return;
+    const v = (searchParams.get('view') || '').toLowerCase();
+    setVarejoView(v === 'reuniao' || v === 'fila' ? v : 'geral');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, modulo]);
 
   // ─── Toggle de aba dentro do MULTIMARCAS: 'time' (atual) | 'global' (novo) ──
   // 'time' = apenas vendedores cadastrados em multimarcas (exclui inbound).

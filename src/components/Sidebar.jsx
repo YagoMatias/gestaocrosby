@@ -397,9 +397,23 @@ const painelVendasItems = [
       },
       {
         name: 'Varejo',
-        href: '/crm-vendas?canal=varejo',
+        href: '#',
         icon: ShoppingCart,
         color: 'text-blue-600',
+        children: [
+          {
+            name: 'CRM',
+            href: '/crm-vendas?canal=varejo',
+            icon: ShoppingCart,
+            color: 'text-blue-600',
+          },
+          {
+            name: 'Reunião',
+            href: '/crm-vendas?canal=varejo&view=reuniao',
+            icon: Megaphone,
+            color: 'text-indigo-600',
+          },
+        ],
       },
       {
         name: 'Revenda',
