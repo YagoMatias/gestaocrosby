@@ -96,7 +96,7 @@ function ConfrontoCard({ c }) {
             )}
           </div>
 
-          {/* VS */}
+          {/* VS + diferença de faturamento */}
           <div className="shrink-0 self-center flex flex-col items-center px-1">
             <span
               className="text-xl font-black italic text-white leading-none"
@@ -104,7 +104,24 @@ function ConfrontoCard({ c }) {
             >
               VS
             </span>
-            {empate && <span className="text-[8px] font-bold text-amber-400 uppercase mt-0.5">empate</span>}
+            {empate ? (
+              <span className="text-[8px] font-bold text-amber-400 uppercase mt-0.5">empate</span>
+            ) : (
+              (() => {
+                const diff = Math.abs((a.invoice_value || 0) - (b.invoice_value || 0));
+                if (diff <= 0) return null;
+                return (
+                  <span
+                    className={`mt-1 text-[9px] font-black tabular-nums whitespace-nowrap ${
+                      winA ? 'text-red-300' : 'text-blue-300'
+                    }`}
+                    title="Diferença de faturamento"
+                  >
+                    {winA ? '◀' : ''} +{fmtBRL(diff)} {winB ? '▶' : ''}
+                  </span>
+                );
+              })()
+            )}
           </div>
 
           {/* Canto azul — B */}
