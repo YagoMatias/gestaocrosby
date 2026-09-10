@@ -503,6 +503,38 @@ const varejo = [
     color: 'text-amber-600',
   },
   {
+    name: 'Relacionamento',
+    href: '#',
+    icon: Users,
+    color: 'text-pink-600',
+    children: [
+      {
+        name: 'Aniversariantes',
+        href: '/aniversariantes-franquia',
+        icon: Cake,
+        color: 'text-pink-600',
+      },
+      {
+        name: 'Pós-Vendas',
+        href: '/pos-vendas-franquia',
+        icon: Headset,
+        color: 'text-amber-600',
+      },
+      {
+        name: 'Clientes com Cashback',
+        href: '/clientes-cashback-franquia',
+        icon: Coins,
+        color: 'text-amber-500',
+      },
+      {
+        name: 'Clientes Inativos',
+        href: '/clientes-inativos-franquia',
+        icon: ArrowCounterClockwise,
+        color: 'text-rose-600',
+      },
+    ],
+  },
+  {
     name: 'BlueCred',
     href: '#',
     icon: CreditCard,
