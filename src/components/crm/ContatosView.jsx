@@ -169,14 +169,14 @@ export default function ContatosView({ modulo }) {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 text-white rounded-xl px-5 py-4 shadow-md flex items-center justify-between flex-wrap gap-3">
+      <div className="bg-gradient-to-r from-[#000638] to-[#1a1f5a] text-white rounded-xl px-5 py-4 shadow-md flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
-          <div className="bg-white/15 p-2.5 rounded-lg">
-            <Users size={22} weight="duotone" className="text-cyan-100" />
+          <div className="bg-white/10 p-2.5 rounded-lg">
+            <Users size={22} weight="duotone" className="text-blue-200" />
           </div>
           <div>
             <h2 className="text-lg font-extrabold">Contatos — {CANAL_LABEL[canal]}</h2>
-            <p className="text-xs text-cyan-100/90 mt-0.5">
+            <p className="text-xs text-blue-100/90 mt-0.5">
               Todos os clientes que já compraram no canal · {data.total.toLocaleString('pt-BR')} contatos
             </p>
           </div>
@@ -185,7 +185,7 @@ export default function ContatosView({ modulo }) {
           <button
             onClick={() => exportCSV(data.contatos, canal)}
             disabled={!data.contatos.length}
-            className="text-xs px-3 py-1.5 rounded bg-white/15 hover:bg-white/25 border border-white/20 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 border border-white/20 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Download size={14} weight="bold" />
             Exportar CSV
@@ -363,7 +363,7 @@ export default function ContatosView({ modulo }) {
               <button
                 onClick={() => setPage((p) => Math.min(totalPaginas, p + 1))}
                 disabled={page >= totalPaginas || loading}
-                className="text-xs px-3 py-1 rounded bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                className="text-xs px-3 py-1 rounded bg-[#000638] text-white hover:bg-[#1a1f5a] disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Próxima →
               </button>

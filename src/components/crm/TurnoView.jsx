@@ -100,7 +100,7 @@ function VendedorChart({ vendedorNome, instance, dist }) {
   );
 
   return (
-    <div className="bg-white border border-gray-100 rounded-lg p-4">
+    <div className="bg-white border border-gray-200 rounded-xl p-4 hover:shadow-md hover:border-[#000638]/20 transition-all">
       <div className="flex items-baseline justify-between mb-2">
         <div>
           <div className="text-sm font-semibold text-gray-900">
@@ -317,12 +317,23 @@ export default function TurnoView({ data, modulo, vendedoresMap }) {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-baseline justify-between">
-        <h2 className="text-sm font-medium text-gray-900">
-          Horário de Maior Movimento de Conversas
-        </h2>
-        <div className="flex items-center gap-3">
-          <label className="flex items-center gap-1.5 text-[11px] text-gray-600 cursor-pointer">
+      {/* Header navy: título + toggle + pico geral + mini chart */}
+      <div className="bg-[#000638] text-white rounded-lg p-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+          <div className="flex items-center gap-2">
+            <Clock size={18} weight="duotone" />
+            <div>
+              <div className="text-sm font-bold">
+                Horário de Maior Movimento de Conversas
+              </div>
+              <p className="text-[11px] text-blue-100 mt-0.5">
+                Módulo{' '}
+                <span className="font-semibold uppercase">{modulo}</span> ·{' '}
+                {vendedores.length} vendedores
+              </p>
+            </div>
+          </div>
+          <label className="flex items-center gap-1.5 text-[11px] text-blue-100 cursor-pointer bg-white/10 hover:bg-white/15 px-2.5 py-1.5 rounded-lg transition-colors">
             <input
               type="checkbox"
               checked={onlyReceived}
@@ -330,16 +341,8 @@ export default function TurnoView({ data, modulo, vendedoresMap }) {
             />
             Apenas recebidas
           </label>
-          <p className="text-[11px] text-gray-500">
-            Módulo <span className="font-medium uppercase">{modulo}</span> ·{' '}
-            {vendedores.length} vendedores
-          </p>
         </div>
-      </div>
-
-      {/* Pico geral do módulo + mini chart agregado */}
-      <div className="bg-[#000638] text-white rounded-lg p-4">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-center justify-between gap-4 flex-wrap border-t border-blue-800/40 pt-3">
           <div>
             <div className="flex items-center gap-2 mb-1">
               <Sun size={16} weight="duotone" />
