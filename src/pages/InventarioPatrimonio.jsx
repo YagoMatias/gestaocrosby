@@ -64,6 +64,24 @@ const SETORES = [
   'Diretoria', 'Loja', 'Logística', 'Outros',
 ];
 
+// Unidades/filiais para o inventário: 12 lojas próprias + CD + BlueHouse Matriz
+const UNIDADES = [
+  'João Pessoa',
+  'Nova Cruz',
+  'Parnamirim',
+  'Canguaretama',
+  'Cidade Jardim',
+  'Guararapes',
+  'Ayrton Senna',
+  'Imperatriz',
+  'Patos',
+  'Midway',
+  'Teresina',
+  'Shopping Recife',
+  'CD Brejinho',
+  'BlueHouse Matriz',
+];
+
 const fmtBRL = (v) =>
   v == null || v === ''
     ? '—'
@@ -96,6 +114,7 @@ function PatrimonioModal({ item, onClose, onSaved }) {
     marca: item?.marca || '',
     modelo: item?.modelo || '',
     numero_serie: item?.numero_serie || '',
+    filial: item?.filial || '',
     local: item?.local || '',
     setor: item?.setor || '',
     responsavel: item?.responsavel || '',
@@ -316,11 +335,30 @@ function PatrimonioModal({ item, onClose, onSaved }) {
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label className="text-[10px] font-semibold text-gray-600 uppercase">Local</label>
+                <label className="text-[10px] font-semibold text-gray-600 uppercase">
+                  Unidade / Filial
+                </label>
+                <select
+                  value={form.filial}
+                  onChange={(e) => set('filial', e.target.value)}
+                  className="mt-0.5 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white"
+                >
+                  <option value="">— Selecione a unidade —</option>
+                  {UNIDADES.map((u) => (
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold text-gray-600 uppercase">
+                  Local (ponto dentro da unidade)
+                </label>
                 <input
                   value={form.local}
                   onChange={(e) => set('local', e.target.value)}
-                  placeholder="Sala da Diretoria, Filial Recife…"
+                  placeholder="Ex.: caixa 2, estoque, vitrine…"
                   className="mt-0.5 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
                 />
               </div>
@@ -494,6 +532,7 @@ export default function InventarioPatrimonio() {
   const [filtroTipo, setFiltroTipo] = useState('');
   const [filtroStatus, setFiltroStatus] = useState('');
   const [filtroSetor, setFiltroSetor] = useState('');
+  const [filtroFilial, setFiltroFilial] = useState('');
 
   // UI: view (tabela | cards), filtros expandidos
   const [view, setView] = useState('cards');
@@ -514,6 +553,7 @@ export default function InventarioPatrimonio() {
       if (filtroTipo) params.set('tipo', filtroTipo);
       if (filtroStatus) params.set('status', filtroStatus);
       if (filtroSetor) params.set('setor', filtroSetor);
+      if (filtroFilial) params.set('filial', filtroFilial);
       if (busca) params.set('q', busca);
       const [listR, statsR] = await Promise.all([
         fetch(`${API_BASE_URL}/api/tech/patrimonio?${params.toString()}`),
@@ -529,7 +569,7 @@ export default function InventarioPatrimonio() {
     } finally {
       setLoading(false);
     }
-  }, [filtroTipo, filtroStatus, filtroSetor, busca]);
+  }, [filtroTipo, filtroStatus, filtroSetor, filtroFilial, busca]);
 
   useEffect(() => {
     carregar();
@@ -568,7 +608,13 @@ export default function InventarioPatrimonio() {
   const setoresCadastrados = Object.keys(stats?.por_setor || {}).filter(
     (k) => k !== 'sem_info',
   ).length;
-  const hasFiltros = !!(busca || filtroTipo || filtroStatus || filtroSetor);
+  const hasFiltros = !!(
+    busca ||
+    filtroTipo ||
+    filtroStatus ||
+    filtroSetor ||
+    filtroFilial
+  );
 
   return (
     <div className="w-full max-w-7xl mx-auto py-4 px-3 flex flex-col gap-4">
@@ -821,6 +867,19 @@ export default function InventarioPatrimonio() {
             </div>
             <div className="flex-1">
               <label className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold block mb-1">
+                Unidade / Filial
+              </label>
+              <select
+                value={filtroFilial}
+                onChange={(e) => setFiltroFilial(e.target.value)}
+                className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs text-gray-700 bg-white w-full max-w-xs"
+              >
+                <option value="">Todas as unidades</option>
+                {UNIDADES.map((u) => <option key={u} value={u}>{u}</option>)}
+              </select>
+            </div>
+            <div className="flex-1">
+              <label className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold block mb-1">
                 Setor
               </label>
               <select
@@ -839,6 +898,7 @@ export default function InventarioPatrimonio() {
                   setFiltroTipo('');
                   setFiltroStatus('');
                   setFiltroSetor('');
+                  setFiltroFilial('');
                 }}
                 className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 text-xs font-semibold"
               >
@@ -957,6 +1017,14 @@ export default function InventarioPatrimonio() {
 
                     {/* Linhas de info */}
                     <div className="space-y-1 text-[11px]">
+                      {it.filial && (
+                        <div>
+                          <span className="inline-flex items-center gap-1 bg-sky-50 text-sky-700 border border-sky-200 rounded-full px-2 py-0.5 font-bold">
+                            <Buildings size={11} weight="bold" />
+                            {it.filial}
+                          </span>
+                        </div>
+                      )}
                       {it.local && (
                         <div className="flex items-start gap-1.5 text-gray-600">
                           <MapPin size={11} className="text-gray-400 flex-shrink-0 mt-0.5" />
