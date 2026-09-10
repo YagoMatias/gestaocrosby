@@ -33,7 +33,9 @@ import {
   Stack,
   Hash,
   Sparkle,
+  DownloadSimple,
 } from '@phosphor-icons/react';
+import * as XLSX from 'xlsx';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
 import { useAuth } from '../components/AuthContext';
@@ -934,6 +936,47 @@ export default function InventarioPatrimonio() {
     }
   };
 
+  // Exporta a lista atual (respeitando os filtros aplicados) para Excel
+  const exportarExcel = () => {
+    if (!items.length) {
+      alert('Nenhum item para exportar com os filtros atuais.');
+      return;
+    }
+    const rows = items.map((it) => ({
+      Código: it.codigo_patrimonio || '',
+      Tipo: tipoInfo(it.tipo).label || it.tipo || '',
+      Descrição: it.descricao || '',
+      Marca: it.marca || '',
+      Modelo: it.modelo || '',
+      'Nº de Série': it.numero_serie || '',
+      Setor: it.setor || '',
+      'Unidade/Filial': it.filial || '',
+      Local: it.local || '',
+      Responsável: it.responsavel || '',
+      'CPF Responsável': it.responsavel_cpf || '',
+      'E-mail Responsável': it.responsavel_email || '',
+      'Data Aquisição': it.data_aquisicao
+        ? String(it.data_aquisicao).slice(0, 10)
+        : '',
+      'Valor (R$)': it.valor_aquisicao != null ? Number(it.valor_aquisicao) : '',
+      Fornecedor: it.fornecedor || '',
+      'Nº NF': it.nota_fiscal || '',
+      Status: statusInfo(it.status).label || it.status || '',
+      Observação: it.observacao || '',
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [
+      { wch: 12 }, { wch: 16 }, { wch: 40 }, { wch: 16 }, { wch: 18 },
+      { wch: 16 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 20 },
+      { wch: 16 }, { wch: 24 }, { wch: 14 }, { wch: 12 }, { wch: 20 },
+      { wch: 12 }, { wch: 14 }, { wch: 30 },
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Patrimônio');
+    const hoje = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `inventario-patrimonio-${hoje}.xlsx`);
+  };
+
   // Top setores/tipos para stats
   const topTipo = useMemo(() => {
     if (!stats?.por_tipo) return null;
@@ -988,6 +1031,14 @@ export default function InventarioPatrimonio() {
               >
                 <ArrowsClockwise size={14} weight="bold" className={loading ? 'animate-spin' : ''} />
                 <span className="hidden sm:inline">Atualizar</span>
+              </button>
+              <button
+                onClick={exportarExcel}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold border border-white/20 backdrop-blur-sm transition-colors"
+                title="Exportar inventário (filtros atuais) para Excel"
+              >
+                <DownloadSimple size={14} weight="bold" />
+                <span className="hidden sm:inline">Excel</span>
               </button>
               <button
                 onClick={() => setTermoOpen(true)}
