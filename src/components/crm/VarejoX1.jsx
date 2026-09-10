@@ -52,51 +52,87 @@ function ConfrontoCard({ c }) {
   const winB = c.vencedor === 'b';
   const empate = c.vencedor === 'empate';
 
-  const Side = ({ p, win, align }) => (
-    <div className={`flex-1 min-w-0 ${align === 'right' ? 'text-right' : 'text-left'}`}>
-      <div className="flex items-center gap-1.5 mb-0.5" style={{ justifyContent: align === 'right' ? 'flex-end' : 'flex-start' }}>
-        {win && align === 'left' && <Crown size={14} weight="fill" className="text-amber-500 shrink-0" />}
-        <span className={`text-sm font-bold truncate ${win ? 'text-[#000638]' : 'text-gray-700'}`}>
-          {p.seller_name || '—'}
-        </span>
-        {win && align === 'right' && <Crown size={14} weight="fill" className="text-amber-500 shrink-0" />}
-      </div>
-      <div className="text-[10px] text-gray-400 flex items-center gap-1 truncate" style={{ justifyContent: align === 'right' ? 'flex-end' : 'flex-start' }}>
-        <Storefront size={10} /> {p.branch_name || '—'}
-      </div>
-      <div className={`mt-1 text-base font-extrabold tabular-nums ${win ? 'text-emerald-600' : 'text-gray-500'}`}>
-        {fmtBRL(p.invoice_value)}
-      </div>
-    </div>
-  );
+  const pctA = ((a.invoice_value || 0) / max) * 100;
+  const pctB = ((b.invoice_value || 0) / max) * 100;
 
   return (
-    <div
-      className={`rounded-xl border p-3 ${
-        empate ? 'border-amber-200 bg-amber-50/40' : 'border-gray-200 bg-white'
-      }`}
-    >
-      <div className="flex items-center gap-3">
-        <Side p={a} win={winA} align="left" />
-        <div className="shrink-0 flex flex-col items-center">
-          <span className="text-[10px] font-black text-gray-300 tracking-widest">VS</span>
-          {empate && <span className="text-[9px] font-bold text-amber-600 uppercase">empate</span>}
+    <div className="relative overflow-hidden rounded-xl border border-white/10 bg-[#0a0b14] shadow-lg">
+      {/* Glow vermelho (esquerda) × azul (direita) — estilo card de luta */}
+      <span className="pointer-events-none absolute inset-y-0 left-0 w-3/5 bg-gradient-to-r from-red-600/35 via-red-600/8 to-transparent" />
+      <span className="pointer-events-none absolute inset-y-0 right-0 w-3/5 bg-gradient-to-l from-blue-600/35 via-blue-600/8 to-transparent" />
+      <span className="pointer-events-none absolute inset-y-3 left-1/2 -translate-x-1/2 w-px bg-gradient-to-b from-transparent via-white/40 to-transparent" />
+
+      <div className="relative px-3 py-3">
+        {/* Branding X1 */}
+        <div className="flex items-center justify-center gap-1 mb-2">
+          <Crown size={10} weight="fill" className="text-amber-400/70" />
+          <span className="text-[10px] font-black tracking-[0.25em] text-white/80">X1</span>
+          <span className="text-[8px] font-bold tracking-widest text-white/30">CROSBY</span>
         </div>
-        <Side p={b} win={winB} align="right" />
-      </div>
-      {/* Barra comparativa */}
-      <div className="flex items-center gap-1 mt-2">
-        <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden flex justify-end">
-          <div
-            className={`h-full rounded-full ${winA ? 'bg-emerald-500' : 'bg-gray-300'}`}
-            style={{ width: `${((a.invoice_value || 0) / max) * 100}%` }}
-          />
+
+        <div className="flex items-stretch gap-2">
+          {/* Canto vermelho — A */}
+          <div className="flex-1 min-w-0 text-left">
+            <div className="flex items-center gap-1">
+              {winA && <Crown size={13} weight="fill" className="text-amber-400 shrink-0" />}
+              <span
+                className="text-sm font-black uppercase tracking-wide text-red-400 truncate"
+                style={{ textShadow: '0 1px 10px rgba(239,68,68,.55)' }}
+              >
+                {a.seller_name || '—'}
+              </span>
+            </div>
+            <div className="text-[9px] text-white/40 flex items-center gap-1 truncate">
+              <Storefront size={9} /> {a.branch_name || '—'}
+            </div>
+            <div className={`mt-1 text-base font-extrabold tabular-nums ${winA ? 'text-white' : 'text-white/55'}`}>
+              {fmtBRL(a.invoice_value)}
+            </div>
+          </div>
+
+          {/* VS */}
+          <div className="shrink-0 self-center flex flex-col items-center px-1">
+            <span
+              className="text-xl font-black italic text-white leading-none"
+              style={{ textShadow: '0 2px 12px rgba(255,255,255,.35)' }}
+            >
+              VS
+            </span>
+            {empate && <span className="text-[8px] font-bold text-amber-400 uppercase mt-0.5">empate</span>}
+          </div>
+
+          {/* Canto azul — B */}
+          <div className="flex-1 min-w-0 text-right">
+            <div className="flex items-center gap-1 justify-end">
+              <span
+                className="text-sm font-black uppercase tracking-wide text-blue-400 truncate"
+                style={{ textShadow: '0 1px 10px rgba(59,130,246,.55)' }}
+              >
+                {b.seller_name || '—'}
+              </span>
+              {winB && <Crown size={13} weight="fill" className="text-amber-400 shrink-0" />}
+            </div>
+            <div className="text-[9px] text-white/40 flex items-center gap-1 justify-end truncate">
+              {b.branch_name || '—'} <Storefront size={9} />
+            </div>
+            <div className={`mt-1 text-base font-extrabold tabular-nums ${winB ? 'text-white' : 'text-white/55'}`}>
+              {fmtBRL(b.invoice_value)}
+            </div>
+          </div>
         </div>
-        <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-          <div
-            className={`h-full rounded-full ${winB ? 'bg-emerald-500' : 'bg-gray-300'}`}
-            style={{ width: `${((b.invoice_value || 0) / max) * 100}%` }}
-          />
+
+        {/* Barras: vermelha cresce pra esquerda, azul pra direita */}
+        <div className="flex items-center gap-1 mt-2">
+          <div className="flex-1 h-1.5 rounded-full bg-white/10 overflow-hidden flex justify-end">
+            <div className="h-full rounded-full bg-gradient-to-l from-red-500 to-red-700" style={{ width: `${pctA}%` }} />
+          </div>
+          <div className="flex-1 h-1.5 rounded-full bg-white/10 overflow-hidden">
+            <div className="h-full rounded-full bg-gradient-to-r from-blue-500 to-blue-700" style={{ width: `${pctB}%` }} />
+          </div>
+        </div>
+
+        <div className="text-center mt-1.5">
+          <span className="text-[8px] font-bold tracking-[0.2em] text-white/40 uppercase">Só um vence!</span>
         </div>
       </div>
     </div>
@@ -155,14 +191,14 @@ function X1Card({ x1, isAdmin, onEncerrar, onCancelar, onExcluir }) {
           </button>
         )}
       </div>
-      <div className="p-3">
+      <div className="p-3 bg-[#05060c]">
         {x1.resultados_error && (
-          <div className="text-[11px] text-rose-600 mb-2">
+          <div className="text-[11px] text-rose-400 mb-2">
             Erro ao calcular faturamento: {x1.resultados_error}
           </div>
         )}
         {resultados.length === 0 ? (
-          <p className="text-xs text-gray-400 text-center py-4">Sem confrontos.</p>
+          <p className="text-xs text-white/40 text-center py-4">Sem confrontos.</p>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
             {resultados.map((c, i) => (
