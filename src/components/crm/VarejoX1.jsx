@@ -9,6 +9,7 @@ import {
   Crown,
   Spinner,
   Trash,
+  Trophy,
   Storefront,
   CheckCircle,
   XCircle,
@@ -162,7 +163,6 @@ function X1Card({ x1, isAdmin, onEncerrar, onCancelar, onExcluir }) {
           <p className="text-[11px] text-blue-100 mt-0.5">
             {fmtData(x1.data_inicio)} — {fmtData(x1.data_fim)} · {resultados.length}{' '}
             {resultados.length === 1 ? 'confronto' : 'confrontos'}
-            {x1.premiacao && <> · 🏆 {x1.premiacao}</>}
           </p>
         </div>
         {isAdmin && x1.status === 'ativa' && (
@@ -191,6 +191,15 @@ function X1Card({ x1, isAdmin, onEncerrar, onCancelar, onExcluir }) {
           </button>
         )}
       </div>
+      {x1.premiacao && (
+        <div className="px-4 py-2 bg-gradient-to-r from-amber-500/20 via-amber-400/10 to-amber-500/20 border-b border-amber-500/30 flex items-center justify-center gap-2">
+          <Trophy size={15} weight="fill" className="text-amber-400" />
+          <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-amber-500/80">
+            Premiação
+          </span>
+          <span className="text-sm font-black text-amber-600">{x1.premiacao}</span>
+        </div>
+      )}
       <div className="p-3 bg-[#05060c]">
         {x1.resultados_error && (
           <div className="text-[11px] text-rose-400 mb-2">
