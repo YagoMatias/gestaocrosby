@@ -48,6 +48,17 @@ const ClientesCashbackFranquia = lazy(
 const ClientesInativosFranquia = lazy(
   () => import('./pages/ClientesInativosFranquia'),
 );
+// Versões dedicadas do Varejo (pré-filtradas nas lojas próprias)
+const AniversariantesVarejo = lazy(
+  () => import('./pages/varejo/AniversariantesVarejo'),
+);
+const PosVendasVarejo = lazy(() => import('./pages/varejo/PosVendasVarejo'));
+const ClientesCashbackVarejo = lazy(
+  () => import('./pages/varejo/ClientesCashbackVarejo'),
+);
+const ClientesInativosVarejo = lazy(
+  () => import('./pages/varejo/ClientesInativosVarejo'),
+);
 
 const MetasVarejo = lazy(() => import('./pages/MetasVarejo'));
 
@@ -250,6 +261,10 @@ const protectedRoutes = [
     path: '/clientes-inativos-franquia',
     component: ClientesInativosFranquia,
   },
+  { path: '/aniversariantes-varejo', component: AniversariantesVarejo },
+  { path: '/pos-vendas-varejo', component: PosVendasVarejo },
+  { path: '/clientes-cashback-varejo', component: ClientesCashbackVarejo },
+  { path: '/clientes-inativos-varejo', component: ClientesInativosVarejo },
   { path: '/metas-varejo', component: MetasVarejo },
   { path: '/ranking-faturamento', component: RankingFaturamento },
   { path: '/ranking-compras-franquias', component: RankingComprasFranquias },

@@ -524,25 +524,25 @@ const varejo = [
     children: [
       {
         name: 'Aniversariantes',
-        href: '/aniversariantes-franquia',
+        href: '/aniversariantes-varejo',
         icon: Cake,
         color: 'text-pink-600',
       },
       {
         name: 'Pós-Vendas',
-        href: '/pos-vendas-franquia',
+        href: '/pos-vendas-varejo',
         icon: Headset,
         color: 'text-amber-600',
       },
       {
         name: 'Clientes com Cashback',
-        href: '/clientes-cashback-franquia',
+        href: '/clientes-cashback-varejo',
         icon: Coins,
         color: 'text-amber-500',
       },
       {
         name: 'Clientes Inativos',
-        href: '/clientes-inativos-franquia',
+        href: '/clientes-inativos-varejo',
         icon: ArrowCounterClockwise,
         color: 'text-rose-600',
       },
