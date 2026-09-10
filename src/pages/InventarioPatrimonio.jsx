@@ -32,6 +32,7 @@ import {
   ArrowsClockwise,
   Stack,
   Hash,
+  Sparkle,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
@@ -131,8 +132,58 @@ function PatrimonioModal({ item, onClose, onSaved }) {
   });
   const [saving, setSaving] = useState(false);
   const [erro, setErro] = useState('');
+  const [estimando, setEstimando] = useState(false);
+  const [estimativa, setEstimativa] = useState(null); // { faixa, justificativa }
 
   const set = (f, v) => setForm((s) => ({ ...s, [f]: v }));
+
+  // Estima o valor do item via IA (Groq) a partir de tipo/marca/modelo/descrição
+  const estimarValor = async () => {
+    setErro('');
+    setEstimativa(null);
+    if (!form.marca && !form.modelo && !form.descricao) {
+      setErro('Preencha marca, modelo ou descrição para estimar o valor.');
+      return;
+    }
+    setEstimando(true);
+    try {
+      const r = await fetch(
+        `${API_BASE_URL}/api/tech/patrimonio/estimar-valor`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tipo: form.tipo,
+            marca: form.marca,
+            modelo: form.modelo,
+            descricao: form.descricao,
+            ano: form.data_aquisicao
+              ? String(form.data_aquisicao).slice(0, 4)
+              : '',
+          }),
+        },
+      );
+      const j = await r.json();
+      if (!r.ok || !j?.success) throw new Error(j?.message || `Erro ${r.status}`);
+      const d = j.data || {};
+      if (d.ia_indisponivel) {
+        setErro(d.justificativa || 'IA não configurada no servidor.');
+        return;
+      }
+      if (d.valor_estimado != null) {
+        set('valor_aquisicao', Number(d.valor_estimado).toFixed(2));
+      }
+      setEstimativa({
+        valor: d.valor_estimado,
+        faixa: d.faixa,
+        justificativa: d.justificativa,
+      });
+    } catch (err) {
+      setErro(`Falha ao estimar: ${err.message}`);
+    } finally {
+      setEstimando(false);
+    }
+  };
 
   // Pré-popula com próximo código se novo
   useEffect(() => {
@@ -422,7 +473,23 @@ function PatrimonioModal({ item, onClose, onSaved }) {
                 />
               </div>
               <div>
-                <label className="text-[10px] font-semibold text-gray-600 uppercase">Valor (R$)</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-semibold text-gray-600 uppercase">Valor (R$)</label>
+                  <button
+                    type="button"
+                    onClick={estimarValor}
+                    disabled={estimando}
+                    title="Estimar valor de mercado com IA"
+                    className="flex items-center gap-1 text-[10px] font-semibold text-[#000638] hover:text-[#1a1f5a] disabled:opacity-50"
+                  >
+                    {estimando ? (
+                      <Spinner size={12} className="animate-spin" />
+                    ) : (
+                      <Sparkle size={12} weight="fill" />
+                    )}
+                    {estimando ? 'Estimando…' : 'Estimar (IA)'}
+                  </button>
+                </div>
                 <input
                   type="number"
                   step="0.01"
@@ -432,6 +499,16 @@ function PatrimonioModal({ item, onClose, onSaved }) {
                   placeholder="0,00"
                   className="mt-0.5 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm tabular-nums"
                 />
+                {estimativa && (
+                  <p className="mt-1 text-[10px] leading-tight text-gray-500">
+                    {estimativa.faixa && (
+                      <span className="font-semibold text-[#000638]">
+                        Faixa: R$ {estimativa.faixa}.{' '}
+                      </span>
+                    )}
+                    {estimativa.justificativa}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="text-[10px] font-semibold text-gray-600 uppercase">Fornecedor</label>
@@ -520,6 +597,265 @@ function StatCard({ icon: Icon, label, value, sub, color = 'blue' }) {
   );
 }
 
+// ─── Modal: Termo de Responsabilidade ──────────────────────────────────────
+const escapeHtml = (s) =>
+  String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+function TermoModal({ items, emissor, onClose }) {
+  // Colaboradores distintos (por nome do responsável), com contagem de itens
+  const colaboradores = useMemo(() => {
+    const map = new Map(); // nome → { nome, cpf, email, setor, filial, itens: [] }
+    for (const it of items || []) {
+      const nome = (it.responsavel || '').trim();
+      if (!nome) continue;
+      const key = nome.toLowerCase();
+      if (!map.has(key)) {
+        map.set(key, {
+          nome,
+          cpf: it.responsavel_cpf || '',
+          email: it.responsavel_email || '',
+          setor: it.setor || '',
+          filial: it.filial || '',
+          itens: [],
+        });
+      }
+      const c = map.get(key);
+      // completa dados de contato/lotação se faltavam
+      if (!c.cpf && it.responsavel_cpf) c.cpf = it.responsavel_cpf;
+      if (!c.email && it.responsavel_email) c.email = it.responsavel_email;
+      if (!c.setor && it.setor) c.setor = it.setor;
+      if (!c.filial && it.filial) c.filial = it.filial;
+      c.itens.push(it);
+    }
+    return Array.from(map.values()).sort((a, b) =>
+      a.nome.localeCompare(b.nome, 'pt-BR'),
+    );
+  }, [items]);
+
+  const [sel, setSel] = useState('');
+  const colaborador = colaboradores.find((c) => c.nome.toLowerCase() === sel);
+
+  const gerarTermo = () => {
+    if (!colaborador) return;
+    const hoje = new Date().toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+    });
+    const totalValor = colaborador.itens.reduce(
+      (s, it) => s + (Number(it.valor_aquisicao) || 0),
+      0,
+    );
+    const linhas = colaborador.itens
+      .map(
+        (it, i) => `
+      <tr>
+        <td style="text-align:center">${i + 1}</td>
+        <td style="font-family:monospace">${escapeHtml(it.codigo_patrimonio || '')}</td>
+        <td>${escapeHtml(tipoInfo(it.tipo).label || it.tipo || '')}</td>
+        <td>${escapeHtml(it.descricao || '')}${
+          it.marca || it.modelo
+            ? `<br><span style="color:#555;font-size:11px">${escapeHtml([it.marca, it.modelo].filter(Boolean).join(' '))}</span>`
+            : ''
+        }</td>
+        <td style="font-family:monospace">${escapeHtml(it.numero_serie || '—')}</td>
+        <td style="text-align:right;white-space:nowrap">${it.valor_aquisicao > 0 ? fmtBRL(it.valor_aquisicao) : '—'}</td>
+      </tr>`,
+      )
+      .join('');
+
+    const html = `<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<title>Termo de Responsabilidade — ${escapeHtml(colaborador.nome)}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; color:#111; margin:40px; font-size:13px; line-height:1.55; }
+  h1 { text-align:center; font-size:18px; margin:0 0 4px; letter-spacing:.5px; }
+  .sub { text-align:center; color:#555; font-size:12px; margin-bottom:24px; }
+  .box { border:1px solid #ccc; border-radius:8px; padding:12px 16px; margin-bottom:18px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:4px 24px; }
+  .grid div span { color:#666; }
+  table { width:100%; border-collapse:collapse; margin:8px 0 18px; }
+  th, td { border:1px solid #bbb; padding:6px 8px; font-size:12px; vertical-align:top; }
+  th { background:#000638; color:#fff; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.4px; }
+  tfoot td { font-weight:bold; background:#f3f4f6; }
+  p.texto { text-align:justify; margin:14px 0; }
+  .assin { margin-top:60px; display:grid; grid-template-columns:1fr 1fr; gap:48px; }
+  .assin .linha { border-top:1px solid #333; padding-top:6px; text-align:center; font-size:12px; }
+  .rodape { margin-top:32px; text-align:center; color:#888; font-size:10px; }
+  @media print { body { margin:18mm; } }
+</style></head>
+<body>
+  <h1>TERMO DE RESPONSABILIDADE DE BENS E EQUIPAMENTOS</h1>
+  <div class="sub">Grupo Crosby — Inventário de Patrimônio</div>
+
+  <div class="box grid">
+    <div><span>Colaborador(a):</span> <strong>${escapeHtml(colaborador.nome)}</strong></div>
+    <div><span>CPF:</span> ${escapeHtml(colaborador.cpf || '____________________')}</div>
+    <div><span>Setor:</span> ${escapeHtml(colaborador.setor || '—')}</div>
+    <div><span>Unidade/Filial:</span> ${escapeHtml(colaborador.filial || '—')}</div>
+    <div><span>E-mail:</span> ${escapeHtml(colaborador.email || '—')}</div>
+    <div><span>Data:</span> ${escapeHtml(hoje)}</div>
+  </div>
+
+  <p class="texto">
+    Declaro para os devidos fins que recebi do <strong>Grupo Crosby</strong> os bens e equipamentos
+    relacionados abaixo, em perfeito estado de conservação e funcionamento, comprometendo-me a:
+    (i) zelar pela guarda, conservação e uso adequado dos mesmos; (ii) utilizá-los exclusivamente
+    para finalidades profissionais relacionadas às minhas atividades; (iii) comunicar imediatamente
+    ao setor responsável qualquer dano, extravio, furto ou defeito; e (iv) devolvê-los nas mesmas
+    condições em que os recebi, ressalvado o desgaste natural de uso, sempre que solicitado ou por
+    ocasião do meu desligamento. Estou ciente de que responderei pelos prejuízos decorrentes de mau
+    uso, negligência ou extravio dos bens ora recebidos.
+  </p>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:28px">#</th>
+        <th style="width:90px">Patrimônio</th>
+        <th style="width:90px">Tipo</th>
+        <th>Descrição</th>
+        <th style="width:110px">Nº de Série</th>
+        <th style="width:90px;text-align:right">Valor</th>
+      </tr>
+    </thead>
+    <tbody>${linhas}</tbody>
+    <tfoot>
+      <tr>
+        <td colspan="5" style="text-align:right">Total (${colaborador.itens.length} ${colaborador.itens.length === 1 ? 'item' : 'itens'})</td>
+        <td style="text-align:right">${totalValor > 0 ? fmtBRL(totalValor) : '—'}</td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <div class="assin">
+    <div class="linha">${escapeHtml(colaborador.nome)}<br><span style="color:#666">Colaborador(a) — recebedor</span></div>
+    <div class="linha">Grupo Crosby<br><span style="color:#666">Responsável pela entrega</span></div>
+  </div>
+
+  <div class="rodape">
+    Documento gerado em ${escapeHtml(hoje)}${emissor ? ` por ${escapeHtml(emissor)}` : ''} — Inventário de Patrimônio Crosby
+  </div>
+
+  <script>window.onload = function(){ setTimeout(function(){ window.print(); }, 250); };</script>
+</body></html>`;
+
+    const w = window.open('', '_blank');
+    if (!w) {
+      alert(
+        'O navegador bloqueou a janela de impressão. Permita pop-ups para este site e tente novamente.',
+      );
+      return;
+    }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-3 border-b bg-[#000638] rounded-t-xl">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <Printer size={16} weight="fill" /> Termo de Responsabilidade
+          </h3>
+          <button onClick={onClose} className="text-white/70 hover:text-white">
+            <X size={18} weight="bold" />
+          </button>
+        </div>
+
+        <div className="p-5 flex flex-col gap-3 overflow-y-auto">
+          <p className="text-xs text-gray-500">
+            Selecione o colaborador. O termo lista todos os itens de patrimônio
+            em que ele consta como <strong>responsável</strong> e abre a janela
+            de impressão (salve como PDF, se preferir).
+          </p>
+
+          {colaboradores.length === 0 ? (
+            <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+              Nenhum item possui responsável preenchido. Cadastre o responsável
+              nos itens para gerar o termo.
+            </div>
+          ) : (
+            <>
+              <div>
+                <label className="text-[10px] font-semibold text-gray-600 uppercase">
+                  Colaborador ({colaboradores.length})
+                </label>
+                <select
+                  value={sel}
+                  onChange={(e) => setSel(e.target.value)}
+                  className="mt-0.5 w-full border border-gray-300 rounded-lg px-2 py-2 text-sm"
+                >
+                  <option value="">— Selecione —</option>
+                  {colaboradores.map((c) => (
+                    <option key={c.nome} value={c.nome.toLowerCase()}>
+                      {c.nome} ({c.itens.length}{' '}
+                      {c.itens.length === 1 ? 'item' : 'itens'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {colaborador && (
+                <div className="border border-gray-200 rounded-lg divide-y max-h-52 overflow-y-auto">
+                  {colaborador.itens.map((it) => (
+                    <div
+                      key={it.id}
+                      className="px-3 py-2 flex items-center justify-between gap-2 text-xs"
+                    >
+                      <div className="min-w-0">
+                        <span className="font-mono text-[#000638]">
+                          {it.codigo_patrimonio}
+                        </span>
+                        <span className="text-gray-600">
+                          {' '}
+                          — {it.descricao || tipoInfo(it.tipo).label}
+                        </span>
+                      </div>
+                      <span className="text-gray-500 tabular-nums whitespace-nowrap">
+                        {it.valor_aquisicao > 0 ? fmtBRL(it.valor_aquisicao) : '—'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="border-t px-5 py-3 flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 text-xs font-semibold"
+          >
+            Fechar
+          </button>
+          <button
+            onClick={gerarTermo}
+            disabled={!colaborador}
+            className="flex items-center gap-2 px-5 py-2 rounded-lg bg-[#000638] hover:bg-[#fe0000] disabled:opacity-40 text-white text-xs font-bold uppercase tracking-wide"
+          >
+            <Printer size={12} weight="fill" />
+            Gerar / Imprimir
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Página principal ──────────────────────────────────────────────────────
 export default function InventarioPatrimonio() {
   const [items, setItems] = useState([]);
@@ -542,6 +878,7 @@ export default function InventarioPatrimonio() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [termoOpen, setTermoOpen] = useState(false);
   const { user } = useAuth() || {};
   const userLogin = user?.email || user?.user_metadata?.login || '';
 
@@ -649,6 +986,14 @@ export default function InventarioPatrimonio() {
               >
                 <ArrowsClockwise size={14} weight="bold" className={loading ? 'animate-spin' : ''} />
                 <span className="hidden sm:inline">Atualizar</span>
+              </button>
+              <button
+                onClick={() => setTermoOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold border border-white/20 backdrop-blur-sm transition-colors"
+                title="Gerar termo de responsabilidade por colaborador"
+              >
+                <Printer size={14} weight="bold" />
+                <span className="hidden sm:inline">Termo</span>
               </button>
               <button
                 onClick={() => {
@@ -1245,6 +1590,15 @@ export default function InventarioPatrimonio() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Termo de responsabilidade */}
+      {termoOpen && (
+        <TermoModal
+          items={items}
+          emissor={userLogin}
+          onClose={() => setTermoOpen(false)}
+        />
       )}
     </div>
   );
