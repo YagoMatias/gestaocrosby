@@ -104,6 +104,49 @@ function statusInfo(s) {
   return STATUS_OPTS.find((x) => x.value === s) || STATUS_OPTS[0];
 }
 
+// Mapeia um item para linha de planilha (reutilizado no export geral e por filial)
+function itemParaLinhaExcel(it) {
+  return {
+    Código: it.codigo_patrimonio || '',
+    Tipo: tipoInfo(it.tipo).label || it.tipo || '',
+    Descrição: it.descricao || '',
+    Marca: it.marca || '',
+    Modelo: it.modelo || '',
+    'Nº de Série': it.numero_serie || '',
+    Setor: it.setor || '',
+    'Unidade/Filial': it.filial || '',
+    Local: it.local || '',
+    Responsável: it.responsavel || '',
+    'CPF Responsável': it.responsavel_cpf || '',
+    'E-mail Responsável': it.responsavel_email || '',
+    'Data Aquisição': it.data_aquisicao
+      ? String(it.data_aquisicao).slice(0, 10)
+      : '',
+    'Valor (R$)': it.valor_aquisicao != null ? Number(it.valor_aquisicao) : '',
+    Fornecedor: it.fornecedor || '',
+    'Nº NF': it.nota_fiscal || '',
+    Status: statusInfo(it.status).label || it.status || '',
+    Observação: it.observacao || '',
+  };
+}
+
+const EXPORT_COL_WIDTHS = [
+  { wch: 12 }, { wch: 16 }, { wch: 40 }, { wch: 16 }, { wch: 18 },
+  { wch: 16 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 20 },
+  { wch: 16 }, { wch: 24 }, { wch: 14 }, { wch: 12 }, { wch: 20 },
+  { wch: 12 }, { wch: 14 }, { wch: 30 },
+];
+
+// Nome de aba válido no Excel (<=31 chars, sem : \\ / ? * [ ])
+function sanitizarAba(nome) {
+  return (
+    String(nome || 'Sem filial')
+      .replace(/[:\\/?*[\]]/g, ' ')
+      .slice(0, 31)
+      .trim() || 'Sem filial'
+  );
+}
+
 // ─── Modal de cadastro/edição ──────────────────────────────────────────────
 function PatrimonioModal({ item, onClose, onSaved }) {
   const isNew = !item;
@@ -860,6 +903,232 @@ function TermoModal({ items, emissor, onClose }) {
   );
 }
 
+// ─── Modal: Relatório por filial ────────────────────────────────────────────
+function RelatorioFilialModal({ onClose }) {
+  const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState('');
+  const [todos, setTodos] = useState([]); // todos os itens (sem filtro)
+
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      setLoading(true);
+      setErro('');
+      try {
+        const r = await fetch(`${API_BASE_URL}/api/tech/patrimonio`);
+        const j = await r.json();
+        if (!j?.success) throw new Error(j?.message || 'Erro ao carregar');
+        if (vivo) setTodos(j.data?.items || []);
+      } catch (e) {
+        if (vivo) setErro(e.message);
+      } finally {
+        if (vivo) setLoading(false);
+      }
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
+  // Agrupa por filial
+  const relatorio = useMemo(() => {
+    const map = new Map(); // filial -> { itens, valor, porTipo }
+    for (const it of todos) {
+      const f = it.filial || 'Sem filial';
+      if (!map.has(f)) map.set(f, { filial: f, itens: 0, valor: 0 });
+      const g = map.get(f);
+      g.itens += 1;
+      g.valor += Number(it.valor_aquisicao) || 0;
+    }
+    return Array.from(map.values()).sort((a, b) => b.valor - a.valor);
+  }, [todos]);
+
+  const totalItens = todos.length;
+  const totalValor = relatorio.reduce((s, g) => s + g.valor, 0);
+  const hoje = new Date().toISOString().slice(0, 10);
+
+  // Exporta um resumo (1 linha por filial)
+  const exportarResumo = () => {
+    const rows = relatorio.map((g) => ({
+      'Unidade/Filial': g.filial,
+      'Qtd de itens': g.itens,
+      'Valor total (R$)': Number(g.valor.toFixed(2)),
+      '% do valor': totalValor
+        ? `${((g.valor / totalValor) * 100).toFixed(1)}%`
+        : '0%',
+    }));
+    rows.push({
+      'Unidade/Filial': 'TOTAL',
+      'Qtd de itens': totalItens,
+      'Valor total (R$)': Number(totalValor.toFixed(2)),
+      '% do valor': '100%',
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 18 }, { wch: 12 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Resumo por filial');
+    XLSX.writeFile(wb, `relatorio-patrimonio-por-filial-${hoje}.xlsx`);
+  };
+
+  // Exporta completo: aba Resumo + 1 aba por filial com todos os itens
+  const exportarCompleto = () => {
+    const wb = XLSX.utils.book_new();
+    // Resumo
+    const resumoRows = relatorio.map((g) => ({
+      'Unidade/Filial': g.filial,
+      'Qtd de itens': g.itens,
+      'Valor total (R$)': Number(g.valor.toFixed(2)),
+    }));
+    resumoRows.push({
+      'Unidade/Filial': 'TOTAL',
+      'Qtd de itens': totalItens,
+      'Valor total (R$)': Number(totalValor.toFixed(2)),
+    });
+    const wsResumo = XLSX.utils.json_to_sheet(resumoRows);
+    wsResumo['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 18 }];
+    XLSX.utils.book_append_sheet(wb, wsResumo, 'Resumo');
+    // Uma aba por filial
+    const usados = new Set();
+    for (const g of relatorio) {
+      const itens = todos
+        .filter((it) => (it.filial || 'Sem filial') === g.filial)
+        .map(itemParaLinhaExcel);
+      let nome = sanitizarAba(g.filial);
+      let base = nome;
+      let i = 2;
+      while (usados.has(nome)) {
+        nome = `${base.slice(0, 28)} ${i++}`;
+      }
+      usados.add(nome);
+      const ws = XLSX.utils.json_to_sheet(itens);
+      ws['!cols'] = EXPORT_COL_WIDTHS;
+      XLSX.utils.book_append_sheet(wb, ws, nome);
+    }
+    XLSX.writeFile(wb, `inventario-completo-por-filial-${hoje}.xlsx`);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-3 border-b bg-[#000638] rounded-t-xl">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <Buildings size={16} weight="fill" /> Relatório por Filial
+          </h3>
+          <button onClick={onClose} className="text-white/70 hover:text-white">
+            <X size={18} weight="bold" />
+          </button>
+        </div>
+
+        <div className="p-5 flex flex-col gap-3 overflow-y-auto">
+          {loading ? (
+            <div className="flex items-center gap-2 text-sm text-gray-500 py-6 justify-center">
+              <Spinner size={18} className="animate-spin" /> Carregando
+              inventário…
+            </div>
+          ) : erro ? (
+            <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3">
+              {erro}
+            </div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-[#000638] text-white text-[11px] uppercase tracking-wide">
+                      <th className="text-left px-3 py-2 rounded-tl-lg">
+                        Unidade / Filial
+                      </th>
+                      <th className="text-right px-3 py-2">Itens</th>
+                      <th className="text-right px-3 py-2">Valor total</th>
+                      <th className="text-right px-3 py-2 rounded-tr-lg">
+                        % valor
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {relatorio.map((g, idx) => (
+                      <tr
+                        key={g.filial}
+                        className={idx % 2 ? 'bg-gray-50' : 'bg-white'}
+                      >
+                        <td className="px-3 py-2 font-semibold text-[#000638] flex items-center gap-1.5">
+                          <Buildings
+                            size={13}
+                            weight="duotone"
+                            className="text-sky-600"
+                          />
+                          {g.filial}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {g.itens}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums font-semibold">
+                          {fmtBRL(g.valor)}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-gray-500">
+                          {totalValor
+                            ? `${((g.valor / totalValor) * 100).toFixed(1)}%`
+                            : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-[#000638] font-bold">
+                      <td className="px-3 py-2">TOTAL</td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {totalItens}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {fmtBRL(totalValor)}
+                      </td>
+                      <td className="px-3 py-2 text-right">100%</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              <p className="text-[10px] text-gray-400">
+                {relatorio.length} filiais · {totalItens} itens no total.
+              </p>
+            </>
+          )}
+        </div>
+
+        <div className="border-t px-5 py-3 flex flex-wrap justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 text-xs font-semibold"
+          >
+            Fechar
+          </button>
+          <button
+            onClick={exportarResumo}
+            disabled={loading || !relatorio.length}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[#000638] text-[#000638] hover:bg-[#000638]/5 disabled:opacity-40 text-xs font-bold"
+          >
+            <DownloadSimple size={12} weight="bold" />
+            Resumo (Excel)
+          </button>
+          <button
+            onClick={exportarCompleto}
+            disabled={loading || !relatorio.length}
+            className="flex items-center gap-2 px-5 py-2 rounded-lg bg-[#000638] hover:bg-[#fe0000] disabled:opacity-40 text-white text-xs font-bold uppercase tracking-wide"
+          >
+            <DownloadSimple size={12} weight="fill" />
+            Completo por filial
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Página principal ──────────────────────────────────────────────────────
 export default function InventarioPatrimonio() {
   const [items, setItems] = useState([]);
@@ -883,6 +1152,7 @@ export default function InventarioPatrimonio() {
   const [editing, setEditing] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [termoOpen, setTermoOpen] = useState(false);
+  const [relatorioOpen, setRelatorioOpen] = useState(false);
   const { user } = useAuth() || {};
   const userLogin = user?.email || user?.user_metadata?.login || '';
 
@@ -942,35 +1212,9 @@ export default function InventarioPatrimonio() {
       alert('Nenhum item para exportar com os filtros atuais.');
       return;
     }
-    const rows = items.map((it) => ({
-      Código: it.codigo_patrimonio || '',
-      Tipo: tipoInfo(it.tipo).label || it.tipo || '',
-      Descrição: it.descricao || '',
-      Marca: it.marca || '',
-      Modelo: it.modelo || '',
-      'Nº de Série': it.numero_serie || '',
-      Setor: it.setor || '',
-      'Unidade/Filial': it.filial || '',
-      Local: it.local || '',
-      Responsável: it.responsavel || '',
-      'CPF Responsável': it.responsavel_cpf || '',
-      'E-mail Responsável': it.responsavel_email || '',
-      'Data Aquisição': it.data_aquisicao
-        ? String(it.data_aquisicao).slice(0, 10)
-        : '',
-      'Valor (R$)': it.valor_aquisicao != null ? Number(it.valor_aquisicao) : '',
-      Fornecedor: it.fornecedor || '',
-      'Nº NF': it.nota_fiscal || '',
-      Status: statusInfo(it.status).label || it.status || '',
-      Observação: it.observacao || '',
-    }));
+    const rows = items.map(itemParaLinhaExcel);
     const ws = XLSX.utils.json_to_sheet(rows);
-    ws['!cols'] = [
-      { wch: 12 }, { wch: 16 }, { wch: 40 }, { wch: 16 }, { wch: 18 },
-      { wch: 16 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 20 },
-      { wch: 16 }, { wch: 24 }, { wch: 14 }, { wch: 12 }, { wch: 20 },
-      { wch: 12 }, { wch: 14 }, { wch: 30 },
-    ];
+    ws['!cols'] = EXPORT_COL_WIDTHS;
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Patrimônio');
     const hoje = new Date().toISOString().slice(0, 10);
@@ -1031,6 +1275,14 @@ export default function InventarioPatrimonio() {
               >
                 <ArrowsClockwise size={14} weight="bold" className={loading ? 'animate-spin' : ''} />
                 <span className="hidden sm:inline">Atualizar</span>
+              </button>
+              <button
+                onClick={() => setRelatorioOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold border border-white/20 backdrop-blur-sm transition-colors"
+                title="Relatório consolidado por filial"
+              >
+                <Buildings size={14} weight="bold" />
+                <span className="hidden sm:inline">Relatório</span>
               </button>
               <button
                 onClick={exportarExcel}
@@ -1652,6 +1904,11 @@ export default function InventarioPatrimonio() {
           emissor={userLogin}
           onClose={() => setTermoOpen(false)}
         />
+      )}
+
+      {/* Relatório por filial */}
+      {relatorioOpen && (
+        <RelatorioFilialModal onClose={() => setRelatorioOpen(false)} />
       )}
     </div>
   );
