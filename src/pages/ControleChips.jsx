@@ -18,6 +18,8 @@ import {
   Plugs,
   WhatsappLogo,
   DownloadSimple,
+  SortAscending,
+  SortDescending,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
@@ -471,6 +473,8 @@ export default function ControleChips() {
   const [filtroOperadora, setFiltroOperadora] = useState('');
   const [filtroSetor, setFiltroSetor] = useState('');
   const [filtroWhatsapp, setFiltroWhatsapp] = useState(''); // '' | 'sem' | 'com'
+  const [ordenarPor, setOrdenarPor] = useState('numero'); // campo de ordenação
+  const [ordemAsc, setOrdemAsc] = useState(true); // true = crescente
   const [showModal, setShowModal] = useState(false);
   const [editando, setEditando] = useState(null);
   const [verificando, setVerificando] = useState(false);
@@ -566,12 +570,30 @@ export default function ControleChips() {
     [chips],
   );
 
-  // Filtro de WhatsApp aplicado no cliente (tem_whatsapp já vem em cada chip)
+  // Filtro de WhatsApp aplicado no cliente + ordenação
   const chipsFiltrados = useMemo(() => {
-    if (filtroWhatsapp === 'sem') return chips.filter((c) => !c.tem_whatsapp);
-    if (filtroWhatsapp === 'com') return chips.filter((c) => !!c.tem_whatsapp);
-    return chips;
-  }, [chips, filtroWhatsapp]);
+    let lista = chips;
+    if (filtroWhatsapp === 'sem') lista = chips.filter((c) => !c.tem_whatsapp);
+    else if (filtroWhatsapp === 'com') lista = chips.filter((c) => !!c.tem_whatsapp);
+
+    const numerico = ordenarPor === 'valor_plano';
+    const arr = [...lista].sort((a, b) => {
+      let va = a[ordenarPor];
+      let vb = b[ordenarPor];
+      if (numerico) {
+        va = Number(va) || 0;
+        vb = Number(vb) || 0;
+        return va - vb;
+      }
+      va = (va ?? '').toString().toLowerCase();
+      vb = (vb ?? '').toString().toLowerCase();
+      // vazios sempre no fim
+      if (!va && vb) return 1;
+      if (va && !vb) return -1;
+      return va.localeCompare(vb, 'pt-BR');
+    });
+    return ordemAsc ? arr : arr.reverse();
+  }, [chips, filtroWhatsapp, ordenarPor, ordemAsc]);
 
   // Exporta a lista visível (respeitando todos os filtros) para Excel
   const exportarExcel = () => {
@@ -743,6 +765,30 @@ export default function ControleChips() {
               <option value="sem">Sem WhatsApp</option>
               <option value="com">Com WhatsApp</option>
             </select>
+            <div className="flex items-center gap-1">
+              <select
+                value={ordenarPor}
+                onChange={(e) => setOrdenarPor(e.target.value)}
+                title="Ordenar por"
+                className="border border-gray-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#000638]/30 focus:border-[#000638]/60 bg-gray-50 text-[#000638] text-xs font-semibold font-barlow"
+              >
+                <option value="numero">Ordenar: Número</option>
+                <option value="responsavel">Ordenar: Responsável</option>
+                <option value="setor">Ordenar: Setor</option>
+                <option value="operadora">Ordenar: Operadora</option>
+                <option value="valor_plano">Ordenar: Valor</option>
+                <option value="status">Ordenar: Status</option>
+                <option value="whatsapp_nome">Ordenar: Nome WhatsApp</option>
+              </select>
+              <button
+                type="button"
+                onClick={() => setOrdemAsc((v) => !v)}
+                title={ordemAsc ? 'Crescente (A→Z / menor→maior)' : 'Decrescente (Z→A / maior→menor)'}
+                className="border border-gray-200 rounded-lg px-2.5 py-2.5 bg-gray-50 text-[#000638] hover:bg-gray-100 transition"
+              >
+                {ordemAsc ? <SortAscending size={16} weight="bold" /> : <SortDescending size={16} weight="bold" />}
+              </button>
+            </div>
           </div>
           {/* Verificar WhatsApp — checa cada número na uazapi */}
           <button
