@@ -354,6 +354,11 @@ const TABBED_PAGES = {
     group: 'BlueCred',
     dot: 'bg-blue-500',
   },
+  '/inadimplencia-bluecred': {
+    label: 'Inadimplência BlueCred',
+    group: 'BlueCred',
+    dot: 'bg-blue-500',
+  },
   '/documento-bluecred': {
     label: 'Documentos Bluecred',
     group: 'BlueCred',

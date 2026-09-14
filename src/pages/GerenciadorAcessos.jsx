@@ -499,6 +499,11 @@ const AVAILABLE_PAGES = [
     category: 'Tecnologia',
   },
   {
+    path: '/tecnologia/pdv-varejo',
+    name: 'PDV Varejo',
+    category: 'Tecnologia',
+  },
+  {
     path: '/tecnologia/orcamento-rfid',
     name: 'Orçamento RFID',
     category: 'Tecnologia',

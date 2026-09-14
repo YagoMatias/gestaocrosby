@@ -501,6 +501,12 @@ const varejo = [
         color: 'text-rose-600',
       },
       {
+        name: 'Inadimplência',
+        href: '/inadimplencia-bluecred',
+        icon: Receipt,
+        color: 'text-red-600',
+      },
+      {
         name: 'Documentos Bluecred',
         href: '/documento-bluecred',
         icon: FileText,
@@ -760,6 +766,12 @@ const tecnologiaItems = [
     href: '/tecnologia/orcamento-rfid',
     icon: Tag,
     color: 'text-purple-600',
+  },
+  {
+    name: 'PDV Varejo',
+    href: '/tecnologia/pdv-varejo',
+    icon: Storefront,
+    color: 'text-emerald-600',
   },
   {
     name: 'Etiquetas de Preço',

@@ -157,6 +157,72 @@ const situacaoTitulo = (item) => {
   return { label: 'A vencer', cor: 'text-gray-500' };
 };
 
+// Canais da análise: FRQ, MTM, REV (revenda) e BLC (BlueCard — crediário do
+// app, mesma base da tela Inadimplência BlueCred). REV e BLC entraram em 2026-09.
+const CANAL_LABEL = { FRQ: 'Franquias', MTM: 'Multimarcas', REV: 'Revenda', BLC: 'BlueCard' };
+const OPCOES_CANAL = [
+  { valor: 'TODOS', label: 'Todos os canais' },
+  { valor: 'MTM', label: 'Multimarcas' },
+  { valor: 'FRQ', label: 'Franquias' },
+  { valor: 'REV', label: 'Revenda' },
+  { valor: 'BLC', label: 'BlueCard' },
+];
+
+// BlueCard só conta filiais próprias (igual à tela Inadimplência BlueCred)
+const BLC_FILIAIS_FORA = new Set([98, 980, 551]);
+const filialBlueCard = (cdEmpresa) => {
+  const n = parseInt(cdEmpresa, 10);
+  return Number.isFinite(n) && n < 5999 && !BLC_FILIAIS_FORA.has(n);
+};
+
+// O TOTVS recusa listas de cd_cliente acima de ~1000 códigos — com REVENDA
+// entrando, a consulta vai em lotes (como na tela de Inadimplentes Revenda).
+const LOTE_CLIENTES = 500;
+const LOTES_SIMULTANEOS = 5;
+async function buscarARemLotes(paramsBase, codigos) {
+  const lotes = [];
+  for (let i = 0; i < codigos.length; i += LOTE_CLIENTES) {
+    lotes.push(codigos.slice(i, i + LOTE_CLIENTES));
+  }
+  const itens = [];
+  for (let i = 0; i < lotes.length; i += LOTES_SIMULTANEOS) {
+    const grupo = lotes.slice(i, i + LOTES_SIMULTANEOS);
+    const respostas = await Promise.all(
+      grupo.map(async (lote) => {
+        const p = new URLSearchParams(paramsBase);
+        p.set('cd_cliente', lote.join(','));
+        const r = await fetch(`${TotvsURL}accounts-receivable/filter?${p.toString()}`);
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({}));
+          throw new Error(err.message || `HTTP ${r.status} no contas a receber`);
+        }
+        const j = await r.json();
+        return j.data?.items || [];
+      }),
+    );
+    respostas.forEach((arr) => itens.push(...arr));
+  }
+  return itens;
+}
+
+// Lista de clientes de um canal. SEM timeout: a de revenda vem de um cache
+// persistido no backend (renovado em segundo plano pelo job
+// reseller-cache-warm) e responde na hora; se uma fonte falhar mesmo assim,
+// o canal fica de fora nesta carga e a tela avisa — em vez de travar tudo.
+// Devolve { lista, meta } — meta traz de quando é a lista (revenda).
+async function listarClientesCanal(rota) {
+  const r = await fetch(`${TotvsURL}${rota}`);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const j = await r.json();
+  const raw = j.data;
+  const lista = Array.isArray(raw)
+    ? raw
+    : Array.isArray(raw?.data)
+      ? raw.data
+      : (raw?.codes || []).map((code) => ({ code }));
+  return { lista, meta: raw?.meta || null };
+}
+
 const MetasInadimplencia = () => {
   const hojeStr = new Date().toISOString().slice(0, 10);
   const inicioAnoStr = `${new Date().getFullYear()}-01-01`;
@@ -168,6 +234,10 @@ const MetasInadimplencia = () => {
 
   const [vencendo, setVencendo] = useState([]);
   const [pagos, setPagos] = useState([]);
+  const [canalFiltro, setCanalFiltro] = useState('TODOS');
+  const [avisoCanais, setAvisoCanais] = useState(null);
+  // De quando é a lista de revenda usada nesta carga (vem do cache persistido)
+  const [infoRevenda, setInfoRevenda] = useState(null);
   const [pessoasMap, setPessoasMap] = useState({});
   const [loading, setLoading] = useState(false);
   const [dadosCarregados, setDadosCarregados] = useState(false);
@@ -193,25 +263,49 @@ const MetasInadimplencia = () => {
       // inadimplência — por isso os totais ficam abaixo dos do Contas a
       // Receber, que não tem esse recorte de cliente.
       // ============================================================
-      const [respMtm, respFrq] = await Promise.all([
-        fetch(`${TotvsURL}multibrand-clients`),
-        fetch(`${TotvsURL}franchise-clients`),
-      ]);
+      // Quatro canais, com tolerância a falha por fonte. Ordem = precedência
+      // quando o mesmo cliente aparece em dois (FRQ > MTM > REV > BLC).
+      const fontes = [
+        { canal: 'FRQ', rota: 'franchise-clients' },
+        { canal: 'MTM', rota: 'multibrand-clients' },
+        { canal: 'REV', rota: 'reseller-clients' },
+        { canal: 'BLC', rota: 'bluecred/clientes' },
+      ];
+      const resultados = await Promise.allSettled(
+        fontes.map((fo) => listarClientesCanal(fo.rota)),
+      );
+      const canalDoCliente = {};
+      const canaisFora = [];
+      resultados.forEach((r, idx) => {
+        const fo = fontes[idx];
+        if (r.status !== 'fulfilled') {
+          console.warn(`Canal ${CANAL_LABEL[fo.canal]} indisponivel: ${r.reason?.message}`);
+          canaisFora.push(CANAL_LABEL[fo.canal]);
+          return;
+        }
+        // bluecred/clientes devolve { codes: [...] }; as outras, lista de clientes
+        const lista = r.value.lista;
+        if (fo.canal === 'REV' && r.value.meta?.atualizado_em) {
+          const dt = new Date(r.value.meta.atualizado_em).toLocaleString('pt-BR');
+          setInfoRevenda(
+            `Revenda: lista de ${dt} (${r.value.meta.total} clientes${r.value.meta.origem === 'supabase' ? ', do cache' : ''}). Ela é renovada em segundo plano; atualize para ver a versão mais nova.`,
+          );
+        }
+        lista.forEach((c) => {
+          const key = String(c.code);
+          if (!canalDoCliente[key]) canalDoCliente[key] = fo.canal;
+        });
+      });
+      setAvisoCanais(
+        canaisFora.length
+          ? `Canal ${canaisFora.join(' e ')} indisponível nesta carga (a lista de clientes falhou). Busque de novo para tentar incluir.`
+          : null,
+      );
 
-      const codigos = new Set();
-      if (respMtm.ok) {
-        const r = await respMtm.json();
-        (r.data || []).forEach((c) => codigos.add(String(c.code)));
+      const codigos = Object.keys(canalDoCliente);
+      if (codigos.length === 0) {
+        throw new Error('Nenhum cliente de canal encontrado');
       }
-      if (respFrq.ok) {
-        const r = await respFrq.json();
-        (r.data || []).forEach((c) => codigos.add(String(c.code)));
-      }
-
-      if (codigos.size === 0) {
-        throw new Error('Nenhum cliente multimarcas/franquia encontrado');
-      }
-      const codigosParam = [...codigos].join(',');
 
       // ============================================================
       // PASSO 2: Buscar em paralelo
@@ -220,43 +314,21 @@ const MetasInadimplencia = () => {
       //    (independente do mês de vencimento — pode ser de qualquer mês)
       // tp_documento=1 => apenas FATURA, como nas demais páginas
       // ============================================================
-      const paramsVencendo = new URLSearchParams({
-        dt_inicio: dtInicio,
-        dt_fim: dtFim,
-        modo: 'vencimento',
-        situacao: '1',
-        tp_documento: '1',
-        cd_cliente: codigosParam,
-      });
-
-      const paramsPagos = new URLSearchParams({
-        dt_inicio: dtInicio,
-        dt_fim: dtFim,
-        modo: 'pagamento',
-        situacao: '1',
-        status: 'Pago',
-        tp_documento: '1',
-        cd_cliente: codigosParam,
-      });
-
-      const [respVencendo, respPagos] = await Promise.all([
-        fetch(`${TotvsURL}accounts-receivable/filter?${paramsVencendo}`),
-        fetch(`${TotvsURL}accounts-receivable/filter?${paramsPagos}`),
+      const [itensVencendoRaw, itensPagosRaw] = await Promise.all([
+        buscarARemLotes(
+          { dt_inicio: dtInicio, dt_fim: dtFim, modo: 'vencimento', situacao: '1', tp_documento: '1' },
+          codigos,
+        ),
+        buscarARemLotes(
+          { dt_inicio: dtInicio, dt_fim: dtFim, modo: 'pagamento', situacao: '1', status: 'Pago', tp_documento: '1' },
+          codigos,
+        ),
       ]);
 
-      if (!respVencendo.ok) {
-        const err = await respVencendo.json().catch(() => ({}));
-        throw new Error(
-          err.message || `Erro vencimentos: HTTP ${respVencendo.status}`,
-        );
-      }
-      if (!respPagos.ok) {
-        const err = await respPagos.json().catch(() => ({}));
-        throw new Error(err.message || `Erro pagos: HTTP ${respPagos.status}`);
-      }
-
-      const resultVencendo = await respVencendo.json();
-      const resultPagos = await respPagos.json();
+      // Marca o canal em cada título (para o filtro e o detalhamento). BlueCard
+      // só conta filiais próprias, igual à tela Inadimplência BlueCred.
+      const marcarCanal = (item) => ({ ...item, canal: canalDoCliente[String(item.cd_cliente).trim()] || '' });
+      const filialOk = (item) => item.canal !== 'BLC' || filialBlueCard(item.cd_empresa);
 
       // Rede de segurança: o tp_documento já vai na query, mas garante FATURA
       const soFatura = (item) =>
@@ -267,10 +339,8 @@ const MetasInadimplencia = () => {
       // inflar o pago nem contar a dívida duas vezes.
       const valeParaMeta = (item) => soFatura(item) && !ehRenegociacao(item);
 
-      const itensVencendo = (resultVencendo.data?.items || []).filter(
-        valeParaMeta,
-      );
-      const itensPagos = (resultPagos.data?.items || []).filter(valeParaMeta);
+      const itensVencendo = itensVencendoRaw.map(marcarCanal).filter((i) => valeParaMeta(i) && filialOk(i));
+      const itensPagos = itensPagosRaw.map(marcarCanal).filter((i) => valeParaMeta(i) && filialOk(i));
 
       setVencendo(itensVencendo);
       setPagos(itensPagos);
@@ -319,17 +389,27 @@ const MetasInadimplencia = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Filtro de canal (aplica às duas séries)
+  const vencendoCanal = useMemo(
+    () => (canalFiltro === 'TODOS' ? vencendo : vencendo.filter((i) => i.canal === canalFiltro)),
+    [vencendo, canalFiltro],
+  );
+  const pagosCanal = useMemo(
+    () => (canalFiltro === 'TODOS' ? pagos : pagos.filter((i) => i.canal === canalFiltro)),
+    [pagos, canalFiltro],
+  );
+
   // Boletos que vencem no período, após filtro Vencidos / Inadimplentes / Todos
   const vencendoFiltrados = useMemo(() => {
-    if (filtroStatus === 'TODOS') return vencendo;
-    return vencendo.filter((item) => {
+    if (filtroStatus === 'TODOS') return vencendoCanal;
+    return vencendoCanal.filter((item) => {
       if (isTituloPago(item)) return false;
       const atraso = diasAtraso(item);
       if (filtroStatus === 'VENCIDOS') return atraso > 0 && atraso <= 60;
       if (filtroStatus === 'INADIMPLENTES') return atraso > 60;
       return true;
     });
-  }, [vencendo, filtroStatus]);
+  }, [vencendoCanal, filtroStatus]);
 
   // Agregação por mês: vencimento (mês de vencimento) x pago (mês de pagamento)
   const dadosPorMes = useMemo(() => {
@@ -368,7 +448,7 @@ const MetasInadimplencia = () => {
       mes.titulosVencendo.push(item);
     });
 
-    pagos.forEach((item) => {
+    pagosCanal.forEach((item) => {
       const key = mesKey(item.dt_liq);
       if (!key) return;
       const mes = garantirMes(key);
@@ -382,7 +462,7 @@ const MetasInadimplencia = () => {
     });
 
     return Object.values(mapa).sort((a, b) => (a.key < b.key ? -1 : 1));
-  }, [vencendoFiltrados, pagos]);
+  }, [vencendoFiltrados, pagosCanal]);
 
   // Totais para os cards
   const totais = useMemo(() => {
@@ -576,8 +656,8 @@ const MetasInadimplencia = () => {
             Configurações para análise de Metas de Inadimplência
           </div>
           <span className="text-xs text-gray-500 mt-1">
-            Considera apenas faturas de clientes Multimarcas e Franquias,
-            fora as baixadas por renegociação. O período filtra o vencimento e
+            Considera faturas de clientes Multimarcas, Franquias, Revenda e
+            BlueCard (crediário do app), fora as baixadas por renegociação. O período filtra o vencimento e
             o pagamento dos boletos, e é sempre expandido para meses completos
           </span>
 
@@ -620,7 +700,33 @@ const MetasInadimplencia = () => {
                 ))}
               </select>
             </div>
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Canal
+              </label>
+              <select
+                value={canalFiltro}
+                onChange={(e) => setCanalFiltro(e.target.value)}
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-sm"
+              >
+                {OPCOES_CANAL.map((o) => (
+                  <option key={o.valor} value={o.valor}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
+          {avisoCanais && (
+            <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              {avisoCanais}
+            </div>
+          )}
+          {infoRevenda && (
+            <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+              {infoRevenda}
+            </div>
+          )}
           <div className="mt-4 flex gap-2">
             <button
               type="submit"

@@ -145,8 +145,11 @@ export default function ForecastCanal() {
   const cfg = CANAIS_COMPETICAO[key];
   const IconeCanal = cfg.icon;
   const apiClient = useApiClient();
+  // Mês exibido (default: corrente)
+  const [mesSel, setMesSel] = useState(() => new Date().toISOString().slice(0, 7));
   const { dados, periodo, porSemana, atualizadoEm, loading, erro, refresh } =
-    useCompeticaoCanais(key);
+    useCompeticaoCanais(key, mesSel);
+  const ehMesCorrente = periodo ? periodo.ehMesCorrente !== false : true;
 
   // Modal "desempenho da semana" (clique no card da semana)
   const [semanaModal, setSemanaModal] = useState(null); // item de porSemana
@@ -154,6 +157,13 @@ export default function ForecastCanal() {
   // Modal "vendas por dia" (canais sem loja: clique no vendedor/franquia)
   const [vendasModal, setVendasModal] = useState(null); // { titulo, chave }
   const [vendasCache, setVendasCache] = useState({}); // chave → {vendas, erro}
+
+  // trocar de mês (ou canal) invalida os detalhes já baixados
+  useEffect(() => {
+    setVendasCache({});
+    setVendasModal(null);
+    setSemanaModal(null);
+  }, [mesSel, key]);
 
   const buscarDetalhe = (chave, sellerCode, filtraCliente = null) => {
     if (vendasCache[chave]) return;
@@ -254,7 +264,7 @@ export default function ForecastCanal() {
                   {loading && <Spinner size={12} className="animate-spin" />}
                   {atualizadoEm &&
                     `Atualizado às ${atualizadoEm.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}
-                  · a cada 30 min
+                  {ehMesCorrente ? ' · a cada 30 min' : ' · mês fechado'}
                   <button
                     onClick={refresh}
                     disabled={loading}
@@ -265,6 +275,20 @@ export default function ForecastCanal() {
                   </button>
                 </span>
               </div>
+              {!tv && (
+                <div>
+                  <label className="block text-[10px] font-semibold text-gray-500 uppercase mb-0.5">
+                    Mês
+                  </label>
+                  <input
+                    type="month"
+                    value={mesSel}
+                    max={new Date().toISOString().slice(0, 7)}
+                    onChange={(e) => e.target.value && setMesSel(e.target.value)}
+                    className="border border-[#000638]/30 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+                  />
+                </div>
+              )}
               <button
                 onClick={alternarTelaCheia}
                 title={tv ? 'Sair da tela cheia' : 'Tela cheia (modo TV)'}
@@ -326,7 +350,9 @@ export default function ForecastCanal() {
                 tv={tv}
               />
               <CampeaoCard
-                titulo="Campeão da Semana"
+                titulo={
+                  ehMesCorrente ? 'Campeão da Semana' : 'Campeão · última semana'
+                }
                 item={
                   rankSem[0]
                     ? { ...rankSem[0], nome: nomeExib(rankSem[0].nome) }

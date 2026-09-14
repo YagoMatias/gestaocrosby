@@ -121,6 +121,7 @@ const PAGE_COMPONENTS = {
   // ---- Varejo › BlueCred ----
   '/dashboard-bluecred': lazy(() => import('../../pages/DashboardBluecred')),
   '/cobranca-bluecard': lazy(() => import('../../pages/CobrancaBluecard')),
+  '/inadimplencia-bluecred': lazy(() => import('../../pages/InadimplenciaBluecred')),
   '/documento-bluecred': lazy(() => import('../../pages/DocumentoBluecred')),
   '/clientes-bluecred': lazy(() => import('../../pages/ClientesBluecred')),
   '/antecipacao-bluecred': lazy(() => import('../../pages/AntecipacaoBoletos')),

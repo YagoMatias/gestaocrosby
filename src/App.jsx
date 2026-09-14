@@ -130,6 +130,7 @@ const LeituraRFID = lazy(() => import('./pages/LeituraRFID'));
 const PDVRfid = lazy(() => import('./pages/PDVRfid'));
 const PortalRFID = lazy(() => import('./pages/PortalRFID'));
 const OrcamentoRFID = lazy(() => import('./pages/OrcamentoRFID'));
+const PDVVarejo = lazy(() => import('./pages/PDVVarejo'));
 const EtiquetasPreco = lazy(() => import('./pages/EtiquetasPreco'));
 const CotacaoCompras = lazy(() => import('./pages/CotacaoCompras'));
 const ClientesPorEmpresa = lazy(() => import('./pages/ClientesPorEmpresa'));
@@ -149,6 +150,7 @@ const DocumentoBluecred = lazy(() => import('./pages/DocumentoBluecred'));
 const ClientesBluecred = lazy(() => import('./pages/ClientesBluecred'));
 const DashboardBluecred = lazy(() => import('./pages/DashboardBluecred'));
 const CobrancaBluecard = lazy(() => import('./pages/CobrancaBluecard'));
+const InadimplenciaBluecred = lazy(() => import('./pages/InadimplenciaBluecred'));
 const AntecipacaoBoletos = lazy(() => import('./pages/AntecipacaoBoletos'));
 const ConsultaNFs = lazy(() => import('./pages/ConsultaNFs'));
 const FaturamentoPanel = lazy(() => import('./components/FaturamentoPanel'));
@@ -204,6 +206,7 @@ const protectedRoutes = [
   { path: '/tecnologia/pdv-rfid', component: PDVRfid },
   { path: '/tecnologia/portal-rfid', component: PortalRFID },
   { path: '/tecnologia/orcamento-rfid', component: OrcamentoRFID },
+  { path: '/tecnologia/pdv-varejo', component: PDVVarejo },
   { path: '/tecnologia/etiquetas-preco', component: EtiquetasPreco },
   { path: '/tecnologia/cotacao-compras', component: CotacaoCompras },
   { path: '/tecnologia/clientes-por-empresa', component: ClientesPorEmpresa },
@@ -278,6 +281,7 @@ const protectedRoutes = [
   { path: '/clientes-bluecred', component: ClientesBluecred },
   { path: '/dashboard-bluecred', component: DashboardBluecred },
   { path: '/cobranca-bluecard', component: CobrancaBluecard },
+  { path: '/inadimplencia-bluecred', component: InadimplenciaBluecred },
   { path: '/antecipacao-bluecred', component: AntecipacaoBoletos },
   { path: '/solicitacao-baixa', component: SolicitacaoBaixa },
   { path: '/minhas-solicitacoes-baixa', component: MinhasSolicitacoesBaixa },

@@ -70,7 +70,17 @@ const CLIENTE_LINHA_PROPRIA = {
   label: "Crosby Shopping Recife",
 };
 
-const ORDEM_CANAIS = ["Franquia", "MTM", CLIENTE_LINHA_PROPRIA.label, "Outro"];
+// Canais: FRQ (franquias), MTM (multimarcas), REV (revenda — classificação
+// TOTVS) e BLC (BlueCard — crediário do app, mesma base da tela Inadimplência
+// BlueCred). REV e BLC entraram em 2026-09.
+const ORDEM_CANAIS = [
+  "Franquia",
+  "MTM",
+  "Revenda",
+  "BlueCard",
+  CLIENTE_LINHA_PROPRIA.label,
+  "Outro",
+];
 
 // Define em qual linha da matriz o título entra
 const getCanalLinha = (item) => {
@@ -79,8 +89,63 @@ const getCanalLinha = (item) => {
   }
   if (item.canal === "FRQ") return "Franquia";
   if (item.canal === "MTM") return "MTM";
+  if (item.canal === "REV") return "Revenda";
+  if (item.canal === "BLC") return "BlueCard";
   return "Outro";
 };
+
+// BlueCard só conta filiais próprias (mesma régua da tela Inadimplência
+// BlueCred): código < 5999, fora 98/980 (franquias) e 551 (temporária).
+const BLC_FILIAIS_FORA = new Set([98, 980, 551]);
+const filialBlueCard = (cdEmpresa) => {
+  const n = parseInt(cdEmpresa, 10);
+  return Number.isFinite(n) && n < 5999 && !BLC_FILIAIS_FORA.has(n);
+};
+
+// O TOTVS recusa (HTTP 400) listas de cd_cliente acima de ~1000 códigos —
+// com REVENDA entrando, a consulta vai em lotes, como na tela de Revenda.
+const LOTE_CLIENTES = 500;
+const LOTES_SIMULTANEOS = 5;
+async function buscarARemLotes(paramsBase, codigos) {
+  const lotes = [];
+  for (let i = 0; i < codigos.length; i += LOTE_CLIENTES) {
+    lotes.push(codigos.slice(i, i + LOTE_CLIENTES));
+  }
+  const itens = [];
+  for (let i = 0; i < lotes.length; i += LOTES_SIMULTANEOS) {
+    const grupo = lotes.slice(i, i + LOTES_SIMULTANEOS);
+    const respostas = await Promise.all(
+      grupo.map(async (lote) => {
+        const p = new URLSearchParams(paramsBase);
+        p.set("cd_cliente", lote.join(","));
+        const r = await fetch(`${TotvsURL}accounts-receivable/filter?${p.toString()}`);
+        if (!r.ok) throw new Error(`HTTP ${r.status} no contas a receber`);
+        const j = await r.json();
+        return j.data?.items || [];
+      }),
+    );
+    respostas.forEach((arr) => itens.push(...arr));
+  }
+  return itens;
+}
+
+// Lista de clientes de um canal. SEM timeout: a de revenda vem de um cache
+// persistido no backend (renovado em segundo plano pelo job
+// reseller-cache-warm) e responde na hora; se uma fonte falhar mesmo assim,
+// o canal fica de fora nesta carga e a tela avisa — em vez de travar tudo.
+// Devolve { lista, meta } — meta traz de quando é a lista (revenda).
+async function listarClientesCanal(rota) {
+  const r = await fetch(`${TotvsURL}${rota}`);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const j = await r.json();
+  const raw = j.data;
+  const lista = Array.isArray(raw)
+    ? raw
+    : Array.isArray(raw?.data)
+      ? raw.data
+      : (raw?.codes || []).map((code) => ({ code }));
+  return { lista, meta: raw?.meta || null };
+}
 
 const getCarteiraEfetiva = (item) => {
   const portador = (item.nm_portador || "").toUpperCase();
@@ -132,6 +197,10 @@ const DashInadimplencia = memo(() => {
   const [loading, setLoading] = useState(false);
   const [dadosCarregados, setDadosCarregados] = useState(false);
   const [timeline, setTimeline] = useState([]);
+  // Canal cuja lista de clientes não respondeu a tempo nesta carga (ex.: revenda a frio)
+  const [avisoCanais, setAvisoCanais] = useState(null);
+  // De quando é a lista de revenda usada nesta carga (vem do cache persistido)
+  const [infoRevenda, setInfoRevenda] = useState(null);
   const [loadingTimeline, setLoadingTimeline] = useState(false);
   const [portadorExpandido, setPortadorExpandido] = useState(false);
   const [portadorSelecionado, setPortadorSelecionado] = useState(null);
@@ -143,9 +212,7 @@ const DashInadimplencia = memo(() => {
     try {
       const { data, error } = await supabase
         .from("inadimplencia_timeline")
-        .select(
-          "data, valor_total, qtd_titulos, qtd_clientes, valor_multimarcas, valor_franquias, qtd_titulos_multimarcas, qtd_titulos_franquias, qtd_clientes_multimarcas, qtd_clientes_franquias",
-        )
+        .select("*")
         .order("data", { ascending: true });
       if (error) throw error;
       setTimeline(data || []);
@@ -160,22 +227,41 @@ const DashInadimplencia = memo(() => {
     async (valorTotal, qtdTitulos, qtdClientes, extras = {}) => {
       try {
         const hoje = new Date().toISOString().split("T")[0];
-        const { error } = await supabase.from("inadimplencia_timeline").upsert(
-          {
-            data: hoje,
-            valor_total: valorTotal,
-            qtd_titulos: qtdTitulos,
-            qtd_clientes: qtdClientes,
-            valor_multimarcas: extras.valorMultimarcas || 0,
-            valor_franquias: extras.valorFranquias || 0,
-            qtd_titulos_multimarcas: extras.qtdTitulosMultimarcas || 0,
-            qtd_titulos_franquias: extras.qtdTitulosFranquias || 0,
-            qtd_clientes_multimarcas: extras.qtdClientesMultimarcas || 0,
-            qtd_clientes_franquias: extras.qtdClientesFranquias || 0,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "data" },
-        );
+        const base = {
+          data: hoje,
+          valor_total: valorTotal,
+          qtd_titulos: qtdTitulos,
+          qtd_clientes: qtdClientes,
+          valor_multimarcas: extras.valorMultimarcas || 0,
+          valor_franquias: extras.valorFranquias || 0,
+          qtd_titulos_multimarcas: extras.qtdTitulosMultimarcas || 0,
+          qtd_titulos_franquias: extras.qtdTitulosFranquias || 0,
+          qtd_clientes_multimarcas: extras.qtdClientesMultimarcas || 0,
+          qtd_clientes_franquias: extras.qtdClientesFranquias || 0,
+          updated_at: new Date().toISOString(),
+        };
+        // Canais novos (REVENDA/BLUECARD). Se a migration
+        // inadimplencia_timeline_canais_revenda_bluecard.sql ainda não rodou,
+        // o Supabase recusa a coluna — cai para o formato antigo e avisa.
+        const novos = {
+          valor_revenda: extras.valorRevenda || 0,
+          qtd_titulos_revenda: extras.qtdTitulosRevenda || 0,
+          qtd_clientes_revenda: extras.qtdClientesRevenda || 0,
+          valor_bluecard: extras.valorBluecard || 0,
+          qtd_titulos_bluecard: extras.qtdTitulosBluecard || 0,
+          qtd_clientes_bluecard: extras.qtdClientesBluecard || 0,
+        };
+        let { error } = await supabase
+          .from("inadimplencia_timeline")
+          .upsert({ ...base, ...novos }, { onConflict: "data" });
+        if (error && /column|schema cache/i.test(String(error.message))) {
+          console.warn(
+            "Timeline: colunas de Revenda/BlueCard ainda nao existem - rode a migration inadimplencia_timeline_canais_revenda_bluecard.sql. Salvando sem elas.",
+          );
+          ({ error } = await supabase
+            .from("inadimplencia_timeline")
+            .upsert(base, { onConflict: "data" }));
+        }
         if (error) throw error;
         console.log("✅ Timeline salva para", hoje);
         await carregarTimeline();
@@ -196,70 +282,84 @@ const DashInadimplencia = memo(() => {
       // ============================================================
       // PASSO 1: Buscar clientes MULTIMARCAS e FRANQUIAS em paralelo
       // ============================================================
-      console.log("🔍 Buscando clientes multimarcas e franquias...");
-      const [respMultimarcas, respFranquias] = await Promise.all([
-        fetch(`${TotvsURL}multibrand-clients`),
-        fetch(`${TotvsURL}franchise-clients`),
-      ]);
+      console.log("Buscando clientes MTM, franquias, revenda e BlueCard...");
+      // Ordem = precedência quando o mesmo cliente aparece em dois canais:
+      // o primeiro que marcar fica (FRQ > MTM > REV > BLC).
+      const fontes = [
+        { canal: "FRQ", rota: "franchise-clients", nome: "Franquias" },
+        { canal: "MTM", rota: "multibrand-clients", nome: "Multimarcas" },
+        { canal: "REV", rota: "reseller-clients", nome: "Revenda" },
+        { canal: "BLC", rota: "bluecred/clientes", nome: "BlueCard" },
+      ];
+      const resultados = await Promise.allSettled(
+        fontes.map((fo) => listarClientesCanal(fo.rota)),
+      );
 
       let clientesMap = {};
-
-      if (respMultimarcas.ok) {
-        const resultMtm = await respMultimarcas.json();
-        const multimarcas = resultMtm.data || [];
-        multimarcas.forEach((m) => {
-          clientesMap[String(m.code)] = { ...m, canal: "MTM" };
+      const canaisFora = [];
+      resultados.forEach((r, idx) => {
+        const fo = fontes[idx];
+        if (r.status !== "fulfilled") {
+          console.warn(`Canal ${fo.nome} indisponivel nesta carga: ${r.reason?.message}`);
+          canaisFora.push(fo.nome);
+          return;
+        }
+        // bluecred/clientes devolve { codes: [...] }; as outras, lista de clientes
+        const lista = r.value.lista;
+        if (fo.canal === "REV" && r.value.meta?.atualizado_em) {
+          const dt = new Date(r.value.meta.atualizado_em).toLocaleString("pt-BR");
+          setInfoRevenda(
+            `Revenda: lista de ${dt} (${r.value.meta.total} clientes${r.value.meta.origem === "supabase" ? ", do cache" : ""}). Ela é renovada em segundo plano; atualize para ver a versão mais nova.`,
+          );
+        }
+        let novos = 0;
+        lista.forEach((c) => {
+          const key = String(c.code);
+          if (!clientesMap[key]) {
+            clientesMap[key] = { ...c, canal: fo.canal };
+            novos++;
+          }
         });
-        console.log(`📋 ${multimarcas.length} clientes multimarcas`);
-      }
-
-      if (respFranquias.ok) {
-        const resultFrq = await respFranquias.json();
-        const franquias = resultFrq.data || [];
-        franquias.forEach((f) => {
-          clientesMap[String(f.code)] = { ...f, canal: "FRQ" };
-        });
-        console.log(`📋 ${franquias.length} clientes franquias`);
-      }
+        console.log(`${fo.nome}: ${lista.length} clientes (${novos} novos no mapa)`);
+      });
+      setAvisoCanais(
+        canaisFora.length
+          ? `Canal ${canaisFora.join(" e ")} indisponível nesta carga (a lista de clientes falhou). Atualize para tentar de novo.`
+          : null,
+      );
 
       const todosCodigosCanais = Object.keys(clientesMap);
       if (todosCodigosCanais.length === 0) {
-        console.warn("⚠️ Nenhum cliente multimarcas/franquia encontrado.");
+        console.warn("Nenhum cliente de canal encontrado.");
         setDados([]);
         setDadosCarregados(true);
         return;
       }
-
-      const codigosParam = todosCodigosCanais.join(",");
-      console.log(
-        `📋 Total: ${todosCodigosCanais.length} clientes (MTM + FRQ)`,
-      );
+      console.log(`Total: ${todosCodigosCanais.length} clientes (FRQ + MTM + REV + BLC)`);
 
       // ============================================================
       // PASSO 2: Buscar contas a receber vencidas APENAS desses clientes
       // ============================================================
-      const params = new URLSearchParams({
-        dt_inicio: dataIni,
-        dt_fim: dataFim,
-        modo: "vencimento",
-        situacao: "1",
-        status: "Vencido",
-        cd_cliente: codigosParam,
-      });
-
-      console.log("🔍 Buscando inadimplentes (MTM + FRQ) via TOTVS...");
-      const response = await fetch(
-        `${TotvsURL}accounts-receivable/filter?${params.toString()}`,
+      console.log("Buscando inadimplentes (todos os canais) via TOTVS, em lotes...");
+      const items = await buscarARemLotes(
+        {
+          dt_inicio: dataIni,
+          dt_fim: dataFim,
+          modo: "vencimento",
+          situacao: "1",
+          status: "Vencido",
+        },
+        todosCodigosCanais,
       );
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-      const result = await response.json();
-      const items = result.data?.items || [];
 
       // Filtrar apenas tp_documento = 1 (FATURA)
-      const faturasFiltradas = items.filter(
-        (item) => item.tp_documento === 1 || item.tp_documento === "1",
-      );
+      const faturasFiltradas = items.filter((item) => {
+        if (!(item.tp_documento === 1 || item.tp_documento === "1")) return false;
+        // BlueCard: só filiais próprias (igual à tela Inadimplência BlueCred)
+        const canalItem = clientesMap[String(item.cd_cliente).trim()]?.canal;
+        if (canalItem === "BLC" && !filialBlueCard(item.cd_empresa)) return false;
+        return true;
+      });
       console.log(
         `📊 Faturas vencidas: ${items.length}, após filtro FATURA: ${faturasFiltradas.length}`,
       );
@@ -344,6 +444,8 @@ const DashInadimplencia = memo(() => {
         };
         const mtm = calcCanal("MTM");
         const frq = calcCanal("FRQ");
+        const rev = calcCanal("REV");
+        const blc = calcCanal("BLC");
         const totalInadimplencia = dadosEnriquecidos
           .filter((i) => !isTituloPago(i))
           .reduce(
@@ -366,6 +468,12 @@ const DashInadimplencia = memo(() => {
             qtdTitulosFranquias: frq.titulos,
             qtdClientesMultimarcas: mtm.clientes,
             qtdClientesFranquias: frq.clientes,
+            valorRevenda: rev.valor,
+            qtdTitulosRevenda: rev.titulos,
+            qtdClientesRevenda: rev.clientes,
+            valorBluecard: blc.valor,
+            qtdTitulosBluecard: blc.titulos,
+            qtdClientesBluecard: blc.clientes,
           },
         );
       }
@@ -719,11 +827,13 @@ const DashInadimplencia = memo(() => {
 
   const chartTimelineCanal = useMemo(() => {
     if (!timeline.length) return null;
-    // Filtrar apenas entradas com dados de canal (valor_multimarcas ou valor_franquias > 0)
+    // Só entradas com algum dado de canal
     const canalData = timeline.filter(
       (t) =>
         (parseFloat(t.valor_multimarcas) || 0) > 0 ||
-        (parseFloat(t.valor_franquias) || 0) > 0,
+        (parseFloat(t.valor_franquias) || 0) > 0 ||
+        (parseFloat(t.valor_revenda) || 0) > 0 ||
+        (parseFloat(t.valor_bluecard) || 0) > 0,
     );
     if (!canalData.length) return null;
     return {
@@ -756,6 +866,32 @@ const DashInadimplencia = memo(() => {
           tension: 0.3,
           pointRadius: 4,
           pointBackgroundColor: "#10b981",
+          pointBorderColor: "#fff",
+          pointBorderWidth: 2,
+          pointHoverRadius: 7,
+        },
+        {
+          label: "Revenda",
+          data: canalData.map((t) => parseFloat(t.valor_revenda) || 0),
+          borderColor: "#f59e0b",
+          backgroundColor: "rgba(245, 158, 11, 0.1)",
+          fill: true,
+          tension: 0.3,
+          pointRadius: 4,
+          pointBackgroundColor: "#f59e0b",
+          pointBorderColor: "#fff",
+          pointBorderWidth: 2,
+          pointHoverRadius: 7,
+        },
+        {
+          label: "BlueCard",
+          data: canalData.map((t) => parseFloat(t.valor_bluecard) || 0),
+          borderColor: "#8b5cf6",
+          backgroundColor: "rgba(139, 92, 246, 0.1)",
+          fill: true,
+          tension: 0.3,
+          pointRadius: 4,
+          pointBackgroundColor: "#8b5cf6",
           pointBorderColor: "#fff",
           pointBorderWidth: 2,
           pointHoverRadius: 7,
@@ -1105,6 +1241,12 @@ const DashInadimplencia = memo(() => {
       const wsFRQ = XLSX.utils.json_to_sheet(exportFRQ);
       wsFRQ["!cols"] = colWidths;
       XLSX.utils.book_append_sheet(wb, wsFRQ, "Franquia");
+    for (const canalExtra of ["Revenda", "BlueCard"]) {
+      const linhasCanal = dadosExport.filter((r) => r.Canal === canalExtra);
+      if (linhasCanal.length) {
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linhasCanal), canalExtra);
+      }
+    }
     }
     const buf = XLSX.write(wb, { bookType: "xlsx", type: "array" });
     saveAs(
@@ -1124,6 +1266,16 @@ const DashInadimplencia = memo(() => {
         icon={TrendDown}
         iconColor="text-red-600"
       />
+      {avisoCanais && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+          {avisoCanais}
+        </div>
+      )}
+      {infoRevenda && (
+        <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-2 text-xs text-gray-600">
+          {infoRevenda}
+        </div>
+      )}
 
       {/* Botão de atualizar + Export */}
       <div className="flex gap-2 mb-4">

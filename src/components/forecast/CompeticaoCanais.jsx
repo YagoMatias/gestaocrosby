@@ -201,10 +201,11 @@ const montarCanais = (payload, detFranquias, nomeFilial, apenas = null) => {
   return out;
 };
 
-// ─── hook de dados: mês corrente + semana corrente, refresh 30min ────────────
+// ─── hook de dados: mês de referência + semana, refresh 30min ───────────────
 // canal = null → todos (seção do Painel); canal informado → só ele:
 // pula o detalhe de franquias e o lookup de nomes de loja quando não precisa.
-export function useCompeticaoCanais(canal = null) {
+// mesRef ('YYYY-MM') → mês a puxar; sem ele, o mês corrente.
+export function useCompeticaoCanais(canal = null, mesRef = null) {
   const apiClient = useApiClient();
   const [dados, setDados] = useState(null); // { mes, semana }
   const [periodo, setPeriodo] = useState(null); // { mes:{ini,fim}, semana:{s,datemin,datemax} }
@@ -252,9 +253,12 @@ export function useCompeticaoCanais(canal = null) {
     try {
       const api = apiRef.current;
       const hoje = hojeLocal();
-      const mesIni = `${hoje.slice(0, 7)}-01`;
-      const [y, m] = hoje.slice(0, 7).split('-').map(Number);
-      const mesFim = `${hoje.slice(0, 7)}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
+      const mes = /^\d{4}-\d{2}$/.test(String(mesRef || ''))
+        ? mesRef
+        : hoje.slice(0, 7);
+      const mesIni = `${mes}-01`;
+      const [y, m] = mes.split('-').map(Number);
+      const mesFim = `${mes}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
 
       // Semana corrente: respeita a régua ajustada no New Forecast, se houver
       let semanas = blocosSemana(mesIni, mesFim);
@@ -266,9 +270,11 @@ export function useCompeticaoCanais(canal = null) {
       } catch (_) {
         /* régua padrão */
       }
+      // mês corrente → semana de hoje; mês passado → última semana do mês
       const semana =
         semanas.find((w) => hoje >= w.datemin && hoje <= w.datemax) ||
         semanas[semanas.length - 1];
+      const ehMesCorrente = mes === hoje.slice(0, 7);
 
       const buscar = (datemin, datemax) =>
         api.totvs.salePanelFaturamentoVendedor({
@@ -302,7 +308,7 @@ export function useCompeticaoCanais(canal = null) {
         mes: montarCanais(mesR?.data ?? mesR, detMes, nomeFilial, canal),
         semana: montarCanais(semR?.data ?? semR, detSem, nomeFilial, canal),
       });
-      setPeriodo({ mes: { ini: mesIni, fim: mesFim }, semana });
+      setPeriodo({ mes: { ini: mesIni, fim: mesFim }, semana, ehMesCorrente });
       setAtualizadoEm(new Date());
 
       // Quebra semanal (não bloqueia o placar principal).
@@ -353,14 +359,18 @@ export function useCompeticaoCanais(canal = null) {
       if (s === seq.current) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [branchNames, canal]);
+  }, [branchNames, canal, mesRef]);
 
-  // primeira carga + refresh a cada 30 minutos
+  // primeira carga + refresh a cada 30 minutos (só no mês corrente: mês
+  // fechado não muda mais, não faz sentido ficar repuxando)
   useEffect(() => {
     carregar();
+    const mesAtual =
+      !mesRef || mesRef === hojeLocal().slice(0, 7);
+    if (!mesAtual) return undefined;
     const t = setInterval(carregar, 30 * 60 * 1000);
     return () => clearInterval(t);
-  }, [carregar]);
+  }, [carregar, mesRef]);
 
   return {
     dados,
