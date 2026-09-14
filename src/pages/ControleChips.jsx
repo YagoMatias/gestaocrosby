@@ -586,6 +586,7 @@ export default function ControleChips() {
       Status: statusInfo(c.status).label || c.status || '',
       'Tem API': c.tem_api ? 'Sim' : 'Não',
       'Tem WhatsApp': c.tem_whatsapp ? 'Sim' : 'Não',
+      'Nome no WhatsApp': c.whatsapp_nome || '',
       'WhatsApp verificado em': c.whatsapp_verificado_em
         ? new Date(c.whatsapp_verificado_em).toLocaleString('pt-BR')
         : '',
@@ -784,6 +785,7 @@ export default function ControleChips() {
               </span>
               <span className="text-gray-500">
                 {resultadoVerif.atualizados} atualizados · {resultadoVerif.total} checados
+                {resultadoVerif.com_nome > 0 && ` · ${resultadoVerif.com_nome} com nome`}
                 {resultadoVerif.erros > 0 && ` · ${resultadoVerif.erros} erro(s)`}
               </span>
             </div>
@@ -884,6 +886,16 @@ export default function ControleChips() {
                           <div className="text-[11px] text-gray-500 truncate">
                             {c.responsavel || <span className="italic text-gray-400">Sem responsável</span>}
                           </div>
+                          {c.whatsapp_nome && (
+                            <div className="flex items-center gap-1 text-[10px] text-emerald-700 truncate mt-0.5" title={`WhatsApp: ${c.whatsapp_nome}`}>
+                              {c.whatsapp_foto ? (
+                                <img src={c.whatsapp_foto} alt="" className="w-4 h-4 rounded-full object-cover flex-shrink-0" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                              ) : (
+                                <WhatsappLogo size={11} weight="fill" className="flex-shrink-0" />
+                              )}
+                              <span className="truncate">{c.whatsapp_nome}</span>
+                            </div>
+                          )}
                         </div>
                         <button
                           type="button"
@@ -948,6 +960,16 @@ export default function ControleChips() {
                           <div className="text-[11px] text-gray-500 truncate" title={c.responsavel}>
                             {c.responsavel || <span className="italic text-gray-400">—</span>}
                           </div>
+                          {c.whatsapp_nome && (
+                            <div className="flex items-center gap-1 text-[10px] text-emerald-700 truncate mt-0.5" title={`WhatsApp: ${c.whatsapp_nome}`}>
+                              {c.whatsapp_foto ? (
+                                <img src={c.whatsapp_foto} alt="" className="w-3.5 h-3.5 rounded-full object-cover flex-shrink-0" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                              ) : (
+                                <WhatsappLogo size={10} weight="fill" className="flex-shrink-0" />
+                              )}
+                              <span className="truncate">{c.whatsapp_nome}</span>
+                            </div>
+                          )}
                         </div>
                       </div>
                       {/* Setor / Local */}
