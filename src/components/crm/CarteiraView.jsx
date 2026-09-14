@@ -314,6 +314,37 @@ function VendedorCard({
         </div>
       </div>
 
+      {/* Barra de saúde da carteira (proporção ativo/a inativar/inativo) */}
+      {(() => {
+        const tot = stats.ativos + stats.aInativar + stats.inativos;
+        if (tot === 0) return null;
+        return (
+          <div
+            className="flex h-1.5 rounded-full overflow-hidden mb-3 bg-gray-100"
+            title={`${stats.ativos} ativos · ${stats.aInativar} a inativar · ${stats.inativos} inativos`}
+          >
+            {stats.ativos > 0 && (
+              <div
+                className="bg-emerald-500"
+                style={{ width: `${(stats.ativos / tot) * 100}%` }}
+              />
+            )}
+            {stats.aInativar > 0 && (
+              <div
+                className="bg-yellow-400"
+                style={{ width: `${(stats.aInativar / tot) * 100}%` }}
+              />
+            )}
+            {stats.inativos > 0 && (
+              <div
+                className="bg-rose-500"
+                style={{ width: `${(stats.inativos / tot) * 100}%` }}
+              />
+            )}
+          </div>
+        );
+      })()}
+
       {/* Oportunidades + Primeira compra */}
       {(oportunidades > 0 || primeiraCompra > 0) && (
         <div className="flex gap-2 mb-3 flex-wrap">
@@ -392,6 +423,37 @@ function LojaCard({ loja, clientes, vendedores, oportunidades, color, onClick })
           <div className="text-[10px] text-gray-500 uppercase">Inativos</div>
         </div>
       </div>
+
+      {/* Barra de saúde da carteira (proporção ativo/a inativar/inativo) */}
+      {(() => {
+        const tot = stats.ativos + stats.aInativar + stats.inativos;
+        if (tot === 0) return null;
+        return (
+          <div
+            className="flex h-1.5 rounded-full overflow-hidden mb-3 bg-gray-100"
+            title={`${stats.ativos} ativos · ${stats.aInativar} a inativar · ${stats.inativos} inativos`}
+          >
+            {stats.ativos > 0 && (
+              <div
+                className="bg-emerald-500"
+                style={{ width: `${(stats.ativos / tot) * 100}%` }}
+              />
+            )}
+            {stats.aInativar > 0 && (
+              <div
+                className="bg-yellow-400"
+                style={{ width: `${(stats.aInativar / tot) * 100}%` }}
+              />
+            )}
+            {stats.inativos > 0 && (
+              <div
+                className="bg-rose-500"
+                style={{ width: `${(stats.inativos / tot) * 100}%` }}
+              />
+            )}
+          </div>
+        );
+      })()}
 
       <div className="flex gap-2 mb-3 flex-wrap">
         <span className="flex items-center gap-1 text-[10px] font-bold bg-gray-50 text-gray-600 border border-gray-200 px-2 py-0.5 rounded-full">

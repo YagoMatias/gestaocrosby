@@ -385,9 +385,43 @@ const painelVendasItems = [
   },
   {
     name: 'CRM de Vendas',
-    href: '/crm-vendas',
+    href: '#',
     icon: Storefront,
     color: 'text-emerald-600',
+    children: [
+      {
+        name: 'Multimarcas',
+        href: '/crm-vendas?canal=multimarcas',
+        icon: Storefront,
+        color: 'text-emerald-600',
+      },
+      {
+        name: 'Varejo',
+        href: '#',
+        icon: ShoppingCart,
+        color: 'text-blue-600',
+        children: [
+          {
+            name: 'CRM',
+            href: '/crm-vendas?canal=varejo',
+            icon: ShoppingCart,
+            color: 'text-blue-600',
+          },
+          {
+            name: 'Reunião',
+            href: '/crm-vendas?canal=varejo&view=reuniao',
+            icon: Megaphone,
+            color: 'text-indigo-600',
+          },
+        ],
+      },
+      {
+        name: 'Revenda',
+        href: '/crm-vendas?canal=revenda',
+        icon: Package,
+        color: 'text-orange-600',
+      },
+    ],
   },
   {
     name: 'Forecast',
@@ -481,6 +515,38 @@ const varejo = [
     href: '/top-clientes',
     icon: Trophy,
     color: 'text-amber-600',
+  },
+  {
+    name: 'Relacionamento',
+    href: '#',
+    icon: Users,
+    color: 'text-pink-600',
+    children: [
+      {
+        name: 'Aniversariantes',
+        href: '/aniversariantes-varejo',
+        icon: Cake,
+        color: 'text-pink-600',
+      },
+      {
+        name: 'Pós-Vendas',
+        href: '/pos-vendas-varejo',
+        icon: Headset,
+        color: 'text-amber-600',
+      },
+      {
+        name: 'Clientes com Cashback',
+        href: '/clientes-cashback-varejo',
+        icon: Coins,
+        color: 'text-amber-500',
+      },
+      {
+        name: 'Clientes Inativos',
+        href: '/clientes-inativos-varejo',
+        icon: ArrowCounterClockwise,
+        color: 'text-rose-600',
+      },
+    ],
   },
   {
     name: 'BlueCred',
@@ -1123,8 +1189,11 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
     (href) => {
       if (!user) return false;
       if (user.allowedPages === '*') return true;
+      // Ignora a query string: a permissão é da página (ex.: /crm-vendas),
+      // não muda por causa do ?canal=... usado pelas abas de canal.
+      const path = String(href).split('?')[0];
       if (user.allowedPages && Array.isArray(user.allowedPages)) {
-        return user.allowedPages.includes(href);
+        return user.allowedPages.includes(path);
       }
       return false;
     },

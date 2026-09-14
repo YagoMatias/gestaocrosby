@@ -759,7 +759,8 @@ export default function PainelGeral() {
             </button>
           )}
 
-          <SyncComprasButton onSyncComplete={() => setReloadAt(Date.now())} />
+          {/* Botão "Sincronizar Compras" REMOVIDO: escrevia "comprou" no ClickUp,
+              que não é mais usado. Cron e transferir-lead já foram desativados. */}
           <button
             onClick={() => setReloadAt(Date.now())}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md border border-gray-300 hover:bg-gray-50 text-gray-700"

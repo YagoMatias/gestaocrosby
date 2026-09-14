@@ -2,8 +2,9 @@
 // Inicialmente: "Competição"
 // Futuro: outras métricas pra reuniões (ranking semanal, top vendedoras, etc)
 import React, { useState } from 'react';
-import { HandFist, TrendUp, Target, ChatCircle, Users, Hourglass, ChartPieSlice, Trophy, Megaphone } from 'phosphor-react';
+import { HandFist, TrendUp, Target, ChatCircle, Users, Hourglass, ChartPieSlice, Trophy, Megaphone, Barbell } from 'phosphor-react';
 import VarejoCompeticao from './VarejoCompeticao';
+import VarejoX1 from './VarejoX1';
 import VarejoCrescimento from './VarejoCrescimento';
 import VarejoMetas from './VarejoMetas';
 import VarejoConversao from './VarejoConversao';
@@ -16,6 +17,12 @@ const SUBABAS = [
     label: 'Competição',
     icon: HandFist,
     color: 'text-red-600',
+  },
+  {
+    id: 'x1',
+    label: 'X1',
+    icon: Barbell,
+    color: 'text-rose-600',
   },
   {
     id: 'crescimento',
@@ -80,6 +87,7 @@ export default function VarejoReuniao({ isAdmin, userLogin }) {
       {subaba === 'competicao' && (
         <VarejoCompeticao isAdmin={isAdmin} userLogin={userLogin} />
       )}
+      {subaba === 'x1' && <VarejoX1 isAdmin={isAdmin} userLogin={userLogin} />}
       {subaba === 'crescimento' && <VarejoCrescimento />}
       {subaba === 'metas' && <VarejoMetas />}
       {subaba === 'conversao' && <VarejoConversao />}

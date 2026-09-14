@@ -7,6 +7,7 @@ import React, {
   lazy,
   Suspense,
 } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   ArrowsClockwise,
   Database,
@@ -87,9 +88,45 @@ async function apiGet(endpoint) {
   return json.data ?? json;
 }
 
+// Canais principais do CRM (sub-abas). Multimarcas agrupa os sub-canais
+// inbound (David/Rafael), que são MTM. Varejo e Revenda são diretos.
+const CANAIS_PRINCIPAIS = [
+  { key: 'multimarcas', label: 'Multimarcas', icon: '🏪' },
+  { key: 'varejo', label: 'Varejo', icon: '🛍' },
+  { key: 'revenda', label: 'Revenda', icon: '📦' },
+];
+const SUBCANAIS_MULTIMARCAS = [
+  { key: 'multimarcas', label: 'Geral' },
+  { key: 'inbound_david', label: 'Inbound David' },
+  { key: 'inbound_rafael', label: 'Inbound Rafael' },
+];
+// Deriva o canal principal a partir do módulo atual.
+function canalPrincipalDe(modulo) {
+  if (['inbound_david', 'inbound_rafael', 'multimarcas'].includes(modulo))
+    return 'multimarcas';
+  return modulo; // varejo | revenda
+}
+
 export default function CRMVendas() {
   const [modulo, setModulo] = useState('multimarcas');
   const [tab, setTab] = useState('painel');
+  const canalPrincipal = canalPrincipalDe(modulo);
+  const [searchParams] = useSearchParams();
+  // O canal vem da URL (?canal=varejo) — as abas de canal ficam no sidebar.
+  useEffect(() => {
+    const canal = (searchParams.get('canal') || '').toLowerCase();
+    const view = (searchParams.get('view') || '').toLowerCase();
+    if (['multimarcas', 'varejo', 'revenda'].includes(canal)) {
+      setModulo(canal);
+      // ?view=reuniao (varejo) abre direto a aba Performance, onde vive a Reunião
+      if (canal === 'varejo' && view === 'reuniao') {
+        setTab('performance');
+      } else {
+        setTab((t) => (t === 'painel' ? 'abertura' : t));
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
   const [subTab, setSubTab] = useState('funil');
   const [dataInicio, setDataInicio] = useState('');
   const [dataFim, setDataFim] = useState('');
@@ -631,7 +668,7 @@ export default function CRMVendas() {
       <PageTitle
         icon={ChartBar}
         title="CRM de Vendas"
-        subtitle="Gestão de leads e carteira • ClickUp + Evolution + TOTVS"
+        subtitle="Gestão de leads e carteira"
       />
 
       {/* ═══ CARD DE CONTROLES ════════════════════════════════════════════ */}
@@ -654,27 +691,38 @@ export default function CRMVendas() {
               </button>
               <div className="w-px h-5 bg-gray-200 mx-2" />
               <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mr-1">
-                Módulo
+                Canal
               </span>
-              {MODULOS.filter((m) =>
-                ['multimarcas', 'inbound_david', 'inbound_rafael', 'revenda', 'varejo'].includes(m.key),
-              ).map((m) => (
-                <button
-                  key={m.key}
-                  onClick={() => {
-                    setModulo(m.key);
-                    // Se tava no painel geral, sai pra aba padrão do módulo
-                    if (tab === 'painel') setTab('abertura');
-                  }}
-                  className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all ${
-                    modulo === m.key && tab !== 'painel'
-                      ? 'bg-gradient-to-r from-[#000638] to-[#1a1f5a] text-white shadow-md shadow-[#000638]/30'
-                      : 'text-gray-600 hover:text-[#000638] hover:bg-[#000638]/5 border border-gray-200'
-                  }`}
-                >
-                  {m.label}
-                </button>
-              ))}
+              {/* Canal ativo (a troca de canal é feita pelas abas do sidebar) */}
+              {tab !== 'painel' &&
+                (() => {
+                  const info = CANAIS_PRINCIPAIS.find((c) => c.key === canalPrincipal);
+                  return (
+                    <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-gradient-to-r from-[#000638] to-[#1a1f5a] text-white shadow-md shadow-[#000638]/30">
+                      <span>{info?.icon}</span>
+                      {info?.label || canalPrincipal}
+                    </span>
+                  );
+                })()}
+              {/* Sub-canais de Multimarcas (Geral / Inbound David / Rafael) */}
+              {canalPrincipal === 'multimarcas' && tab !== 'painel' && (
+                <>
+                  <div className="w-px h-5 bg-gray-200 mx-1" />
+                  {SUBCANAIS_MULTIMARCAS.map((s) => (
+                    <button
+                      key={s.key}
+                      onClick={() => setModulo(s.key)}
+                      className={`px-3 py-1 rounded-full text-[11px] font-semibold transition-all ${
+                        modulo === s.key
+                          ? 'bg-indigo-600 text-white shadow-sm'
+                          : 'text-gray-500 hover:text-indigo-700 hover:bg-indigo-50 border border-gray-200'
+                      }`}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </>
+              )}
             </div>
 
             {/* Sync indicators (auto-refresh em background, sem botão manual) */}

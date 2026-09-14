@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useCallback, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Trophy,
   TrendUp,
@@ -86,42 +87,56 @@ const KPI_COLOR_TOKENS = {
     iconText: 'text-emerald-600',
     value: 'text-emerald-600',
     accent: 'from-emerald-400',
+    bar: 'bg-emerald-500',
+    tint: 'from-emerald-50/70',
   },
   blue: {
     iconBg: 'bg-blue-100',
     iconText: 'text-blue-600',
     value: 'text-blue-600',
     accent: 'from-blue-400',
+    bar: 'bg-blue-500',
+    tint: 'from-blue-50/70',
   },
   purple: {
     iconBg: 'bg-violet-100',
     iconText: 'text-violet-600',
     value: 'text-violet-600',
     accent: 'from-violet-400',
+    bar: 'bg-violet-500',
+    tint: 'from-violet-50/70',
   },
   indigo: {
     iconBg: 'bg-indigo-100',
     iconText: 'text-indigo-600',
     value: 'text-indigo-600',
     accent: 'from-indigo-400',
+    bar: 'bg-indigo-500',
+    tint: 'from-indigo-50/70',
   },
   amber: {
     iconBg: 'bg-amber-100',
     iconText: 'text-amber-600',
     value: 'text-amber-700',
     accent: 'from-amber-400',
+    bar: 'bg-amber-500',
+    tint: 'from-amber-50/70',
   },
   rose: {
     iconBg: 'bg-rose-100',
     iconText: 'text-rose-600',
     value: 'text-rose-600',
     accent: 'from-rose-400',
+    bar: 'bg-rose-500',
+    tint: 'from-rose-50/70',
   },
   sky: {
     iconBg: 'bg-sky-100',
     iconText: 'text-sky-600',
     value: 'text-sky-600',
     accent: 'from-sky-400',
+    bar: 'bg-sky-500',
+    tint: 'from-sky-50/70',
   },
 };
 
@@ -139,7 +154,9 @@ function KpiCard({
   const tokens = (color && KPI_COLOR_TOKENS[color]) || null;
   return (
     <div
-      className={`bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-1 relative overflow-hidden ${
+      className={`border border-gray-200 rounded-xl p-4 pl-5 flex flex-col gap-1 relative overflow-hidden ${
+        tokens ? `bg-gradient-to-b ${tokens.tint} to-white` : 'bg-white'
+      } ${
         clickable
           ? 'cursor-pointer hover:border-[#000638]/40 hover:shadow-md hover:-translate-y-0.5 transition'
           : ''
@@ -151,7 +168,7 @@ function KpiCard({
       {/* Faixa colorida lateral */}
       {tokens && (
         <span
-          className={`absolute inset-y-0 left-0 w-1 bg-gradient-to-b ${tokens.accent} to-transparent`}
+          className={`absolute inset-y-0 left-0 w-1.5 ${tokens.bar}`}
         />
       )}
       {loading && (
@@ -191,7 +208,7 @@ function KpiCard({
         </div>
       ) : (
         <span
-          className={`text-xl font-bold tabular-nums ${
+          className={`text-2xl font-bold tabular-nums leading-tight ${
             tokens ? tokens.value : 'text-[#000638]'
           }`}
         >
@@ -1471,6 +1488,23 @@ function SellersTotalsTable({
     };
   }, [filtrados]);
 
+  // Maior faturamento do grupo — usado na micro-barra de comparação.
+  const maxFat = useMemo(
+    () =>
+      filtrados.reduce((m, r) => Math.max(m, Number(r.invoice_value) || 0), 0),
+    [filtrados],
+  );
+
+  // Ranking por faturamento (estável, independe da coluna de ordenação atual).
+  // Usado para as medalhas do top-3 ao lado do nome do vendedor.
+  const fatRank = useMemo(() => {
+    const m = new Map();
+    [...filtrados]
+      .sort((a, b) => (Number(b.invoice_value) || 0) - (Number(a.invoice_value) || 0))
+      .forEach((s, i) => m.set(s.seller_code, i + 1));
+    return m;
+  }, [filtrados]);
+
   const toggleSort = (col) => {
     if (sortCol === col) setSortAsc(!sortAsc);
     else {
@@ -1549,61 +1583,59 @@ function SellersTotalsTable({
         ) : (
           <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
             <table className="w-full text-xs">
-              <thead className="bg-gray-100 sticky top-0 border-b border-gray-200">
-                <tr>
-                  <th className="text-left px-3 py-2 text-gray-500 font-semibold">
-                    #
-                  </th>
+              <thead className="sticky top-0 z-10 bg-gradient-to-r from-[#000638] to-[#1a1f5a] shadow-sm">
+                <tr className="text-[10px] uppercase tracking-wider text-blue-100/80">
+                  <th className="text-left px-3 py-2.5 font-bold w-[44px]">#</th>
                   <th
-                    className="text-left px-3 py-2 text-gray-600 font-semibold cursor-pointer hover:text-[#000638] select-none"
+                    className="text-left px-3 py-2.5 font-bold cursor-pointer hover:text-white select-none transition-colors"
                     onClick={() => toggleSort('seller_name')}
                   >
                     Vendedor <SortIcon col="seller_name" />
                   </th>
                   <th
-                    className="text-left px-3 py-2 text-gray-600 font-semibold cursor-pointer hover:text-[#000638] select-none"
+                    className="text-left px-3 py-2.5 font-bold cursor-pointer hover:text-white select-none transition-colors"
                     onClick={() => toggleSort('branch_name')}
                   >
                     Loja <SortIcon col="branch_name" />
                   </th>
                   <th
-                    className="text-right px-3 py-2 text-[#000638] font-semibold cursor-pointer hover:text-[#000638] select-none bg-[#000638]/[0.04]"
+                    className="text-right px-3 py-2.5 font-bold text-white cursor-pointer hover:text-white select-none bg-white/10"
                     onClick={() => toggleSort('invoice_value')}
                   >
                     Faturamento <SortIcon col="invoice_value" />
                   </th>
                   <th
-                    className="text-right px-3 py-2 text-gray-500 font-semibold cursor-pointer hover:text-[#000638] select-none"
+                    className="text-right px-3 py-2.5 font-bold cursor-pointer hover:text-white select-none transition-colors"
                     onClick={() => toggleSort('invoice_qty')}
                   >
                     Vendas <SortIcon col="invoice_qty" />
                   </th>
                   <th
-                    className="text-right px-3 py-2 text-gray-500 font-semibold cursor-pointer hover:text-[#000638] select-none"
+                    className="text-right px-3 py-2.5 font-bold cursor-pointer hover:text-white select-none transition-colors"
                     onClick={() => toggleSort('itens_qty')}
                   >
                     Peças <SortIcon col="itens_qty" />
                   </th>
                   <th
-                    className="text-right px-3 py-2 text-gray-500 font-semibold cursor-pointer hover:text-[#000638] select-none"
+                    className="text-right px-3 py-2.5 font-bold cursor-pointer hover:text-white select-none transition-colors"
                     onClick={() => toggleSort('tm')}
                   >
                     TM <SortIcon col="tm" />
                   </th>
                   <th
-                    className="text-right px-3 py-2 text-gray-500 font-semibold cursor-pointer hover:text-[#000638] select-none"
+                    className="text-right px-3 py-2.5 font-bold cursor-pointer hover:text-white select-none transition-colors"
                     onClick={() => toggleSort('pa')}
                   >
                     PA <SortIcon col="pa" />
                   </th>
                   <th
-                    className="text-right px-3 py-2 text-gray-500 font-semibold cursor-pointer hover:text-[#000638] select-none"
+                    className="text-right px-3 py-2.5 font-bold cursor-pointer hover:text-white select-none transition-colors"
                     onClick={() => toggleSort('pmpv')}
                   >
                     PMPV <SortIcon col="pmpv" />
                   </th>
                   <th
-                    className="text-right px-3 py-2 text-gray-500 font-semibold cursor-pointer hover:text-[#000638] select-none"
+                    className="text-right px-3 py-2.5 font-bold cursor-pointer hover:text-white select-none transition-colors"
                     onClick={() => toggleSort('pct_meta_mensal')}
                     title={`Meta mensal · ${periodoMensalKey || ''}`}
                   >
@@ -1613,7 +1645,7 @@ function SellersTotalsTable({
                     </span>
                   </th>
                   <th
-                    className="text-right px-3 py-2 text-gray-500 font-semibold cursor-pointer hover:text-[#000638] select-none"
+                    className="text-right px-3 py-2.5 font-bold cursor-pointer hover:text-white select-none transition-colors"
                     onClick={() => toggleSort('pct_meta_semanal')}
                     title={`Meta semanal · ${periodoSemanalKey || ''}`}
                   >
@@ -1623,7 +1655,7 @@ function SellersTotalsTable({
                     </span>
                   </th>
                   <th
-                    className="text-right px-3 py-2 text-gray-500 font-semibold cursor-pointer hover:text-[#000638] select-none"
+                    className="text-right px-3 py-2.5 font-bold cursor-pointer hover:text-white select-none transition-colors"
                     onClick={() => toggleSort('openings')}
                   >
                     <span className="flex items-center justify-end gap-1">
@@ -1632,7 +1664,7 @@ function SellersTotalsTable({
                     </span>
                   </th>
                   <th
-                    className="text-right px-3 py-2 text-gray-500 font-semibold cursor-pointer hover:text-[#000638] select-none"
+                    className="text-right px-3 py-2.5 font-bold cursor-pointer hover:text-white select-none transition-colors"
                     onClick={() => toggleSort('reativacoes')}
                   >
                     <span className="flex items-center justify-end gap-1">
@@ -1640,7 +1672,7 @@ function SellersTotalsTable({
                       <SortIcon col="reativacoes" />
                     </span>
                   </th>
-                  <th className="text-center px-3 py-2 text-gray-500 font-semibold w-[60px]" />
+                  <th className="text-center px-3 py-2.5 font-bold w-[60px]" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -1651,16 +1683,31 @@ function SellersTotalsTable({
                       idx % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'
                     } hover:bg-[#000638]/[0.04]`}
                   >
-                    <td className="px-3 py-2 text-gray-400 font-mono">
+                    <td className="px-3 py-2 text-gray-400 font-mono tabular-nums">
                       {idx + 1}
                     </td>
-                    <td className="px-3 py-2 font-semibold text-gray-800 max-w-[200px] truncate">
-                      {s.seller_name}
-                      {s._inativo && (
-                        <span className="text-gray-400 font-normal text-[10px] ml-1">
-                          (inativo)
-                        </span>
-                      )}
+                    <td className="px-3 py-2 font-semibold text-gray-800 max-w-[220px]">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        {(() => {
+                          const r = fatRank.get(s.seller_code);
+                          const medal =
+                            r === 1 ? '🥇' : r === 2 ? '🥈' : r === 3 ? '🥉' : null;
+                          return medal ? (
+                            <span
+                              className="text-sm leading-none shrink-0"
+                              title={`${r}º em faturamento`}
+                            >
+                              {medal}
+                            </span>
+                          ) : null;
+                        })()}
+                        <span className="truncate">{s.seller_name}</span>
+                        {s._inativo && (
+                          <span className="text-gray-400 font-normal text-[10px] shrink-0">
+                            (inativo)
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-3 py-2 text-gray-700 whitespace-nowrap">
                       {s.branch_name ? (
@@ -1676,8 +1723,20 @@ function SellersTotalsTable({
                         <span className="text-gray-300">—</span>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-right font-bold text-[#000638] bg-[#000638]/[0.025]">
-                      {fmtMoeda(s.invoice_value)}
+                    <td className="px-3 py-2 text-right bg-[#000638]/[0.025]">
+                      <div className="font-bold text-[#000638] tabular-nums">
+                        {fmtMoeda(s.invoice_value)}
+                      </div>
+                      {maxFat > 0 && (Number(s.invoice_value) || 0) > 0 && (
+                        <div className="mt-1 h-1 w-full rounded-full bg-gray-200/70 overflow-hidden">
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-[#000638] to-indigo-500"
+                            style={{
+                              width: `${Math.max(3, ((Number(s.invoice_value) || 0) / maxFat) * 100)}%`,
+                            }}
+                          />
+                        </div>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-right text-gray-700">
                       {fmtNum(s.invoice_qty)}
@@ -2726,6 +2785,15 @@ export default function PerformanceView({
 
   // Toggle de aba dentro do VAREJO: 'geral' (atual) | 'reuniao' (novo)
   const [varejoView, setVarejoView] = useState('geral');
+  // Deep-link do sidebar: ?view=reuniao (ou fila) no varejo abre direto a aba;
+  // sem ?view volta pra "geral". Só reage à URL (toggles in-page não a mudam).
+  const [searchParams] = useSearchParams();
+  useEffect(() => {
+    if (modulo !== 'varejo') return;
+    const v = (searchParams.get('view') || '').toLowerCase();
+    setVarejoView(v === 'reuniao' || v === 'fila' ? v : 'geral');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, modulo]);
 
   // ─── Toggle de aba dentro do MULTIMARCAS: 'time' (atual) | 'global' (novo) ──
   // 'time' = apenas vendedores cadastrados em multimarcas (exclui inbound).

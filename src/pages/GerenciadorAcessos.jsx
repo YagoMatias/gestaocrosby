@@ -284,6 +284,22 @@ const AVAILABLE_PAGES = [
   { path: '/promocoes', name: 'Promoções', category: 'Varejo' },
   { path: '/credev-varejo', name: 'CREDEV Varejo', category: 'Varejo' },
   {
+    path: '/aniversariantes-varejo',
+    name: 'Aniversariantes (Varejo)',
+    category: 'Varejo',
+  },
+  { path: '/pos-vendas-varejo', name: 'Pós-Vendas (Varejo)', category: 'Varejo' },
+  {
+    path: '/clientes-cashback-varejo',
+    name: 'Clientes com Cashback (Varejo)',
+    category: 'Varejo',
+  },
+  {
+    path: '/clientes-inativos-varejo',
+    name: 'Clientes Inativos (Varejo)',
+    category: 'Varejo',
+  },
+  {
     path: '/dashboard-bluecred',
     name: 'BlueCred — Dashboard',
     category: 'Varejo — BlueCred',

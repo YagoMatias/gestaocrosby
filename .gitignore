@@ -31,3 +31,7 @@ backend/.cache/
 # Certificados digitais A1 (NUNCA commitar)
 backend/certs/
 *.pfx
+
+# Backend copiado do repo real (CrosbyTech/apigestaocrosby) — nao versionar.
+# O deploy do backend e o proprio apigestaocrosby (Render); aqui e so referencia local.
+backend/

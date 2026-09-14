@@ -146,7 +146,7 @@ function VendedorCard({
   }, [leads, phoneStatus, uazapiContacts]);
 
   return (
-    <div className="bg-white border border-gray-100 rounded-lg overflow-hidden">
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden hover:shadow-md hover:border-[#000638]/20 transition-all">
       <button
         onClick={handleToggle}
         className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-gray-50 transition-colors text-left"
@@ -191,6 +191,28 @@ function VendedorCard({
               Buscando último contato no UAzapi… (pode levar alguns segundos)
             </div>
           )}
+          {/* Resumo de urgência — leads sem contato / parados há +30 dias */}
+          {(() => {
+            const semContato = leadsEnriquecidos.filter((l) => !l._lastTs).length;
+            const criticos = leadsEnriquecidos.filter(
+              (l) => l._diasSemContato != null && l._diasSemContato > 30,
+            ).length;
+            if (semContato === 0 && criticos === 0) return null;
+            return (
+              <div className="px-3 py-2 bg-gray-50 border-b border-gray-100 flex items-center gap-2 flex-wrap">
+                {semContato > 0 && (
+                  <span className="inline-flex items-center gap-1 bg-gray-200 text-gray-700 text-[11px] font-bold px-2 py-0.5 rounded-full">
+                    {semContato} sem contato
+                  </span>
+                )}
+                {criticos > 0 && (
+                  <span className="inline-flex items-center gap-1 bg-rose-100 text-rose-700 text-[11px] font-bold px-2 py-0.5 rounded-full">
+                    {criticos} há +30 dias
+                  </span>
+                )}
+              </div>
+            );
+          })()}
           <div className="max-h-[420px] overflow-y-auto">
             <table className="w-full text-xs">
               <thead className="bg-gray-50 sticky top-0">
@@ -407,14 +429,38 @@ export default function UltimoContatoView({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-baseline justify-between mb-1">
-        <h2 className="text-sm font-medium text-gray-900">
-          Último Contato por Vendedor
-        </h2>
-        <p className="text-[11px] text-gray-500">
-          Módulo <span className="font-medium uppercase">{modulo || '—'}</span>{' '}
-          · {grupos.length} vendedores · {grupos.reduce((s, g) => s + g.leads.length, 0)} leads
-        </p>
+      <div className="bg-[#000638] text-white rounded-lg p-4">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div className="flex items-center gap-2">
+            <Clock size={18} weight="duotone" />
+            <div>
+              <div className="text-sm font-bold">Último Contato por Vendedor</div>
+              <p className="text-[11px] text-blue-100 mt-0.5">
+                Módulo{' '}
+                <span className="font-semibold uppercase">{modulo || '—'}</span> ·
+                leads do CRM × última conversa no WhatsApp
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <div className="text-[10px] text-blue-200 uppercase font-medium">
+                Vendedores
+              </div>
+              <div className="text-2xl font-bold tabular-nums">
+                {grupos.length}
+              </div>
+            </div>
+            <div className="text-right border-l border-blue-700 pl-4">
+              <div className="text-[10px] text-blue-200 uppercase font-medium">
+                Leads
+              </div>
+              <div className="text-2xl font-bold tabular-nums">
+                {grupos.reduce((s, g) => s + g.leads.length, 0)}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

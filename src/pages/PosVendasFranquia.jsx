@@ -53,7 +53,7 @@ const linkWhatsapp = (telefone) => {
   return `https://wa.me/${num}`;
 };
 
-const PosVendasFranquia = () => {
+const PosVendasFranquia = ({ lojasFixas = null } = {}) => {
   const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
   const [data, setData] = useState(seteDiasAtras());
   const [lista, setLista] = useState([]);
@@ -178,6 +178,8 @@ const PosVendasFranquia = () => {
               <FiltroEmpresa
                 empresasSelecionadas={empresasSelecionadas}
                 onSelectEmpresas={setEmpresasSelecionadas}
+                restrictCodes={lojasFixas}
+                autoSelectAll={!!lojasFixas}
               />
             </div>
 

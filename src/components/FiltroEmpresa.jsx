@@ -6,7 +6,10 @@ const FiltroEmpresa = ({
   empresasSelecionadas = [],
   onSelectEmpresas,
   apenasEmpresa101 = false,
+  restrictCodes = null, // se passado, mostra só essas empresas (por cd_empresa)
+  autoSelectAll = false, // pré-seleciona todas as visíveis uma vez (usado com restrictCodes)
 }) => {
+  const autoSelecionadoRef = useRef(false);
   const { user } = useAuth();
   const [showDropdown, setShowDropdown] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -101,8 +104,30 @@ const FiltroEmpresa = ({
     }
   }, [user?.role, user?.allowedCompanies, todasEmpresasOriginais]);
 
-  // Filtrar empresas baseado no termo de busca
-  const empresasFiltradas = todasEmpresas.filter(
+  // Restrição por códigos (ex: lojas próprias do varejo) — aplica sobre a lista
+  // já visível. E pré-seleciona todas UMA vez quando autoSelectAll está ligado.
+  const restritas = React.useMemo(() => {
+    if (!Array.isArray(restrictCodes) || restrictCodes.length === 0)
+      return todasEmpresas;
+    const set = new Set(restrictCodes.map((c) => String(c)));
+    return todasEmpresas.filter((emp) => set.has(String(emp.cd_empresa)));
+  }, [todasEmpresas, restrictCodes]);
+
+  useEffect(() => {
+    if (
+      autoSelectAll &&
+      !autoSelecionadoRef.current &&
+      restritas.length > 0 &&
+      empresasSelecionadas.length === 0
+    ) {
+      autoSelecionadoRef.current = true;
+      if (onSelectEmpresas) onSelectEmpresas([...restritas]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSelectAll, restritas]);
+
+  // Filtrar empresas baseado no termo de busca (sobre a lista já restrita)
+  const empresasFiltradas = restritas.filter(
     (empresa) =>
       empresa.cd_empresa.toLowerCase().includes(searchTerm.toLowerCase()) ||
       empresa.nm_grupoempresa.toLowerCase().includes(searchTerm.toLowerCase()),
@@ -212,7 +237,7 @@ const FiltroEmpresa = ({
             <button
               type="button"
               onClick={() => {
-                if (onSelectEmpresas) onSelectEmpresas([...todasEmpresas]);
+                if (onSelectEmpresas) onSelectEmpresas([...restritas]);
               }}
               className="text-xs px-2 py-1 bg-[#000638] text-white rounded hover:bg-[#fe0000] transition-colors"
             >

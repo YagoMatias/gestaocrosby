@@ -32,7 +32,10 @@ import {
   ArrowsClockwise,
   Stack,
   Hash,
+  Sparkle,
+  DownloadSimple,
 } from '@phosphor-icons/react';
+import * as XLSX from 'xlsx';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
 import { useAuth } from '../components/AuthContext';
@@ -64,6 +67,24 @@ const SETORES = [
   'Diretoria', 'Loja', 'Logística', 'Outros',
 ];
 
+// Unidades/filiais para o inventário: 12 lojas próprias + CD + BlueHouse Matriz
+const UNIDADES = [
+  'João Pessoa',
+  'Nova Cruz',
+  'Parnamirim',
+  'Canguaretama',
+  'Cidade Jardim',
+  'Guararapes',
+  'Ayrton Senna',
+  'Imperatriz',
+  'Patos',
+  'Midway',
+  'Teresina',
+  'Shopping Recife',
+  'CD Brejinho',
+  'BlueHouse Matriz',
+];
+
 const fmtBRL = (v) =>
   v == null || v === ''
     ? '—'
@@ -83,6 +104,49 @@ function statusInfo(s) {
   return STATUS_OPTS.find((x) => x.value === s) || STATUS_OPTS[0];
 }
 
+// Mapeia um item para linha de planilha (reutilizado no export geral e por filial)
+function itemParaLinhaExcel(it) {
+  return {
+    Código: it.codigo_patrimonio || '',
+    Tipo: tipoInfo(it.tipo).label || it.tipo || '',
+    Descrição: it.descricao || '',
+    Marca: it.marca || '',
+    Modelo: it.modelo || '',
+    'Nº de Série': it.numero_serie || '',
+    Setor: it.setor || '',
+    'Unidade/Filial': it.filial || '',
+    Local: it.local || '',
+    Responsável: it.responsavel || '',
+    'CPF Responsável': it.responsavel_cpf || '',
+    'E-mail Responsável': it.responsavel_email || '',
+    'Data Aquisição': it.data_aquisicao
+      ? String(it.data_aquisicao).slice(0, 10)
+      : '',
+    'Valor (R$)': it.valor_aquisicao != null ? Number(it.valor_aquisicao) : '',
+    Fornecedor: it.fornecedor || '',
+    'Nº NF': it.nota_fiscal || '',
+    Status: statusInfo(it.status).label || it.status || '',
+    Observação: it.observacao || '',
+  };
+}
+
+const EXPORT_COL_WIDTHS = [
+  { wch: 12 }, { wch: 16 }, { wch: 40 }, { wch: 16 }, { wch: 18 },
+  { wch: 16 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 20 },
+  { wch: 16 }, { wch: 24 }, { wch: 14 }, { wch: 12 }, { wch: 20 },
+  { wch: 12 }, { wch: 14 }, { wch: 30 },
+];
+
+// Nome de aba válido no Excel (<=31 chars, sem : \\ / ? * [ ])
+function sanitizarAba(nome) {
+  return (
+    String(nome || 'Sem filial')
+      .replace(/[:\\/?*[\]]/g, ' ')
+      .slice(0, 31)
+      .trim() || 'Sem filial'
+  );
+}
+
 // ─── Modal de cadastro/edição ──────────────────────────────────────────────
 function PatrimonioModal({ item, onClose, onSaved }) {
   const isNew = !item;
@@ -96,6 +160,7 @@ function PatrimonioModal({ item, onClose, onSaved }) {
     marca: item?.marca || '',
     modelo: item?.modelo || '',
     numero_serie: item?.numero_serie || '',
+    filial: item?.filial || '',
     local: item?.local || '',
     setor: item?.setor || '',
     responsavel: item?.responsavel || '',
@@ -112,8 +177,58 @@ function PatrimonioModal({ item, onClose, onSaved }) {
   });
   const [saving, setSaving] = useState(false);
   const [erro, setErro] = useState('');
+  const [estimando, setEstimando] = useState(false);
+  const [estimativa, setEstimativa] = useState(null); // { faixa, justificativa }
 
   const set = (f, v) => setForm((s) => ({ ...s, [f]: v }));
+
+  // Estima o valor do item via IA (Groq) a partir de tipo/marca/modelo/descrição
+  const estimarValor = async () => {
+    setErro('');
+    setEstimativa(null);
+    if (!form.marca && !form.modelo && !form.descricao) {
+      setErro('Preencha marca, modelo ou descrição para estimar o valor.');
+      return;
+    }
+    setEstimando(true);
+    try {
+      const r = await fetch(
+        `${API_BASE_URL}/api/tech/patrimonio/estimar-valor`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tipo: form.tipo,
+            marca: form.marca,
+            modelo: form.modelo,
+            descricao: form.descricao,
+            ano: form.data_aquisicao
+              ? String(form.data_aquisicao).slice(0, 4)
+              : '',
+          }),
+        },
+      );
+      const j = await r.json();
+      if (!r.ok || !j?.success) throw new Error(j?.message || `Erro ${r.status}`);
+      const d = j.data || {};
+      if (d.ia_indisponivel) {
+        setErro(d.justificativa || 'IA não configurada no servidor.');
+        return;
+      }
+      if (d.valor_estimado != null) {
+        set('valor_aquisicao', Number(d.valor_estimado).toFixed(2));
+      }
+      setEstimativa({
+        valor: d.valor_estimado,
+        faixa: d.faixa,
+        justificativa: d.justificativa,
+      });
+    } catch (err) {
+      setErro(`Falha ao estimar: ${err.message}`);
+    } finally {
+      setEstimando(false);
+    }
+  };
 
   // Pré-popula com próximo código se novo
   useEffect(() => {
@@ -316,11 +431,30 @@ function PatrimonioModal({ item, onClose, onSaved }) {
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div>
-                <label className="text-[10px] font-semibold text-gray-600 uppercase">Local</label>
+                <label className="text-[10px] font-semibold text-gray-600 uppercase">
+                  Unidade / Filial
+                </label>
+                <select
+                  value={form.filial}
+                  onChange={(e) => set('filial', e.target.value)}
+                  className="mt-0.5 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white"
+                >
+                  <option value="">— Selecione a unidade —</option>
+                  {UNIDADES.map((u) => (
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-semibold text-gray-600 uppercase">
+                  Local (ponto dentro da unidade)
+                </label>
                 <input
                   value={form.local}
                   onChange={(e) => set('local', e.target.value)}
-                  placeholder="Sala da Diretoria, Filial Recife…"
+                  placeholder="Ex.: caixa 2, estoque, vitrine…"
                   className="mt-0.5 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm"
                 />
               </div>
@@ -384,7 +518,23 @@ function PatrimonioModal({ item, onClose, onSaved }) {
                 />
               </div>
               <div>
-                <label className="text-[10px] font-semibold text-gray-600 uppercase">Valor (R$)</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-semibold text-gray-600 uppercase">Valor (R$)</label>
+                  <button
+                    type="button"
+                    onClick={estimarValor}
+                    disabled={estimando}
+                    title="Estimar valor de mercado com IA"
+                    className="flex items-center gap-1 text-[10px] font-semibold text-[#000638] hover:text-[#1a1f5a] disabled:opacity-50"
+                  >
+                    {estimando ? (
+                      <Spinner size={12} className="animate-spin" />
+                    ) : (
+                      <Sparkle size={12} weight="fill" />
+                    )}
+                    {estimando ? 'Estimando…' : 'Estimar (IA)'}
+                  </button>
+                </div>
                 <input
                   type="number"
                   step="0.01"
@@ -394,6 +544,16 @@ function PatrimonioModal({ item, onClose, onSaved }) {
                   placeholder="0,00"
                   className="mt-0.5 w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm tabular-nums"
                 />
+                {estimativa && (
+                  <p className="mt-1 text-[10px] leading-tight text-gray-500">
+                    {estimativa.faixa && (
+                      <span className="font-semibold text-[#000638]">
+                        Faixa: R$ {estimativa.faixa}.{' '}
+                      </span>
+                    )}
+                    {estimativa.justificativa}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="text-[10px] font-semibold text-gray-600 uppercase">Fornecedor</label>
@@ -482,6 +642,493 @@ function StatCard({ icon: Icon, label, value, sub, color = 'blue' }) {
   );
 }
 
+// ─── Modal: Termo de Responsabilidade ──────────────────────────────────────
+const escapeHtml = (s) =>
+  String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+function TermoModal({ items, emissor, onClose }) {
+  // Colaboradores distintos (por nome do responsável), com contagem de itens
+  const colaboradores = useMemo(() => {
+    const map = new Map(); // nome → { nome, cpf, email, setor, filial, itens: [] }
+    for (const it of items || []) {
+      const nome = (it.responsavel || '').trim();
+      if (!nome) continue;
+      const key = nome.toLowerCase();
+      if (!map.has(key)) {
+        map.set(key, {
+          nome,
+          cpf: it.responsavel_cpf || '',
+          email: it.responsavel_email || '',
+          setor: it.setor || '',
+          filial: it.filial || '',
+          itens: [],
+        });
+      }
+      const c = map.get(key);
+      // completa dados de contato/lotação se faltavam
+      if (!c.cpf && it.responsavel_cpf) c.cpf = it.responsavel_cpf;
+      if (!c.email && it.responsavel_email) c.email = it.responsavel_email;
+      if (!c.setor && it.setor) c.setor = it.setor;
+      if (!c.filial && it.filial) c.filial = it.filial;
+      c.itens.push(it);
+    }
+    return Array.from(map.values()).sort((a, b) =>
+      a.nome.localeCompare(b.nome, 'pt-BR'),
+    );
+  }, [items]);
+
+  const [sel, setSel] = useState('');
+  const colaborador = colaboradores.find((c) => c.nome.toLowerCase() === sel);
+
+  const gerarTermo = () => {
+    if (!colaborador) return;
+    const hoje = new Date().toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric',
+    });
+    const totalValor = colaborador.itens.reduce(
+      (s, it) => s + (Number(it.valor_aquisicao) || 0),
+      0,
+    );
+    const linhas = colaborador.itens
+      .map(
+        (it, i) => `
+      <tr>
+        <td style="text-align:center">${i + 1}</td>
+        <td style="font-family:monospace">${escapeHtml(it.codigo_patrimonio || '')}</td>
+        <td>${escapeHtml(tipoInfo(it.tipo).label || it.tipo || '')}</td>
+        <td>${escapeHtml(it.descricao || '')}${
+          it.marca || it.modelo
+            ? `<br><span style="color:#555;font-size:11px">${escapeHtml([it.marca, it.modelo].filter(Boolean).join(' '))}</span>`
+            : ''
+        }</td>
+        <td style="font-family:monospace">${escapeHtml(it.numero_serie || '—')}</td>
+        <td style="text-align:right;white-space:nowrap">${it.valor_aquisicao > 0 ? fmtBRL(it.valor_aquisicao) : '—'}</td>
+      </tr>`,
+      )
+      .join('');
+
+    const html = `<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<title>Termo de Responsabilidade — ${escapeHtml(colaborador.nome)}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; color:#111; margin:40px; font-size:13px; line-height:1.55; }
+  h1 { text-align:center; font-size:18px; margin:0 0 4px; letter-spacing:.5px; }
+  .sub { text-align:center; color:#555; font-size:12px; margin-bottom:24px; }
+  .box { border:1px solid #ccc; border-radius:8px; padding:12px 16px; margin-bottom:18px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:4px 24px; }
+  .grid div span { color:#666; }
+  table { width:100%; border-collapse:collapse; margin:8px 0 18px; }
+  th, td { border:1px solid #bbb; padding:6px 8px; font-size:12px; vertical-align:top; }
+  th { background:#000638; color:#fff; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.4px; }
+  tfoot td { font-weight:bold; background:#f3f4f6; }
+  p.texto { text-align:justify; margin:14px 0; }
+  .assin { margin-top:60px; display:grid; grid-template-columns:1fr 1fr; gap:48px; }
+  .assin .linha { border-top:1px solid #333; padding-top:6px; text-align:center; font-size:12px; }
+  .rodape { margin-top:32px; text-align:center; color:#888; font-size:10px; }
+  .logo { display:block; margin:0 auto 14px; height:46px; width:auto; }
+  @media print { body { margin:18mm; } }
+</style></head>
+<body>
+  <img class="logo" src="${window.location.origin}/crosbyazul.png" alt="Crosby" />
+  <h1>TERMO DE RESPONSABILIDADE DE BENS E EQUIPAMENTOS</h1>
+  <div class="sub">Grupo Crosby — Inventário de Patrimônio</div>
+
+  <div class="box grid">
+    <div><span>Colaborador(a):</span> <strong>${escapeHtml(colaborador.nome)}</strong></div>
+    <div><span>CPF:</span> ${escapeHtml(colaborador.cpf || '____________________')}</div>
+    <div><span>Setor:</span> ${escapeHtml(colaborador.setor || '—')}</div>
+    <div><span>Unidade/Filial:</span> ${escapeHtml(colaborador.filial || '—')}</div>
+    <div><span>E-mail:</span> ${escapeHtml(colaborador.email || '—')}</div>
+    <div><span>Data:</span> ${escapeHtml(hoje)}</div>
+  </div>
+
+  <p class="texto">
+    Declaro para os devidos fins que recebi do <strong>Grupo Crosby</strong> os bens e equipamentos
+    relacionados abaixo, em perfeito estado de conservação e funcionamento, comprometendo-me a:
+    (i) zelar pela guarda, conservação e uso adequado dos mesmos; (ii) utilizá-los exclusivamente
+    para finalidades profissionais relacionadas às minhas atividades; (iii) comunicar imediatamente
+    ao setor responsável qualquer dano, extravio, furto ou defeito; e (iv) devolvê-los nas mesmas
+    condições em que os recebi, ressalvado o desgaste natural de uso, sempre que solicitado ou por
+    ocasião do meu desligamento. Estou ciente de que responderei pelos prejuízos decorrentes de mau
+    uso, negligência ou extravio dos bens ora recebidos.
+  </p>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:28px">#</th>
+        <th style="width:90px">Patrimônio</th>
+        <th style="width:90px">Tipo</th>
+        <th>Descrição</th>
+        <th style="width:110px">Nº de Série</th>
+        <th style="width:90px;text-align:right">Valor</th>
+      </tr>
+    </thead>
+    <tbody>${linhas}</tbody>
+    <tfoot>
+      <tr>
+        <td colspan="5" style="text-align:right">Total (${colaborador.itens.length} ${colaborador.itens.length === 1 ? 'item' : 'itens'})</td>
+        <td style="text-align:right">${totalValor > 0 ? fmtBRL(totalValor) : '—'}</td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <div class="assin">
+    <div class="linha">${escapeHtml(colaborador.nome)}<br><span style="color:#666">Colaborador(a) — recebedor</span></div>
+    <div class="linha">Grupo Crosby<br><span style="color:#666">Responsável pela entrega</span></div>
+  </div>
+
+  <div class="rodape">
+    Documento gerado em ${escapeHtml(hoje)}${emissor ? ` por ${escapeHtml(emissor)}` : ''} — Inventário de Patrimônio Crosby
+  </div>
+
+  <script>window.onload = function(){ setTimeout(function(){ window.print(); }, 250); };</script>
+</body></html>`;
+
+    const w = window.open('', '_blank');
+    if (!w) {
+      alert(
+        'O navegador bloqueou a janela de impressão. Permita pop-ups para este site e tente novamente.',
+      );
+      return;
+    }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl shadow-2xl w-full max-w-lg flex flex-col max-h-[90vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-3 border-b bg-[#000638] rounded-t-xl">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <Printer size={16} weight="fill" /> Termo de Responsabilidade
+          </h3>
+          <button onClick={onClose} className="text-white/70 hover:text-white">
+            <X size={18} weight="bold" />
+          </button>
+        </div>
+
+        <div className="p-5 flex flex-col gap-3 overflow-y-auto">
+          <p className="text-xs text-gray-500">
+            Selecione o colaborador. O termo lista todos os itens de patrimônio
+            em que ele consta como <strong>responsável</strong> e abre a janela
+            de impressão (salve como PDF, se preferir).
+          </p>
+
+          {colaboradores.length === 0 ? (
+            <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+              Nenhum item possui responsável preenchido. Cadastre o responsável
+              nos itens para gerar o termo.
+            </div>
+          ) : (
+            <>
+              <div>
+                <label className="text-[10px] font-semibold text-gray-600 uppercase">
+                  Colaborador ({colaboradores.length})
+                </label>
+                <select
+                  value={sel}
+                  onChange={(e) => setSel(e.target.value)}
+                  className="mt-0.5 w-full border border-gray-300 rounded-lg px-2 py-2 text-sm"
+                >
+                  <option value="">— Selecione —</option>
+                  {colaboradores.map((c) => (
+                    <option key={c.nome} value={c.nome.toLowerCase()}>
+                      {c.nome} ({c.itens.length}{' '}
+                      {c.itens.length === 1 ? 'item' : 'itens'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {colaborador && (
+                <div className="border border-gray-200 rounded-lg divide-y max-h-52 overflow-y-auto">
+                  {colaborador.itens.map((it) => (
+                    <div
+                      key={it.id}
+                      className="px-3 py-2 flex items-center justify-between gap-2 text-xs"
+                    >
+                      <div className="min-w-0">
+                        <span className="font-mono text-[#000638]">
+                          {it.codigo_patrimonio}
+                        </span>
+                        <span className="text-gray-600">
+                          {' '}
+                          — {it.descricao || tipoInfo(it.tipo).label}
+                        </span>
+                      </div>
+                      <span className="text-gray-500 tabular-nums whitespace-nowrap">
+                        {it.valor_aquisicao > 0 ? fmtBRL(it.valor_aquisicao) : '—'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="border-t px-5 py-3 flex justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 text-xs font-semibold"
+          >
+            Fechar
+          </button>
+          <button
+            onClick={gerarTermo}
+            disabled={!colaborador}
+            className="flex items-center gap-2 px-5 py-2 rounded-lg bg-[#000638] hover:bg-[#fe0000] disabled:opacity-40 text-white text-xs font-bold uppercase tracking-wide"
+          >
+            <Printer size={12} weight="fill" />
+            Gerar / Imprimir
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Modal: Relatório por filial ────────────────────────────────────────────
+function RelatorioFilialModal({ onClose }) {
+  const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState('');
+  const [todos, setTodos] = useState([]); // todos os itens (sem filtro)
+
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      setLoading(true);
+      setErro('');
+      try {
+        const r = await fetch(`${API_BASE_URL}/api/tech/patrimonio`);
+        const j = await r.json();
+        if (!j?.success) throw new Error(j?.message || 'Erro ao carregar');
+        if (vivo) setTodos(j.data?.items || []);
+      } catch (e) {
+        if (vivo) setErro(e.message);
+      } finally {
+        if (vivo) setLoading(false);
+      }
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
+  // Agrupa por filial
+  const relatorio = useMemo(() => {
+    const map = new Map(); // filial -> { itens, valor, porTipo }
+    for (const it of todos) {
+      const f = it.filial || 'Sem filial';
+      if (!map.has(f)) map.set(f, { filial: f, itens: 0, valor: 0 });
+      const g = map.get(f);
+      g.itens += 1;
+      g.valor += Number(it.valor_aquisicao) || 0;
+    }
+    return Array.from(map.values()).sort((a, b) => b.valor - a.valor);
+  }, [todos]);
+
+  const totalItens = todos.length;
+  const totalValor = relatorio.reduce((s, g) => s + g.valor, 0);
+  const hoje = new Date().toISOString().slice(0, 10);
+
+  // Exporta um resumo (1 linha por filial)
+  const exportarResumo = () => {
+    const rows = relatorio.map((g) => ({
+      'Unidade/Filial': g.filial,
+      'Qtd de itens': g.itens,
+      'Valor total (R$)': Number(g.valor.toFixed(2)),
+      '% do valor': totalValor
+        ? `${((g.valor / totalValor) * 100).toFixed(1)}%`
+        : '0%',
+    }));
+    rows.push({
+      'Unidade/Filial': 'TOTAL',
+      'Qtd de itens': totalItens,
+      'Valor total (R$)': Number(totalValor.toFixed(2)),
+      '% do valor': '100%',
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 18 }, { wch: 12 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Resumo por filial');
+    XLSX.writeFile(wb, `relatorio-patrimonio-por-filial-${hoje}.xlsx`);
+  };
+
+  // Exporta completo: aba Resumo + 1 aba por filial com todos os itens
+  const exportarCompleto = () => {
+    const wb = XLSX.utils.book_new();
+    // Resumo
+    const resumoRows = relatorio.map((g) => ({
+      'Unidade/Filial': g.filial,
+      'Qtd de itens': g.itens,
+      'Valor total (R$)': Number(g.valor.toFixed(2)),
+    }));
+    resumoRows.push({
+      'Unidade/Filial': 'TOTAL',
+      'Qtd de itens': totalItens,
+      'Valor total (R$)': Number(totalValor.toFixed(2)),
+    });
+    const wsResumo = XLSX.utils.json_to_sheet(resumoRows);
+    wsResumo['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 18 }];
+    XLSX.utils.book_append_sheet(wb, wsResumo, 'Resumo');
+    // Uma aba por filial
+    const usados = new Set();
+    for (const g of relatorio) {
+      const itens = todos
+        .filter((it) => (it.filial || 'Sem filial') === g.filial)
+        .map(itemParaLinhaExcel);
+      let nome = sanitizarAba(g.filial);
+      let base = nome;
+      let i = 2;
+      while (usados.has(nome)) {
+        nome = `${base.slice(0, 28)} ${i++}`;
+      }
+      usados.add(nome);
+      const ws = XLSX.utils.json_to_sheet(itens);
+      ws['!cols'] = EXPORT_COL_WIDTHS;
+      XLSX.utils.book_append_sheet(wb, ws, nome);
+    }
+    XLSX.writeFile(wb, `inventario-completo-por-filial-${hoje}.xlsx`);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 py-3 border-b bg-[#000638] rounded-t-xl">
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <Buildings size={16} weight="fill" /> Relatório por Filial
+          </h3>
+          <button onClick={onClose} className="text-white/70 hover:text-white">
+            <X size={18} weight="bold" />
+          </button>
+        </div>
+
+        <div className="p-5 flex flex-col gap-3 overflow-y-auto">
+          {loading ? (
+            <div className="flex items-center gap-2 text-sm text-gray-500 py-6 justify-center">
+              <Spinner size={18} className="animate-spin" /> Carregando
+              inventário…
+            </div>
+          ) : erro ? (
+            <div className="text-sm text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-3">
+              {erro}
+            </div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-[#000638] text-white text-[11px] uppercase tracking-wide">
+                      <th className="text-left px-3 py-2 rounded-tl-lg">
+                        Unidade / Filial
+                      </th>
+                      <th className="text-right px-3 py-2">Itens</th>
+                      <th className="text-right px-3 py-2">Valor total</th>
+                      <th className="text-right px-3 py-2 rounded-tr-lg">
+                        % valor
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {relatorio.map((g, idx) => (
+                      <tr
+                        key={g.filial}
+                        className={idx % 2 ? 'bg-gray-50' : 'bg-white'}
+                      >
+                        <td className="px-3 py-2 font-semibold text-[#000638] flex items-center gap-1.5">
+                          <Buildings
+                            size={13}
+                            weight="duotone"
+                            className="text-sky-600"
+                          />
+                          {g.filial}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {g.itens}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums font-semibold">
+                          {fmtBRL(g.valor)}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-gray-500">
+                          {totalValor
+                            ? `${((g.valor / totalValor) * 100).toFixed(1)}%`
+                            : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-[#000638] font-bold">
+                      <td className="px-3 py-2">TOTAL</td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {totalItens}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {fmtBRL(totalValor)}
+                      </td>
+                      <td className="px-3 py-2 text-right">100%</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              <p className="text-[10px] text-gray-400">
+                {relatorio.length} filiais · {totalItens} itens no total.
+              </p>
+            </>
+          )}
+        </div>
+
+        <div className="border-t px-5 py-3 flex flex-wrap justify-end gap-2">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 text-xs font-semibold"
+          >
+            Fechar
+          </button>
+          <button
+            onClick={exportarResumo}
+            disabled={loading || !relatorio.length}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[#000638] text-[#000638] hover:bg-[#000638]/5 disabled:opacity-40 text-xs font-bold"
+          >
+            <DownloadSimple size={12} weight="bold" />
+            Resumo (Excel)
+          </button>
+          <button
+            onClick={exportarCompleto}
+            disabled={loading || !relatorio.length}
+            className="flex items-center gap-2 px-5 py-2 rounded-lg bg-[#000638] hover:bg-[#fe0000] disabled:opacity-40 text-white text-xs font-bold uppercase tracking-wide"
+          >
+            <DownloadSimple size={12} weight="fill" />
+            Completo por filial
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Página principal ──────────────────────────────────────────────────────
 export default function InventarioPatrimonio() {
   const [items, setItems] = useState([]);
@@ -494,6 +1141,7 @@ export default function InventarioPatrimonio() {
   const [filtroTipo, setFiltroTipo] = useState('');
   const [filtroStatus, setFiltroStatus] = useState('');
   const [filtroSetor, setFiltroSetor] = useState('');
+  const [filtroFilial, setFiltroFilial] = useState('');
 
   // UI: view (tabela | cards), filtros expandidos
   const [view, setView] = useState('cards');
@@ -503,6 +1151,8 @@ export default function InventarioPatrimonio() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [termoOpen, setTermoOpen] = useState(false);
+  const [relatorioOpen, setRelatorioOpen] = useState(false);
   const { user } = useAuth() || {};
   const userLogin = user?.email || user?.user_metadata?.login || '';
 
@@ -514,6 +1164,7 @@ export default function InventarioPatrimonio() {
       if (filtroTipo) params.set('tipo', filtroTipo);
       if (filtroStatus) params.set('status', filtroStatus);
       if (filtroSetor) params.set('setor', filtroSetor);
+      if (filtroFilial) params.set('filial', filtroFilial);
       if (busca) params.set('q', busca);
       const [listR, statsR] = await Promise.all([
         fetch(`${API_BASE_URL}/api/tech/patrimonio?${params.toString()}`),
@@ -529,7 +1180,7 @@ export default function InventarioPatrimonio() {
     } finally {
       setLoading(false);
     }
-  }, [filtroTipo, filtroStatus, filtroSetor, busca]);
+  }, [filtroTipo, filtroStatus, filtroSetor, filtroFilial, busca]);
 
   useEffect(() => {
     carregar();
@@ -555,6 +1206,21 @@ export default function InventarioPatrimonio() {
     }
   };
 
+  // Exporta a lista atual (respeitando os filtros aplicados) para Excel
+  const exportarExcel = () => {
+    if (!items.length) {
+      alert('Nenhum item para exportar com os filtros atuais.');
+      return;
+    }
+    const rows = items.map(itemParaLinhaExcel);
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = EXPORT_COL_WIDTHS;
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Patrimônio');
+    const hoje = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `inventario-patrimonio-${hoje}.xlsx`);
+  };
+
   // Top setores/tipos para stats
   const topTipo = useMemo(() => {
     if (!stats?.por_tipo) return null;
@@ -568,7 +1234,13 @@ export default function InventarioPatrimonio() {
   const setoresCadastrados = Object.keys(stats?.por_setor || {}).filter(
     (k) => k !== 'sem_info',
   ).length;
-  const hasFiltros = !!(busca || filtroTipo || filtroStatus || filtroSetor);
+  const hasFiltros = !!(
+    busca ||
+    filtroTipo ||
+    filtroStatus ||
+    filtroSetor ||
+    filtroFilial
+  );
 
   return (
     <div className="w-full max-w-7xl mx-auto py-4 px-3 flex flex-col gap-4">
@@ -603,6 +1275,30 @@ export default function InventarioPatrimonio() {
               >
                 <ArrowsClockwise size={14} weight="bold" className={loading ? 'animate-spin' : ''} />
                 <span className="hidden sm:inline">Atualizar</span>
+              </button>
+              <button
+                onClick={() => setRelatorioOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold border border-white/20 backdrop-blur-sm transition-colors"
+                title="Relatório consolidado por filial"
+              >
+                <Buildings size={14} weight="bold" />
+                <span className="hidden sm:inline">Relatório</span>
+              </button>
+              <button
+                onClick={exportarExcel}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold border border-white/20 backdrop-blur-sm transition-colors"
+                title="Exportar inventário (filtros atuais) para Excel"
+              >
+                <DownloadSimple size={14} weight="bold" />
+                <span className="hidden sm:inline">Excel</span>
+              </button>
+              <button
+                onClick={() => setTermoOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold border border-white/20 backdrop-blur-sm transition-colors"
+                title="Gerar termo de responsabilidade por colaborador"
+              >
+                <Printer size={14} weight="bold" />
+                <span className="hidden sm:inline">Termo</span>
               </button>
               <button
                 onClick={() => {
@@ -821,6 +1517,19 @@ export default function InventarioPatrimonio() {
             </div>
             <div className="flex-1">
               <label className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold block mb-1">
+                Unidade / Filial
+              </label>
+              <select
+                value={filtroFilial}
+                onChange={(e) => setFiltroFilial(e.target.value)}
+                className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs text-gray-700 bg-white w-full max-w-xs"
+              >
+                <option value="">Todas as unidades</option>
+                {UNIDADES.map((u) => <option key={u} value={u}>{u}</option>)}
+              </select>
+            </div>
+            <div className="flex-1">
+              <label className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold block mb-1">
                 Setor
               </label>
               <select
@@ -839,6 +1548,7 @@ export default function InventarioPatrimonio() {
                   setFiltroTipo('');
                   setFiltroStatus('');
                   setFiltroSetor('');
+                  setFiltroFilial('');
                 }}
                 className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 text-xs font-semibold"
               >
@@ -957,6 +1667,14 @@ export default function InventarioPatrimonio() {
 
                     {/* Linhas de info */}
                     <div className="space-y-1 text-[11px]">
+                      {it.filial && (
+                        <div>
+                          <span className="inline-flex items-center gap-1 bg-sky-50 text-sky-700 border border-sky-200 rounded-full px-2 py-0.5 font-bold">
+                            <Buildings size={11} weight="bold" />
+                            {it.filial}
+                          </span>
+                        </div>
+                      )}
                       {it.local && (
                         <div className="flex items-start gap-1.5 text-gray-600">
                           <MapPin size={11} className="text-gray-400 flex-shrink-0 mt-0.5" />
@@ -1177,6 +1895,20 @@ export default function InventarioPatrimonio() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Termo de responsabilidade */}
+      {termoOpen && (
+        <TermoModal
+          items={items}
+          emissor={userLogin}
+          onClose={() => setTermoOpen(false)}
+        />
+      )}
+
+      {/* Relatório por filial */}
+      {relatorioOpen && (
+        <RelatorioFilialModal onClose={() => setRelatorioOpen(false)} />
       )}
     </div>
   );

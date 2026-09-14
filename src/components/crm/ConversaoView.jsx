@@ -103,8 +103,11 @@ function VendedorCard({ vendedor, ranking, cross }) {
               {initials(vendedor.nome)}
             </div>
             {ranking <= 3 && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[#000638] text-white text-[9px] font-bold flex items-center justify-center">
-                {ranking}
+              <span
+                className="absolute -top-1.5 -right-1.5 text-sm leading-none"
+                title={`${ranking}º em conversão`}
+              >
+                {ranking === 1 ? '🥇' : ranking === 2 ? '🥈' : '🥉'}
               </span>
             )}
           </div>
@@ -128,6 +131,18 @@ function VendedorCard({ vendedor, ranking, cross }) {
           )}
         </div>
       </button>
+
+      {/* Barra de conversão (sempre visível, pra comparar sem expandir) */}
+      <div className="h-1 bg-gray-100">
+        <div
+          className="h-full rounded-r-full transition-all"
+          style={{
+            width: `${Math.min(taxa, 100)}%`,
+            background:
+              taxa >= 30 ? '#059669' : taxa >= 15 ? '#d97706' : '#9ca3af',
+          }}
+        />
+      </div>
 
       {aberto && (
         <div className="border-t border-gray-100 bg-gray-50 px-4 py-3 space-y-2">

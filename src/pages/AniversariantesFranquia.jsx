@@ -41,7 +41,7 @@ const linkWhatsapp = (telefone) => {
   return `https://wa.me/${num}`;
 };
 
-const AniversariantesFranquia = () => {
+const AniversariantesFranquia = ({ lojasFixas = null } = {}) => {
   const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
   const [mes, setMes] = useState(new Date().getMonth() + 1);
   const [dados, setDados] = useState([]);
@@ -171,6 +171,8 @@ const AniversariantesFranquia = () => {
               <FiltroEmpresa
                 empresasSelecionadas={empresasSelecionadas}
                 onSelectEmpresas={setEmpresasSelecionadas}
+                restrictCodes={lojasFixas}
+                autoSelectAll={!!lojasFixas}
               />
             </div>
 

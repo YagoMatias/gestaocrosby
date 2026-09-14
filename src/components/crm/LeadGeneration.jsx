@@ -69,6 +69,10 @@ const CATEGORIAS = [
   { key: 'top', label: 'Top Clientes', icon: Trophy, color: '#f97316', bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200' },
 ];
 
+// Categorias que dependem da carteira do ERP (TOTVS). As demais
+// (top, aniversariante, cashback) vêm do Supabase e abrem sem esperar o ERP.
+const CATEGORIAS_ERP = new Set(['ativo', 'a_inativar', 'inativo']);
+
 const fmtMoeda = (v) =>
   Number(v || 0).toLocaleString('pt-BR', {
     style: 'currency',
@@ -587,9 +591,34 @@ function ClienteCard({ cliente, categoria, onRegistrar, onHistorico, onChatLead,
   const cor = avatarColor(cliente.nome || cliente.person_nome);
   const nome = cliente.nome || cliente.person_nome || 'Sem nome';
   const fone = cliente.fone || cliente.person_telefone;
+  const catInfo = CATEGORIAS.find((x) => x.key === categoria);
+  const accent = catInfo?.color || '#6366f1';
+  // Contato registrado HOJE → deixa a "baixa" visível no próprio card.
+  const contatadoHoje = (() => {
+    if (!ultimoContato?.data_contato) return false;
+    const d = new Date(ultimoContato.data_contato);
+    if (isNaN(d.getTime())) return false;
+    const n = new Date();
+    return (
+      d.getFullYear() === n.getFullYear() &&
+      d.getMonth() === n.getMonth() &&
+      d.getDate() === n.getDate()
+    );
+  })();
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-3 hover:border-indigo-300 hover:shadow-md transition">
+    <div
+      className={`relative overflow-hidden rounded-xl border p-3 pl-3.5 transition ${
+        contatadoHoje
+          ? 'border-emerald-300 ring-1 ring-emerald-200 bg-emerald-50/30'
+          : 'border-gray-200 bg-white hover:border-indigo-300 hover:shadow-md'
+      }`}
+    >
+      {/* Faixa lateral da categoria */}
+      <span
+        className="absolute inset-y-0 left-0 w-1"
+        style={{ background: accent }}
+      />
       <div className="flex items-start gap-2.5 mb-2.5">
         <span
           className="shrink-0 w-9 h-9 rounded-full text-white text-xs font-bold flex items-center justify-center shadow-sm"
@@ -653,15 +682,25 @@ function ClienteCard({ cliente, categoria, onRegistrar, onHistorico, onChatLead,
 
       {/* Último contato */}
       {ultimoContato && (
-        <div className="bg-gray-50 rounded-md px-2 py-1.5 mb-2 text-[10px] flex items-center gap-1.5">
-          {ultimoContato.atendida ? (
+        <div
+          className={`rounded-md px-2 py-1.5 mb-2 text-[10px] flex items-center gap-1.5 ${
+            contatadoHoje
+              ? 'bg-emerald-100 text-emerald-800 font-semibold'
+              : 'bg-gray-50 text-gray-600'
+          }`}
+        >
+          {contatadoHoje ? (
+            <CheckCircle size={11} weight="fill" className="text-emerald-600" />
+          ) : ultimoContato.atendida ? (
             <PhoneCall size={10} weight="fill" className="text-emerald-600" />
           ) : (
             <PhoneDisconnect size={10} weight="fill" className="text-red-500" />
           )}
-          <span className="text-gray-600">
-            Último contato:{' '}
-            <span className="font-semibold">{fmtData(ultimoContato.data_contato)}</span>
+          <span>
+            {contatadoHoje ? 'Contatado hoje' : 'Último contato'}:{' '}
+            <span className="font-semibold">
+              {fmtData(ultimoContato.data_contato)}
+            </span>
           </span>
         </div>
       )}
@@ -981,24 +1020,20 @@ export default function LeadGeneration({ erpData, modulo, vendedoresMap, onChatL
   }, [categoriaSel, modulo, refreshKey]);
 
   // ── Carregar lista de cashback ──
-  // Backend exige `persons: [{code}]`. Geramos a lista a partir da carteira
-  // do vendedor selecionado (somente clientes desse vendedor).
+  // Não depende do ERP: os clientes do vendedor saem do Supabase
+  // (notas_fiscais.dealer_code) dentro do próprio endpoint, que então
+  // consulta os saldos no TOTVS.
   useEffect(() => {
     if (categoriaSel !== 'cashback') return;
-    if (!vendedorSel || !erpData?.clientes) {
+    if (!vendedorSel) {
       setCashbackList([]);
       setCashbackCarregado(true);
       return;
     }
-    const persons = erpData.clientes
-      .filter((c) => c.vendedorCode === vendedorSel.code && c.cod)
-      .map((c) => ({ code: c.cod }));
-    if (persons.length === 0) {
-      setCashbackList([]);
-      setCashbackCarregado(true);
-      return;
-    }
-    apiPost('/api/crm/cashback-balances', { persons, modulo })
+    setCashbackCarregado(false);
+    apiGet(
+      `/api/crm/lead-generation/cashback-vendedor?vendedor_code=${vendedorSel.code}&modulo=${encodeURIComponent(modulo)}`,
+    )
       .then((d) => {
         // Resposta: { total, clientes: { [code]: {nome, telefone, balance, ...} } }
         const dict = d?.clientes || {};
@@ -1013,7 +1048,7 @@ export default function LeadGeneration({ erpData, modulo, vendedoresMap, onChatL
       })
       .catch(() => setCashbackList([]))
       .finally(() => setCashbackCarregado(true));
-  }, [categoriaSel, modulo, vendedorSel, erpData?.clientes, refreshKey]);
+  }, [categoriaSel, modulo, vendedorSel, refreshKey]);
 
   // ── Carregar últimas ligações pra colocar timestamps nos cards ──
   useEffect(() => {
@@ -1160,17 +1195,10 @@ export default function LeadGeneration({ erpData, modulo, vendedoresMap, onChatL
     return out;
   }, [erpData, vendedorSel, aniversariantes, cashbackList, topClientes]);
 
-  if (!erpData?.clientes) {
-    return (
-      <div className="bg-white border border-gray-200 rounded-xl p-12 text-center">
-        <Phone size={48} weight="duotone" className="mx-auto text-gray-300 mb-3" />
-        <p className="text-sm font-semibold text-[#000638]">Carteira não carregada</p>
-        <p className="text-xs text-gray-500 mt-1">
-          Aguarde o ERP carregar (botão ERP TOTVS no topo) para começar.
-        </p>
-      </div>
-    );
-  }
+  // Só as categorias do ERP ficam bloqueadas enquanto a carteira carrega.
+  // Top Clientes / Aniversariantes / Cashback (Supabase) abrem na hora.
+  const erpPendente = !erpData?.clientes;
+  const categoriaPrecisaErp = CATEGORIAS_ERP.has(categoriaSel);
 
   return (
     <div className="space-y-4">
@@ -1267,7 +1295,21 @@ export default function LeadGeneration({ erpData, modulo, vendedoresMap, onChatL
       </div>
 
       {/* Lista de clientes */}
-      {erroTop && categoriaSel === 'top' ? (
+      {erpPendente && categoriaPrecisaErp ? (
+        <div className="bg-white border border-gray-200 rounded-xl p-12 text-center">
+          <Spinner size={28} className="animate-spin mx-auto mb-3 text-emerald-500" />
+          <p className="text-sm font-semibold text-[#000638]">
+            Carteira do ERP carregando…
+          </p>
+          <p className="text-xs text-gray-500 mt-1">
+            Esta categoria depende do ERP TOTVS. Enquanto isso, use{' '}
+            <span className="font-semibold text-orange-600">Top Clientes</span>,{' '}
+            <span className="font-semibold text-pink-600">Aniversariantes</span> ou{' '}
+            <span className="font-semibold text-violet-600">Cashback</span>, que
+            abrem na hora.
+          </p>
+        </div>
+      ) : erroTop && categoriaSel === 'top' ? (
         <div className="bg-white border border-red-200 rounded-xl p-8 text-center">
           <Warning size={32} weight="duotone" className="mx-auto mb-2 text-red-400" />
           <p className="text-sm font-semibold text-red-600">
