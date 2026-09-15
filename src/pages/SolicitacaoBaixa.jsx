@@ -80,6 +80,9 @@ const SolicitacaoBaixa = () => {
     { id: 'cartao_credito', label: 'Cartão de Crédito', paidType: 1 },
     { id: 'cartao_debito', label: 'Cartão de Débito', paidType: 2 },
     { id: 'credev', label: 'CREDEV', paidType: 5 },
+    // Pix pago dentro do app BlueCard, pela conta Pagar.me da Crosby. O dinheiro
+    // cai na conta da Pagar.me, não num banco do TOTVS — por isso sem `bank`.
+    { id: 'pix_pagarme', label: 'Pix Pagar.me (BlueCard)', paidType: 4 },
   ];
 
   const FORMAS_PAGAMENTO_LABELS = {
@@ -90,6 +93,7 @@ const SolicitacaoBaixa = () => {
     cartao_credito: 'Cartão de Créd.',
     cartao_debito: 'Cartão de Déb.',
     credev: 'CREDEV',
+    pix_pagarme: 'Pix Pagar.me',
   };
 
   // Carregar solicitações
@@ -980,7 +984,9 @@ const SolicitacaoBaixa = () => {
                                         ? 'bg-orange-100 text-orange-800'
                                         : sol.forma_pagamento === 'credev'
                                           ? 'bg-indigo-100 text-indigo-800'
-                                          : 'bg-gray-100 text-gray-800'
+                                          : sol.forma_pagamento === 'pix_pagarme'
+                                            ? 'bg-sky-100 text-sky-800'
+                                            : 'bg-gray-100 text-gray-800'
                           } ${sol.status === 'processada' ? 'cursor-pointer hover:opacity-80' : ''}`}
                           title={
                             sol.status === 'processada'
@@ -1013,9 +1019,17 @@ const SolicitacaoBaixa = () => {
                       </span>
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap">
-                      <div className="font-medium">{sol.user_nome || '--'}</div>
+                      <div className="font-medium flex items-center gap-1">
+                        {sol.origem === 'bluecard_pagarme' && (
+                          <span
+                            className="inline-block w-2 h-2 rounded-full bg-sky-500 flex-shrink-0"
+                            title="Aberta automaticamente: Pix Pagar.me pago no app BlueCard"
+                          />
+                        )}
+                        {sol.user_nome || '--'}
+                      </div>
                       <div className="text-[10px] text-gray-400">
-                        {sol.user_email}
+                        {sol.origem === 'bluecard_pagarme' ? 'automático · app BlueCard' : sol.user_email}
                       </div>
                     </td>
                     <td className="px-3 py-2 text-center text-[10px]">
