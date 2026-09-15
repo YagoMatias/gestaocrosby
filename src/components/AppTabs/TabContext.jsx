@@ -153,6 +153,16 @@ const TABBED_PAGES = {
     group: 'Solicitações Crosby',
     dot: 'bg-orange-500',
   },
+  '/formulario-solicitacoes': {
+    label: 'Formulário de Solicitações',
+    group: 'Solicitações Crosby',
+    dot: 'bg-orange-500',
+  },
+  '/minhas-solicitacoes': {
+    label: 'Minhas Solicitações',
+    group: 'Solicitações Crosby',
+    dot: 'bg-orange-500',
+  },
   '/tecnologia/chamados-dryland': {
     label: 'Chamados Dryland',
     group: 'Solicitações Crosby',

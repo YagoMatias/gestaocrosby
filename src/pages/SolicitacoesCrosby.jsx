@@ -21,7 +21,7 @@ import {
   CurrencyCircleDollar,
   Eye,
   Link as LinkIcon,
-  Copy,
+  FileText,
   CheckSquare,
   PaperPlaneTilt,
   HandCoins,
@@ -103,6 +103,13 @@ const STATUS_CONFIG = {
     color: 'bg-green-100 text-green-800',
     icon: CheckCircle,
   },
+  // Solicitação COM nota fiscal: não vai ao TOTVS (a NF é escriturada lá
+  // direto). Entra aqui na aprovação do gestor e sai para pagamento.
+  nota_fiscal: {
+    label: 'Nota Fiscal',
+    color: 'bg-purple-100 text-purple-800',
+    icon: Receipt,
+  },
   erro_envio: {
     label: 'Erro no envio',
     color: 'bg-red-100 text-red-800',
@@ -118,6 +125,23 @@ const STATUS_CONFIG = {
     color: 'bg-gray-200 text-gray-700',
     icon: XCircle,
   },
+};
+
+// Situação da nota fiscal (só para solicitações com tem_nota_fiscal = true).
+// ESCRITURADO = chamado de escrituração concluído no Dryland.
+const nfSituacao = (sol) => {
+  if (sol?.tem_nota_fiscal !== true) return null;
+  if (sol.nf_escriturado_em)
+    return {
+      key: 'escriturado',
+      label: 'Escriturado',
+      color: 'bg-green-100 text-green-800',
+    };
+  return {
+    key: 'pendente',
+    label: 'Pendente escriturar',
+    color: 'bg-amber-100 text-amber-800',
+  };
 };
 
 const TIPO_CONFIG = {
@@ -347,10 +371,6 @@ const SolicitacoesCrosby = () => {
   const [modalDetalhe, setModalDetalhe] = useState(null);
   const [modalRejeicao, setModalRejeicao] = useState(null);
   const [motivoRejeicao, setMotivoRejeicao] = useState('');
-  const [linkCopiado, setLinkCopiado] = useState(false);
-
-  const formularioUrl = `${window.location.origin}/formulario-solicitacoes`;
-
   // Permissões
   // • isGestor     → todos os usuários com acesso à página podem aprovar como gestor
   // • isAdmin      → owner e admin: excluir solicitações e ver o RH (dados sensíveis)
@@ -393,6 +413,7 @@ const SolicitacoesCrosby = () => {
         if (!data || data.length < PAGE) break;
       }
       setSolicitacoes(todas);
+      sincronizarEscrituracao(todas); // em paralelo, não trava a tabela
     } catch (err) {
       console.error('Erro ao carregar solicitações:', err);
       notify('error', 'Erro ao carregar solicitações.');
@@ -408,6 +429,137 @@ const SolicitacoesCrosby = () => {
   const notify = (type, message) => {
     setNotification({ type, message });
     setTimeout(() => setNotification(null), 3500);
+  };
+
+  // ── Nota fiscal: escrituração via chamado no Dryland ──────────────────
+  // Solicitação com NF não vai ao TOTVS (a NF é escriturada direto lá pela
+  // Produção). Na aprovação do gestor abrimos um chamado no Dryland para o
+  // setor Produção; quando o chamado é concluído, gravamos nf_escriturado_em.
+  const [chamadosNF, setChamadosNF] = useState({}); // chamado id → { status, numero }
+
+  const abrirChamadoNotaFiscal = async (sol) => {
+    const texto = [
+      `Fornecedor: ${sol.supplier_name || '--'} (${formatCnpjCpf(sol.supplier_cpf_cnpj) || '--'})`,
+      `Valor: ${formatarMoeda(sol.valor_total)}`,
+      `Data de vencimento: ${formatarData(sol.dt_vencimento)}`,
+      `Solicitação HeadCoach: #${sol.id}`,
+      `Empresa: ${sol.cd_empresa} - ${sol.nm_empresa || ''}`,
+      `Solicitante: ${sol.solicitante || '--'}${sol.setor ? ` (${sol.setor})` : ''}`,
+      sol.descricao ? `Descrição: ${sol.descricao}` : null,
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    const resp = await fetch(`${API_BASE_URL}/api/dryland/chamados`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        loja_cd: sol.cd_empresa ?? 0,
+        loja_nome: sol.nm_empresa || 'CROSBY',
+        assunto: `NOTA FISCAL (${sol.supplier_name || 'fornecedor'}) pendente de escrituração`,
+        texto,
+        setor: 'producao',
+        direcao: 'adm',
+        por: userNome,
+      }),
+    });
+    const json = await resp.json().catch(() => ({}));
+    const chamado = json?.data;
+    if (!resp.ok || json?.success === false || !chamado?.id) {
+      throw new Error(
+        json?.message || `Falha ao abrir chamado no Dryland (HTTP ${resp.status})`,
+      );
+    }
+    // chamado_abrir devolve o id; o número (#) vem do chamado_get
+    if (chamado.numero == null) {
+      try {
+        const det = await fetch(
+          `${API_BASE_URL}/api/dryland/chamados/${chamado.id}`,
+        ).then((r) => r.json());
+        if (det?.data?.chamado?.numero != null)
+          chamado.numero = det.data.chamado.numero;
+      } catch {
+        /* número é só informativo */
+      }
+    }
+    const { error } = await supabaseAdmin
+      .from('solicitacoes_crosby')
+      .update({
+        nf_chamado_dryland_id: chamado.id,
+        nf_chamado_dryland_numero: chamado.numero ?? null,
+        nf_chamado_aberto_em: new Date().toISOString(),
+      })
+      .eq('id', sol.id);
+    if (error) throw error;
+    return chamado;
+  };
+
+  // Marca ESCRITURADO quando o chamado do Dryland foi concluído.
+  const sincronizarEscrituracao = async (lista) => {
+    const pendentes = lista.filter(
+      (s) => s.nf_chamado_dryland_id && !s.nf_escriturado_em,
+    );
+    if (!pendentes.length) return;
+    try {
+      const resp = await fetch(`${API_BASE_URL}/api/dryland/chamados`);
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const json = await resp.json();
+      const porId = {};
+      (Array.isArray(json?.data) ? json.data : []).forEach((c) => {
+        porId[c.id] = c;
+      });
+      const mapa = {};
+      const concluidas = [];
+      pendentes.forEach((s) => {
+        const c = porId[s.nf_chamado_dryland_id];
+        if (!c) return;
+        mapa[s.nf_chamado_dryland_id] = { status: c.status, numero: c.numero };
+        if (c.status === 'concluido') {
+          concluidas.push({
+            id: s.id,
+            em:
+              c.concluido_em ||
+              c.atualizado_em ||
+              c.updated_at ||
+              new Date().toISOString(),
+          });
+        }
+      });
+      setChamadosNF((prev) => ({ ...prev, ...mapa }));
+      if (concluidas.length) {
+        await Promise.all(
+          concluidas.map((c) =>
+            supabaseAdmin
+              .from('solicitacoes_crosby')
+              .update({ nf_escriturado_em: c.em })
+              .eq('id', c.id),
+          ),
+        );
+        setSolicitacoes((prev) =>
+          prev.map((s) => {
+            const c = concluidas.find((x) => x.id === s.id);
+            return c ? { ...s, nf_escriturado_em: c.em } : s;
+          }),
+        );
+      }
+    } catch (err) {
+      console.error('Erro ao sincronizar escrituração com o Dryland:', err);
+    }
+  };
+
+  const abrirChamadoNF = async (sol) => {
+    try {
+      const c = await abrirChamadoNotaFiscal(sol);
+      await carregarSolicitacoes();
+      setModalDetalhe(null);
+      notify(
+        'success',
+        `Chamado${c.numero ? ` #${c.numero}` : ''} aberto no Dryland (Produção).`,
+      );
+    } catch (err) {
+      console.error(err);
+      notify('error', err?.message || 'Erro ao abrir chamado no Dryland.');
+    }
   };
 
   // Garante que o duplicateCode no payload use o valor editado pelo usuário
@@ -555,6 +707,8 @@ const SolicitacoesCrosby = () => {
       enviado_totvs: solicitacoesGerais.filter(
         (s) => s.status === 'enviado_totvs',
       ).length,
+      nota_fiscal: solicitacoesGerais.filter((s) => s.status === 'nota_fiscal')
+        .length,
       erro_envio: solicitacoesGerais.filter((s) => s.status === 'erro_envio')
         .length,
       rejeitado: solicitacoesGerais.filter((s) => s.status === 'rejeitado')
@@ -569,20 +723,45 @@ const SolicitacoesCrosby = () => {
       notify('error', 'Você não tem permissão para aprovar como gestor.');
       return;
     }
+    // Com NF: pula o TOTVS — vai para 'nota_fiscal' e abre chamado no Dryland
+    const comNF = sol.tem_nota_fiscal === true;
     try {
       const { error } = await supabaseAdmin
         .from('solicitacoes_crosby')
         .update({
-          status: 'aprovado_gestor',
+          status: comNF ? 'nota_fiscal' : 'aprovado_gestor',
           aprovado_gestor_em: new Date().toISOString(),
           aprovado_gestor_por: user?.id || null,
           aprovado_gestor_por_nome: userNome,
         })
         .eq('id', sol.id);
       if (error) throw error;
+
+      let erroChamado = null;
+      if (comNF && !sol.nf_chamado_dryland_id) {
+        try {
+          await abrirChamadoNotaFiscal(sol);
+        } catch (e) {
+          console.error('Erro ao abrir chamado de NF no Dryland:', e);
+          erroChamado = e?.message || 'falha desconhecida';
+        }
+      }
+
       await carregarSolicitacoes();
       setModalDetalhe(null);
-      notify('success', 'Solicitação aprovada pelo gestor.');
+      if (!comNF) {
+        notify('success', 'Solicitação aprovada pelo gestor.');
+      } else if (erroChamado) {
+        notify(
+          'error',
+          `Aprovada como Nota Fiscal, mas o chamado no Dryland falhou (${erroChamado}). Abra pelo botão no detalhe.`,
+        );
+      } else {
+        notify(
+          'success',
+          'Aprovada como Nota Fiscal — chamado de escrituração aberto no Dryland (Produção).',
+        );
+      }
     } catch (err) {
       console.error(err);
       notify('error', 'Erro ao aprovar como gestor.');
@@ -903,8 +1082,11 @@ const SolicitacoesCrosby = () => {
       notify('error', 'Apenas o financeiro pode liberar para pagamento.');
       return;
     }
-    if (sol.status !== 'enviado_totvs') {
-      notify('error', 'Só é possível liberar após o envio ao TOTVS.');
+    if (sol.status !== 'enviado_totvs' && sol.status !== 'nota_fiscal') {
+      notify(
+        'error',
+        'Só é possível liberar após o envio ao TOTVS (ou no status Nota Fiscal).',
+      );
       return;
     }
     if (
@@ -1051,16 +1233,6 @@ const SolicitacoesCrosby = () => {
     }
   };
 
-  const copiarLink = async () => {
-    try {
-      await navigator.clipboard.writeText(formularioUrl);
-      setLinkCopiado(true);
-      setTimeout(() => setLinkCopiado(false), 2000);
-    } catch (err) {
-      console.error('Erro ao copiar link:', err);
-    }
-  };
-
   const limparFiltros = () => {
     setFiltroStatus('TODOS');
     setFiltroTipo('TODOS');
@@ -1127,22 +1299,51 @@ const SolicitacoesCrosby = () => {
     try {
       const ids = [...selecionados];
       const agora = new Date().toISOString();
-      const { error } = await supabaseAdmin
-        .from('solicitacoes_crosby')
-        .update({
-          status: 'aprovado_gestor',
-          aprovado_gestor_em: agora,
-          aprovado_gestor_por: user?.id || null,
-          aprovado_gestor_por_nome: userNome,
-        })
-        .in('id', ids);
-      if (error) throw error;
+      const patch = {
+        aprovado_gestor_em: agora,
+        aprovado_gestor_por: user?.id || null,
+        aprovado_gestor_por_nome: userNome,
+      };
+      // Com NF vai para 'nota_fiscal' (sem TOTVS) e abre chamado no Dryland
+      const sels = solicitacoes.filter((s) => selecionados.has(s.id));
+      const comNF = sels.filter((s) => s.tem_nota_fiscal === true);
+      const idsNF = new Set(comNF.map((s) => s.id));
+      const idsNormais = ids.filter((id) => !idsNF.has(id));
+
+      if (idsNormais.length) {
+        const { error } = await supabaseAdmin
+          .from('solicitacoes_crosby')
+          .update({ ...patch, status: 'aprovado_gestor' })
+          .in('id', idsNormais);
+        if (error) throw error;
+      }
+      if (idsNF.size) {
+        const { error } = await supabaseAdmin
+          .from('solicitacoes_crosby')
+          .update({ ...patch, status: 'nota_fiscal' })
+          .in('id', [...idsNF]);
+        if (error) throw error;
+      }
+      let falhasChamado = 0;
+      for (const s of comNF.filter((x) => !x.nf_chamado_dryland_id)) {
+        try {
+          await abrirChamadoNotaFiscal(s);
+        } catch (e) {
+          console.error('Erro ao abrir chamado de NF no Dryland:', e);
+          falhasChamado++;
+        }
+      }
+
       await carregarSolicitacoes();
       setSelecionados(new Set());
-      notify(
-        'success',
-        `${ids.length} solicitação(ões) aprovada(s) pelo gestor.`,
-      );
+      const resumo = [
+        `${ids.length} solicitação(ões) aprovada(s) pelo gestor`,
+        idsNF.size ? `${idsNF.size} com NF (chamado no Dryland)` : null,
+        falhasChamado ? `${falhasChamado} chamado(s) falharam` : null,
+      ]
+        .filter(Boolean)
+        .join(' · ');
+      notify(falhasChamado ? 'error' : 'success', resumo + '.');
     } catch (err) {
       console.error(err);
       notify('error', 'Erro ao aprovar em massa.');
@@ -1592,33 +1793,31 @@ const SolicitacoesCrosby = () => {
         </span>
       </RouterLink>
 
-      {/* Link público */}
+      {/* Nova solicitação — formulário interno (exige usuário logado) */}
       <div className="mb-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-3 flex flex-wrap items-center gap-2">
-        <LinkIcon size={18} weight="bold" className="text-[#000638]" />
+        <FileText size={18} weight="bold" className="text-[#000638]" />
         <div className="flex-1 min-w-[200px]">
           <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
-            Link público do formulário
+            Formulário de Solicitações
           </p>
-          <code className="text-xs text-[#000638] break-all">
-            {formularioUrl}
-          </code>
+          <p className="text-[11px] text-gray-600">
+            Cada usuário abre a solicitação com o próprio login e acompanha o
+            andamento em Minhas Solicitações.
+          </p>
         </div>
-        <button
-          onClick={copiarLink}
+        <RouterLink
+          to="/formulario-solicitacoes"
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-[#000638] hover:bg-[#fe0000] rounded-lg transition-colors"
         >
-          {linkCopiado ? (
-            <>
-              <CheckSquare size={14} weight="bold" />
-              Copiado!
-            </>
-          ) : (
-            <>
-              <Copy size={14} weight="bold" />
-              Copiar link
-            </>
-          )}
-        </button>
+          <Plus size={14} weight="bold" />
+          Nova solicitação
+        </RouterLink>
+        <RouterLink
+          to="/minhas-solicitacoes"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#000638] bg-white border border-[#000638]/30 hover:bg-gray-50 rounded-lg transition-colors"
+        >
+          Minhas Solicitações
+        </RouterLink>
       </div>
 
       {/* Cards resumo */}
@@ -1653,6 +1852,12 @@ const SolicitacoesCrosby = () => {
             value: totais.enviado_totvs,
             color: 'text-green-700',
             filter: 'enviado_totvs',
+          },
+          {
+            label: 'Nota Fiscal',
+            value: totais.nota_fiscal,
+            color: 'text-purple-700',
+            filter: 'nota_fiscal',
           },
           {
             label: 'Erro envio',
@@ -1920,6 +2125,7 @@ const SolicitacoesCrosby = () => {
                 <th className="px-3 py-2.5 text-center font-semibold">
                   Duplicata
                 </th>
+                <th className="px-3 py-2.5 text-center font-semibold">NF</th>
                 <th className="px-3 py-2.5 text-right font-semibold">Valor</th>
                 <th className="px-3 py-2.5 text-center font-semibold">
                   Vencimento
@@ -2005,6 +2211,39 @@ const SolicitacoesCrosby = () => {
                     <td className="px-3 py-2 text-center font-mono">
                       {sol.duplicate_code || '--'}
                     </td>
+                    <td className="px-3 py-2 text-center">
+                      {(() => {
+                        const nf = nfSituacao(sol);
+                        if (nf) {
+                          const ch =
+                            chamadosNF[sol.nf_chamado_dryland_id] || null;
+                          return (
+                            <span
+                              className={`inline-flex flex-col items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${nf.color}`}
+                              title={
+                                sol.nf_chamado_dryland_numero
+                                  ? `Chamado Dryland #${sol.nf_chamado_dryland_numero}${ch?.status ? ` · ${ch.status}` : ''}`
+                                  : 'Sem chamado no Dryland'
+                              }
+                            >
+                              {nf.label}
+                              {sol.nf_chamado_dryland_numero && (
+                                <span className="font-normal opacity-80">
+                                  #{sol.nf_chamado_dryland_numero}
+                                </span>
+                              )}
+                            </span>
+                          );
+                        }
+                        if (sol.tem_nota_fiscal === false)
+                          return (
+                            <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-600">
+                              Sem NF
+                            </span>
+                          );
+                        return <span className="text-gray-400">--</span>;
+                      })()}
+                    </td>
                     <td className="px-3 py-2 text-right font-semibold">
                       {formatarMoeda(sol.valor_total)}
                     </td>
@@ -2068,6 +2307,8 @@ const SolicitacoesCrosby = () => {
           onDevolverParaGestor={devolverParaGestor}
           onAtualizarStatusSecundario={atualizarStatusSecundario}
           onLiberarPagamento={liberarParaPagamento}
+          onAbrirChamadoNF={abrirChamadoNF}
+          chamadoNF={chamadosNF[modalDetalhe.nf_chamado_dryland_id] || null}
           onRecarregar={carregarSolicitacoes}
         />
       )}
@@ -2249,6 +2490,8 @@ const ModalDetalhe = ({
   onDevolverParaGestor,
   onAtualizarStatusSecundario,
   onLiberarPagamento,
+  onAbrirChamadoNF,
+  chamadoNF,
   onRecarregar,
 }) => {
   const tipoCfg = TIPO_CONFIG[sol.tipo_solicitacao] || TIPO_CONFIG.compra;
@@ -2265,17 +2508,25 @@ const ModalDetalhe = ({
   const podeReenviar = sol.status === 'erro_envio' && isFinanceiro;
   const podeRejeitar =
     (sol.status === 'pendente' && isGestor) ||
-    (sol.status === 'aprovado_gestor' && isFinanceiro);
+    (sol.status === 'aprovado_gestor' && isFinanceiro) ||
+    (sol.status === 'nota_fiscal' && isFinanceiro);
   const podeEditar =
     (sol.status === 'pendente' && isGestor) ||
     (sol.status === 'aprovado_gestor' && isFinanceiro) ||
+    (sol.status === 'nota_fiscal' && isFinanceiro) ||
     (sol.status === 'erro_envio' && isFinanceiro);
   const podeDevolver = sol.status === 'aprovado_gestor' && isFinanceiro;
+  // Nota fiscal não passa pelo TOTVS: libera direto do status 'nota_fiscal'
   const podeLiberarPagamento =
-    sol.status === 'enviado_totvs' &&
+    (sol.status === 'enviado_totvs' || sol.status === 'nota_fiscal') &&
     !sol.pagamento_liberacao_id &&
     isFinanceiro;
   const jaLiberadoPagamento = !!sol.pagamento_liberacao_id;
+  const nf = nfSituacao(sol);
+  const podeAbrirChamadoNF =
+    sol.status === 'nota_fiscal' &&
+    !sol.nf_chamado_dryland_id &&
+    (isGestor || isFinanceiro);
 
   if (editando) {
     return (
@@ -2378,6 +2629,22 @@ const ModalDetalhe = ({
                     <StatusIcon size={12} weight="bold" />
                     {statusCfg.label}
                   </span>
+                  {nf && (
+                    <span
+                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${nf.color}`}
+                      title={
+                        chamadoNF?.status
+                          ? `Chamado Dryland: ${chamadoNF.status}`
+                          : undefined
+                      }
+                    >
+                      <Receipt size={12} weight="bold" />
+                      NF · {nf.label}
+                      {sol.nf_chamado_dryland_numero
+                        ? ` · chamado #${sol.nf_chamado_dryland_numero}`
+                        : ''}
+                    </span>
+                  )}
                   {TIPOS_COM_STATUS_SEC.includes(sol.tipo_solicitacao) &&
                     sol.status_secundario &&
                     (() => {
@@ -3204,6 +3471,16 @@ const ModalDetalhe = ({
                 Reenviar ao TOTVS
               </button>
             )}
+            {podeAbrirChamadoNF && (
+              <button
+                onClick={() => onAbrirChamadoNF(sol)}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold bg-purple-600 text-white hover:bg-purple-700 transition-colors"
+                title="Abre o chamado de escrituração da NF no Dryland (setor Produção)"
+              >
+                <Receipt size={14} weight="bold" />
+                Abrir chamado de escrituração
+              </button>
+            )}
             {podeLiberarPagamento && (
               <button
                 onClick={() => onLiberarPagamento(sol)}
@@ -3243,6 +3520,7 @@ const ModalDetalhe = ({
               !podeRejeitar &&
               !podeDevolver &&
               !podeLiberarPagamento &&
+              !podeAbrirChamadoNF &&
               !jaLiberadoPagamento && (
                 <p className="text-xs text-gray-400 italic">
                   Nenhuma ação disponível para o status atual ou para o seu

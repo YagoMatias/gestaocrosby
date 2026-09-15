@@ -48,6 +48,10 @@ const PAGE_COMPONENTS = {
   '/solicitacoes-crosby/compras-manutencao': lazy(
     () => import('../../pages/SolicitacoesCrosbyComprasManutencao'),
   ),
+  '/formulario-solicitacoes': lazy(
+    () => import('../../pages/FormularioSolicitacoes'),
+  ),
+  '/minhas-solicitacoes': lazy(() => import('../../pages/MinhasSolicitacoes')),
   '/tecnologia/chamados-dryland': lazy(
     () => import('../../pages/ChamadosDryland'),
   ),

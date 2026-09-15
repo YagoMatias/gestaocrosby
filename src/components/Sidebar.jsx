@@ -85,6 +85,12 @@ const solicitacoesCrosby = [
     color: 'text-blue-600',
   },
   {
+    name: 'Minhas Solicitações',
+    href: '/minhas-solicitacoes',
+    icon: ClipboardText,
+    color: 'text-indigo-600',
+  },
+  {
     name: 'Compras & Manutenção',
     href: '/solicitacoes-crosby/compras-manutencao',
     icon: ShoppingCart,

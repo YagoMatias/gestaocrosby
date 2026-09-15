@@ -45,6 +45,11 @@ const AVAILABLE_PAGES = [
     category: 'Solicitações Crosby',
   },
   {
+    path: '/minhas-solicitacoes',
+    name: 'Minhas Solicitações',
+    category: 'Solicitações Crosby',
+  },
+  {
     path: '/solicitacoes-crosby/compras-manutencao',
     name: 'Compras & Manutenção',
     category: 'Solicitações Crosby',
@@ -288,7 +293,11 @@ const AVAILABLE_PAGES = [
     name: 'Aniversariantes (Varejo)',
     category: 'Varejo',
   },
-  { path: '/pos-vendas-varejo', name: 'Pós-Vendas (Varejo)', category: 'Varejo' },
+  {
+    path: '/pos-vendas-varejo',
+    name: 'Pós-Vendas (Varejo)',
+    category: 'Varejo',
+  },
   {
     path: '/clientes-cashback-varejo',
     name: 'Clientes com Cashback (Varejo)',
@@ -322,6 +331,11 @@ const AVAILABLE_PAGES = [
   {
     path: '/antecipacao-bluecred',
     name: 'BlueCred — Antecipação',
+    category: 'Varejo — BlueCred',
+  },
+  {
+    path: '/inadimplencia-bluecred',
+    name: 'BlueCred — Inadimplência',
     category: 'Varejo — BlueCred',
   },
 

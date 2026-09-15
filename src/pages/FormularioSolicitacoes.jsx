@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Link as RouterLink } from 'react-router-dom';
 import {
   ClipboardText,
   ShoppingCart,
@@ -30,6 +31,7 @@ import {
   UploadSimple,
 } from '@phosphor-icons/react';
 import { supabase, supabaseAdmin } from '../lib/supabase';
+import { useAuth } from '../components/AuthContext';
 import { API_BASE_URL } from '../config/constants';
 import CadastrarFornecedorModal from '../components/CadastrarFornecedorModal';
 import CENTROS_CUSTO from '../config/centrosCusto.json';
@@ -402,6 +404,11 @@ const PortadorCombobox = ({ value, onChange }) => {
 // =====================================================================
 
 const FormularioSolicitacoes = () => {
+  // Página protegida: o solicitante é sempre o usuário logado.
+  const { user } = useAuth();
+  const solicitante = (user?.name || user?.email || '').trim();
+  const solicitanteEmail = (user?.email || '').trim();
+
   const [empresas, setEmpresas] = useState([]);
   const [empresasLoading, setEmpresasLoading] = useState(true);
   const [empresaSelecionada, setEmpresaSelecionada] = useState(null);
@@ -409,8 +416,6 @@ const FormularioSolicitacoes = () => {
   const [empresaDropdownOpen, setEmpresaDropdownOpen] = useState(false);
   const empresaRef = useRef(null);
 
-  const [solicitante, setSolicitante] = useState('');
-  const [solicitanteEmail, setSolicitanteEmail] = useState('');
   const [setor, setSetor] = useState('');
 
   const SETORES = [
@@ -452,6 +457,8 @@ const FormularioSolicitacoes = () => {
   const [formaPagamento, setFormaPagamento] = useState('');
   const [chavePix, setChavePix] = useState('');
   const [codigoBarras, setCodigoBarras] = useState('');
+  // "O pagamento TEM ou VAI TER nota fiscal?" — obrigatório: 'sim' | 'nao' | ''
+  const [temNotaFiscal, setTemNotaFiscal] = useState('');
 
   // Reembolso: comprovante (1 arquivo)
   const [comprovanteFile, setComprovanteFile] = useState(null);
@@ -537,29 +544,6 @@ const FormularioSolicitacoes = () => {
       /* ignora */
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Corrige o body que globalmente tem h-screen e overflow-x:hidden (index.css)
-  useEffect(() => {
-    const prevHeight = document.body.style.height;
-    const prevOverflow = document.body.style.overflow;
-    const prevJustify = document.body.style.justifyContent;
-    const prevAlign = document.body.style.alignItems;
-    const prevDisplay = document.body.style.display;
-    document.body.style.height = 'auto';
-    document.body.style.minHeight = '100%';
-    document.body.style.overflow = 'auto';
-    document.body.style.display = 'block';
-    document.body.style.justifyContent = '';
-    document.body.style.alignItems = '';
-    return () => {
-      document.body.style.height = prevHeight;
-      document.body.style.minHeight = '';
-      document.body.style.overflow = prevOverflow;
-      document.body.style.display = prevDisplay;
-      document.body.style.justifyContent = prevJustify;
-      document.body.style.alignItems = prevAlign;
-    };
   }, []);
 
   useEffect(() => {
@@ -794,8 +778,6 @@ const FormularioSolicitacoes = () => {
   const resetForm = () => {
     setEmpresaSelecionada(null);
     setEmpresaSearch('');
-    setSolicitante('');
-    setSolicitanteEmail('');
     setSetor('');
     setTipo('');
     setFornecedorCpfCnpj('');
@@ -813,6 +795,7 @@ const FormularioSolicitacoes = () => {
     setFormaPagamento('');
     setChavePix('');
     setCodigoBarras('');
+    setTemNotaFiscal('');
     setComprovanteFile(null);
     setComprovantePreview('');
     setLinkExemplo('');
@@ -1018,8 +1001,9 @@ const FormularioSolicitacoes = () => {
       const rows = valores.map((valor, i) => ({
         cd_empresa: LOTE_PRESET.cdEmpresa,
         nm_empresa: empresa.nm_grupoempresa || null,
+        user_id: user?.id || null,
         solicitante: LOTE_PRESET.solicitante,
-        solicitante_email: null,
+        solicitante_email: solicitanteEmail || null,
         setor: LOTE_PRESET.setor,
         tipo_solicitacao: 'pagamento',
         nivel_urgencia: 'normal',
@@ -1089,7 +1073,8 @@ const FormularioSolicitacoes = () => {
     if (!empresaSelecionada) return 'Selecione a loja.';
     if (!empresaSelecionada.cnpj)
       return 'A loja selecionada não possui CNPJ cadastrado.';
-    if (!solicitante.trim()) return 'Informe o nome do solicitante.';
+    if (!user?.id || !solicitante)
+      return 'Sessão expirada. Faça login novamente para enviar a solicitação.';
     if (!setor) return 'Selecione o setor do solicitante.';
     if (!descricao.trim()) {
       if (tipo === 'compra') return 'Descreva os produtos que deseja comprar.';
@@ -1107,6 +1092,8 @@ const FormularioSolicitacoes = () => {
 
     if (exigeFormaPagamento && !formaPagamento)
       return 'Selecione a forma de pagamento.';
+    if (exigeFormaPagamento && !temNotaFiscal)
+      return 'Informe se o pagamento tem ou vai ter nota fiscal.';
     if (exigeFormaPagamento && formaPagamento === 'pix' && !chavePix.trim())
       return 'Informe a chave PIX.';
     if (
@@ -1295,8 +1282,9 @@ const FormularioSolicitacoes = () => {
       const insertData = {
         cd_empresa: parseInt(empresaSelecionada.cd_empresa),
         nm_empresa: empresaSelecionada.nm_grupoempresa || null,
-        solicitante: solicitante.trim(),
-        solicitante_email: solicitanteEmail.trim() || null,
+        user_id: user.id,
+        solicitante,
+        solicitante_email: solicitanteEmail || null,
         setor: setor || null,
         tipo_solicitacao: tipo,
         nivel_urgencia: 'normal',
@@ -1319,6 +1307,7 @@ const FormularioSolicitacoes = () => {
         chave_pix: formaPagamento === 'pix' ? chavePix.trim() || null : null,
         codigo_barras:
           formaPagamento === 'boleto' ? codigoBarras.trim() || null : null,
+        tem_nota_fiscal: exigeFormaPagamento ? temNotaFiscal === 'sim' : null,
         despesa_code: null,
         marca_modelo: null,
         recomendacao_fornecedores: null,
@@ -1414,7 +1403,7 @@ const FormularioSolicitacoes = () => {
 
   if (enviado) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-[#f4f6fb] to-white flex items-center justify-center p-4">
+      <div className="w-full flex items-center justify-center py-16 px-4">
         <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 text-center border">
           <div className="mx-auto w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mb-4">
             <CheckCircle size={40} weight="fill" className="text-green-600" />
@@ -1438,13 +1427,19 @@ const FormularioSolicitacoes = () => {
           >
             Enviar nova solicitação
           </button>
+          <RouterLink
+            to="/minhas-solicitacoes"
+            className="block mt-2 text-xs font-bold text-[#000638] hover:text-[#fe0000]"
+          >
+            Acompanhar em Minhas Solicitações →
+          </RouterLink>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="w-full bg-gradient-to-br from-[#f4f6fb] to-white py-8 px-4">
+    <div className="w-full py-6 px-2">
       <div className="max-w-3xl mx-auto">
         <div className="text-center mb-6">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-gradient-to-br from-blue-50 to-blue-100 shadow-sm mb-3">
@@ -1867,16 +1862,19 @@ const FormularioSolicitacoes = () => {
               <div>
                 <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
                   <User size={14} weight="bold" />
-                  Solicitante *
+                  Solicitante
                 </label>
                 <input
                   type="text"
                   value={solicitante}
-                  onChange={(e) => setSolicitante(e.target.value)}
-                  maxLength={120}
-                  placeholder="Nome de quem está solicitando"
-                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#000638] transition-colors"
+                  readOnly
+                  className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm bg-gray-50 text-[#000638] font-semibold focus:outline-none"
                 />
+                {solicitanteEmail && (
+                  <p className="mt-1 text-[11px] text-gray-500">
+                    {solicitanteEmail}
+                  </p>
+                )}
               </div>
               <div>
                 <label className="text-xs font-bold text-[#000638] mb-1.5 block">
@@ -1895,18 +1893,6 @@ const FormularioSolicitacoes = () => {
                   ))}
                 </select>
               </div>
-            </div>
-            <div>
-              <label className="text-xs font-bold text-[#000638] mb-1.5 block">
-                E-mail (opcional)
-              </label>
-              <input
-                type="email"
-                value={solicitanteEmail}
-                onChange={(e) => setSolicitanteEmail(e.target.value)}
-                placeholder="email@empresa.com"
-                className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#000638] transition-colors"
-              />
             </div>
           </section>
 
@@ -2061,6 +2047,36 @@ const FormularioSolicitacoes = () => {
                   />
                 </div>
               )}
+
+              {/* Nota fiscal — obrigatório para pagamento/reembolso/RH */}
+              <div>
+                <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
+                  <Receipt size={14} weight="bold" />
+                  O pagamento TEM ou VAI TER nota fiscal? *
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { value: 'sim', label: 'Sim' },
+                    { value: 'nao', label: 'Não' },
+                  ].map((opt) => {
+                    const selected = temNotaFiscal === opt.value;
+                    return (
+                      <button
+                        type="button"
+                        key={opt.value}
+                        onClick={() => setTemNotaFiscal(opt.value)}
+                        className={`px-3 py-2.5 rounded-lg border-2 text-sm font-bold transition-all ${
+                          selected
+                            ? 'bg-[#000638] text-white border-transparent shadow-md'
+                            : 'bg-white text-[#000638] border-gray-200 hover:border-[#000638]/40'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             </section>
           )}
 

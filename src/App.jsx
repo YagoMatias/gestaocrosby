@@ -174,6 +174,7 @@ const CadastrarCliente = lazy(() => import('./pages/CadastrarCliente'));
 const FormularioSolicitacoes = lazy(
   () => import('./pages/FormularioSolicitacoes'),
 );
+const MinhasSolicitacoes = lazy(() => import('./pages/MinhasSolicitacoes'));
 const DuplicataVendas = lazy(() => import('./pages/DuplicataVendas'));
 const PagamentosFabricas = lazy(() => import('./pages/PagamentosFabricas'));
 const ConciliacaoStone = lazy(() => import('./pages/ConciliacaoStone'));
@@ -335,6 +336,8 @@ const protectedRoutes = [
     path: '/solicitacoes-crosby/compras-manutencao',
     component: SolicitacoesCrosbyComprasManutencao,
   },
+  { path: '/formulario-solicitacoes', component: FormularioSolicitacoes },
+  { path: '/minhas-solicitacoes', component: MinhasSolicitacoes },
   { path: '/cadastrar-cliente', component: CadastrarCliente },
   { path: '/duplicata-vendas', component: DuplicataVendas },
   // RH — Banco de Talentos
@@ -426,14 +429,6 @@ function App() {
           element={
             <Suspense fallback={<PageLoadingFallback />}>
               <DownloadNotificacao />
-            </Suspense>
-          }
-        />
-        <Route
-          path="/formulario-solicitacoes"
-          element={
-            <Suspense fallback={<PageLoadingFallback />}>
-              <FormularioSolicitacoes />
             </Suspense>
           }
         />
