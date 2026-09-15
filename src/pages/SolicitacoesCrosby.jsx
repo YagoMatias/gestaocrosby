@@ -144,6 +144,25 @@ const nfSituacao = (sol) => {
   };
 };
 
+// Setor do formulário → setor do Dryland (id do módulo com publico:'setor').
+// O chamado de escrituração da NF vai para o setor de quem abriu a solicitação.
+// Setores sem módulo no Dryland (Multimarcas, Revenda, Central de Franquias)
+// caem no SETOR_DRYLAND_PADRAO.
+const SETOR_DRYLAND_PADRAO = 'producao';
+const SETOR_DRYLAND = {
+  FINANCEIRO: 'financeiro',
+  RH: 'dp',
+  'PRODUÇÃO': 'producao',
+  'EXPEDIÇÃO': 'expedicao',
+  MARKETING: 'marketing',
+  'TRÁFEGO': 'marketing',
+  TECNOLOGIA: 'tecnologia',
+  VAREJO: 'gerente-varejo',
+};
+const setorDryland = (setor) =>
+  SETOR_DRYLAND[String(setor || '').trim().toUpperCase()] ||
+  SETOR_DRYLAND_PADRAO;
+
 const TIPO_CONFIG = {
   pagamento: {
     label: 'Pagamento',
@@ -433,8 +452,9 @@ const SolicitacoesCrosby = () => {
 
   // ── Nota fiscal: escrituração via chamado no Dryland ──────────────────
   // Solicitação com NF não vai ao TOTVS (a NF é escriturada direto lá pela
-  // Produção). Na aprovação do gestor abrimos um chamado no Dryland para o
-  // setor Produção; quando o chamado é concluído, gravamos nf_escriturado_em.
+  // Produção/setor). Na aprovação do gestor abrimos um chamado no Dryland para
+  // o setor de quem abriu a solicitação (SETOR_DRYLAND); quando o chamado é
+  // concluído, gravamos nf_escriturado_em.
   const [chamadosNF, setChamadosNF] = useState({}); // chamado id → { status, numero }
 
   const abrirChamadoNotaFiscal = async (sol) => {
@@ -458,7 +478,7 @@ const SolicitacoesCrosby = () => {
         loja_nome: sol.nm_empresa || 'CROSBY',
         assunto: `NOTA FISCAL (${sol.supplier_name || 'fornecedor'}) pendente de escrituração`,
         texto,
-        setor: 'producao',
+        setor: setorDryland(sol.setor),
         direcao: 'adm',
         por: userNome,
       }),
@@ -554,7 +574,7 @@ const SolicitacoesCrosby = () => {
       setModalDetalhe(null);
       notify(
         'success',
-        `Chamado${c.numero ? ` #${c.numero}` : ''} aberto no Dryland (Produção).`,
+        `Chamado${c.numero ? ` #${c.numero}` : ''} aberto no Dryland (setor ${setorDryland(sol.setor)}).`,
       );
     } catch (err) {
       console.error(err);
@@ -759,7 +779,7 @@ const SolicitacoesCrosby = () => {
       } else {
         notify(
           'success',
-          'Aprovada como Nota Fiscal — chamado de escrituração aberto no Dryland (Produção).',
+          `Aprovada como Nota Fiscal — chamado de escrituração aberto no Dryland (setor ${setorDryland(sol.setor)}).`,
         );
       }
     } catch (err) {
@@ -3475,7 +3495,7 @@ const ModalDetalhe = ({
               <button
                 onClick={() => onAbrirChamadoNF(sol)}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold bg-purple-600 text-white hover:bg-purple-700 transition-colors"
-                title="Abre o chamado de escrituração da NF no Dryland (setor Produção)"
+                title={`Abre o chamado de escrituração da NF no Dryland (setor ${setorDryland(sol.setor)})`}
               >
                 <Receipt size={14} weight="bold" />
                 Abrir chamado de escrituração

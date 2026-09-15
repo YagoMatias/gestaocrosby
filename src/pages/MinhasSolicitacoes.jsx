@@ -85,7 +85,7 @@ const ETAPAS = [
 ];
 
 // Solicitação COM nota fiscal não vai ao TOTVS: após o gestor aprovar, fica
-// em 'nota_fiscal' até a Produção escriturar a NF (chamado no Dryland) e o
+// em 'nota_fiscal' até o setor do solicitante escriturar a NF (chamado no Dryland) e o
 // financeiro liberar o pagamento. Ocupa a posição da etapa TOTVS na barra.
 const ETAPA_NF = {
   key: 'nota_fiscal',
@@ -1163,7 +1163,7 @@ const MinhasSolicitacoes = () => {
                     modalDetalhe.sol.nf_chamado_dryland_id
                       ? [
                           {
-                            label: 'Chamado de escrituração aberto (Produção)',
+                            label: `Chamado de escrituração aberto${modalDetalhe.sol.setor ? ` (${modalDetalhe.sol.setor})` : ''}`,
                             em: modalDetalhe.sol.nf_chamado_aberto_em,
                             por: modalDetalhe.sol.nf_chamado_dryland_numero
                               ? `Dryland #${modalDetalhe.sol.nf_chamado_dryland_numero}`
