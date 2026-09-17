@@ -97,11 +97,6 @@ const TABBED_PAGES = {
     group: 'Contas a Receber',
     dot: 'bg-green-500',
   },
-  '/pmr': {
-    label: 'Dashboard PMR',
-    group: 'Contas a Receber',
-    dot: 'bg-green-500',
-  },
   '/batida-carteira': {
     label: 'Batida de Carteira',
     group: 'Contas a Receber',
@@ -109,11 +104,6 @@ const TABBED_PAGES = {
   },
   '/solicitacao-baixa': {
     label: 'Solicitação de Baixa',
-    group: 'Contas a Receber',
-    dot: 'bg-green-500',
-  },
-  '/analise-credito': {
-    label: 'Análise de Crédito',
     group: 'Contas a Receber',
     dot: 'bg-green-500',
   },
@@ -128,11 +118,6 @@ const TABBED_PAGES = {
     label: 'DRE',
     group: 'Financeiro',
     dot: 'bg-purple-500',
-  },
-  '/automacao-financeiro': {
-    label: 'Automação Financeiro',
-    group: 'Financeiro',
-    dot: 'bg-emerald-500',
   },
 
   // ---- Financeiro › Fiscal ----
@@ -213,42 +198,27 @@ const TABBED_PAGES = {
   // ---- Painel de Vendas ----
   '/painel-vendas': {
     label: 'Painel de Vendas',
-    group: 'Painel de Vendas',
+    group: 'Comercial',
     dot: 'bg-sky-500',
   },
   '/crm-vendas': {
     label: 'CRM de Vendas',
-    group: 'Painel de Vendas',
-    dot: 'bg-sky-500',
-  },
-  '/forecast': {
-    label: 'Forecast',
-    group: 'Painel de Vendas',
+    group: 'Comercial',
     dot: 'bg-sky-500',
   },
   '/new-forecast': {
     label: 'New Forecast',
-    group: 'Painel de Vendas',
+    group: 'Comercial',
     dot: 'bg-sky-500',
   },
   '/crm/competicao': {
     label: 'Painel Competição',
-    group: 'Painel de Vendas',
+    group: 'Comercial',
     dot: 'bg-sky-500',
   },
   '/ranking-compras-franquias': {
     label: 'Compras Franquias (Sellin)',
-    group: 'Painel de Vendas',
-    dot: 'bg-sky-500',
-  },
-  '/totvs': {
-    label: 'Faturamento TOTVS',
-    group: 'Painel de Vendas',
-    dot: 'bg-sky-500',
-  },
-  '/catalogo-admin': {
-    label: 'Catálogo Virtual',
-    group: 'Painel de Vendas',
+    group: 'Comercial',
     dot: 'bg-sky-500',
   },
 

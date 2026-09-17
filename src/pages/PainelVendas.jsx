@@ -9,7 +9,6 @@ import {
 import PageTitle from '../components/ui/PageTitle';
 import useApiClient from '../hooks/useApiClient';
 import useFreshFetch from '../hooks/useFreshFetch';
-import { CompeticaoTodosCanais } from '../components/forecast/CompeticaoCanais';
 
 const formatBRL = (v) =>
   Number(v || 0).toLocaleString('pt-BR', {
@@ -400,9 +399,6 @@ export default function PainelVendas() {
             </div>
           );
         })()}
-
-      {/* Competição de vendas — mês/semana correntes, todos os canais */}
-      <CompeticaoTodosCanais />
 
       {/* Modal de drill (filiais → vendedores → vendas) */}
       {viewAtual && (

@@ -26,17 +26,12 @@ const PAGE_COMPONENTS = {
   '/metas-inadimplencia': lazy(() => import('../../pages/MetasInadimplencia')),
   '/esteira-protesto': lazy(() => import('../../pages/EsteiraProtesto')),
   '/call-center': lazy(() => import('../../pages/CallCenter')),
-  '/pmr': lazy(() => import('../../pages/DashboardPMR')),
   '/batida-carteira': lazy(() => import('../../pages/BatidaCarteira')),
   '/solicitacao-baixa': lazy(() => import('../../pages/SolicitacaoBaixa')),
-  '/analise-credito': lazy(() => import('../../pages/AnaliseCredito')),
 
   // ---- Financeiro › demais ----
   '/conciliacao-stone': lazy(() => import('../../pages/ConciliacaoStone')),
   '/dre': lazy(() => import('../../pages/DRE')),
-  '/automacao-financeiro': lazy(
-    () => import('../../pages/AutomacaoFinanceiro'),
-  ),
 
   // ---- Financeiro › Fiscal ----
   '/manifestacao-destinatario': lazy(
@@ -69,17 +64,14 @@ const PAGE_COMPONENTS = {
   '/creditos-clientes': lazy(() => import('../../pages/CreditosClientes')),
   '/top-clientes': lazy(() => import('../../pages/TopClientes')),
 
-  // ---- Painel de Vendas ----
+  // ---- Comercial ----
   '/painel-vendas': lazy(() => import('../../pages/PainelVendas')),
   '/crm-vendas': lazy(() => import('../../pages/CRMVendas')),
-  '/forecast': lazy(() => import('../../pages/Forecast')),
   '/new-forecast': lazy(() => import('../../pages/NewForecast')),
   '/crm/competicao': lazy(() => import('../../pages/PainelCompeticao')),
   '/ranking-compras-franquias': lazy(
     () => import('../../pages/RankingComprasFranquias'),
   ),
-  '/totvs': lazy(() => import('../FaturamentoPanel')),
-  '/catalogo-admin': lazy(() => import('../../pages/CatalogoAdmin')),
 
   // ---- Multimarcas ----
   '/inadimplentes-multimarcas': lazy(

@@ -60,21 +60,21 @@ const AVAILABLE_PAGES = [
     category: 'Solicitações Crosby',
   },
 
-  // ─── RH / Banco de Talentos ─────────────────────────────────
+  // ─── RH ─────────────────────────────────
   {
     path: '/rh/vagas',
     name: 'Vagas & Banco de Talentos',
-    category: 'RH / Banco de Talentos',
+    category: 'RH',
   },
   {
     path: '/rh/inscricoes',
     name: 'Inscrições da Vaga (candidatos e currículos)',
-    category: 'RH / Banco de Talentos',
+    category: 'RH',
   },
   {
     path: '/rh/documentos',
     name: 'Admissão — Documentos (dados sensíveis)',
-    category: 'RH / Banco de Talentos',
+    category: 'RH',
   },
 
   // ─── Clientes ───────────────────────────────────────────────
@@ -190,11 +190,6 @@ const AVAILABLE_PAGES = [
     category: 'Financeiro — Contas a Receber',
   },
   {
-    path: '/pmr',
-    name: 'Dashboard PMR',
-    category: 'Financeiro — Contas a Receber',
-  },
-  {
     path: '/batida-carteira',
     name: 'Batida de Carteira',
     category: 'Financeiro — Contas a Receber',
@@ -202,11 +197,6 @@ const AVAILABLE_PAGES = [
   {
     path: '/solicitacao-baixa',
     name: 'Solicitação de Baixa',
-    category: 'Financeiro — Contas a Receber',
-  },
-  {
-    path: '/analise-credito',
-    name: 'Análise de Crédito',
     category: 'Financeiro — Contas a Receber',
   },
 
@@ -218,58 +208,32 @@ const AVAILABLE_PAGES = [
   },
   { path: '/dre', name: 'DRE', category: 'Financeiro' },
   {
-    path: '/automacao-financeiro',
-    name: 'Automação Financeiro',
-    category: 'Financeiro',
-  },
-  {
     path: '/extratos-bancos',
     name: 'Extratos Bancos',
     category: 'Financeiro',
   },
 
-  // ─── Painel de Vendas ───────────────────────────────────────
+  // ─── Comercial ───────────────────────────────────────
   {
     path: '/painel-vendas',
     name: 'Painel de Vendas',
-    category: 'Painel de Vendas',
+    category: 'Comercial',
   },
-  { path: '/crm-vendas', name: 'CRM de Vendas', category: 'Painel de Vendas' },
-  { path: '/forecast', name: 'Forecast (Hub)', category: 'Painel de Vendas' },
+  { path: '/crm-vendas', name: 'CRM de Vendas', category: 'Comercial' },
   {
     path: '/new-forecast',
     name: 'New Forecast',
-    category: 'Painel de Vendas',
-  },
-  {
-    path: '/forecast/faturamento-historico',
-    name: 'Forecast — Faturamento Detalhado',
-    category: 'Painel de Vendas',
-  },
-  {
-    path: '/dashboard-vendas',
-    name: 'Forecast — Dashboard Vendas',
-    category: 'Painel de Vendas',
+    category: 'Comercial',
   },
   {
     path: '/crm/competicao',
-    name: 'Painel Competição (B2R × B2M)',
-    category: 'Painel de Vendas',
+    name: 'Painel Competição',
+    category: 'Comercial',
   },
   {
     path: '/ranking-compras-franquias',
     name: 'Compras Franquias (Sellin)',
-    category: 'Painel de Vendas',
-  },
-  {
-    path: '/totvs',
-    name: 'Faturamento TOTVS',
-    category: 'Painel de Vendas',
-  },
-  {
-    path: '/catalogo-admin',
-    name: 'Catálogo Virtual',
-    category: 'Painel de Vendas',
+    category: 'Franquias',
   },
 
   // ─── Varejo ─────────────────────────────────────────────────
@@ -580,6 +544,17 @@ const AVAILABLE_PAGES = [
   { path: '/crosby-manage', name: 'Crosby Manage', category: 'Administração' },
 ];
 
+// Hierarquia espelhando o sidebar: estas categorias aparecem DENTRO do bloco
+// da categoria-pai. Marcar a categoria-pai marca também as subcategorias.
+const SUBCATEGORIAS = {
+  Comercial: ['Varejo', 'Varejo — BlueCred', 'Multimarcas', 'Franquias', 'Revenda'],
+};
+const CATEGORIA_PAI = Object.fromEntries(
+  Object.entries(SUBCATEGORIAS).flatMap(([pai, filhas]) =>
+    filhas.map((filha) => [filha, pai]),
+  ),
+);
+
 const GerenciadorAcessos = () => {
   const { user } = useAuth();
   const {
@@ -730,8 +705,16 @@ const GerenciadorAcessos = () => {
   };
 
   // Selecionar todas as páginas de uma categoria
+  // Páginas da categoria + das subcategorias (ex.: Comercial > Varejo)
+  const paginasDaCategoria = (category) => [
+    ...(pagesByCategory[category] || []),
+    ...(SUBCATEGORIAS[category] || []).flatMap(
+      (sub) => pagesByCategory[sub] || [],
+    ),
+  ];
+
   const handleSelectCategory = (category) => {
-    const pagesInCategory = pagesByCategory[category].map((p) => p.path);
+    const pagesInCategory = paginasDaCategoria(category).map((p) => p.path);
     const allSelected = pagesInCategory.every((p) => selectedPages.includes(p));
 
     if (allSelected) {
@@ -770,6 +753,98 @@ const GerenciadorAcessos = () => {
   // Desmarcar todas as páginas
   const handleDeselectAllPages = () => {
     setSelectedPages([]);
+  };
+
+  // Bloco de uma categoria no seletor de páginas. Categoria-pai (Comercial)
+  // mostra as próprias páginas e, dentro, as subcategorias.
+  const renderCategoria = (category, nivel = 0) => {
+    const pages = pagesByCategory[category] || [];
+    const todas = paginasDaCategoria(category);
+    const subs = (SUBCATEGORIAS[category] || []).filter(
+      (s) => pagesByCategory[s],
+    );
+    const allSelected =
+      todas.length > 0 && todas.every((p) => selectedPages.includes(p.path));
+    const someSelected = todas.some((p) => selectedPages.includes(p.path));
+
+    return (
+      <div
+        key={category}
+        className={
+          nivel === 0
+            ? 'bg-white border border-gray-200 rounded-lg p-2'
+            : 'border-l-2 border-purple-200 pl-2 mt-2'
+        }
+      >
+        {/* Header da categoria */}
+        <button
+          onClick={() => handleSelectCategory(category)}
+          className="w-full flex items-center gap-2 mb-2 hover:bg-gray-50 rounded p-1.5 transition-colors"
+        >
+          <div
+            className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${
+              allSelected
+                ? 'bg-purple-600 border-purple-600'
+                : someSelected
+                  ? 'bg-purple-300 border-purple-300'
+                  : 'border-gray-300'
+            }`}
+          >
+            {allSelected && <Check size={12} className="text-white" />}
+            {someSelected && !allSelected && (
+              <div className="w-2 h-2 bg-white rounded-sm" />
+            )}
+          </div>
+          <span
+            className={`text-xs font-bold ${nivel === 0 ? 'text-gray-700' : 'text-gray-600'}`}
+          >
+            {category}
+          </span>
+          <span className="text-[10px] text-gray-500 ml-auto">
+            {todas.length} páginas
+            {subs.length > 0 && ` · ${subs.length} subcanais`}
+          </span>
+        </button>
+
+        {/* Lista de páginas */}
+        <div className="space-y-1 ml-6">
+          {pages.map((page) => {
+            const isSelected = selectedPages.includes(page.path);
+            return (
+              <button
+                key={page.path}
+                onClick={() => handleTogglePage(page.path)}
+                className={`w-full flex items-center gap-2 p-1.5 rounded text-left transition-colors ${
+                  isSelected
+                    ? 'bg-purple-50 hover:bg-purple-100'
+                    : 'hover:bg-gray-50'
+                }`}
+              >
+                <div
+                  className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0 ${
+                    isSelected
+                      ? 'bg-purple-600 border-purple-600'
+                      : 'border-gray-300'
+                  }`}
+                >
+                  {isSelected && <Check size={10} className="text-white" />}
+                </div>
+                <span
+                  className={`text-xs ${
+                    isSelected ? 'font-semibold text-purple-900' : 'text-gray-700'
+                  }`}
+                >
+                  {page.name}
+                </span>
+              </button>
+            );
+          })}
+
+          {/* Subcategorias (ex.: Comercial > Varejo, Multimarcas...) */}
+          {subs.map((sub) => renderCategoria(sub, nivel + 1))}
+        </div>
+      </div>
+    );
   };
 
   // Salvar permissões
@@ -1182,89 +1257,9 @@ const GerenciadorAcessos = () => {
 
               {/* Páginas por categoria */}
               <div className="space-y-2 max-h-[550px] overflow-y-auto pr-2">
-                {Object.entries(pagesByCategory).map(([category, pages]) => {
-                  const allSelected = pages.every((p) =>
-                    selectedPages.includes(p.path),
-                  );
-                  const someSelected = pages.some((p) =>
-                    selectedPages.includes(p.path),
-                  );
-
-                  return (
-                    <div
-                      key={category}
-                      className="bg-white border border-gray-200 rounded-lg p-2"
-                    >
-                      {/* Header da categoria */}
-                      <button
-                        onClick={() => handleSelectCategory(category)}
-                        className="w-full flex items-center gap-2 mb-2 hover:bg-gray-50 rounded p-1.5 transition-colors"
-                      >
-                        <div
-                          className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 ${
-                            allSelected
-                              ? 'bg-purple-600 border-purple-600'
-                              : someSelected
-                                ? 'bg-purple-300 border-purple-300'
-                                : 'border-gray-300'
-                          }`}
-                        >
-                          {allSelected && (
-                            <Check size={12} className="text-white" />
-                          )}
-                          {someSelected && !allSelected && (
-                            <div className="w-2 h-2 bg-white rounded-sm" />
-                          )}
-                        </div>
-                        <span className="text-xs font-bold text-gray-700">
-                          {category}
-                        </span>
-                        <span className="text-[10px] text-gray-500 ml-auto">
-                          {pages.length} páginas
-                        </span>
-                      </button>
-
-                      {/* Lista de páginas */}
-                      <div className="space-y-1 ml-6">
-                        {pages.map((page) => {
-                          const isSelected = selectedPages.includes(page.path);
-                          return (
-                            <button
-                              key={page.path}
-                              onClick={() => handleTogglePage(page.path)}
-                              className={`w-full flex items-center gap-2 p-1.5 rounded text-left transition-colors ${
-                                isSelected
-                                  ? 'bg-purple-50 hover:bg-purple-100'
-                                  : 'hover:bg-gray-50'
-                              }`}
-                            >
-                              <div
-                                className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0 ${
-                                  isSelected
-                                    ? 'bg-purple-600 border-purple-600'
-                                    : 'border-gray-300'
-                                }`}
-                              >
-                                {isSelected && (
-                                  <Check size={10} className="text-white" />
-                                )}
-                              </div>
-                              <span
-                                className={`text-xs ${
-                                  isSelected
-                                    ? 'font-semibold text-purple-900'
-                                    : 'text-gray-700'
-                                }`}
-                              >
-                                {page.name}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
+                {Object.keys(pagesByCategory)
+                  .filter((category) => !CATEGORIA_PAI[category])
+                  .map((category) => renderCategoria(category))}
               </div>
 
               {/* Botões de ação */}

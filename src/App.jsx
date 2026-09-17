@@ -33,7 +33,6 @@ const BatidaCarteira = lazy(() => import('./pages/BatidaCarteira'));
 const ContasPagarFranquias = lazy(() => import('./pages/ContasPagarFranquias'));
 const TitulosClientes = lazy(() => import('./pages/TitulosClientes'));
 const TitulosClientesVarejo = lazy(() => import('./pages/TitulosClientesVarejo'));
-const AnaliseCredito = lazy(() => import('./pages/AnaliseCredito'));
 const NotasFiscais = lazy(() => import('./pages/NotasFiscais'));
 const ManifestacaoDestinatario = lazy(
   () => import('./pages/ManifestacaoDestinatario'),
@@ -73,7 +72,6 @@ const PainelAdmin = lazy(() => import('./pages/PainelAdmin'));
 const UserPanel = lazy(() => import('./pages/UserPanel'));
 const ExtratosBancos = lazy(() => import('./pages/ExtratosBancos'));
 const AuthTest = lazy(() => import('./components/AuthTest'));
-const PMR = lazy(() => import('./pages/DashboardPMR'));
 const DashContasAReceber = lazy(() => import('./pages/DashContasAReceber'));
 const DashContasAPagar = lazy(() => import('./pages/DashContasAPagar'));
 const DashInadimplencia = lazy(() => import('./pages/DashInadimplencia'));
@@ -130,7 +128,6 @@ const ExpedicaoShowroom = lazy(() => import('./pages/ExpedicaoShowroom'));
 const Showroom = lazy(() => import('./pages/Showroom'));
 const FaturamentoHistorico = lazy(() => import('./pages/FaturamentoHistorico'));
 const DashboardVendas = lazy(() => import('./pages/DashboardVendas'));
-const Forecast = lazy(() => import('./pages/Forecast'));
 const NewForecast = lazy(() => import('./pages/NewForecast'));
 const ForecastCanal = lazy(() => import('./pages/ForecastCanal'));
 const ControleChips = lazy(() => import('./pages/ControleChips'));
@@ -154,7 +151,6 @@ const PainelCompeticao = lazy(() => import('./pages/PainelCompeticao'));
 const VoucherUsage = lazy(() => import('./pages/VoucherUsage'));
 const VoucherVarejo = lazy(() => import('./pages/VoucherVarejo'));
 const Promocoes = lazy(() => import('./pages/Promocoes'));
-const CatalogoAdmin = lazy(() => import('./pages/CatalogoAdmin'));
 const CrosbyManage = lazy(() => import('./pages/CrosbyManage'));
 const TopClientes = lazy(() => import('./pages/TopClientes'));
 const DocumentoBluecred = lazy(() => import('./pages/DocumentoBluecred'));
@@ -164,7 +160,6 @@ const CobrancaBluecard = lazy(() => import('./pages/CobrancaBluecard'));
 const InadimplenciaBluecred = lazy(() => import('./pages/InadimplenciaBluecred'));
 const AntecipacaoBoletos = lazy(() => import('./pages/AntecipacaoBoletos'));
 const ConsultaNFs = lazy(() => import('./pages/ConsultaNFs'));
-const FaturamentoPanel = lazy(() => import('./components/FaturamentoPanel'));
 const AtividadeClientes = lazy(() => import('./pages/AtividadeClientes'));
 const SolicitacoesCrosby = lazy(() => import('./pages/SolicitacoesCrosby'));
 const SolicitacoesCrosbyComprasManutencao = lazy(
@@ -179,7 +174,6 @@ const DuplicataVendas = lazy(() => import('./pages/DuplicataVendas'));
 const PagamentosFabricas = lazy(() => import('./pages/PagamentosFabricas'));
 const ConciliacaoStone = lazy(() => import('./pages/ConciliacaoStone'));
 const CrosbyBot = lazy(() => import('./pages/CrosbyBot'));
-const AutomacaoFinanceiro = lazy(() => import('./pages/AutomacaoFinanceiro'));
 // RH — Banco de Talentos (vagas + inscrições) + LP pública
 const RhVagas = lazy(() => import('./pages/rh/Vagas'));
 const RhVagaInscricoes = lazy(() => import('./pages/rh/VagaInscricoes'));
@@ -205,8 +199,6 @@ const protectedRoutes = [
   { path: '/estoque/expedicao-showroom', component: ExpedicaoShowroom },
   { path: '/showroom', component: Showroom },
   { path: '/crosby-bot', component: CrosbyBot },
-  { path: '/forecast/faturamento-historico', component: Forecast },
-  { path: '/dashboard-vendas', component: Forecast },
   { path: '/tecnologia/controle-chip', component: ControleChips },
   { path: '/tecnologia/chamados-dryland', component: ChamadosDryland },
   { path: '/tecnologia/monitoramento-totvs', component: MonitoramentoTotvs },
@@ -228,7 +220,6 @@ const protectedRoutes = [
   { path: '/dash-inadimplencia', component: DashInadimplencia },
   { path: '/metas-inadimplencia', component: MetasInadimplencia },
   { path: '/esteira-protesto', component: EsteiraProtesto },
-  { path: '/pmr', component: PMR },
   { path: '/home', component: Home },
   { path: '/contas-a-pagar', component: ContasAPagar },
   { path: '/dash-contas-a-pagar', component: DashContasAPagar },
@@ -246,7 +237,6 @@ const protectedRoutes = [
   { path: '/contas-pagar-franquias', component: ContasPagarFranquias },
   { path: '/titulos-clientes', component: TitulosClientes },
   { path: '/titulos-clientes-varejo', component: TitulosClientesVarejo },
-  { path: '/analise-credito', component: AnaliseCredito },
   { path: '/notas-fiscais', component: NotasFiscais },
   {
     path: '/manifestacao-destinatario',
@@ -275,7 +265,6 @@ const protectedRoutes = [
   { path: '/dre', component: DRE },
   { path: '/despesas-gerais', component: DespesasGerais },
   { path: '/despesas-gerais/:pagina', component: DespesasGerais },
-  { path: '/automacao-financeiro', component: AutomacaoFinanceiro },
   { path: '/compras-franquias', component: ComprasFranquias },
   { path: '/credev-varejo', component: CredevVarejo },
   { path: '/inadimplentes-multimarcas', component: InadimplentesMultimarcas },
@@ -319,17 +308,12 @@ const protectedRoutes = [
   { path: '/api-claude', component: ApiClaude },
   { path: '/painel-vendas', component: PainelVendas },
   { path: '/crm-vendas', component: CRMVendas },
-  { path: '/forecast', component: Forecast },
   { path: '/new-forecast', component: NewForecast },
   { path: '/forecast-canal/:canal', component: ForecastCanal },
-  // URLs antigas — caem na mesma página (hub) mas abrem aba correta via query
-  { path: '/faturamento-canal', component: Forecast },
   { path: '/crm/competicao', component: PainelCompeticao },
-  { path: '/totvs', component: FaturamentoPanel },
   { path: '/voucher-usage', component: VoucherUsage },
   { path: '/voucher-varejo', component: VoucherVarejo },
   { path: '/promocoes', component: Promocoes },
-  { path: '/catalogo-admin', component: CatalogoAdmin },
   { path: '/crosby-manage', component: CrosbyManage },
   { path: '/solicitacoes-crosby', component: SolicitacoesCrosby },
   {

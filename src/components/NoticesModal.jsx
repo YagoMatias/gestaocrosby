@@ -212,8 +212,6 @@ const NoticesModal = ({ onClose }) => {
   // Rota associada a uma notificação de sistema (quando aplicável)
   const rotaDaNotificacao = (notif) => {
     if (!notif?.tipo) return null;
-    if (String(notif.tipo).startsWith('ANALISE_CREDITO'))
-      return '/analise-credito';
     if (String(notif.tipo) === 'PROVISAO_LIBERACAO')
       return '/liberacao-pagamento';
     if (String(notif.tipo) === 'DRYLAND_CHAMADO_NOVO')

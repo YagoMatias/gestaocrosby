@@ -272,13 +272,6 @@ const financeiro = [
         roles: ['owner', 'admin', 'manager', 'user'],
       },
       {
-        name: 'Dashboard PMR',
-        href: '/pmr',
-        icon: Clock,
-        color: 'text-cyan-600',
-        roles: ['owner', 'admin', 'manager', 'user'],
-      },
-      {
         name: 'Batida de Carteira',
         href: '/batida-carteira',
         icon: Wallet,
@@ -293,11 +286,36 @@ const financeiro = [
         roles: ['owner', 'admin', 'manager', 'user'],
       },
       {
-        name: 'Análise de Crédito',
-        href: '/analise-credito',
-        icon: ClipboardText,
-        color: 'text-purple-600',
-        roles: ['owner', 'admin', 'manager'],
+        name: 'Inadimplência',
+        href: '#',
+        icon: Coins,
+        color: 'text-red-600',
+        children: [
+          {
+            name: 'Inadimplência Franquias',
+            href: '/inadimplentes-franquias',
+            icon: Handshake,
+            color: 'text-amber-600',
+          },
+          {
+            name: 'Inadimplência MTM',
+            href: '/inadimplentes-multimarcas',
+            icon: Tag,
+            color: 'text-indigo-600',
+          },
+          {
+            name: 'Inadimplência BlueCred',
+            href: '/inadimplencia-bluecred',
+            icon: CreditCard,
+            color: 'text-blue-600',
+          },
+          {
+            name: 'Inadimplência Revenda',
+            href: '/inadimplentes-revenda',
+            icon: Package,
+            color: 'text-orange-600',
+          },
+        ],
       },
     ],
   },
@@ -373,13 +391,6 @@ const financeiro = [
       },
     ],
   },
-  {
-    name: 'Automação Financeiro',
-    href: '/automacao-financeiro',
-    icon: Cpu,
-    color: 'text-emerald-600',
-    roles: ['owner'],
-  },
 ];
 
 const painelVendasItems = [
@@ -388,52 +399,6 @@ const painelVendasItems = [
     href: '/painel-vendas',
     icon: ShoppingCart,
     color: 'text-blue-600',
-  },
-  {
-    name: 'CRM de Vendas',
-    href: '#',
-    icon: Storefront,
-    color: 'text-emerald-600',
-    children: [
-      {
-        name: 'Multimarcas',
-        href: '/crm-vendas?canal=multimarcas',
-        icon: Storefront,
-        color: 'text-emerald-600',
-      },
-      {
-        name: 'Varejo',
-        href: '#',
-        icon: ShoppingCart,
-        color: 'text-blue-600',
-        children: [
-          {
-            name: 'CRM',
-            href: '/crm-vendas?canal=varejo',
-            icon: ShoppingCart,
-            color: 'text-blue-600',
-          },
-          {
-            name: 'Reunião',
-            href: '/crm-vendas?canal=varejo&view=reuniao',
-            icon: Megaphone,
-            color: 'text-indigo-600',
-          },
-        ],
-      },
-      {
-        name: 'Revenda',
-        href: '/crm-vendas?canal=revenda',
-        icon: Package,
-        color: 'text-orange-600',
-      },
-    ],
-  },
-  {
-    name: 'Forecast',
-    href: '/forecast',
-    icon: ChartBar,
-    color: 'text-violet-600',
   },
   {
     name: 'New Forecast',
@@ -447,24 +412,6 @@ const painelVendasItems = [
     icon: Trophy,
     color: 'text-amber-500',
   },
-  {
-    name: 'Compras Franquias',
-    href: '/ranking-compras-franquias',
-    icon: ShoppingCart,
-    color: 'text-orange-600',
-  },
-  {
-    name: 'Faturamento TOTVS',
-    href: '/totvs',
-    icon: ChartBar,
-    color: 'text-blue-600',
-  },
-  {
-    name: 'Catálogo Virtual',
-    href: '/catalogo-admin',
-    icon: Storefront,
-    color: 'text-indigo-600',
-  },
 ];
 
 const varejo = [
@@ -473,6 +420,18 @@ const varejo = [
     href: '/forecast-canal/varejo',
     icon: Trophy,
     color: 'text-emerald-600',
+  },
+  {
+    name: 'CRM de Vendas',
+    href: '/crm-vendas?canal=varejo',
+    icon: ShoppingCart,
+    color: 'text-blue-600',
+  },
+  {
+    name: 'Reunião CRM',
+    href: '/crm-vendas?canal=varejo&view=reuniao',
+    icon: Megaphone,
+    color: 'text-indigo-600',
   },
   {
     name: 'Etiquetas de Preço',
@@ -645,6 +604,12 @@ const multimarcas = [
     color: 'text-indigo-600',
   },
   {
+    name: 'CRM de Vendas',
+    href: '/crm-vendas?canal=multimarcas',
+    icon: Storefront,
+    color: 'text-emerald-600',
+  },
+  {
     name: 'Inadimplentes Multimarcas',
     href: '/inadimplentes-multimarcas',
     icon: ChartBar,
@@ -684,6 +649,12 @@ const revenda = [
     color: 'text-cyan-600',
   },
   {
+    name: 'CRM de Vendas',
+    href: '/crm-vendas?canal=revenda',
+    icon: Package,
+    color: 'text-orange-600',
+  },
+  {
     name: 'Inadimplentes Revenda',
     href: '/inadimplentes-revenda',
     icon: ChartBar,
@@ -700,9 +671,9 @@ const franquias = [
   },
   {
     name: 'Compras Franquias',
-    href: '/compras-franquias',
+    href: '/ranking-compras-franquias',
     icon: ShoppingCart,
-    color: 'text-emerald-600',
+    color: 'text-orange-600',
   },
   {
     name: 'Inadimplentes Franquias',
@@ -997,6 +968,39 @@ const expedicao = [
   },
 ];
 
+// Comercial = páginas do antigo "Painel de Vendas" + os canais como subgrupos
+const comercialItems = [
+  ...painelVendasItems,
+  {
+    name: 'Varejo',
+    href: '#',
+    icon: Storefront,
+    color: 'text-green-600',
+    children: varejo,
+  },
+  {
+    name: 'Multimarcas',
+    href: '#',
+    icon: Buildings,
+    color: 'text-purple-600',
+    children: multimarcas,
+  },
+  {
+    name: 'Franquias',
+    href: '#',
+    icon: Users,
+    color: 'text-amber-600',
+    children: franquias,
+  },
+  {
+    name: 'Revenda',
+    href: '#',
+    icon: TrendUp,
+    color: 'text-blue-600',
+    children: revenda,
+  },
+];
+
 const getRoleLabel = (role) => {
   const roleConfig = {
     admin: 'Administrador',
@@ -1011,22 +1015,19 @@ const getRoleLabel = (role) => {
 
 // ======================== COMPONENTES EXTRAÍDOS ========================
 
+// Folha: visível se tem acesso. Grupo: visível se QUALQUER descendente for.
+const itemVisivel = (item, hasAccessToPage) =>
+  Array.isArray(item.children)
+    ? item.children.some((child) => itemVisivel(child, hasAccessToPage))
+    : hasAccessToPage(item.href);
+
 const MenuItem = memo(
   ({ item, isActive, level = 0, hasAccessToPage, pathname, onNavigate }) => {
     const [open, setOpen] = useState(false);
     const IconComponent = item.icon;
     const paddingLeft = level === 0 ? 'pl-3' : 'pl-6';
 
-    // Se tem filhos, só mostra se pelo menos um filho for acessível
-    if (item.children && Array.isArray(item.children)) {
-      const hasAnyVisibleChild = item.children.some(
-        (child) => child.href === '#' || hasAccessToPage(child.href),
-      );
-      if (!hasAnyVisibleChild) return null;
-    }
-
-    const canSee = item.href === '#' || hasAccessToPage(item.href);
-    if (!canSee) return null;
+    if (!itemVisivel(item, hasAccessToPage)) return null;
 
     if (item.children && Array.isArray(item.children)) {
       return (
@@ -1122,12 +1123,9 @@ const MenuSection = memo(
     pathname,
     onNavigate,
   }) => {
-    const hasVisibleItems = items.some((item) => {
-      if (item.children && Array.isArray(item.children)) {
-        return item.children.some((child) => hasAccessToPage(child.href));
-      }
-      return item.href === '#' || hasAccessToPage(item.href);
-    });
+    const hasVisibleItems = items.some((item) =>
+      itemVisivel(item, hasAccessToPage),
+    );
 
     if (!hasVisibleItems) return null;
 
@@ -1250,10 +1248,10 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           color="text-orange-600"
         />
 
-        {/* Seção RH — Banco de Talentos */}
+        {/* Seção RH */}
         <MenuSection
           {...menuProps}
-          title="RH / Banco de Talentos"
+          title="RH"
           items={rh}
           isOpen={openSection === 'rh'}
           onToggle={() => handleSectionToggle('rh')}
@@ -1295,59 +1293,15 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           color="text-emerald-600"
         />
 
-        {/* Seção Painel de Vendas */}
+        {/* Seção Comercial (Painel de Vendas + Varejo, Multimarcas, Franquias, Revenda) */}
         <MenuSection
           {...menuProps}
-          title="Painel de Vendas"
-          items={painelVendasItems}
-          isOpen={openSection === 'painelVendas'}
-          onToggle={() => handleSectionToggle('painelVendas')}
+          title="Comercial"
+          items={comercialItems}
+          isOpen={openSection === 'comercial'}
+          onToggle={() => handleSectionToggle('comercial')}
           icon={ShoppingCart}
           color="text-blue-600"
-        />
-
-        {/* Seção Varejo */}
-        <MenuSection
-          {...menuProps}
-          title="Varejo"
-          items={varejo}
-          isOpen={openSection === 'varejo'}
-          onToggle={() => handleSectionToggle('varejo')}
-          icon={Storefront}
-          color="text-green-600"
-        />
-
-        {/* Seção Multimarcas */}
-        <MenuSection
-          {...menuProps}
-          title="Multimarcas"
-          items={multimarcas}
-          isOpen={openSection === 'multimarcas'}
-          onToggle={() => handleSectionToggle('multimarcas')}
-          icon={Buildings}
-          color="text-purple-600"
-        />
-
-        {/* Seção Revenda */}
-        <MenuSection
-          {...menuProps}
-          title="Revenda"
-          items={revenda}
-          isOpen={openSection === 'revenda'}
-          onToggle={() => handleSectionToggle('revenda')}
-          icon={TrendUp}
-          color="text-blue-600"
-        />
-
-        {/* Seção Franquias */}
-        <MenuSection
-          {...menuProps}
-          title="Franquias"
-          items={franquias}
-          isOpen={openSection === 'franquias'}
-          onToggle={() => handleSectionToggle('franquias')}
-          icon={Users}
-          color="text-amber-600"
         />
 
         {/* Seção Marketing */}
