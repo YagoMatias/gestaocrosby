@@ -38,6 +38,9 @@ import {
   MagnifyingGlass,
   X,
   ChatText,
+  Buildings,
+  Storefront,
+  CreditCard,
 } from '@phosphor-icons/react';
 
 // Resultados possíveis de uma ligação (o "status" do contato)
@@ -117,6 +120,32 @@ const MENSAGEM_SMS_URGENTE_MULTI =
 const MENSAGEM_SMS_LEMBRETE =
   'Crosby: Ola {NOME}! {QTD} faturas a vencer ({DATAS}), total R$ {TOTAL}. ' +
   `O boleto chega no dia do vencimento. wa.me/${WHATSAPP_COBRANCA}`;
+
+// ============================================================
+// Modelos BLUECRED — o crediario do app e pago por PIX dentro do
+// aplicativo, nao por boleto. Entao os modelos perdem a NF e o codigo de
+// barras (que nem existem) e apontam para o app. O tom da cobranca
+// vencida tambem e mais brando: aqui o devedor e consumidor final, nao
+// lojista, e a regua de protesto/juros da MTM nao se aplica.
+// ============================================================
+const MENSAGEM_SMS_BLC_URGENTE =
+  'Crosby: Ola {NOME}! Sua fatura de R$ {VALOR} vence dia {VENCIMENTO}. ' +
+  'Acesse o aplicativo para verificar e pagar.';
+
+const MENSAGEM_SMS_BLC_URGENTE_MULTI =
+  'Crosby: Ola {NOME}! Voce tem {QTD} faturas vencendo ({DATAS}), total ' +
+  'R$ {TOTAL}. Acesse o aplicativo para verificar e pagar.';
+
+const MENSAGEM_SMS_BLC_LEMBRETE =
+  'Crosby: Ola {NOME}! {QTD} faturas a vencer ({DATAS}), total R$ {TOTAL}. ' +
+  'Acesse o aplicativo para verificar e pagar.';
+
+// Enxuta de proposito: com nome de 20 chars e valor de 9 digitos a versao
+// com "Acesse o APP para regularizar ou fale com o suporte: https://..."
+// resolvia em 167 chars e viraria 2 SMS por cliente.
+const MENSAGEM_SMS_BLC_VENCIDA =
+  'Crosby: Ola {NOME}! Voce tem R$ {VALOR} em fatura vencida do BlueCred. ' +
+  `Regularize no APP ou fale com o suporte: wa.me/${WHATSAPP_COBRANCA}`;
 
 /**
  * Normaliza um telefone para 55 + DDD + 9 dígitos (celular).
@@ -268,7 +297,7 @@ const diasAteVencimento = (fatura) => {
  * Monta o plano de SMS de um cliente conforme a urgência das faturas.
  * @returns {{tipo, mensagens, urgentes, futuras, excedentes}}
  */
-const planoSmsCliente = (cliente, templates) => {
+const planoSmsCliente = (cliente, templates, { semBoleto = false } = {}) => {
   const vazio = {
     tipo: 'NENHUM',
     mensagens: [],
@@ -278,7 +307,12 @@ const planoSmsCliente = (cliente, templates) => {
   };
   if (!cliente) return vazio;
 
-  const urgentes = faturasComBoleto(cliente).filter((f) => {
+  // Sem boleto (BlueCred paga por PIX no app), toda fatura que vence
+  // hoje/amanhã é elegível — não faz sentido exigir linha digitável.
+  const candidatas = semBoleto
+    ? cliente.faturas || []
+    : faturasComBoleto(cliente);
+  const urgentes = candidatas.filter((f) => {
     const d = diasAteVencimento(f);
     return d !== null && d <= DIAS_URGENTE;
   });
@@ -288,9 +322,12 @@ const planoSmsCliente = (cliente, templates) => {
     const ordenadas = [...urgentes].sort(
       (a, b) => (diasAteVencimento(a) ?? 0) - (diasAteVencimento(b) ?? 0),
     );
-    // 1 aviso + N boletos, respeitando o teto por cliente
-    const cabem = ordenadas.slice(0, TETO_SMS_CLIENTE - 1);
-    const excedentes = ordenadas.slice(TETO_SMS_CLIENTE - 1);
+    // 1 aviso + N boletos, respeitando o teto por cliente. Sem boleto o
+    // aviso é a única mensagem, então nada concorre pelo teto.
+    const cabem = semBoleto
+      ? ordenadas
+      : ordenadas.slice(0, TETO_SMS_CLIENTE - 1);
+    const excedentes = semBoleto ? [] : ordenadas.slice(TETO_SMS_CLIENTE - 1);
     const unica = cabem.length === 1;
 
     const aviso = aplicarTemplateLembrete(
@@ -307,12 +344,14 @@ const planoSmsCliente = (cliente, templates) => {
       excedentes,
       mensagens: [
         { texto: aviso, prioridade: 'URGENTE', papel: 'AVISO' },
-        ...cabem.map((f) => ({
-          texto: String(f.linha_digitavel || '').replace(/\D/g, ''),
-          prioridade: 'URGENTE',
-          papel: 'BOLETO',
-          fatura: f,
-        })),
+        ...(semBoleto
+          ? []
+          : cabem.map((f) => ({
+              texto: String(f.linha_digitavel || '').replace(/\D/g, ''),
+              prioridade: 'URGENTE',
+              papel: 'BOLETO',
+              fatura: f,
+            }))),
       ],
     };
   }
@@ -353,9 +392,40 @@ const valorParaSms = (v) =>
   });
 
 const aplicarTemplateSms = (template, cliente) =>
-  String(template || '').replace(
-    /\{valor\}/gi,
-    valorParaSms(cliente?.valor_total),
+  String(template || '')
+    .replace(/\{nome\}/gi, nomeParaSms(cliente))
+    .replace(/\{valor\}/gi, valorParaSms(cliente?.valor_total));
+
+// Empresas FILIAL: código abaixo de 5999, exceto 98 e 980 (franquias).
+// Mesma régua de InadimplentesRevenda.jsx — a consulta de revenda vai por
+// filial porque listar os ~25 mil clientes derrubava o TOTVS.
+const FRANQUIA_CODES = ['98', '980'];
+let filiaisCache = null;
+
+async function buscarCodigosFiliais() {
+  if (filiaisCache) return filiaisCache;
+  const resp = await fetch(`${TotvsURL}branches`);
+  if (!resp.ok) throw new Error(`Erro ao buscar empresas: HTTP ${resp.status}`);
+  const result = await resp.json();
+  const empresas = result.data?.data || result.data || [];
+  filiaisCache = empresas
+    .map((e) => String(e.cd_empresa))
+    .filter(
+      (cd) =>
+        /^\d+$/.test(cd) &&
+        parseInt(cd, 10) < 5999 &&
+        !FRANQUIA_CODES.includes(cd),
+    );
+  return filiaisCache;
+}
+
+// REVENDA = tipo 7/code 1 (REVENDEDOR SIM) ou tipo 20/code 3 (TIPO DE
+// CLIENTE = REVENDEDOR) — mesma união usada nos multimarcas.
+const ehClienteRevenda = (c) =>
+  (c.classifications || []).some(
+    (cl) =>
+      (cl.typeCode === 7 && String(cl.code) === '1') ||
+      (cl.typeCode === 20 && String(cl.code) === '3'),
   );
 
 const statusInfo = (id) =>
@@ -381,6 +451,11 @@ const CallCenter = () => {
   // INADIMPLENTES = títulos vencidos (cobrança) | ADIMPLENTES = títulos a
   // vencer de hoje até +7 dias (lembrete com código de barras)
   const [modo, setModo] = useState('INADIMPLENTES');
+  // Universo de clientes da aba. MTM e BLC sao code-driven (lista de
+  // codigos -> contas a receber); REV e branch-driven (faturas das filiais
+  // -> classifica so quem tem fatura), porque listar ~25 mil revendas
+  // derrubava o TOTVS. Ver InadimplentesRevenda.jsx.
+  const [canal, setCanal] = useState('MTM');
 
   // Cache por modo: trocar o toggle NÃO refaz a consulta TOTVS de um recorte
   // que já foi carregado. { [modo]: { dados, valoresAVencer, carregadoEm,
@@ -462,35 +537,62 @@ const CallCenter = () => {
   // Modelos do modo adimplente (editáveis nos modais)
   const [tplUrgente, setTplUrgente] = useState(MENSAGEM_SMS_URGENTE);
   const [tplLembrete, setTplLembrete] = useState(MENSAGEM_SMS_LEMBRETE);
+  // Modelos do canal ativo. BlueCred paga por PIX no app: texto próprio e
+  // nenhuma mensagem de código de barras.
+  const semBoleto = canal === 'BLUECRED';
+  const modelosCanal = useMemo(
+    () =>
+      semBoleto
+        ? {
+            urgente: MENSAGEM_SMS_BLC_URGENTE,
+            urgenteMulti: MENSAGEM_SMS_BLC_URGENTE_MULTI,
+            lembrete: MENSAGEM_SMS_BLC_LEMBRETE,
+            vencida: MENSAGEM_SMS_BLC_VENCIDA,
+          }
+        : {
+            urgente: MENSAGEM_SMS_URGENTE,
+            urgenteMulti: MENSAGEM_SMS_URGENTE_MULTI,
+            lembrete: MENSAGEM_SMS_LEMBRETE,
+            vencida: MENSAGEM_SMS_PADRAO,
+          },
+    [semBoleto],
+  );
+
   const templatesSms = useMemo(
     () => ({
       urgente: tplUrgente,
-      urgenteMulti: MENSAGEM_SMS_URGENTE_MULTI,
+      urgenteMulti: modelosCanal.urgenteMulti,
       lembrete: tplLembrete,
     }),
-    [tplUrgente, tplLembrete],
+    [tplUrgente, tplLembrete, modelosCanal],
   );
+
+  // Opções do plano de SMS — só o canal importa hoje
+  const opcoesPlano = useMemo(() => ({ semBoleto }), [semBoleto]);
 
   // ============================================================
   // Cache por modo — tudo abaixo lê do bucket do modo ativo
   // ============================================================
   // Identifica o recorte carregado. ADIMPLENTES tem janela fixa (hoje..+7),
   // então só o dia importa; INADIMPLENTES depende das datas escolhidas.
-  const chaveFiltroDe = (m) =>
+  const chaveFiltroDe = (c, m) =>
     m === 'ADIMPLENTES'
-      ? `ADIMPLENTES|${hojeStr}`
-      : `INADIMPLENTES|${filtroDataInicial}|${filtroDataFinal}`;
+      ? `${c}|ADIMPLENTES|${hojeStr}`
+      : `${c}|INADIMPLENTES|${filtroDataInicial}|${filtroDataFinal}`;
+
+  // Cada combinacao canal x modo tem o proprio bucket de cache
+  const chaveAba = (c = canal, m = modo) => `${c}|${m}`;
 
   // Saldo vem como string pt-BR ("50,35" / "-3,35")
   const saldoNegativo = String(saldoSms ?? '').trim().startsWith('-');
 
-  const cacheAtual = cachePorModo[modo];
+  const cacheAtual = cachePorModo[chaveAba()];
   const dados = cacheAtual?.dados || [];
   const valoresAVencer = cacheAtual?.valoresAVencer || {};
-  const loading = !!carregandoModo[modo];
+  const loading = !!carregandoModo[chaveAba()];
   // Filtros mudaram depois que os dados foram carregados
   const cacheDesatualizado =
-    !!cacheAtual && cacheAtual.chaveFiltro !== chaveFiltroDe(modo);
+    !!cacheAtual && cacheAtual.chaveFiltro !== chaveFiltroDe(canal, modo);
 
   const formatarMoeda = (valor) =>
     (parseFloat(valor) || 0).toLocaleString('pt-BR', {
@@ -581,17 +683,22 @@ const CallCenter = () => {
   // ============================================================
   // Buscar clientes inadimplentes multimarcas (mesma origem da MTM)
   // ============================================================
-  const fetchDados = async (modoAtual = modo, { forcar = false } = {}) => {
+  const fetchDados = async (
+    canalAtual = canal,
+    modoAtual = modo,
+    { forcar = false } = {},
+  ) => {
+    const aba = chaveAba(canalAtual, modoAtual);
     // Já em cache e sem pedido explícito de recarga → não gasta rota
-    if (!forcar && cachePorModo[modoAtual]) return;
-    // Busca já em andamento para este modo → evita disparo duplicado
-    if (buscasEmVooRef.current.has(modoAtual)) return;
+    if (!forcar && cachePorModo[aba]) return;
+    // Busca já em andamento para esta aba → evita disparo duplicado
+    if (buscasEmVooRef.current.has(aba)) return;
 
-    const chaveFiltro = chaveFiltroDe(modoAtual);
+    const chaveFiltro = chaveFiltroDe(canalAtual, modoAtual);
 
     try {
-      buscasEmVooRef.current.add(modoAtual);
-      setCarregandoModo((prev) => ({ ...prev, [modoAtual]: true }));
+      buscasEmVooRef.current.add(aba);
+      setCarregandoModo((prev) => ({ ...prev, [aba]: true }));
 
       const dataIni = filtroDataInicial || '2024-01-01';
       const dataFim = filtroDataFinal || hojeStr;
@@ -604,36 +711,77 @@ const CallCenter = () => {
       umAnoFrente.setFullYear(umAnoFrente.getFullYear() + 1);
       const umAnoFrenteStr = umAnoFrente.toISOString().split('T')[0];
 
-      // PASSO 1: códigos dos clientes MULTIMARCAS
-      const respMultimarcas = await fetch(`${TotvsURL}multibrand-clients`);
-      if (!respMultimarcas.ok) {
-        const errData = await respMultimarcas.json().catch(() => ({}));
-        throw new Error(
-          errData.message ||
-            `Erro ao buscar multimarcas: HTTP ${respMultimarcas.status}`,
-        );
-      }
-      const resultMultimarcas = await respMultimarcas.json();
-      const multimarcas = resultMultimarcas.data || [];
-
-      if (multimarcas.length === 0) {
+      // PASSO 1: universo de clientes da aba.
+      // MTM e BLUECRED saem de uma lista de códigos e viram filtro
+      // cd_cliente. REVENDA não: listar ~25 mil revendas derruba o TOTVS,
+      // então a consulta vai por filial e a classificação roda depois, só
+      // sobre quem tem fatura (mesma estratégia de InadimplentesRevenda).
+      const abaVazia = () => {
         setCachePorModo((prev) => ({
           ...prev,
-          [modoAtual]: {
+          [aba]: {
             dados: [],
             valoresAVencer: {},
             carregadoEm: new Date(),
             chaveFiltro,
           },
         }));
-        return;
+      };
+
+      let clientesMap = {};
+      let codigosClientes = '';
+      let codigosFiliais = '';
+
+      if (canalAtual === 'REVENDA') {
+        codigosFiliais = (await buscarCodigosFiliais()).join(',');
+        if (!codigosFiliais) {
+          abaVazia();
+          return;
+        }
+      } else if (canalAtual === 'BLUECRED') {
+        const respBlc = await fetch(`${TotvsURL}bluecred/clientes`);
+        if (!respBlc.ok) {
+          const errData = await respBlc.json().catch(() => ({}));
+          throw new Error(
+            errData.message ||
+              `Erro ao buscar clientes BlueCred: HTTP ${respBlc.status}`,
+          );
+        }
+        const codes = (await respBlc.json())?.data?.codes || [];
+        if (codes.length === 0) {
+          abaVazia();
+          return;
+        }
+        // A rota devolve só os códigos; nome e telefone vêm do PASSO 3
+        codes.forEach((c) => {
+          clientesMap[String(c)] = { code: c };
+        });
+        codigosClientes = codes.join(',');
+      } else {
+        const respMultimarcas = await fetch(`${TotvsURL}multibrand-clients`);
+        if (!respMultimarcas.ok) {
+          const errData = await respMultimarcas.json().catch(() => ({}));
+          throw new Error(
+            errData.message ||
+              `Erro ao buscar multimarcas: HTTP ${respMultimarcas.status}`,
+          );
+        }
+        const multimarcas = (await respMultimarcas.json()).data || [];
+        if (multimarcas.length === 0) {
+          abaVazia();
+          return;
+        }
+        multimarcas.forEach((m) => {
+          clientesMap[String(m.code)] = m;
+        });
+        codigosClientes = multimarcas.map((m) => m.code).join(',');
       }
 
-      const multimarcasMap = {};
-      multimarcas.forEach((m) => {
-        multimarcasMap[String(m.code)] = m;
-      });
-      const codigosMultimarcas = multimarcas.map((m) => m.code).join(',');
+      // Recorte de clientes que entra em toda consulta de contas a receber
+      const filtroUniverso = () =>
+        canalAtual === 'REVENDA'
+          ? { branches: codigosFiliais }
+          : { cd_cliente: codigosClientes };
 
       // PASSO 2: contas a receber conforme o modo
       let vencidasFiltradas = [];
@@ -652,7 +800,7 @@ const CallCenter = () => {
           modo: 'vencimento',
           situacao: '1',
           status: 'Em Aberto',
-          cd_cliente: codigosMultimarcas,
+          ...filtroUniverso(),
           expand_invoice: '1',
         });
 
@@ -675,7 +823,7 @@ const CallCenter = () => {
           modo: 'vencimento',
           situacao: '1',
           status: 'Vencido',
-          cd_cliente: codigosMultimarcas,
+          ...filtroUniverso(),
         });
 
         const paramsAVencer = new URLSearchParams({
@@ -684,7 +832,7 @@ const CallCenter = () => {
           modo: 'vencimento',
           situacao: '1',
           status: 'Em Aberto',
-          cd_cliente: codigosMultimarcas,
+          ...filtroUniverso(),
         });
 
         const [responseVencidas, responseAVencer] = await Promise.all([
@@ -721,6 +869,49 @@ const CallCenter = () => {
         );
       }
 
+      // PASSO 2b: REVENDA — a consulta veio por filial, então traz todo
+      // tipo de cliente. Classifica só quem tem fatura e descarta o resto.
+      if (canalAtual === 'REVENDA') {
+        const codigosComFatura = [
+          ...new Set(
+            [...vencidasFiltradas, ...aVencerFiltradas]
+              .map((i) => parseInt(i.cd_cliente, 10))
+              .filter((c) => !isNaN(c)),
+          ),
+        ];
+        if (codigosComFatura.length === 0) {
+          abaVazia();
+          return;
+        }
+        const respClassif = await fetch(`${TotvsURL}clients-classifications`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ personCodes: codigosComFatura }),
+        });
+        if (!respClassif.ok) {
+          const errData = await respClassif.json().catch(() => ({}));
+          throw new Error(
+            errData.message ||
+              `Erro ao classificar clientes: HTTP ${respClassif.status}`,
+          );
+        }
+        const classificados = (await respClassif.json()).data || [];
+        clientesMap = {};
+        classificados.filter(ehClienteRevenda).forEach((c) => {
+          clientesMap[String(c.code)] = c;
+        });
+        if (Object.keys(clientesMap).length === 0) {
+          abaVazia();
+          return;
+        }
+        vencidasFiltradas = vencidasFiltradas.filter(
+          (i) => clientesMap[String(i.cd_cliente)],
+        );
+        aVencerFiltradas = aVencerFiltradas.filter(
+          (i) => clientesMap[String(i.cd_cliente)],
+        );
+      }
+
       // PASSO 3: enriquecer com telefone/UF
       const todosCodigosClientes = [
         ...new Set(
@@ -750,7 +941,7 @@ const CallCenter = () => {
 
       const dadosEnriquecidos = vencidasFiltradas.map((item) => {
         const pessoa = pessoasMap[String(item.cd_cliente)] || {};
-        const multimarca = multimarcasMap[String(item.cd_cliente)] || {};
+        const multimarca = clientesMap[String(item.cd_cliente)] || {};
         return {
           ...item,
           nm_cliente:
@@ -790,8 +981,8 @@ const CallCenter = () => {
       // Falha não apaga um cache bom que já existia para este modo
       notificar('error', `Erro ao carregar dados: ${error.message}`, 5000);
     } finally {
-      buscasEmVooRef.current.delete(modoAtual);
-      setCarregandoModo((prev) => ({ ...prev, [modoAtual]: false }));
+      buscasEmVooRef.current.delete(aba);
+      setCarregandoModo((prev) => ({ ...prev, [aba]: false }));
     }
   };
 
@@ -847,7 +1038,23 @@ const CallCenter = () => {
     // disparar SMS para quem nem está na aba visível
     setSelecionados(new Set());
     setFiltroSituacao('TODAS');
-    fetchDados(novoModo); // no-op se já houver cache
+    fetchDados(canal, novoModo); // no-op se já houver cache
+  };
+
+  // Troca de canal: mesma lógica da troca de modo. MTM, Revenda e BlueCred
+  // são universos de cliente disjuntos, então a seleção não sobrevive.
+  const trocarCanal = (novoCanal) => {
+    if (novoCanal === canal) return;
+    setCanal(novoCanal);
+    // Os modelos editáveis são do canal anterior — resetar evita mandar
+    // texto de boleto para quem paga no app (e vice-versa)
+    const blc = novoCanal === 'BLUECRED';
+    setTplUrgente(blc ? MENSAGEM_SMS_BLC_URGENTE : MENSAGEM_SMS_URGENTE);
+    setTplLembrete(blc ? MENSAGEM_SMS_BLC_LEMBRETE : MENSAGEM_SMS_LEMBRETE);
+    setSelecionados(new Set());
+    setFiltroSituacao('TODAS');
+    setFiltroClientes([]);
+    fetchDados(novoCanal, modo);
   };
 
   // Filtro de cliente sobre as faturas
@@ -1395,9 +1602,9 @@ const CallCenter = () => {
     e?.stopPropagation();
     setClienteSms(cliente);
     setTextoSms(
-      modo === 'ADIMPLENTES' ? MENSAGEM_SMS_URGENTE : MENSAGEM_SMS_PADRAO,
+      modo === 'ADIMPLENTES' ? modelosCanal.urgente : modelosCanal.vencida,
     );
-    setTplLembrete(MENSAGEM_SMS_LEMBRETE);
+    setTplLembrete(modelosCanal.lembrete);
     setModalSmsAberto(true);
   };
 
@@ -1425,11 +1632,15 @@ const CallCenter = () => {
     };
     if (modo !== 'ADIMPLENTES' || !clienteSms) return vazio;
 
-    const plano = planoSmsCliente(clienteSms, {
-      urgente: textoSms.trim(),
-      urgenteMulti: MENSAGEM_SMS_URGENTE_MULTI,
-      lembrete: tplLembrete.trim(),
-    });
+    const plano = planoSmsCliente(
+      clienteSms,
+      {
+        urgente: textoSms.trim(),
+        urgenteMulti: modelosCanal.urgenteMulti,
+        lembrete: tplLembrete.trim(),
+      },
+      opcoesPlano,
+    );
     return {
       ...plano,
       // Só os textos contam: a linha digitável tem 47 dígitos fixos
@@ -1437,7 +1648,7 @@ const CallCenter = () => {
         (m) => m.papel !== 'BOLETO' && m.texto.length > SMS_LIMITE,
       ).length,
     };
-  }, [modo, clienteSms, textoSms, tplLembrete]);
+  }, [modo, clienteSms, textoSms, tplLembrete, modelosCanal, opcoesPlano]);
 
   // Grava no histórico avisando na tela se o Supabase recusar. Antes o erro
   // era engolido: a tabela ficou vazia por RLS e ninguém percebeu.
@@ -1606,9 +1817,9 @@ const CallCenter = () => {
   // ============================================================
   const abrirModalSmsLote = () => {
     setTextoSmsLote(
-      modo === 'ADIMPLENTES' ? MENSAGEM_SMS_LEMBRETE : MENSAGEM_SMS_PADRAO,
+      modo === 'ADIMPLENTES' ? modelosCanal.lembrete : modelosCanal.vencida,
     );
-    setTplUrgente(MENSAGEM_SMS_URGENTE);
+    setTplUrgente(modelosCanal.urgente);
     setModalSmsLoteAberto(true);
   };
 
@@ -1627,11 +1838,15 @@ const CallCenter = () => {
       const planos = comTelefone
         .map((c) => ({
           cliente: c,
-          plano: planoSmsCliente(c, {
-            urgente: tplUrgente.trim(),
-            urgenteMulti: MENSAGEM_SMS_URGENTE_MULTI,
-            lembrete: textoSmsLote.trim(),
-          }),
+          plano: planoSmsCliente(
+            c,
+            {
+              urgente: tplUrgente.trim(),
+              urgenteMulti: modelosCanal.urgenteMulti,
+              lembrete: textoSmsLote.trim(),
+            },
+            opcoesPlano,
+          ),
         }))
         .filter((p) => p.plano.mensagens.length > 0);
 
@@ -1689,7 +1904,7 @@ const CallCenter = () => {
       acimaDoLimite,
       totalSms: mensagens.length,
     };
-  }, [clientesSelecionados, textoSmsLote, tplUrgente, modo]);
+  }, [clientesSelecionados, textoSmsLote, tplUrgente, modo, modelosCanal, opcoesPlano]);
 
   const enviarSmsLote = async () => {
     const { mensagens, acimaDoLimite } = previaLote;
@@ -1958,7 +2173,7 @@ const CallCenter = () => {
     const temTelefone = !!cel.numero;
     const temBoleto =
       modo !== 'ADIMPLENTES' ||
-      planoSmsCliente(cliente, templatesSms).mensagens.length > 0;
+      planoSmsCliente(cliente, templatesSms, opcoesPlano).mensagens.length > 0;
     const habilitado = temTelefone && temBoleto;
     return (
       <button
@@ -2056,6 +2271,45 @@ const CallCenter = () => {
         iconColor="text-blue-600"
       />
 
+      {/* Canal: universo de clientes da aba */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[11px] font-bold uppercase tracking-wide text-gray-500 mr-1">
+          Canal
+        </span>
+        {[
+          { id: 'MTM', label: 'Multimarcas', Icone: Buildings },
+          { id: 'REVENDA', label: 'Revenda', Icone: Storefront },
+          { id: 'BLUECRED', label: 'BlueCred', Icone: CreditCard },
+        ].map(({ id, label, Icone }) => {
+          const carregandoCanal = Object.keys(carregandoModo).some(
+            (k) => k.startsWith(`${id}|`) && carregandoModo[k],
+          );
+          return (
+            <button
+              key={id}
+              onClick={() => trocarCanal(id)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-xs uppercase tracking-wide transition-colors shadow-md ${
+                canal === id
+                  ? 'bg-blue-700 text-white'
+                  : 'bg-white text-blue-700 border border-blue-700/30 hover:bg-gray-50'
+              }`}
+            >
+              {carregandoCanal ? (
+                <CircleNotch size={16} className="animate-spin" />
+              ) : (
+                <Icone size={16} weight="bold" />
+              )}
+              {label}
+            </button>
+          );
+        })}
+        {semBoleto && (
+          <span className="text-[11px] text-gray-500 italic">
+            paga por PIX no app — sem boleto nem código de barras
+          </span>
+        )}
+      </div>
+
       {/* Toggle INADIMPLENTES / ADIMPLENTES */}
       <div className="flex items-center gap-2 flex-wrap">
         {[
@@ -2071,14 +2325,15 @@ const CallCenter = () => {
                 : 'bg-white text-[#000638] border border-[#000638]/30 hover:bg-gray-50'
             }`}
           >
-            {carregandoModo[id] ? (
+            {carregandoModo[chaveAba(canal, id)] ? (
               <CircleNotch size={16} className="animate-spin" />
             ) : (
               <Icone size={16} weight="bold" />
             )}
             {label}
             {/* Bolinha = aba já carregada, troca instantânea */}
-            {cachePorModo[id] && !carregandoModo[id] && (
+            {cachePorModo[chaveAba(canal, id)] &&
+              !carregandoModo[chaveAba(canal, id)] && (
               <span
                 className={`w-1.5 h-1.5 rounded-full ${
                   modo === id ? 'bg-green-400' : 'bg-green-500'
@@ -2110,7 +2365,7 @@ const CallCenter = () => {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            fetchDados(modo, { forcar: true });
+            fetchDados(canal, modo, { forcar: true });
           }}
         >
           <div className="text-sm font-semibold text-[#000638] mb-2">
@@ -2765,7 +3020,11 @@ const CallCenter = () => {
                               </div>
                               <div className="text-sm font-bold text-blue-600">
                                 {
-                                  planoSmsCliente(cliente, templatesSms)
+                                  planoSmsCliente(
+                                    cliente,
+                                    templatesSms,
+                                    opcoesPlano,
+                                  )
                                     .mensagens.length
                                 }
                               </div>
