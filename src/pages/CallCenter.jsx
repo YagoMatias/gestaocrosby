@@ -463,6 +463,9 @@ const CallCenter = () => {
   const [cachePorModo, setCachePorModo] = useState({});
   // Loading por modo — uma busca em andamento não trava a aba já carregada
   const [carregandoModo, setCarregandoModo] = useState({});
+  // Erro da última busca, por aba. Sem isso uma falha do TOTVS aparecia
+  // como "0 clientes na fila" — indistinguível de não haver devedor.
+  const [erroPorAba, setErroPorAba] = useState({});
   // Trava síncrona: o `disabled` do botão só reage no próximo render, então um
   // duplo-clique rápido dispararia duas consultas TOTVS de 12 páginas
   const buscasEmVooRef = useRef(new Set());
@@ -590,6 +593,7 @@ const CallCenter = () => {
   const dados = cacheAtual?.dados || [];
   const valoresAVencer = cacheAtual?.valoresAVencer || {};
   const loading = !!carregandoModo[chaveAba()];
+  const erroAtual = erroPorAba[chaveAba()] || null;
   // Filtros mudaram depois que os dados foram carregados
   const cacheDesatualizado =
     !!cacheAtual && cacheAtual.chaveFiltro !== chaveFiltroDe(canal, modo);
@@ -699,6 +703,12 @@ const CallCenter = () => {
     try {
       buscasEmVooRef.current.add(aba);
       setCarregandoModo((prev) => ({ ...prev, [aba]: true }));
+      setErroPorAba((prev) => {
+        if (!prev[aba]) return prev;
+        const novo = { ...prev };
+        delete novo[aba];
+        return novo;
+      });
 
       const dataIni = filtroDataInicial || '2024-01-01';
       const dataFim = filtroDataFinal || hojeStr;
@@ -969,7 +979,7 @@ const CallCenter = () => {
 
       setCachePorModo((prev) => ({
         ...prev,
-        [modoAtual]: {
+        [aba]: {
           dados: dadosEnriquecidos,
           valoresAVencer: aVencerMap,
           carregadoEm: new Date(),
@@ -978,7 +988,8 @@ const CallCenter = () => {
       }));
     } catch (error) {
       console.error('❌ Erro ao buscar clientes para o call center:', error);
-      // Falha não apaga um cache bom que já existia para este modo
+      // Falha não apaga um cache bom que já existia para esta aba
+      setErroPorAba((prev) => ({ ...prev, [aba]: error.message }));
       notificar('error', `Erro ao carregar dados: ${error.message}`, 5000);
     } finally {
       buscasEmVooRef.current.delete(aba);
@@ -2360,6 +2371,36 @@ const CallCenter = () => {
         )}
       </div>
 
+      {/* Falha da última busca: fica fixo até dar certo. A notificação some em
+          5 s e deixava a fila vazia parecendo "ninguém devendo". */}
+      {erroAtual && !loading && (
+        <div className="flex items-start gap-3 bg-red-50 border border-red-300 rounded-lg px-4 py-3">
+          <Warning size={20} weight="bold" className="text-red-600 shrink-0 mt-0.5" />
+          <div className="flex-1 text-sm">
+            <div className="font-bold text-red-700">
+              Não foi possível carregar a fila do TOTVS
+            </div>
+            <div className="text-red-600 text-xs mt-0.5">
+              {cacheAtual?.carregadoEm
+                ? `Exibindo a última carga, das ${cacheAtual.carregadoEm.toLocaleTimeString(
+                    'pt-BR',
+                    { hour: '2-digit', minute: '2-digit' },
+                  )}. `
+                : 'A fila está vazia porque a consulta falhou, não porque não há devedores. '}
+              Detalhe: {erroAtual}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => fetchDados(canal, modo, { forcar: true })}
+            className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 bg-red-600 text-white text-xs font-bold rounded hover:bg-red-700 transition-colors"
+          >
+            <ClockClockwise size={14} weight="bold" />
+            Tentar novamente
+          </button>
+        </div>
+      )}
+
       {/* Filtros de consulta */}
       <div className="bg-white p-4 sm:p-6 rounded-lg shadow-sm border">
         <form
@@ -2809,9 +2850,13 @@ const CallCenter = () => {
                     <tr>
                       <td
                         colSpan={modo === 'INADIMPLENTES' ? 13 : 12}
-                        className="px-4 py-8 text-center text-gray-500"
+                        className={`px-4 py-8 text-center ${
+                          erroAtual ? 'text-red-600 font-semibold' : 'text-gray-500'
+                        }`}
                       >
-                        Nenhum cliente encontrado para os filtros selecionados
+                        {erroAtual
+                          ? 'Falha ao carregar — a fila vazia NÃO significa que não há devedores. Use "Tentar novamente" no aviso acima.'
+                          : 'Nenhum cliente encontrado para os filtros selecionados'}
                       </td>
                     </tr>
                   ) : (
@@ -2957,8 +3002,14 @@ const CallCenter = () => {
                   </label>
                 )}
                 {fila.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-gray-500 text-sm">
-                    Nenhum cliente encontrado para os filtros selecionados
+                  <div
+                    className={`px-4 py-8 text-center text-sm ${
+                      erroAtual ? 'text-red-600 font-semibold' : 'text-gray-500'
+                    }`}
+                  >
+                    {erroAtual
+                      ? 'Falha ao carregar — a fila vazia NÃO significa que não há devedores.'
+                      : 'Nenhum cliente encontrado para os filtros selecionados'}
                   </div>
                 ) : (
                   fila.map((cliente) => (
