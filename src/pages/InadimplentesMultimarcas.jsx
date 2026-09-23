@@ -32,10 +32,11 @@ import {
   Legend,
   PointElement,
   LineElement,
+  BarElement,
   Filler,
 } from 'chart.js';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
-import { Line } from 'react-chartjs-2';
+import { Bar, Line } from 'react-chartjs-2';
 import {
   ChartBar,
   CalendarBlank,
@@ -84,9 +85,15 @@ ChartJS.register(
   Legend,
   PointElement,
   LineElement,
+  BarElement,
   Filler,
   ChartDataLabels,
 );
+
+const MESES_CURTOS = [
+  'jan', 'fev', 'mar', 'abr', 'mai', 'jun',
+  'jul', 'ago', 'set', 'out', 'nov', 'dez',
+];
 
 const InadimplentesMultimarcas = () => {
   const apiClient = useApiClient();
@@ -1328,6 +1335,109 @@ Crosby`;
   // ======================== CHART DATA MEMOS ========================
 
   // Gráfico: Evolução do Valor Total da Inadimplência
+  // A serie e diaria, mas rotular todo ponto vira um borrao de numeros.
+  // Aqui ficam os indices que FECHAM cada mes: sao os unicos rotulados, e
+  // os unicos que ganham marca no eixo X. O tooltip continua mostrando o
+  // dia exato ao passar o mouse.
+  const marcosMensais = useMemo(() => {
+    const ultimoDoMes = new Set();
+    const rotuloMes = {};
+    timeline.forEach((t, i) => {
+      const mes = String(t.data).slice(0, 7);
+      const prox = timeline[i + 1];
+      if (mes !== (prox ? String(prox.data).slice(0, 7) : null)) {
+        ultimoDoMes.add(i);
+        const d = parseDateNoTZ(t.data);
+        // toLocaleDateString devolve "mar. de 26"; queremos "mar/26"
+        rotuloMes[i] = d
+          ? `${MESES_CURTOS[d.getMonth()]}/${String(d.getFullYear()).slice(2)}`
+          : mes;
+      }
+    });
+    return { ultimoDoMes, rotuloMes };
+  }, [timeline]);
+
+  // Data cheia no topo do tooltip (o eixo so mostra o mes)
+  const tituloTooltipData = (ctxs) => {
+    const d = parseDateNoTZ(timeline[ctxs?.[0]?.dataIndex]?.data);
+    return d ? d.toLocaleDateString('pt-BR') : '';
+  };
+
+  // Faixas de atraso: quanto mais a esquerda, mais recente a divida.
+  // Serve para ver se a inadimplencia esta entrando agora (clientes novos
+  // nas primeiras faixas) ou se e estoque velho parado no 121+.
+  const FAIXAS_ATRASO = [
+    { label: '1 a 15 dias', min: 1, max: 15, cor: '#10b981' },
+    { label: '16 a 30 dias', min: 16, max: 30, cor: '#84cc16' },
+    { label: '31 a 60 dias', min: 31, max: 60, cor: '#f59e0b' },
+    { label: '61 a 120 dias', min: 61, max: 120, cor: '#f97316' },
+    { label: '121+ dias', min: 121, max: Infinity, cor: '#dc2626' },
+  ];
+
+  const faixasAtraso = useMemo(() => {
+    const baldes = FAIXAS_ATRASO.map((f) => ({ ...f, clientes: 0, valor: 0 }));
+    clientesAgrupados.forEach((c) => {
+      // Classifica pelo titulo MAIS ANTIGO do cliente (mesmo criterio que a
+      // tela ja usa para dizer se ele e VENCIDO ou INADIMPLENTE)
+      const dias = c.diasAtrasoMax || 0;
+      const b = baldes.find((x) => dias >= x.min && dias <= x.max);
+      if (!b) return;
+      b.clientes += 1;
+      b.valor += c.valor_total || 0;
+    });
+    return baldes;
+  }, [clientesAgrupados]);
+
+  const chartFaixasAtraso = useMemo(() => {
+    if (!faixasAtraso.some((f) => f.clientes > 0)) return null;
+    return {
+      labels: faixasAtraso.map((f) => f.label),
+      datasets: [
+        {
+          label: 'Clientes',
+          data: faixasAtraso.map((f) => f.clientes),
+          backgroundColor: faixasAtraso.map((f) => f.cor),
+          borderRadius: 6,
+        },
+      ],
+    };
+  }, [faixasAtraso]);
+
+  const barOptionsFaixas = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      datalabels: {
+        display: true,
+        color: '#ffffff',
+        font: { weight: 'bold', size: 12 },
+        formatter: (v) => (v > 0 ? v : ''),
+        anchor: 'center',
+        align: 'center',
+      },
+      tooltip: {
+        callbacks: {
+          label: (ctx) => {
+            const f = faixasAtraso[ctx.dataIndex];
+            return [
+              `${ctx.raw} cliente(s)`,
+              `Total vencido: ${formatCurrency(f?.valor)}`,
+            ];
+          },
+        },
+      },
+    },
+    scales: {
+      x: { ticks: { font: { size: 11 } }, grid: { display: false } },
+      y: {
+        beginAtZero: true,
+        ticks: { font: { size: 10 }, precision: 0 },
+        grid: { color: 'rgba(0,0,0,0.05)' },
+      },
+    },
+  };
+
   const chartTimelineValor = useMemo(() => {
     if (!timeline.length) return null;
     return {
@@ -1585,20 +1695,32 @@ Crosby`;
     plugins: {
       legend: { display: false },
       datalabels: {
-        display: true,
+        // So o ultimo dia de cada mes recebe rotulo
+        display: (ctx) => marcosMensais.ultimoDoMes.has(ctx.dataIndex),
         color: '#000638',
-        font: { weight: 'bold', size: 9 },
+        font: { weight: 'bold', size: 10 },
         formatter: (v) => formatCurrency(v),
         anchor: 'end',
         align: 'top',
-        offset: 4,
+        offset: 6,
       },
       tooltip: {
-        callbacks: { label: (ctx) => formatCurrency(ctx.raw) },
+        callbacks: {
+          title: tituloTooltipData,
+          label: (ctx) => formatCurrency(ctx.raw),
+        },
       },
     },
     scales: {
-      x: { ticks: { font: { size: 10 } }, grid: { display: false } },
+      x: {
+        ticks: {
+          font: { size: 10 },
+          autoSkip: false,
+          maxRotation: 0,
+          callback: (_v, i) => marcosMensais.rotuloMes[i] || '',
+        },
+        grid: { display: false },
+      },
       y: {
         ticks: { font: { size: 10 }, callback: (v) => formatCurrency(v) },
         grid: { color: 'rgba(0,0,0,0.05)' },
@@ -1612,20 +1734,32 @@ Crosby`;
     plugins: {
       legend: { display: false },
       datalabels: {
-        display: true,
+        // So o ultimo dia de cada mes recebe rotulo
+        display: (ctx) => marcosMensais.ultimoDoMes.has(ctx.dataIndex),
         color: '#000638',
-        font: { weight: 'bold', size: 10 },
+        font: { weight: 'bold', size: 11 },
         formatter: (v) => v,
         anchor: 'end',
         align: 'top',
-        offset: 4,
+        offset: 6,
       },
       tooltip: {
-        callbacks: { label: (ctx) => `${ctx.raw} clientes` },
+        callbacks: {
+          title: tituloTooltipData,
+          label: (ctx) => `${ctx.raw} clientes`,
+        },
       },
     },
     scales: {
-      x: { ticks: { font: { size: 10 } }, grid: { display: false } },
+      x: {
+        ticks: {
+          font: { size: 10 },
+          autoSkip: false,
+          maxRotation: 0,
+          callback: (_v, i) => marcosMensais.rotuloMes[i] || '',
+        },
+        grid: { display: false },
+      },
       y: {
         ticks: { font: { size: 10 }, stepSize: 1 },
         grid: { color: 'rgba(0,0,0,0.05)' },
@@ -2800,6 +2934,58 @@ Crosby`;
                         Sem dados de evolução ainda.
                       </div>
                     )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Grafico: clientes por faixa de atraso */}
+              <Card className="shadow-lg rounded-xl bg-white">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center gap-2">
+                    <ChartBar size={18} className="text-amber-600" />
+                    <CardTitle className="text-sm font-bold text-[#000638]">
+                      Clientes por Faixa de Atraso
+                    </CardTitle>
+                  </div>
+                  <CardDescription className="text-xs text-gray-500">
+                    Quantos clientes estao em cada faixa, do atraso mais
+                    recente ao mais antigo. As barras verdes a esquerda sao a
+                    inadimplencia entrando agora; o 121+ e estoque velho.
+                    Passe o mouse para ver o valor de cada faixa.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-0 px-4 pb-4">
+                  <div style={{ height: 320 }}>
+                    {chartFaixasAtraso ? (
+                      <Bar data={chartFaixasAtraso} options={barOptionsFaixas} />
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+                        Sem clientes vencidos no filtro atual.
+                      </div>
+                    )}
+                  </div>
+                  {/* Valor por faixa — o grafico conta clientes, mas o
+                      dinheiro e o que decide a prioridade da cobranca */}
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mt-3">
+                    {faixasAtraso.map((f) => (
+                      <div
+                        key={f.label}
+                        className="rounded-lg border border-gray-100 px-2 py-1.5 text-center"
+                      >
+                        <div
+                          className="text-[10px] font-bold uppercase tracking-wide"
+                          style={{ color: f.cor }}
+                        >
+                          {f.label}
+                        </div>
+                        <div className="text-xs font-extrabold text-[#000638]">
+                          {formatarMoeda(f.valor)}
+                        </div>
+                        <div className="text-[10px] text-gray-500">
+                          {f.clientes} cliente(s)
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </CardContent>
               </Card>
