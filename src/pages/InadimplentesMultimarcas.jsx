@@ -181,6 +181,11 @@ const InadimplentesMultimarcas = () => {
   const [modalProtestosAberto, setModalProtestosAberto] = useState(false);
   const [clienteProtestos, setClienteProtestos] = useState(null);
 
+  // Faturamento por vendedor (rota com cache mensal no banco)
+  const [faturamentoVendedor, setFaturamentoVendedor] = useState({});
+  const [loadingFaturamento, setLoadingFaturamento] = useState(false);
+  const [erroFaturamento, setErroFaturamento] = useState(null);
+
   // Estados para timeline (evolução)
   const [timeline, setTimeline] = useState([]);
   const [timelineRep, setTimelineRep] = useState([]);
@@ -209,6 +214,33 @@ const InadimplentesMultimarcas = () => {
     if (!name) return 'SEM REPRESENTANTE';
     const firstName = name.trim().split(/\s+/)[0].toUpperCase();
     return firstName;
+  };
+
+  // Os cinco vendedores multimarcas com codigo no TOTVS. O campo
+  // representante e texto livre digitado a mao, entao "WALTER DANILO",
+  // "WALTER MULTIMARCAS" e "WALTER/ RAFAEL" apontam todos para o 177.
+  // `desde` = data em que cada um comecou a vender. O faturamento e somado
+  // a partir dai, nao de uma data comum: Arthur entrou em 2026 e seria
+  // comparado com quem vende desde 2025.
+  const VENDEDORES_MTM = [
+    { chave: 'RAFAEL', code: 21, nome: 'RAFAEL ARAUJO', desde: '2025-03-10' },
+    { chave: 'DAVID', code: 26, nome: 'DAVID ALMEIDA', desde: '2025-12-01' },
+    { chave: 'RENATO', code: 65, nome: 'RENATO', desde: '2025-06-01' },
+    { chave: 'WALTER', code: 177, nome: 'WALTER MULTIMARCAS', desde: '2025-01-01' },
+    { chave: 'ARTHUR', code: 259, nome: 'ARTHUR BARBOSA', desde: '2026-01-01' },
+  ];
+  const CHAVES_VENDEDOR = new Set(VENDEDORES_MTM.map((v) => v.chave));
+
+  // Vendedores citados no texto livre. Devolve mais de um quando a venda
+  // foi dividida ("WALTER/ RAFAEL") — nesse caso o valor do cliente e
+  // rateado em partes iguais. Vazio = nao e um dos cinco (REPRESENTANTE,
+  // MOSTRUARIO, PEU...), que continuam agrupados pelo primeiro nome.
+  const vendedoresDoRepresentante = (texto) => {
+    const tokens = String(texto || '')
+      .toUpperCase()
+      .split(/[^A-ZÀ-Ÿ]+/)
+      .filter(Boolean);
+    return [...new Set(tokens.filter((t) => CHAVES_VENDEDOR.has(t)))];
   };
 
   // Saneamento de série temporal: em alguns dias o job noturno gravou dados
@@ -341,6 +373,54 @@ const InadimplentesMultimarcas = () => {
     },
     [carregarTimeline],
   );
+
+  // ======================== FATURAMENTO POR VENDEDOR ========================
+  // Cada um na janela dele (campo `desde`), porque entraram em datas
+  // diferentes. Meses fechados vêm do banco (faturamento_vendedor_mensal);
+  // só o mês aberto e as pontas parciais vão ao TOTVS.
+  const carregarFaturamento = useCallback(async () => {
+    setLoadingFaturamento(true);
+    setErroFaturamento(null);
+    try {
+      const resp = await fetch(
+        `${TotvsURL}sale-panel/faturamento-vendedor-janelas`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            vendedores: VENDEDORES_MTM.map((v) => ({
+              seller_code: v.code,
+              datemin: v.desde,
+            })),
+            datemax: hojeStr,
+          }),
+        },
+      );
+      const json = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(json?.message || `HTTP ${resp.status}`);
+      const mapa = {};
+      (json?.data?.vendedores || []).forEach((v) => {
+        mapa[Number(v.seller_code)] = {
+          valor: Number(v.valor) || 0,
+          qtd: Number(v.qtd) || 0,
+          nome: v.seller_name || '',
+          datemin: v.datemin,
+        };
+      });
+      setFaturamentoVendedor(mapa);
+    } catch (err) {
+      console.error('Erro ao carregar faturamento por vendedor:', err);
+      setErroFaturamento(err.message);
+      setFaturamentoVendedor({});
+    } finally {
+      setLoadingFaturamento(false);
+    }
+  }, [hojeStr]);
+
+  useEffect(() => {
+    carregarFaturamento();
+  }, [carregarFaturamento]);
+
 
   // Carregar timeline ao montar
   useEffect(() => {
@@ -1117,22 +1197,83 @@ Crosby`;
   // Resumo de dívida por representante
   const resumoPorRepresentante = useMemo(() => {
     const mapa = {};
-    clientesAgrupados.forEach((cliente) => {
-      const rep = normalizeRepName(cliente.representante);
+    const garantir = (rep) => {
       if (!mapa[rep]) {
         mapa[rep] = {
           representante: rep,
           qtdClientes: 0,
           valorTotal: 0,
           valorAVencer: 0,
+          valorInadimplente: 0,
         };
       }
-      mapa[rep].qtdClientes += 1;
-      mapa[rep].valorTotal += cliente.valor_total || 0;
-      mapa[rep].valorAVencer += cliente.valor_a_vencer || 0;
+      return mapa[rep];
+    };
+
+    clientesAgrupados.forEach((cliente) => {
+      const vendedores = vendedoresDoRepresentante(cliente.representante);
+      // Venda dividida entre dois vendedores → rateia em partes iguais
+      const alvos = vendedores.length
+        ? vendedores
+        : [normalizeRepName(cliente.representante)];
+      const fatia = 1 / alvos.length;
+
+      alvos.forEach((rep) => {
+        const r = garantir(rep);
+        r.qtdClientes += fatia;
+        r.valorTotal += (cliente.valor_total || 0) * fatia;
+        r.valorAVencer += (cliente.valor_a_vencer || 0) * fatia;
+        // Inadimplente = atraso acima de 60 dias (mesmo corte da tela)
+        if (cliente.situacao === 'INADIMPLENTE') {
+          r.valorInadimplente += (cliente.valor_total || 0) * fatia;
+        }
+      });
     });
-    return Object.values(mapa).sort((a, b) => b.valorTotal - a.valorTotal);
+
+    return Object.values(mapa)
+      .map((r) => ({ ...r, qtdClientes: Math.round(r.qtdClientes) }))
+      .sort((a, b) => b.valorTotal - a.valorTotal);
   }, [clientesAgrupados]);
+
+  // Tabela do dashboard: venda x inadimplência (>60 dias) x percentual.
+  // Os cinco aparecem sempre, mesmo zerados — Walter e Renato foram
+  // desligados e não faturam desde julho, mas a carteira deles continua.
+  const desempenhoVendedores = useMemo(() => {
+    const porRep = {};
+    resumoPorRepresentante.forEach((r) => {
+      porRep[r.representante] = r;
+    });
+    return VENDEDORES_MTM.map((v) => {
+      const r = porRep[v.chave] || {};
+      const venda = faturamentoVendedor[v.code]?.valor || 0;
+      const inadimplencia = r.valorInadimplente || 0;
+      return {
+        ...v,
+        venda,
+        inadimplencia,
+        carteiraVencida: r.valorTotal || 0,
+        qtdClientes: r.qtdClientes || 0,
+        percentual: venda > 0 ? (inadimplencia / venda) * 100 : null,
+      };
+    }).sort((a, b) => b.venda - a.venda);
+  }, [resumoPorRepresentante, faturamentoVendedor]);
+
+  // Rodape da tabela. O percentual do total NAO e a media dos percentuais:
+  // e a soma das inadimplencias sobre a soma das vendas, senao um vendedor
+  // pequeno com percentual alto distorceria o numero.
+  const totaisVendedores = useMemo(() => {
+    const soma = (campo) =>
+      desempenhoVendedores.reduce((a, v) => a + (v[campo] || 0), 0);
+    const venda = soma('venda');
+    const inadimplencia = soma('inadimplencia');
+    return {
+      venda,
+      inadimplencia,
+      carteiraVencida: soma('carteiraVencida'),
+      qtdClientes: soma('qtdClientes'),
+      percentual: venda > 0 ? (inadimplencia / venda) * 100 : null,
+    };
+  }, [desempenhoVendedores]);
 
   // Auto-salvar timeline quando dados carregam (apenas se há dados e não há filtros aplicados)
   useEffect(() => {
@@ -2663,123 +2804,156 @@ Crosby`;
                 </CardContent>
               </Card>
 
-              {/* Gráfico: Evolução por Representante - Valor */}
+              {/* Tabela: venda x inadimplencia por vendedor */}
               <Card className="shadow-lg rounded-xl bg-white">
                 <CardHeader className="pb-2">
-                  <div className="flex items-center gap-2">
-                    <TrendUp size={18} className="text-purple-600" />
-                    <CardTitle className="text-sm font-bold text-[#000638]">
-                      Evolução da Inadimplência por Representante (Valor)
-                    </CardTitle>
-                  </div>
-                  <CardDescription className="text-xs text-gray-500">
-                    Valor inadimplente de cada representante ao longo do tempo
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="pt-0 px-4 pb-4">
-                  <div style={{ height: 400 }}>
-                    {chartTimelineRepresentantes ? (
-                      <Line
-                        data={chartTimelineRepresentantes}
-                        options={lineOptionsRepresentantes}
-                      />
-                    ) : (
-                      <div className="flex items-center justify-center h-full text-gray-400 text-sm">
-                        Sem dados de evolução por representante ainda.
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Gráfico: Evolução Vencidos vs Inadimplentes */}
-              <Card className="shadow-lg rounded-xl bg-white">
-                <CardHeader className="pb-2">
-                  <div className="flex items-center gap-2">
-                    <Warning size={18} className="text-yellow-600" />
-                    <CardTitle className="text-sm font-bold text-[#000638]">
-                      Evolução Vencidos vs Inadimplentes
-                    </CardTitle>
-                    <div className="ml-auto flex items-center gap-2">
-                      {variacoes.atrasados !== null && (
-                        <span
-                          className={`flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${variacoes.atrasados > 0 ? 'bg-orange-100 text-orange-700' : variacoes.atrasados < 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}
-                        >
-                          {variacoes.atrasados > 0 ? (
-                            <ArrowUp size={14} weight="bold" />
-                          ) : variacoes.atrasados < 0 ? (
-                            <ArrowDown size={14} weight="bold" />
-                          ) : null}
-                          Venc. {variacoes.atrasados > 0 ? '+' : ''}
-                          {variacoes.atrasados.toFixed(1)}%
-                        </span>
-                      )}
-                      {variacoes.inadimplentes !== null && (
-                        <span
-                          className={`flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${variacoes.inadimplentes > 0 ? 'bg-red-100 text-red-700' : variacoes.inadimplentes < 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}
-                        >
-                          {variacoes.inadimplentes > 0 ? (
-                            <ArrowUp size={14} weight="bold" />
-                          ) : variacoes.inadimplentes < 0 ? (
-                            <ArrowDown size={14} weight="bold" />
-                          ) : null}
-                          Inad. {variacoes.inadimplentes > 0 ? '+' : ''}
-                          {variacoes.inadimplentes.toFixed(1)}%
-                        </span>
-                      )}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Users size={18} className="text-[#000638]" />
+                      <CardTitle className="text-sm font-bold text-[#000638]">
+                        Venda x Inadimplencia por Vendedor
+                      </CardTitle>
                     </div>
+                    <button
+                      onClick={carregarFaturamento}
+                      disabled={loadingFaturamento}
+                      className="flex items-center gap-1 text-xs font-bold text-[#000638] bg-gray-100 hover:bg-gray-200 disabled:opacity-50 px-2.5 py-1 rounded-lg transition-colors"
+                      title="Recarregar faturamento"
+                    >
+                      {loadingFaturamento ? (
+                        <CircleNotch size={14} className="animate-spin" />
+                      ) : (
+                        <ArrowClockwise size={14} weight="bold" />
+                      )}
+                      Atualizar
+                    </button>
                   </div>
                   <CardDescription className="text-xs text-gray-500">
-                    Vencidos (≤ 60 dias) vs Inadimplentes ({'>'} 60 dias) —
-                    acompanhe a gravidade da carteira{' '}
-                    {variacoes.primeiraData
-                      ? `(ref. ${variacoes.primeiraData})`
-                      : ''}
+                    Faturado de cada vendedor desde a data de entrada dele,
+                    contra a carteira inadimplente (clientes com mais de 60
+                    dias de atraso). Percentual = inadimplencia / faturado * 100.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="pt-0 px-4 pb-4">
-                  <div style={{ height: 350 }}>
-                    {chartTimelineAtrasadosInadimplentes ? (
-                      <Line
-                        data={chartTimelineAtrasadosInadimplentes}
-                        options={lineOptionsAtrasadosInadimplentes}
-                      />
-                    ) : (
-                      <div className="flex items-center justify-center h-full text-gray-400 text-sm">
-                        Sem dados de evolução atrasados/inadimplentes ainda. Os
-                        dados começarão a ser coletados a partir de hoje.
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Gráfico: Evolução por Representante - Quantidade de Clientes */}
-              <Card className="shadow-lg rounded-xl bg-white">
-                <CardHeader className="pb-2">
-                  <div className="flex items-center gap-2">
-                    <Users size={18} className="text-green-600" />
-                    <CardTitle className="text-sm font-bold text-[#000638]">
-                      Evolução Clientes por Representante
-                    </CardTitle>
-                  </div>
-                  <CardDescription className="text-xs text-gray-500">
-                    Quantidade de clientes inadimplentes de cada representante
-                    ao longo do tempo
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="pt-0 px-4 pb-4">
-                  <div style={{ height: 400 }}>
-                    {chartTimelineRepClientes ? (
-                      <Line
-                        data={chartTimelineRepClientes}
-                        options={lineOptionsRepClientes}
-                      />
-                    ) : (
-                      <div className="flex items-center justify-center h-full text-gray-400 text-sm">
-                        Sem dados de evolução por representante ainda.
-                      </div>
-                    )}
+                  {erroFaturamento && (
+                    <div className="mb-3 text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
+                      Nao foi possivel carregar o faturamento: {erroFaturamento}
+                    </div>
+                  )}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-[#000638] text-white">
+                          <th className="px-3 py-2 text-left font-semibold">
+                            Vendedor
+                          </th>
+                          <th className="px-3 py-2 text-right font-semibold">
+                            Faturado
+                          </th>
+                          <th className="px-3 py-2 text-right font-semibold">
+                            Inadimplencia (+60d)
+                          </th>
+                          <th className="px-3 py-2 text-right font-semibold">
+                            % Inadimplencia
+                          </th>
+                          <th className="px-3 py-2 text-right font-semibold">
+                            Carteira vencida
+                          </th>
+                          <th className="px-3 py-2 text-center font-semibold">
+                            Clientes
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {desempenhoVendedores.map((v) => (
+                          <tr
+                            key={v.code}
+                            className="border-b border-gray-100 hover:bg-gray-50"
+                          >
+                            <td className="px-3 py-2">
+                              <div className="font-bold text-[#000638]">
+                                {v.chave}
+                              </div>
+                              <div className="text-[10px] text-gray-500">
+                                {v.nome} - cod. {v.code}
+                              </div>
+                              <div className="text-[10px] text-gray-400">
+                                desde {formatarData(v.desde)}
+                              </div>
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {loadingFaturamento ? (
+                                <CircleNotch
+                                  size={12}
+                                  className="animate-spin inline"
+                                />
+                              ) : (
+                                formatarMoeda(v.venda)
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-right font-semibold text-red-600">
+                              {formatarMoeda(v.inadimplencia)}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {v.percentual === null ? (
+                                <span
+                                  className="text-gray-400"
+                                  title="Sem faturamento no periodo - vendedor desligado"
+                                >
+                                  --
+                                </span>
+                              ) : (
+                                <span
+                                  className={`font-bold ${
+                                    v.percentual >= 10
+                                      ? 'text-red-600'
+                                      : v.percentual >= 5
+                                        ? 'text-amber-600'
+                                        : 'text-green-700'
+                                  }`}
+                                >
+                                  {v.percentual.toLocaleString('pt-BR', {
+                                    maximumFractionDigits: 1,
+                                  })}
+                                  %
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-3 py-2 text-right text-gray-600">
+                              {formatarMoeda(v.carteiraVencida)}
+                            </td>
+                            <td className="px-3 py-2 text-center text-gray-600">
+                              {v.qtdClientes}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="bg-gray-50 font-bold text-[#000638]">
+                          <td className="px-3 py-2">TOTAL</td>
+                          <td className="px-3 py-2 text-right">
+                            {formatarMoeda(totaisVendedores.venda)}
+                          </td>
+                          <td className="px-3 py-2 text-right text-red-600">
+                            {formatarMoeda(totaisVendedores.inadimplencia)}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            {totaisVendedores.percentual === null
+                              ? '--'
+                              : `${totaisVendedores.percentual.toLocaleString(
+                                  'pt-BR',
+                                  { maximumFractionDigits: 1 },
+                                )}%`}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            {formatarMoeda(totaisVendedores.carteiraVencida)}
+                          </td>
+                          <td className="px-3 py-2 text-center">
+                            {totaisVendedores.qtdClientes}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
                   </div>
                 </CardContent>
               </Card>
