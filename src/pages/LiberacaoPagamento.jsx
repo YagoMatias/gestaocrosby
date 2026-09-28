@@ -66,6 +66,12 @@ const BANCOS = [
 const FORMAS_PAGAMENTO = [
   { value: 'PIX', label: 'PIX', detalheLabel: 'Chave PIX', campo: 'chave_pix' },
   {
+    value: 'PAGBANK',
+    label: 'Saldo PagBank',
+    detalheLabel: 'Chave PagBank',
+    campo: 'chave_pix',
+  },
+  {
     value: 'BOLETO',
     label: 'Boleto',
     detalheLabel: 'Código de Barras',

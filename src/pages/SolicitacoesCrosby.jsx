@@ -55,10 +55,32 @@ const PORTADORES_OPTIONS = Object.entries(PORTADORES_JSON).sort(
 );
 const STORAGE_BUCKET = 'solicitacoes-crosby';
 
+// Forma de pagamento chega em formatos diferentes ('pix' do formulário,
+// 'PIX'/'Saldo PagBank' da edição) — normaliza para comparar.
+const normForma = (v) =>
+  String(v || '')
+    .toLowerCase()
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '_');
+const isPagbank = (v) => normForma(v) === 'saldo_pagbank';
+const formaLabel = (v) => {
+  const f = normForma(v);
+  if (!f) return '--';
+  if (f === 'pix') return 'PIX';
+  if (f === 'boleto') return 'Boleto';
+  if (f === 'debito') return 'Débito';
+  if (f === 'saldo_pagbank') return 'Saldo PagBank';
+  if (f.startsWith('credito_')) return 'Crédito ' + f.replace('credito_', '');
+  return v;
+};
+
 const FORMAS_PAGAMENTO = [
   'PIX',
   'Débito',
   'Boleto',
+  'Saldo PagBank',
   'Crédito 1x',
   'Crédito 2x',
   'Crédito 3x',
@@ -1162,7 +1184,9 @@ const SolicitacoesCrosby = () => {
               ? 'DEBITO'
               : fp.startsWith('credito')
                 ? 'CREDITO'
-                : null;
+                : isPagbank(fp)
+                  ? 'PAGBANK'
+                  : null;
 
       const linkPgto =
         sol.dados_completos?.pix_qrcode_payload ||
@@ -1572,7 +1596,9 @@ const SolicitacoesCrosby = () => {
                   ? 'DEBITO'
                   : fp.startsWith('credito')
                     ? 'CREDITO'
-                    : null;
+                    : isPagbank(fp)
+                      ? 'PAGBANK'
+                      : null;
 
           const linkPgto =
             sol.dados_completos?.pix_qrcode_payload ||
@@ -1837,6 +1863,51 @@ const SolicitacoesCrosby = () => {
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#000638] bg-white border border-[#000638]/30 hover:bg-gray-50 rounded-lg transition-colors"
         >
           Minhas Solicitações
+        </RouterLink>
+      </div>
+
+      {/* Link público de devolução de mercadoria — o cliente preenche sem login */}
+      <div className="mb-4 bg-gradient-to-r from-rose-50 to-orange-50 border border-rose-200 rounded-xl p-3 flex flex-wrap items-center gap-2">
+        <ArrowUUpLeft size={18} weight="bold" className="text-rose-700" />
+        <div className="flex-1 min-w-[200px]">
+          <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+            Devolução de mercadoria · link público
+          </p>
+          <p className="text-[11px] text-gray-600">
+            Envie ao cliente. Ele informa CPF/CNPJ, vendedor, tipo, quantidade e
+            fotos por peça. Defeito abre chamado para a Produção; tudo aparece em
+            Devoluções de Mercadoria.
+          </p>
+        </div>
+        <code className="hidden md:inline text-[11px] px-2 py-1 rounded bg-white border border-rose-200 text-rose-800">
+          {`${window.location.origin}/devolucao`}
+        </code>
+        <button
+          type="button"
+          onClick={() => {
+            navigator.clipboard
+              ?.writeText(`${window.location.origin}/devolucao`)
+              .then(() => notify('success', 'Link público copiado'))
+              .catch(() => notify('error', 'Não consegui copiar o link'));
+          }}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-rose-700 hover:bg-rose-800 rounded-lg transition-colors"
+        >
+          <LinkSimple size={14} weight="bold" />
+          Copiar link
+        </button>
+        <a
+          href="/devolucao"
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#000638] bg-white border border-[#000638]/30 hover:bg-gray-50 rounded-lg transition-colors"
+        >
+          Abrir
+        </a>
+        <RouterLink
+          to="/devolucoes-mercadoria"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#000638] bg-white border border-[#000638]/30 hover:bg-gray-50 rounded-lg transition-colors"
+        >
+          Devoluções de Mercadoria
         </RouterLink>
       </div>
 
@@ -2744,7 +2815,7 @@ const ModalDetalhe = ({
                     className="sm:col-span-2"
                   >
                     <span className="font-semibold text-sm">
-                      {sol.forma_pagamento || '--'}
+                      {formaLabel(sol.forma_pagamento)}
                     </span>
                   </DocField>
                   <DocField label="Valor Total">
@@ -3027,8 +3098,24 @@ const ModalDetalhe = ({
                         </DocField>
                       </div>
                     )}
+                    {isPagbank(sol.forma_pagamento) && (
+                      <div className="grid grid-cols-1">
+                        <DocField label="Chave PagBank">
+                          {sol.chave_pix ? (
+                            <span className="font-mono text-sm break-all select-all bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                              {sol.chave_pix}
+                            </span>
+                          ) : (
+                            <span className="text-gray-400 text-xs italic">
+                              não informada
+                            </span>
+                          )}
+                        </DocField>
+                      </div>
+                    )}
                     {sol.chave_pix &&
-                      (sol.forma_pagamento || '').toLowerCase() !== 'pix' && (
+                      (sol.forma_pagamento || '').toLowerCase() !== 'pix' &&
+                      !isPagbank(sol.forma_pagamento) && (
                         <div className="grid grid-cols-1">
                           <DocField label="Chave PIX">
                             <span className="font-mono text-sm break-all select-all bg-yellow-50 px-2 py-0.5 rounded border border-yellow-200">
@@ -3726,6 +3813,7 @@ const ModalEdicao = ({
     if (fp === 'pix') return 'PIX';
     if (fp === 'boleto') return 'Boleto';
     if (fp === 'débito' || fp === 'debito') return 'Débito';
+    if (isPagbank(fp)) return 'Saldo PagBank';
     return sol.forma_pagamento || '';
   });
   const [supplierCpfCnpj, setSupplierCpfCnpj] = React.useState(
@@ -3812,6 +3900,10 @@ const ModalEdicao = ({
     sol.valor_total ? String(sol.valor_total) : '',
   );
   const [chavePix, setChavePix] = React.useState(sol.chave_pix || '');
+  // Tem ou vai ter nota fiscal? 'sim' | 'nao' | '' (não informado)
+  const [temNotaFiscal, setTemNotaFiscal] = React.useState(
+    sol.tem_nota_fiscal === true ? 'sim' : sol.tem_nota_fiscal === false ? 'nao' : '',
+  );
   const [codigoBarras, setCodigoBarras] = React.useState(
     sol.codigo_barras || '',
   );
@@ -4110,13 +4202,14 @@ const ModalEdicao = ({
           tipo || sol.tipo_solicitacao,
         ) && {
           chave_pix:
-            formaPagamento.toLowerCase() === 'pix'
+            formaPagamento.toLowerCase() === 'pix' || isPagbank(formaPagamento)
               ? chavePix.trim() || null
               : null,
           codigo_barras:
             formaPagamento.toLowerCase() === 'boleto'
               ? codigoBarras.trim() || null
               : null,
+          tem_nota_fiscal: temNotaFiscal === '' ? null : temNotaFiscal === 'sim',
         }),
         ...(exigeFluxoSimples && {
           dt_emissao: toIso(dtEmissao),
@@ -4314,6 +4407,26 @@ const ModalEdicao = ({
                   ))}
                 </select>
               </div>
+              {['pagamento', 'reembolso', 'rh'].includes(
+                tipo || sol.tipo_solicitacao,
+              ) && (
+                <div>
+                  <ELabel>Tem ou vai ter nota fiscal?</ELabel>
+                  <select
+                    className={inpCls}
+                    value={temNotaFiscal}
+                    onChange={(e) => setTemNotaFiscal(e.target.value)}
+                  >
+                    <option value="">Não informado</option>
+                    <option value="sim">Sim</option>
+                    <option value="nao">Não</option>
+                  </select>
+                  <p className="mt-1 text-[10px] text-gray-500">
+                    Com nota fiscal, a aprovação do gestor envia para o status
+                    Nota Fiscal (sem TOTVS) e abre o chamado de escrituração.
+                  </p>
+                </div>
+              )}
               <div>
                 <ELabel>Data de Emissão</ELabel>
                 <input
@@ -4529,6 +4642,20 @@ const ModalEdicao = ({
                     value={chavePix}
                     onChange={(e) => setChavePix(e.target.value)}
                     placeholder="CPF, e-mail, telefone, chave aleatória ou PIX copia e cola"
+                  />
+                </div>
+              )}
+
+              {/* Chave PagBank (gravada em chave_pix) */}
+              {isPagbank(formaPagamento) && (
+                <div>
+                  <ELabel>Chave PagBank *</ELabel>
+                  <textarea
+                    rows={2}
+                    className={inpCls + ' font-mono break-all resize-y'}
+                    value={chavePix}
+                    onChange={(e) => setChavePix(e.target.value)}
+                    placeholder="Chave da conta PagBank do fornecedor"
                   />
                 </div>
               )}

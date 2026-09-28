@@ -14,6 +14,7 @@ import {
   Megaphone,
   CreditCard,
   Barcode,
+  ArrowUUpLeft,
   Truck,
   Storefront,
   Buildings,
@@ -95,6 +96,12 @@ const solicitacoesCrosby = [
     href: '/solicitacoes-crosby/compras-manutencao',
     icon: ShoppingCart,
     color: 'text-blue-600',
+  },
+  {
+    name: 'Devoluções de Mercadoria',
+    href: '/devolucoes-mercadoria',
+    icon: ArrowUUpLeft,
+    color: 'text-rose-600',
   },
   {
     name: 'Chamados Dryland',
@@ -207,6 +214,13 @@ const financeiro = [
     roles: ['owner', 'admin', 'manager', 'user'],
   },
   {
+    name: 'Extrato Stone',
+    href: '/extrato-stone',
+    icon: Bank,
+    color: 'text-blue-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
+  },
+  {
     name: 'Fiscal',
     href: '#',
     icon: FileText,
@@ -240,6 +254,13 @@ const financeiro = [
         name: 'Dashboard',
         href: '/dash-contas-a-receber',
         icon: ChartBar,
+        color: 'text-green-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
+        name: 'Fluxo de Caixa',
+        href: '/fluxo-caixa',
+        icon: Wallet,
         color: 'text-green-600',
         roles: ['owner', 'admin', 'manager', 'user'],
       },
@@ -415,6 +436,18 @@ const painelVendasItems = [
 ];
 
 const varejo = [
+  {
+    name: 'PDV Crosby',
+    href: '/tecnologia/pdv-crosby',
+    icon: Storefront,
+    color: 'text-emerald-600',
+  },
+  {
+    name: 'Vendas PDV',
+    href: '/varejo/vendas-pdv',
+    icon: Receipt,
+    color: 'text-teal-600',
+  },
   {
     name: 'Forecast Varejo',
     href: '/forecast-canal/varejo',
@@ -811,8 +844,20 @@ const tecnologiaItems = [
     color: 'text-purple-600',
   },
   {
+    name: 'Devolução RFID',
+    href: '/tecnologia/devolucao-rfid',
+    icon: ArrowUUpLeft,
+    color: 'text-rose-600',
+  },
+  {
     name: 'PDV Varejo',
     href: '/tecnologia/pdv-varejo',
+    icon: Storefront,
+    color: 'text-emerald-600',
+  },
+  {
+    name: 'PDV Crosby',
+    href: '/tecnologia/pdv-crosby',
     icon: Storefront,
     color: 'text-emerald-600',
   },
@@ -878,6 +923,12 @@ const adminItems = [
     href: '/crosby-manage',
     icon: WhatsappLogo,
     color: 'text-emerald-600',
+  },
+  {
+    name: 'Fiscal PDV',
+    href: '/admin/fiscal-pdv',
+    icon: Barcode,
+    color: 'text-blue-600',
   },
 ];
 

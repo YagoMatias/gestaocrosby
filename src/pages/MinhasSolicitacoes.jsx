@@ -133,6 +133,7 @@ const FORMA_LABEL = (v) => {
   if (s === 'pix') return 'PIX';
   if (s === 'boleto') return 'Boleto';
   if (s === 'debito') return 'Débito';
+  if (s === 'saldo_pagbank' || s === 'saldo pagbank') return 'Saldo PagBank';
   if (s.startsWith('credito_')) return `Crédito ${s.replace('credito_', '')}`;
   return v;
 };

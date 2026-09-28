@@ -73,6 +73,7 @@ const UserPanel = lazy(() => import('./pages/UserPanel'));
 const ExtratosBancos = lazy(() => import('./pages/ExtratosBancos'));
 const AuthTest = lazy(() => import('./components/AuthTest'));
 const DashContasAReceber = lazy(() => import('./pages/DashContasAReceber'));
+const FluxoCaixa = lazy(() => import('./pages/FluxoCaixa'));
 const DashContasAPagar = lazy(() => import('./pages/DashContasAPagar'));
 const DashInadimplencia = lazy(() => import('./pages/DashInadimplencia'));
 const MetasInadimplencia = lazy(() => import('./pages/MetasInadimplencia'));
@@ -138,7 +139,13 @@ const LeituraRFID = lazy(() => import('./pages/LeituraRFID'));
 const PDVRfid = lazy(() => import('./pages/PDVRfid'));
 const PortalRFID = lazy(() => import('./pages/PortalRFID'));
 const OrcamentoRFID = lazy(() => import('./pages/OrcamentoRFID'));
+const DevolucaoRFID = lazy(() => import('./pages/DevolucaoRFID'));
+const DevolucoesMercadoria = lazy(() => import('./pages/DevolucoesMercadoria'));
+const DevolucaoPublica = lazy(() => import('./pages/DevolucaoPublica'));
 const PDVVarejo = lazy(() => import('./pages/PDVVarejo'));
+const PDVCrosby = lazy(() => import('./pages/PDVCrosby'));
+const VendasPDV = lazy(() => import('./pages/VendasPDV'));
+const FiscalPDV = lazy(() => import('./pages/FiscalPDV'));
 const EtiquetasPreco = lazy(() => import('./pages/EtiquetasPreco'));
 const CotacaoCompras = lazy(() => import('./pages/CotacaoCompras'));
 const ClientesPorEmpresa = lazy(() => import('./pages/ClientesPorEmpresa'));
@@ -173,6 +180,7 @@ const MinhasSolicitacoes = lazy(() => import('./pages/MinhasSolicitacoes'));
 const DuplicataVendas = lazy(() => import('./pages/DuplicataVendas'));
 const PagamentosFabricas = lazy(() => import('./pages/PagamentosFabricas'));
 const ConciliacaoStone = lazy(() => import('./pages/ConciliacaoStone'));
+const ExtratoStone = lazy(() => import('./pages/ExtratoStone'));
 const CrosbyBot = lazy(() => import('./pages/CrosbyBot'));
 // RH — Banco de Talentos (vagas + inscrições) + LP pública
 const RhVagas = lazy(() => import('./pages/rh/Vagas'));
@@ -210,13 +218,19 @@ const protectedRoutes = [
   { path: '/tecnologia/pdv-rfid', component: PDVRfid },
   { path: '/tecnologia/portal-rfid', component: PortalRFID },
   { path: '/tecnologia/orcamento-rfid', component: OrcamentoRFID },
+  { path: '/tecnologia/devolucao-rfid', component: DevolucaoRFID },
+  { path: '/devolucoes-mercadoria', component: DevolucoesMercadoria },
   { path: '/tecnologia/pdv-varejo', component: PDVVarejo },
+  { path: '/tecnologia/pdv-crosby', component: PDVCrosby },
+  { path: '/varejo/vendas-pdv', component: VendasPDV },
+  { path: '/admin/fiscal-pdv', component: FiscalPDV },
   { path: '/tecnologia/etiquetas-preco', component: EtiquetasPreco },
   { path: '/tecnologia/cotacao-compras', component: CotacaoCompras },
   { path: '/tecnologia/clientes-por-empresa', component: ClientesPorEmpresa },
   { path: '/tecnologia/criar-vouchers', component: CriarVouchers },
 
   { path: '/dash-contas-a-receber', component: DashContasAReceber },
+  { path: '/fluxo-caixa', component: FluxoCaixa },
   { path: '/dash-inadimplencia', component: DashInadimplencia },
   { path: '/metas-inadimplencia', component: MetasInadimplencia },
   { path: '/esteira-protesto', component: EsteiraProtesto },
@@ -225,6 +239,7 @@ const protectedRoutes = [
   { path: '/dash-contas-a-pagar', component: DashContasAPagar },
   { path: '/pagamentos-fabricas', component: PagamentosFabricas },
   { path: '/conciliacao-stone', component: ConciliacaoStone },
+  { path: '/extrato-stone', component: ExtratoStone },
   { path: '/emprestimos', component: Emprestimos },
   { path: '/despesa-filial', component: DespesaFilial },
   { path: '/despesas-fixas', component: DespesasFixas },
@@ -466,6 +481,15 @@ function App() {
           element={
             <Suspense fallback={<PageLoadingFallback />}>
               <CrosbyObrigado />
+            </Suspense>
+          }
+        />
+        {/* Pública: devolução de mercadoria pelo cliente (link das Solicitações Crosby) */}
+        <Route
+          path="/devolucao"
+          element={
+            <Suspense fallback={<PageLoadingFallback />}>
+              <DevolucaoPublica />
             </Suspense>
           }
         />

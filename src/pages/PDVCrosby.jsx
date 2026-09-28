@@ -1,4 +1,11 @@
-// Página: Tecnologia → PDV Varejo
+// Página: Tecnologia → PDV Crosby
+// Dois destinos para a venda:
+//  • TOTVS     — gera a transação "em andamento" no ERP e o caixa finaliza
+//                no TRAFP005 (fluxo original do PDV Varejo).
+//  • HEADCOACH — a venda inteira é registrada no HeadCoach (cliente, itens,
+//                desconto, pagamentos com NSU/autorização, vendedor, empresa)
+//                e a NFC-e / NF-e / NF-e de devolução é emitida direto na
+//                SEFAZ com o certificado da matriz (backend /api/pdv-crosby).
 // PDV de loja: bipa as peças no LEITOR RFID DE MESA (USB, .bat R9816 via Web
 // Serial) ou por SKU manual, com o layout/organização por grade do Orçamento.
 // Preço = VENDA VAREJO (código 1, com promoção quando houver). O botão GERAR
@@ -33,15 +40,22 @@ import {
   Storefront,
   UserPlus,
   Receipt,
+  FileText,
+  ArrowsLeftRight,
+  ListBullets,
   Gear,
-  Wallet,
-  Coins,
-  HandCoins,
-  CreditCard,
+  Cloud,
+  Database,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
 import useRfidReader from '../hooks/useRfidReader';
+import { useAuth } from '../components/AuthContext';
+import { fetchSefaz } from '../utils/fetchSefaz';
+import PagamentoModal from '../components/pdv/PagamentoModal';
+import ResultadoFiscalModal from '../components/pdv/ResultadoFiscalModal';
+import VendasDoDiaModal from '../components/pdv/VendasDoDiaModal';
+import FiscalConfigModal from '../components/pdv/FiscalConfigModal';
 
 // ─── Config do PDV Varejo (ajustável) ────────────────────────────────────────
 const PDV_VAREJO_CONFIG = {
@@ -58,20 +72,26 @@ const PDV_VAREJO_CONFIG = {
   cashbackFatorMinimo: 3,
 };
 
-// Enum oficial DocumentType (FCRFM001) — 26=PIX, 20=CREDEV, 10=ADIANTAMENTO
-const DOC_CREDEV = 20;
-const DOC_ADIANTAMENTO = 10;
-
-// Formas de pagamento do restante da venda (plano gravado na transação).
-// Vazio = não grava plano; o caixa define tudo no TRAFP005 (fluxo antigo).
-const FORMAS_RESTANTE = [
-  { code: '', label: 'Definir no caixa (TRAFP005)' },
-  { code: 3, label: '3 — Dinheiro' },
-  { code: 26, label: '26 — PIX' },
-  { code: 4, label: '4 — Cartão de crédito' },
-  { code: 5, label: '5 — Cartão de débito' },
-  { code: 1, label: '1 — Fatura' },
+// Tipo de venda → operação TOTVS, conforme a empresa.
+// Empresas 1 a 99 usam a operação padrão; 95 e 98 têm operações próprias.
+const TIPOS_VENDA = [
+  { id: 'nfce', label: 'NFCE', icon: Receipt, padrao: 510, especial: 545 },
+  { id: 'nfe', label: 'NFE', icon: FileText, padrao: 521, especial: 548 },
+  { id: 'troca', label: 'TROCA', icon: ArrowsLeftRight, padrao: 1, especial: 555 },
 ];
+const EMPRESAS_ESPECIAIS = [95, 98];
+
+// A operação vem da configuração da empresa (Administração → Fiscal PDV).
+// Sem configuração, cai na regra histórica do TOTVS.
+function operacaoPara(tipoId, branch, cfg = null) {
+  const tipo = TIPOS_VENDA.find((t) => t.id === tipoId);
+  if (!tipo) return '';
+  const daConfig = cfg?.[{ nfce: 'operacao_nfce', nfe: 'operacao_nfe', troca: 'operacao_troca' }[tipoId]];
+  if (daConfig) return String(daConfig);
+  const emp = parseInt(branch, 10);
+  if (!emp || emp < 1 || emp > 99) return '';
+  return String(EMPRESAS_ESPECIAIS.includes(emp) ? tipo.especial : tipo.padrao);
+}
 
 // Situações da transação no TOTVS
 const TRX_STATUS = {
@@ -234,33 +254,39 @@ function ClientePicker({ value, onSelect }) {
 }
 
 // ─── Página ──────────────────────────────────────────────────────────────────
-const PDVVarejo = () => {
+const PDVCrosby = () => {
+  const { user } = useAuth();
+  // Destino da venda: 'totvs' (transação no ERP) | 'headcoach' (venda + NF aqui)
+  const [destino, setDestino] = useState(
+    () => localStorage.getItem('pdv_crosby_destino') || 'totvs',
+  );
+  // Modo HEADCOACH
+  const [fiscalCfg, setFiscalCfg] = useState(null); // config fiscal da empresa
+  const [pagamentoOpen, setPagamentoOpen] = useState(false);
+  const [hcBusy, setHcBusy] = useState(false);
+  const [resultado, setResultado] = useState(null); // { venda, nota, emitente, erro }
+  const [showVendas, setShowVendas] = useState(false);
+  const [showConfig, setShowConfig] = useState(false);
+
   // Filtros
   const [branches, setBranches] = useState([]);
   const [branch, setBranch] = useState(
-    () => localStorage.getItem('pdv_varejo_branch') || '',
+    () => localStorage.getItem('pdv_crosby_branch') || '',
   );
   const [sellers, setSellers] = useState([]);
   const [seller, setSeller] = useState(
-    () => localStorage.getItem('pdv_varejo_seller') || '',
+    () => localStorage.getItem('pdv_crosby_seller') || '',
   );
-  const [operations, setOperations] = useState([]);
-  const [operation, setOperation] = useState(
-    () => localStorage.getItem('pdv_varejo_operation') || '',
+  const [tipoVenda, setTipoVenda] = useState(
+    () => localStorage.getItem('pdv_crosby_tipo') || '',
   );
+  // Operação da transação derivada do tipo de venda + empresa + config fiscal
+  const operation = operacaoPara(tipoVenda, branch, fiscalCfg);
   const [customer, setCustomer] = useState(null);
 
-  // Saldos do cliente na empresa da venda: cashback (bônus), credev
-  // (crédito de devolução) e adiantamento. Cashback abate como desconto;
-  // credev e adiantamento entram como FORMA DE PAGAMENTO no plano.
-  const [saldos, setSaldos] = useState(null);
-  const [saldosLoading, setSaldosLoading] = useState(false);
+  // Cashback (saldo bônus do cliente na empresa da venda)
+  const [cashback, setCashback] = useState(null); // { balance, cpf }
   const [cashbackUsar, setCashbackUsar] = useState(false);
-  const [credevUsar, setCredevUsar] = useState(false);
-  const [adiantUsar, setAdiantUsar] = useState(false);
-  const [credevValor, setCredevValor] = useState('');
-  const [adiantValor, setAdiantValor] = useState('');
-  const [formaRestante, setFormaRestante] = useState('');
   const cashbackGeradoRef = useRef(false); // evita gerar 2x na mesma venda
 
   // Itens (mesma organização do Orçamento: por grade, 1 etiqueta = 1 peça)
@@ -279,12 +305,10 @@ const PDVVarejo = () => {
   const [trxStatus, setTrxStatus] = useState(null); // status numérico do TOTVS
   const [trxChecking, setTrxChecking] = useState(false);
 
-  useEffect(() => localStorage.setItem('pdv_varejo_branch', branch), [branch]);
-  useEffect(() => localStorage.setItem('pdv_varejo_seller', seller), [seller]);
-  useEffect(
-    () => localStorage.setItem('pdv_varejo_operation', operation),
-    [operation],
-  );
+  useEffect(() => localStorage.setItem('pdv_crosby_branch', branch), [branch]);
+  useEffect(() => localStorage.setItem('pdv_crosby_seller', seller), [seller]);
+  useEffect(() => localStorage.setItem('pdv_crosby_tipo', tipoVenda), [tipoVenda]);
+  useEffect(() => localStorage.setItem('pdv_crosby_destino', destino), [destino]);
 
   const showToast = useCallback((type, msg) => {
     setToast({ type, msg });
@@ -295,14 +319,10 @@ const PDVVarejo = () => {
   useEffect(() => {
     (async () => {
       try {
-        const [b, o] = await Promise.all([
-          fetch(`${API_BASE_URL}/api/totvs/branches`).then((r) => r.json()),
-          fetch(`${API_BASE_URL}/api/totvs/pdv/operations`).then((r) =>
-            r.json(),
-          ),
-        ]);
+        const b = await fetch(`${API_BASE_URL}/api/totvs/branches`).then((r) =>
+          r.json(),
+        );
         setBranches(b?.data?.data || []);
-        setOperations(o?.data?.items || []);
       } catch {
         showToast('erro', 'Falha ao carregar dados do TOTVS');
       }
@@ -331,44 +351,47 @@ const PDVVarejo = () => {
     })();
   }, [branch]);
 
-  // Saldos: ao escolher cliente (e empresa), busca cashback + credev +
-  // adiantamento numa chamada só
-  const limparUsoSaldos = useCallback(() => {
-    setCashbackUsar(false);
-    setCredevUsar(false);
-    setAdiantUsar(false);
-    setCredevValor('');
-    setAdiantValor('');
-  }, []);
-
+  // Configuração fiscal da empresa (operações, ambiente, série)
   useEffect(() => {
-    setSaldos(null);
-    limparUsoSaldos();
-    if (!customer || !branch) return;
-    let cancelado = false;
+    setFiscalCfg(null);
+    if (!branch) return;
     (async () => {
-      setSaldosLoading(true);
       try {
-        const r = await fetch(
-          `${API_BASE_URL}/api/totvs/pdv/customer-balance?code=${customer.code}&branch=${branch}`,
-        );
+        const r = await fetch(`${API_BASE_URL}/api/pdv-crosby/config/${branch}`);
         const j = await r.json();
-        if (cancelado) return;
-        setSaldos(
-          r.ok && j?.success
-            ? j.data
-            : { cashback: 0, credev: 0, adiantamento: 0, cpf: null, outrasFiliais: [] },
-        );
+        if (r.ok && j.success) setFiscalCfg(j.data?.config || null);
       } catch {
-        if (!cancelado) setSaldos({ cashback: 0, credev: 0, adiantamento: 0, cpf: null, outrasFiliais: [] });
-      } finally {
-        if (!cancelado) setSaldosLoading(false);
+        setFiscalCfg(null);
       }
     })();
-    return () => {
-      cancelado = true;
-    };
-  }, [customer, branch, limparUsoSaldos]);
+  }, [branch]);
+
+  // Cashback: ao escolher cliente (e empresa), busca CPF e saldo bônus
+  useEffect(() => {
+    setCashback(null);
+    setCashbackUsar(false);
+    if (!customer || !branch) return;
+    (async () => {
+      try {
+        const rc = await fetch(
+          `${API_BASE_URL}/api/totvs/pdv/customer/${customer.code}`,
+        );
+        const jc = await rc.json();
+        const cpf = (jc?.data?.cpfCnpj || '').replace(/\D/g, '');
+        if (!cpf) {
+          setCashback({ balance: 0, cpf: null });
+          return;
+        }
+        const rb = await fetch(
+          `${API_BASE_URL}/api/totvs/pdv/bonus?cpf=${cpf}&branch=${branch}`,
+        );
+        const jb = await rb.json();
+        setCashback({ balance: jb?.data?.balance || 0, cpf });
+      } catch {
+        setCashback({ balance: 0, cpf: null });
+      }
+    })();
+  }, [customer, branch]);
 
   // ─── Produtos: merge por productCode (grade), preço varejo ───────────────
   const mergeProduto = useCallback((data, { epc = null, manual = 0 }) => {
@@ -531,68 +554,38 @@ const PDVVarejo = () => {
   }, [items]);
 
   const totals = useMemo(() => {
-    const round2 = (v) => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
     const qty = items.reduce((s, i) => s + qtyOf(i), 0);
     const subtotal = items.reduce((s, i) => s + qtyOf(i) * i.unit, 0);
     const discounts = items.reduce(
       (s, i) => s + qtyOf(i) * (i.discount || 0),
       0,
     );
-    const base = round2(subtotal - discounts);
-
-    // Cashback: abate como DESCONTO, limitado pelo saldo E pela regra
-    // venda >= 3x o valor usado
-    const saldoCashback = saldos?.cashback || 0;
+    const base = subtotal - discounts;
+    // Cashback consumível: limitado pelo saldo E pela regra venda >= 3x o uso
+    const saldo = cashback?.balance || 0;
     const maxPelaVenda = base / PDV_VAREJO_CONFIG.cashbackFatorMinimo;
-    const cashbackDisponivel = Math.min(saldoCashback, Math.floor(maxPelaVenda * 100) / 100);
+    const cashbackDisponivel = Math.min(saldo, Math.floor(maxPelaVenda * 100) / 100);
     const cashbackAplicado =
-      cashbackUsar && cashbackDisponivel > 0 ? round2(cashbackDisponivel) : 0;
-
-    // Valor da nota: o que o cliente deve depois do desconto de cashback
-    const totalNota = round2(base - cashbackAplicado);
-
-    // Credev e adiantamento são FORMA DE PAGAMENTO: não mudam o valor da
-    // nota, abatem o que falta pagar no caixa.
-    const saldoCredev = saldos?.credev || 0;
-    const credevDisponivel = round2(Math.min(saldoCredev, totalNota));
-    const credevPedido = credevValor === '' ? credevDisponivel : Number(String(credevValor).replace(',', '.')) || 0;
-    const credevAplicado = credevUsar ? round2(Math.max(0, Math.min(credevPedido, credevDisponivel))) : 0;
-
-    const saldoAdiant = saldos?.adiantamento || 0;
-    const adiantDisponivel = round2(Math.min(saldoAdiant, Math.max(0, totalNota - credevAplicado)));
-    const adiantPedido = adiantValor === '' ? adiantDisponivel : Number(String(adiantValor).replace(',', '.')) || 0;
-    const adiantAplicado = adiantUsar ? round2(Math.max(0, Math.min(adiantPedido, adiantDisponivel))) : 0;
-
-    const aPagar = round2(totalNota - credevAplicado - adiantAplicado);
+      cashbackUsar && cashbackDisponivel > 0 ? cashbackDisponivel : 0;
     return {
       qty,
       subtotal,
       discounts,
       cashbackDisponivel,
       cashbackAplicado,
-      credevDisponivel,
-      credevAplicado,
-      adiantDisponivel,
-      adiantAplicado,
-      saldosUsados: round2(cashbackAplicado + credevAplicado + adiantAplicado),
-      totalNota,
-      aPagar,
-      // "total" segue sendo o valor da nota (compatível com o resto da tela)
-      total: totalNota,
+      total: base - cashbackAplicado,
     };
-  }, [items, saldos, cashbackUsar, credevUsar, adiantUsar, credevValor, adiantValor]);
+  }, [items, cashback, cashbackUsar]);
 
   const novaVenda = useCallback(() => {
     setItems([]);
     setCustomer(null);
+    setResultado(null);
+    setPagamentoOpen(false);
     setTrx(null);
     setTrxStatus(null);
-    setSaldos(null);
+    setCashback(null);
     setCashbackUsar(false);
-    setCredevUsar(false);
-    setAdiantUsar(false);
-    setCredevValor('');
-    setAdiantValor('');
     cashbackGeradoRef.current = false;
     processedEpcs.current = new Set();
   }, []);
@@ -603,20 +596,20 @@ const PDVVarejo = () => {
   }, []);
 
   // ─── Gerar transação (em andamento, p/ o caixa finalizar no TRAFP005) ────
-  // Usando credev/adiantamento, o plano de pagamento precisa ficar completo:
-  // sem a forma do restante o TOTVS gravaria um plano parcial.
-  const usaSaldoPagamento = totals.credevAplicado > 0 || totals.adiantAplicado > 0;
-  const faltaFormaRestante = usaSaldoPagamento && totals.aPagar > 0 && !formaRestante;
-
-  const canGenerate =
+  const prontoBase =
     !posting &&
+    !hcBusy &&
     items.length > 0 &&
     branch &&
-    customer &&
     seller &&
-    operation &&
-    !faltaFormaRestante &&
+    tipoVenda &&
     items.every((i) => qtyOf(i) > 0 && i.unit > 0);
+  // TOTVS: exige cliente e operação. HEADCOACH: NFC-e pode ser sem cliente;
+  // NF-e e TROCA exigem cliente identificado.
+  const canGenerate =
+    destino === 'totvs'
+      ? prontoBase && customer && operation
+      : prontoBase && (tipoVenda === 'nfce' || customer);
 
   const gerarTransacao = useCallback(async () => {
     if (!canGenerate) return;
@@ -654,40 +647,6 @@ const PDVVarejo = () => {
           .toFixed(2),
       );
 
-      // Plano de pagamento: credev e adiantamento entram como parcelas
-      // próprias (doc. 20 e 10) e o restante na forma escolhida. Gravar o
-      // plano na inclusão equivale ao "encerrar" do PDV físico. Sem saldo e
-      // sem forma escolhida, nada é enviado e o caixa define tudo no TRAFP005.
-      const hoje = new Date().toISOString().slice(0, 10);
-      const plano = [];
-      const credevUsado = Math.min(totals.credevAplicado, totalExato);
-      const adiantUsado = Math.min(totals.adiantAplicado, totalExato - credevUsado);
-      if (credevUsado > 0) {
-        plano.push({
-          documentType: DOC_CREDEV,
-          documentTypeSequence: 1,
-          installmentValue: Number(credevUsado.toFixed(2)),
-          expirationDate: hoje,
-        });
-      }
-      if (adiantUsado > 0) {
-        plano.push({
-          documentType: DOC_ADIANTAMENTO,
-          documentTypeSequence: 1,
-          installmentValue: Number(adiantUsado.toFixed(2)),
-          expirationDate: hoje,
-        });
-      }
-      const restante = Number((totalExato - credevUsado - adiantUsado).toFixed(2));
-      if (restante > 0 && formaRestante) {
-        plano.push({
-          documentType: parseInt(formaRestante, 10),
-          documentTypeSequence: 1,
-          installmentValue: restante,
-          expirationDate: hoje,
-        });
-      }
-
       const payload = {
         branchCode: parseInt(branch, 10),
         customerCode: customer.code,
@@ -698,7 +657,6 @@ const PDVVarejo = () => {
         status: 1,
         totalAmountTransaction: totalExato,
         items: itensPayload,
-        ...(plano.length > 0 ? { paymentPlanItems: plano } : {}),
       };
       const r = await fetch(`${API_BASE_URL}/api/totvs/pdv/transactions`, {
         method: 'POST',
@@ -714,10 +672,6 @@ const PDVVarejo = () => {
         ...j.data,
         total: totalExato,
         cashbackUsado: cb,
-        credevUsado,
-        adiantUsado,
-        restante,
-        plano,
         customerCode: customer.code,
       });
       setTrxStatus(1);
@@ -755,7 +709,223 @@ const PDVVarejo = () => {
     } finally {
       setPosting(false);
     }
-  }, [canGenerate, branch, customer, seller, operation, totals, items, formaRestante, showToast]);
+  }, [canGenerate, branch, customer, seller, operation, totals, items, showToast]);
+
+  // ─── HEADCOACH: registra a venda aqui e emite a nota na SEFAZ ────────────
+  const emitirNota = useCallback(async (vendaId) => {
+    try {
+      const { r, j } = await fetchSefaz(
+        `${API_BASE_URL}/api/pdv-crosby/vendas/${vendaId}/emitir`,
+        { method: 'POST' },
+      );
+      return { ok: r.ok && j.success, data: j?.data, message: j?.message };
+    } catch (e) {
+      return { ok: false, data: null, message: e.message };
+    }
+  }, []);
+
+  // Venda ATENDIDA/AUTORIZADA → cashback novo (20%), uma vez por venda
+  const gerarCashback = useCallback(
+    async ({ total, customerCode, transactionCode, transactionDate, origem }) => {
+      if (cashbackGeradoRef.current || !customerCode) return null;
+      cashbackGeradoRef.current = true;
+      const valor = Number(((total * PDV_VAREJO_CONFIG.cashbackGerarPct) / 100).toFixed(2));
+      if (!(valor > 0)) return null;
+      try {
+        const r = await fetch(`${API_BASE_URL}/api/totvs/pdv/bonus/add`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            personCode: customerCode,
+            branchCode: parseInt(branch, 10),
+            value: valor,
+            transactionCode: transactionCode || undefined,
+            transactionDate: transactionDate || undefined,
+            historic: `Cashback ${PDV_VAREJO_CONFIG.cashbackGerarPct}% - ${origem}`,
+          }),
+        });
+        const j = await r.json();
+        if (r.ok && j.success) {
+          showToast('ok', `Cashback de ${fmtBRL(valor)} gerado para o cliente! 💰`);
+          return valor;
+        }
+        cashbackGeradoRef.current = false;
+        showToast('erro', `Cashback não gerado: ${j?.message || ''}`);
+      } catch {
+        cashbackGeradoRef.current = false;
+        showToast('erro', 'Cashback não gerado');
+      }
+      return null;
+    },
+    [branch, showToast],
+  );
+
+  const finalizarHeadcoach = useCallback(
+    async ({ pagamentos, nfReferenciada }) => {
+      if (!canGenerate) return;
+      setHcBusy(true);
+      try {
+        const cb = totals.cashbackAplicado;
+        const baseVenda = totals.subtotal - totals.discounts;
+        const empresaSel = branches.find((b) => String(b.cd_empresa) === String(branch));
+        const vendedorSel = sellers.find((s) => String(s.code) === String(seller));
+        // Cashback usado entra como desconto proporcional nos itens (igual ao TOTVS)
+        const itens = items.map((i) => {
+          const q = qtyOf(i);
+          const itemTotal = q * (i.unit - (i.discount || 0));
+          const extraUnit =
+            cb > 0 && baseVenda > 0 ? Number((((itemTotal / baseVenda) * cb) / q).toFixed(2)) : 0;
+          return {
+            productCode: i.productCode,
+            sku: i.sku,
+            nome: i.name,
+            referencia: i.referenceName,
+            quantidade: q,
+            valorUnit: Number(Number(i.unit).toFixed(2)),
+            descontoUnit: Number(((i.discount || 0) + extraUnit).toFixed(2)),
+            epcs: i.epcs,
+          };
+        });
+        const payload = {
+          empresa: parseInt(branch, 10),
+          empresaCnpj: empresaSel?.cnpj || null,
+          empresaNome: empresaSel?.nm_grupoempresa || null,
+          tipoVenda,
+          operacao: operation || null,
+          cliente: customer
+            ? { code: customer.code, nome: customer.name, cpfCnpj: cashback?.cpf || null }
+            : null,
+          vendedor: { code: parseInt(seller, 10), nome: vendedorSel?.name || null },
+          itens,
+          pagamentos,
+          cashbackUsado: cb,
+          nfReferenciada,
+          criadoPor: user?.email || user?.name || null,
+        };
+        const r = await fetch(`${API_BASE_URL}/api/pdv-crosby/vendas`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const j = await r.json();
+        if (!r.ok || !j.success) {
+          showToast('erro', j?.message || 'Falha ao registrar a venda');
+          return;
+        }
+        const venda = j.data;
+        setPagamentoOpen(false);
+        cashbackGeradoRef.current = false;
+        beep(true);
+
+        // Consome o cashback usado (PESFC054)
+        if (cb > 0 && customer) {
+          try {
+            const rc = await fetch(`${API_BASE_URL}/api/totvs/pdv/bonus/consume`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                personCode: customer.code,
+                branchCode: parseInt(branch, 10),
+                usedValue: cb,
+              }),
+            });
+            const jc = await rc.json();
+            if (!rc.ok || !jc.success)
+              showToast(
+                'erro',
+                `Venda ok, mas o consumo do cashback falhou: ${jc?.message || ''} — baixe no PESFC054`,
+              );
+          } catch {
+            showToast('erro', 'Venda ok, mas o consumo do cashback falhou — baixe no PESFC054');
+          }
+        }
+
+        // Emite a nota
+        const em = await emitirNota(venda.id);
+        const res = em.data
+          ? {
+              venda: em.data.venda || venda,
+              nota: em.data.nota || null,
+              emitente: em.data.emitente || null,
+              erro: em.ok ? null : em.message,
+            }
+          : { venda, nota: null, emitente: null, erro: em.message };
+        setResultado(res);
+        if (res.nota?.status === 'autorizada') {
+          beep(true);
+          if (tipoVenda !== 'troca') {
+            const gerado = await gerarCashback({
+              total: Number(venda.total),
+              customerCode: customer?.code,
+              origem: `venda HeadCoach ${venda.id} (PDV Crosby)`,
+            });
+            if (gerado)
+              setResultado((prev) =>
+                prev ? { ...prev, venda: { ...prev.venda, cashback_gerado: gerado } } : prev,
+              );
+          }
+        } else {
+          beep(false);
+        }
+      } catch (e) {
+        showToast('erro', `Falha ao finalizar: ${e.message}`);
+      } finally {
+        setHcBusy(false);
+      }
+    },
+    [
+      canGenerate,
+      totals,
+      branches,
+      branch,
+      sellers,
+      seller,
+      items,
+      tipoVenda,
+      operation,
+      customer,
+      cashback,
+      user,
+      showToast,
+      emitirNota,
+      gerarCashback,
+    ],
+  );
+
+  // Reemite (após rejeição) e recarrega o resultado
+  const reemitir = useCallback(async () => {
+    if (!resultado?.venda?.id) return;
+    setHcBusy(true);
+    try {
+      const em = await emitirNota(resultado.venda.id);
+      const res = em.data
+        ? {
+            venda: em.data.venda || resultado.venda,
+            nota: em.data.nota || null,
+            emitente: em.data.emitente || resultado.emitente,
+            erro: em.ok ? null : em.message,
+          }
+        : { ...resultado, nota: null, erro: em.message };
+      setResultado(res);
+      if (res.nota?.status === 'autorizada' && resultado.venda.tipo_venda !== 'troca') {
+        await gerarCashback({
+          total: Number(res.venda.total),
+          customerCode: res.venda.cliente_code,
+          origem: `venda HeadCoach ${res.venda.id} (PDV Crosby)`,
+        });
+      }
+    } finally {
+      setHcBusy(false);
+    }
+  }, [resultado, emitirNota, gerarCashback]);
+
+  const recarregarResultado = useCallback(async () => {
+    if (!resultado?.nota?.id) return;
+    const r = await fetch(`${API_BASE_URL}/api/pdv-crosby/notas/${resultado.nota.id}`);
+    const j = await r.json();
+    if (r.ok && j.success)
+      setResultado({ venda: j.data.venda, nota: j.data.nota, emitente: j.data.emitente });
+  }, [resultado]);
 
   // ─── Acompanha o status até ATENDIDA (caixa finaliza no TRAFP005) ────────
   const verificarStatus = useCallback(async () => {
@@ -805,7 +975,7 @@ const PDVVarejo = () => {
             value: valor,
             transactionCode: trx.transactionCode,
             transactionDate: trx.transactionDate,
-            historic: `Cashback ${PDV_VAREJO_CONFIG.cashbackGerarPct}% - venda ${trx.transactionCode} (PDV Varejo)`,
+            historic: `Cashback ${PDV_VAREJO_CONFIG.cashbackGerarPct}% - venda ${trx.transactionCode} (PDV Crosby)`,
           }),
         });
         const j = await r.json();
@@ -835,12 +1005,62 @@ const PDVVarejo = () => {
     <div className="flex-1 overflow-y-auto bg-gray-100 p-3 lg:p-4">
       <div className="max-w-6xl mx-auto">
         <PageTitle
-          title="PDV Varejo"
+          title="PDV Crosby"
           subtitle="Bipe as peças, gere a transação e finalize no caixa TOTVS (TRAFP005)"
           icon={Storefront}
         />
 
-        {/* Filtros: empresa, vendedor, operação, cliente */}
+        {/* Destino da venda + ações do modo HEADCOACH */}
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-xl bg-white ring-1 ring-gray-200 shadow-sm p-1">
+            {[
+              { id: 'totvs', label: 'TOTVS', icon: Database, hint: 'Gera a transação no ERP; o caixa finaliza no TRAFP005' },
+              { id: 'headcoach', label: 'HEADCOACH', icon: Cloud, hint: 'Venda e nota fiscal emitidas pelo HeadCoach' },
+            ].map((d) => {
+              const Icon = d.icon;
+              const ativo = destino === d.id;
+              return (
+                <button
+                  key={d.id}
+                  type="button"
+                  onClick={() => setDestino(d.id)}
+                  title={d.hint}
+                  className={`h-8 px-3 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-colors ${
+                    ativo ? 'bg-[#000638] text-white' : 'text-[#000638] hover:bg-gray-50'
+                  }`}
+                >
+                  <Icon size={14} weight="bold" /> {d.label}
+                </button>
+              );
+            })}
+          </div>
+          <span className="text-[11px] text-gray-500">
+            {destino === 'totvs'
+              ? 'Transação em andamento no TOTVS → caixa finaliza no TRAFP005.'
+              : 'Venda registrada no HeadCoach com emissão direta de NFC-e / NF-e na SEFAZ.'}
+          </span>
+          {destino === 'headcoach' && (
+            <div className="ml-auto inline-flex gap-1.5">
+              <button
+                onClick={() => setShowVendas(true)}
+                disabled={!branch}
+                className="h-8 px-2.5 rounded-lg text-xs font-semibold text-[#000638] bg-white ring-1 ring-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-40 inline-flex items-center gap-1"
+              >
+                <ListBullets size={14} /> Vendas do dia
+              </button>
+              <button
+                onClick={() => setShowConfig(true)}
+                disabled={!branch}
+                className="h-8 px-2.5 rounded-lg text-xs font-semibold text-[#000638] bg-white ring-1 ring-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-40 inline-flex items-center gap-1"
+                title="Ambiente, série, CSC, alíquota"
+              >
+                <Gear size={14} /> Fiscal
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Filtros: empresa, vendedor, tipo de venda, cliente */}
         <div className="mb-2 bg-white rounded-xl border border-gray-200 shadow-sm p-3 grid grid-cols-2 lg:grid-cols-4 gap-2 items-start">
           <div>
             <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">
@@ -894,245 +1114,79 @@ const PDVVarejo = () => {
           </div>
 
           <div>
-            <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">
-              Operação
+            <label className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">
+              Tipo de venda
+              {operation && (
+                <span className="normal-case font-normal text-gray-400">
+                  operação {operation}
+                </span>
+              )}
             </label>
-            <div className="relative">
-              <Gear
-                size={15}
-                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400"
-              />
-              <select
-                value={operation}
-                onChange={(e) => setOperation(e.target.value)}
-                className="w-full h-9 pl-8 pr-2 rounded-lg border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
-              >
-                <option value="">Selecione…</option>
-                {operations.map((o) => (
-                  <option key={o.operationCode} value={o.operationCode}>
-                    {o.operationCode} — {o.description}
-                  </option>
-                ))}
-              </select>
+            <div className="grid grid-cols-3 gap-1">
+              {TIPOS_VENDA.map((t) => {
+                const ativo = tipoVenda === t.id;
+                const Icon = t.icon;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setTipoVenda(t.id)}
+                    title={`Operação ${operacaoPara(t.id, branch, fiscalCfg) || '—'}`}
+                    className={`h-9 rounded-lg text-xs font-bold inline-flex items-center justify-center gap-1 transition-colors ${
+                      ativo
+                        ? 'bg-[#000638] text-white'
+                        : 'bg-white text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    <Icon size={14} weight="bold" /> {t.label}
+                  </button>
+                );
+              })}
             </div>
+            {tipoVenda && branch && !operation && (
+              <p className="mt-1 text-[10px] text-rose-600">
+                Empresa {branch} sem operação configurada para este tipo.
+              </p>
+            )}
           </div>
 
           <ClientePicker value={customer} onSelect={setCustomer} />
         </div>
 
-        {/* Saldos do cliente: cashback, credev e adiantamento */}
-        {customer && (saldosLoading || saldos) && (
-          <div className="mb-2 bg-white rounded-xl border border-gray-200 shadow-sm p-3">
-            <div className="flex items-center gap-2 mb-2">
-              <Wallet size={15} className="text-[#000638]" />
-              <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-                Saldos de {customer.name.split(' ')[0]}
-              </span>
-              {saldosLoading && <Spinner size={13} className="animate-spin text-gray-400" />}
-              {saldos && totals.saldosUsados > 0 && (
-                <span className="ml-auto text-xs font-bold text-emerald-700">
-                  usando {fmtBRL(totals.saldosUsados)}
-                </span>
-              )}
-            </div>
-
-            {saldos &&
-            saldos.cashback <= 0 &&
-            saldos.credev <= 0 &&
-            saldos.adiantamento <= 0 ? (
-              <p className="text-xs text-gray-400">
-                Cliente sem cashback, credev ou adiantamento nesta empresa.
-              </p>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                {/* Cashback — abate como desconto */}
-                <div
-                  className={`rounded-xl p-2.5 ring-1 ${
-                    totals.cashbackAplicado > 0
-                      ? 'bg-emerald-50 ring-emerald-300'
-                      : 'bg-gray-50 ring-gray-200'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-emerald-700">
-                      <Coins size={13} weight="bold" /> Cashback
-                    </span>
-                    <b className="text-sm text-[#000638] tabular-nums">
-                      {fmtBRL(saldos?.cashback || 0)}
-                    </b>
-                  </div>
-                  <p className="text-[10px] text-gray-500 mt-0.5">
-                    Vira desconto. Usa no máximo 1/3 da venda
-                    {(saldos?.cashback || 0) > 0 && (
-                      <>
-                        {' '}
-                        — para usar tudo, venda de{' '}
-                        {fmtBRL((saldos?.cashback || 0) * PDV_VAREJO_CONFIG.cashbackFatorMinimo)}
-                      </>
-                    )}
-                    .
-                  </p>
-                  <label className="mt-1.5 flex items-center gap-1.5 text-xs font-semibold text-emerald-800 select-none cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={cashbackUsar}
-                      onChange={(e) => setCashbackUsar(e.target.checked)}
-                      disabled={totals.cashbackDisponivel <= 0}
-                      className="accent-emerald-600 w-4 h-4 p-0 mb-0 disabled:opacity-40"
-                    />
-                    Usar {totals.cashbackDisponivel > 0 && `até ${fmtBRL(totals.cashbackDisponivel)}`}
-                    {totals.cashbackAplicado > 0 && (
-                      <span className="text-emerald-600">(−{fmtBRL(totals.cashbackAplicado)})</span>
-                    )}
-                  </label>
-                </div>
-
-                {/* Credev e adiantamento — forma de pagamento */}
-                {[
-                  {
-                    id: 'credev',
-                    label: 'Credev',
-                    icon: HandCoins,
-                    saldo: saldos?.credev || 0,
-                    disponivel: totals.credevDisponivel,
-                    aplicado: totals.credevAplicado,
-                    usar: credevUsar,
-                    setUsar: setCredevUsar,
-                    valor: credevValor,
-                    setValor: setCredevValor,
-                    cor: 'blue',
-                    ajuda: 'Crédito de devolução. Entra como pagamento (doc. 20).',
-                  },
-                  {
-                    id: 'adiantamento',
-                    label: 'Adiantamento',
-                    icon: CreditCard,
-                    saldo: saldos?.adiantamento || 0,
-                    disponivel: totals.adiantDisponivel,
-                    aplicado: totals.adiantAplicado,
-                    usar: adiantUsar,
-                    setUsar: setAdiantUsar,
-                    valor: adiantValor,
-                    setValor: setAdiantValor,
-                    cor: 'purple',
-                    ajuda: 'Adiantamento do cliente. Entra como pagamento (doc. 10).',
-                  },
-                ].map((c) => {
-                  const Icon = c.icon;
-                  const ativo = c.aplicado > 0;
-                  return (
-                    <div
-                      key={c.id}
-                      className={`rounded-xl p-2.5 ring-1 ${
-                        ativo
-                          ? c.cor === 'blue'
-                            ? 'bg-blue-50 ring-blue-300'
-                            : 'bg-purple-50 ring-purple-300'
-                          : 'bg-gray-50 ring-gray-200'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span
-                          className={`inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide ${
-                            c.cor === 'blue' ? 'text-blue-700' : 'text-purple-700'
-                          }`}
-                        >
-                          <Icon size={13} weight="bold" /> {c.label}
-                        </span>
-                        <b className="text-sm text-[#000638] tabular-nums">{fmtBRL(c.saldo)}</b>
-                      </div>
-                      <p className="text-[10px] text-gray-500 mt-0.5">{c.ajuda}</p>
-                      <div className="mt-1.5 flex items-center gap-1.5">
-                        <label className="flex items-center gap-1.5 text-xs font-semibold text-[#000638] select-none cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={c.usar}
-                            onChange={(e) => {
-                              c.setUsar(e.target.checked);
-                              if (e.target.checked && c.valor === '') c.setValor(String(c.disponivel.toFixed(2)));
-                            }}
-                            disabled={c.disponivel <= 0}
-                            className={`w-4 h-4 p-0 mb-0 disabled:opacity-40 ${
-                              c.cor === 'blue' ? 'accent-blue-600' : 'accent-purple-600'
-                            }`}
-                          />
-                          Usar
-                        </label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          max={c.disponivel}
-                          value={c.valor}
-                          onChange={(e) => c.setValor(e.target.value)}
-                          disabled={!c.usar || c.disponivel <= 0}
-                          placeholder={c.disponivel.toFixed(2)}
-                          title={`Disponível nesta venda: ${fmtBRL(c.disponivel)}`}
-                          className="h-7 w-24 px-1.5 rounded-md border border-gray-300 text-right text-xs tabular-nums focus:outline-none focus:ring-2 focus:ring-[#000638]/30 disabled:bg-gray-100 disabled:text-gray-400"
-                        />
-                        {c.aplicado > 0 && (
-                          <span className="text-[11px] font-semibold text-emerald-700">
-                            −{fmtBRL(c.aplicado)}
-                          </span>
-                        )}
-                      </div>
-                      {c.usar && c.disponivel <= 0 && (
-                        <p className="text-[10px] text-amber-600 mt-1">
-                          Nada a usar: o valor restante da venda já está coberto.
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Saldos em outras empresas — informativo */}
-            {saldos?.outrasFiliais?.length > 0 && (
-              <p className="mt-2 text-[10px] text-gray-500">
-                Também há saldo em outras empresas (só dá para usar na empresa da venda):{' '}
-                {saldos.outrasFiliais
-                  .map(
-                    (f) =>
-                      `empresa ${f.branchCode}: ${[
-                        f.credev ? `credev ${fmtBRL(f.credev)}` : null,
-                        f.adiantamento ? `adiant. ${fmtBRL(f.adiantamento)}` : null,
-                      ]
-                        .filter(Boolean)
-                        .join(', ')}`,
-                  )
-                  .join(' · ')}
-              </p>
-            )}
-
-            {/* Forma do restante: obrigatória quando usa credev/adiantamento */}
-            {usaSaldoPagamento && (
-              <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-2">
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-                  Restante a pagar: <b className="text-[#000638]">{fmtBRL(totals.aPagar)}</b>
-                </span>
-                <select
-                  value={formaRestante}
-                  onChange={(e) => setFormaRestante(e.target.value)}
-                  disabled={totals.aPagar <= 0}
-                  className={`h-8 px-2 rounded-lg border text-xs focus:outline-none focus:ring-2 focus:ring-[#000638]/30 disabled:bg-gray-100 disabled:text-gray-400 ${
-                    faltaFormaRestante ? 'border-rose-400 ring-1 ring-rose-300' : 'border-gray-300'
-                  }`}
-                >
-                  {FORMAS_RESTANTE.filter((f) => f.code !== '').map((f) => (
-                    <option key={f.code} value={f.code}>
-                      {f.label}
-                    </option>
-                  ))}
-                  <option value="">Selecione a forma…</option>
-                </select>
-                {faltaFormaRestante && (
-                  <span className="text-[11px] text-rose-600">
-                    Escolha como o cliente paga o restante para gravar o plano no TOTVS.
+        {/* Cashback do cliente */}
+        {customer && cashback && cashback.balance > 0 && (
+          <div className="mb-2 flex flex-wrap items-center gap-2 bg-emerald-50 rounded-xl ring-1 ring-emerald-200 px-3 py-2">
+            <span className="text-sm text-emerald-800">
+              💰 <b>{customer.name.split(' ')[0]}</b> tem{' '}
+              <b>{fmtBRL(cashback.balance)}</b> de cashback — para usar tudo, a
+              venda precisa ser de pelo menos{' '}
+              <b>
+                {fmtBRL(
+                  cashback.balance * PDV_VAREJO_CONFIG.cashbackFatorMinimo,
+                )}
+              </b>
+              {totals.cashbackDisponivel > 0 &&
+                totals.cashbackDisponivel < cashback.balance && (
+                  <span className="text-emerald-700">
+                    {' '}
+                    (nesta venda dá para usar{' '}
+                    {fmtBRL(totals.cashbackDisponivel)})
                   </span>
                 )}
-              </div>
-            )}
+            </span>
+            <div className="flex-1" />
+            <label className="flex items-center gap-1.5 text-sm font-semibold text-emerald-800 select-none cursor-pointer">
+              <input
+                type="checkbox"
+                checked={cashbackUsar}
+                onChange={(e) => setCashbackUsar(e.target.checked)}
+                disabled={totals.cashbackDisponivel <= 0}
+                className="accent-emerald-600 w-4 h-4"
+              />
+              Usar cashback
+              {totals.cashbackAplicado > 0 &&
+                ` (−${fmtBRL(totals.cashbackAplicado)})`}
+            </label>
           </div>
         )}
 
@@ -1421,51 +1475,45 @@ const PDVVarejo = () => {
                   </div>
                 )}
                 <div className="flex justify-between items-baseline pt-1.5 border-t border-gray-100">
-                  <span className="font-semibold text-gray-700">Total da nota</span>
+                  <span className="font-semibold text-gray-700">Total</span>
                   <span className="text-xl font-bold text-[#000638] tabular-nums">
-                    {fmtBRL(totals.totalNota)}
+                    {fmtBRL(totals.total)}
                   </span>
                 </div>
-                {totals.credevAplicado > 0 && (
-                  <div className="flex justify-between text-blue-700 font-medium">
-                    <span>Credev</span>
-                    <span className="tabular-nums">− {fmtBRL(totals.credevAplicado)}</span>
-                  </div>
-                )}
-                {totals.adiantAplicado > 0 && (
-                  <div className="flex justify-between text-purple-700 font-medium">
-                    <span>Adiantamento</span>
-                    <span className="tabular-nums">− {fmtBRL(totals.adiantAplicado)}</span>
-                  </div>
-                )}
-                {usaSaldoPagamento && (
-                  <div className="flex justify-between items-baseline pt-1.5 border-t border-gray-100">
-                    <span className="font-semibold text-gray-700">A pagar no caixa</span>
-                    <span className="text-lg font-bold text-emerald-700 tabular-nums">
-                      {fmtBRL(totals.aPagar)}
-                    </span>
-                  </div>
-                )}
               </div>
 
               <button
-                onClick={gerarTransacao}
+                onClick={destino === 'totvs' ? gerarTransacao : () => setPagamentoOpen(true)}
                 disabled={!canGenerate}
-                className="mt-3 w-full h-11 rounded-lg bg-[#000638] text-white font-bold text-xs inline-flex items-center justify-center gap-1.5 hover:bg-[#000638]/90 disabled:opacity-40 disabled:cursor-not-allowed"
+                className={`mt-3 w-full h-11 rounded-lg text-white font-bold text-xs inline-flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed ${
+                  destino === 'totvs'
+                    ? 'bg-[#000638] hover:bg-[#000638]/90'
+                    : 'bg-emerald-600 hover:bg-emerald-700'
+                }`}
               >
-                {posting ? (
+                {posting || hcBusy ? (
                   <>
-                    <Spinner size={16} className="animate-spin" /> Gerando…
+                    <Spinner size={16} className="animate-spin" />{' '}
+                    {destino === 'totvs' ? 'Gerando…' : 'Emitindo…'}
+                  </>
+                ) : destino === 'totvs' ? (
+                  <>
+                    <Receipt size={16} weight="bold" /> GERAR TRANSAÇÃO
                   </>
                 ) : (
                   <>
-                    <Receipt size={16} weight="bold" /> GERAR TRANSAÇÃO
+                    <Cloud size={16} weight="bold" />{' '}
+                    {tipoVenda === 'troca' ? 'REGISTRAR TROCA' : 'FINALIZAR VENDA'}
                   </>
                 )}
               </button>
               {!canGenerate && items.length > 0 && (
                 <p className="mt-1.5 text-[10px] text-gray-400 text-center">
-                  Preencha empresa, vendedor, operação e cliente.
+                  {destino === 'totvs'
+                    ? 'Preencha empresa, vendedor, tipo de venda e cliente.'
+                    : tipoVenda === 'nfce'
+                      ? 'Preencha empresa, vendedor e tipo de venda.'
+                      : 'NF-e e TROCA exigem cliente identificado.'}
                 </p>
               )}
             </div>
@@ -1506,30 +1554,6 @@ const PDVVarejo = () => {
                     <br />
                     <span className="text-emerald-600 text-xs">
                       💰 {fmtBRL(trx.cashbackUsado)} de cashback consumido
-                    </span>
-                  </>
-                )}
-                {trx.credevUsado > 0 && (
-                  <>
-                    <br />
-                    <span className="text-blue-700 text-xs">
-                      Credev no plano: {fmtBRL(trx.credevUsado)}
-                    </span>
-                  </>
-                )}
-                {trx.adiantUsado > 0 && (
-                  <>
-                    <br />
-                    <span className="text-purple-700 text-xs">
-                      Adiantamento no plano: {fmtBRL(trx.adiantUsado)}
-                    </span>
-                  </>
-                )}
-                {trx.plano?.length > 0 && trx.restante > 0 && (
-                  <>
-                    <br />
-                    <span className="text-gray-500 text-xs">
-                      Restante a receber no caixa: {fmtBRL(trx.restante)}
                     </span>
                   </>
                 )}
@@ -1606,6 +1630,47 @@ const PDVVarejo = () => {
           </div>
         )}
 
+        {/* HEADCOACH: pagamento, resultado fiscal, vendas do dia, config */}
+        {pagamentoOpen && (
+          <PagamentoModal
+            total={totals.total}
+            tipoVenda={tipoVenda}
+            busy={hcBusy}
+            onConfirm={finalizarHeadcoach}
+            onClose={() => !hcBusy && setPagamentoOpen(false)}
+          />
+        )}
+        {resultado && (
+          <ResultadoFiscalModal
+            resultado={resultado}
+            onNovaVenda={novaVenda}
+            onFechar={() => setResultado(null)}
+            onReemitir={reemitir}
+            onAtualizar={recarregarResultado}
+            showToast={showToast}
+          />
+        )}
+        {showVendas && branch && (
+          <VendasDoDiaModal
+            empresa={parseInt(branch, 10)}
+            onClose={() => setShowVendas(false)}
+            onAbrirResultado={(r) => {
+              setShowVendas(false);
+              setResultado(r);
+            }}
+            showToast={showToast}
+          />
+        )}
+        {showConfig && branch && (
+          <FiscalConfigModal
+            empresa={parseInt(branch, 10)}
+            empresaNome={
+              branches.find((b) => String(b.cd_empresa) === String(branch))?.nm_grupoempresa
+            }
+            onClose={() => setShowConfig(false)}
+          />
+        )}
+
         {/* Toast */}
         {toast && (
           <div
@@ -1628,4 +1693,4 @@ const PDVVarejo = () => {
   );
 };
 
-export default PDVVarejo;
+export default PDVCrosby;

@@ -90,6 +90,20 @@ ChartJS.register(
   ChartDataLabels,
 );
 
+// Dias de atraso de um vencimento. Fica no nivel de modulo porque os
+// useMemo do grafico de faixas rodam antes das funcoes do componente.
+const diasVencidoDe = (dtVencimento) => {
+  if (!dtVencimento) return 0;
+  const [datePart] = String(dtVencimento).split('T');
+  const [y, m, d] = datePart.split('-').map((n) => parseInt(n, 10));
+  if (!y || !m || !d) return 0;
+  const venc = new Date(y, m - 1, d);
+  venc.setHours(0, 0, 0, 0);
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+  return Math.floor((hoje - venc) / (1000 * 60 * 60 * 24));
+};
+
 const MESES_CURTOS = [
   'jan', 'fev', 'mar', 'abr', 'mai', 'jun',
   'jul', 'ago', 'set', 'out', 'nov', 'dez',
@@ -167,6 +181,11 @@ const InadimplentesMultimarcas = () => {
 
   // Estado para alternar entre LISTA, DASHBOARD e CLIENTES INATIVOS
   const [viewMode, setViewMode] = useState('lista');
+
+  // Grafico de faixas: CLIENTE agrupa pelo titulo mais antigo de cada
+  // cliente (ele cai numa faixa so); FATURA joga cada titulo vencido na
+  // faixa dele (o mesmo cliente pode aparecer em varias).
+  const [modoFaixa, setModoFaixa] = useState('CLIENTE');
 
   // ─── Aba Clientes Inativos ───
   const [clientesMultimarcas, setClientesMultimarcas] = useState([]);
@@ -1212,6 +1231,7 @@ Crosby`;
           valorTotal: 0,
           valorAVencer: 0,
           valorInadimplente: 0,
+          clientesInadimplentes: [],
         };
       }
       return mapa[rep];
@@ -1233,6 +1253,17 @@ Crosby`;
         // Inadimplente = atraso acima de 60 dias (mesmo corte da tela)
         if (cliente.situacao === 'INADIMPLENTE') {
           r.valorInadimplente += (cliente.valor_total || 0) * fatia;
+          // Guarda o cliente ja com a fatia aplicada, senao a soma da
+          // lista no modal nao bateria com o numero da tabela
+          r.clientesInadimplentes.push(
+            fatia === 1
+              ? cliente
+              : {
+                  ...cliente,
+                  valor_total: (cliente.valor_total || 0) * fatia,
+                  _rateado: true,
+                },
+          );
         }
       });
     });
@@ -1260,6 +1291,7 @@ Crosby`;
         inadimplencia,
         carteiraVencida: r.valorTotal || 0,
         qtdClientes: r.qtdClientes || 0,
+        clientesInadimplentes: r.clientesInadimplentes || [],
         percentual: venda > 0 ? (inadimplencia / venda) * 100 : null,
       };
     }).sort((a, b) => b.venda - a.venda);
@@ -1375,37 +1407,126 @@ Crosby`;
   ];
 
   const faixasAtraso = useMemo(() => {
-    const baldes = FAIXAS_ATRASO.map((f) => ({ ...f, clientes: 0, valor: 0 }));
-    clientesAgrupados.forEach((c) => {
-      // Classifica pelo titulo MAIS ANTIGO do cliente (mesmo criterio que a
-      // tela ja usa para dizer se ele e VENCIDO ou INADIMPLENTE)
-      const dias = c.diasAtrasoMax || 0;
-      const b = baldes.find((x) => dias >= x.min && dias <= x.max);
-      if (!b) return;
-      b.clientes += 1;
-      b.valor += c.valor_total || 0;
-    });
+    const baldes = FAIXAS_ATRASO.map((f) => ({
+      ...f,
+      clientes: 0,
+      faturas: 0,
+      valor: 0,
+      lista: [],
+    }));
+
+    if (modoFaixa === 'CLIENTE') {
+      // Cliente inteiro numa faixa so, pelo titulo MAIS ANTIGO dele —
+      // mesmo criterio que a tela usa para separar VENCIDO de INADIMPLENTE
+      clientesAgrupados.forEach((c) => {
+        const dias = c.diasAtrasoMax || 0;
+        const b = baldes.find((x) => dias >= x.min && dias <= x.max);
+        if (!b) return;
+        b.clientes += 1;
+        b.faturas += (c.faturas || []).length;
+        b.valor += c.valor_total || 0;
+        b.lista.push(c);
+      });
+    } else {
+      // Cada fatura na faixa dela. O cliente pode cair em varias, e em
+      // cada uma entra so com o valor das faturas daquela faixa.
+      const porBalde = baldes.map(() => new Map());
+      clientesAgrupados.forEach((c) => {
+        (c.faturas || []).forEach((f) => {
+          const dias = diasVencidoDe(f.dt_vencimento);
+          if (dias < 1) return;
+          const i = baldes.findIndex((x) => dias >= x.min && dias <= x.max);
+          if (i < 0) return;
+          const valor = parseFloat(f.vl_fatura) || 0;
+          baldes[i].faturas += 1;
+          baldes[i].valor += valor;
+          const mapa = porBalde[i];
+          const atual = mapa.get(c.cd_cliente) || {
+            ...c,
+            valor_total: 0,
+            _qtdFaturasFaixa: 0,
+            _parcial: true,
+          };
+          atual.valor_total += valor;
+          atual._qtdFaturasFaixa += 1;
+          mapa.set(c.cd_cliente, atual);
+        });
+      });
+      baldes.forEach((b, i) => {
+        b.lista = [...porBalde[i].values()];
+        b.clientes = b.lista.length;
+      });
+    }
+
+    baldes.forEach((b) =>
+      b.lista.sort((x, y) => (y.valor_total || 0) - (x.valor_total || 0)),
+    );
     return baldes;
-  }, [clientesAgrupados]);
+  }, [clientesAgrupados, modoFaixa]);
+
+  const porFatura = modoFaixa === 'FATURA';
 
   const chartFaixasAtraso = useMemo(() => {
-    if (!faixasAtraso.some((f) => f.clientes > 0)) return null;
+    const campo = porFatura ? 'faturas' : 'clientes';
+    if (!faixasAtraso.some((f) => f[campo] > 0)) return null;
     return {
       labels: faixasAtraso.map((f) => f.label),
       datasets: [
         {
-          label: 'Clientes',
-          data: faixasAtraso.map((f) => f.clientes),
+          label: porFatura ? 'Faturas' : 'Clientes',
+          data: faixasAtraso.map((f) => f[campo]),
           backgroundColor: faixasAtraso.map((f) => f.cor),
           borderRadius: 6,
         },
       ],
     };
-  }, [faixasAtraso]);
+  }, [faixasAtraso, porFatura]);
+
+  // Clique na barra (ou no rotulo do eixo) abre os clientes daquela faixa
+  const abrirFaixa = (indice) => {
+    const f = faixasAtraso[indice];
+    if (!f || f.lista.length === 0) return;
+    // No modo FATURA a barra conta faturas, mas quem se cobra e o cliente:
+    // a lista traz o cliente com o valor SO das faturas daquela faixa.
+    const titulo = porFatura
+      ? `Vencidas ha ${f.label} — ${f.faturas} fatura(s) de ${f.clientes} cliente(s), ${formatarMoeda(f.valor)}`
+      : `Clientes vencidos ha ${f.label} — ${f.clientes} cliente(s), ${formatarMoeda(f.valor)}`;
+    abrirModalLista(titulo, f.lista);
+  };
+
+  // Clique na inadimplencia do vendedor abre os clientes dele acima de 60 dias
+  const abrirInadimplenciaVendedor = (v) => {
+    if (!v?.clientesInadimplentes?.length) return;
+    const lista = [...v.clientesInadimplentes].sort(
+      (a, b) => (b.valor_total || 0) - (a.valor_total || 0),
+    );
+    const rateados = lista.filter((c) => c._rateado).length;
+    abrirModalLista(
+      `${v.chave} — ${lista.length} cliente(s) acima de 60 dias, ${formatarMoeda(
+        v.inadimplencia,
+      )}${rateados ? ` (${rateados} com valor dividido entre dois vendedores)` : ''}`,
+      lista,
+    );
+  };
 
   const barOptionsFaixas = {
     responsive: true,
     maintainAspectRatio: false,
+    onClick: (_e, elementos, chart) => {
+      if (elementos?.length) return abrirFaixa(elementos[0].index);
+      // Clicou fora da barra: usa a faixa da coluna sob o cursor
+      const pontos = chart.getElementsAtEventForMode(
+        _e,
+        'index',
+        { intersect: false },
+        true,
+      );
+      if (pontos?.length) abrirFaixa(pontos[0].index);
+    },
+    onHover: (evt, elementos) => {
+      const alvo = evt?.native?.target;
+      if (alvo) alvo.style.cursor = elementos?.length ? 'pointer' : 'default';
+    },
     plugins: {
       legend: { display: false },
       datalabels: {
@@ -1420,10 +1541,15 @@ Crosby`;
         callbacks: {
           label: (ctx) => {
             const f = faixasAtraso[ctx.dataIndex];
-            return [
-              `${ctx.raw} cliente(s)`,
-              `Total vencido: ${formatCurrency(f?.valor)}`,
-            ];
+            return porFatura
+              ? [
+                  `${f?.faturas} fatura(s) de ${f?.clientes} cliente(s)`,
+                  `Total vencido: ${formatCurrency(f?.valor)}`,
+                ]
+              : [
+                  `${f?.clientes} cliente(s) · ${f?.faturas} fatura(s)`,
+                  `Total vencido: ${formatCurrency(f?.valor)}`,
+                ];
           },
         },
       },
@@ -2434,17 +2560,7 @@ Crosby`;
   const PORTADOR_PROTESTO = 748;
   const DIAS_MIN_PROTESTO = 29;
 
-  const diasAtrasoFatura = (dtVencimento) => {
-    if (!dtVencimento) return 0;
-    const [datePart] = String(dtVencimento).split('T');
-    const [y, m, d] = datePart.split('-').map((n) => parseInt(n, 10));
-    if (!y || !m || !d) return 0;
-    const venc = new Date(y, m - 1, d);
-    venc.setHours(0, 0, 0, 0);
-    const hoje = new Date();
-    hoje.setHours(0, 0, 0, 0);
-    return Math.floor((hoje - venc) / (1000 * 60 * 60 * 24));
-  };
+  const diasAtrasoFatura = diasVencidoDe;
 
   const elegibilidadeProtesto = (fatura) => {
     if (faturasProtestadas.has(chaveFatura(fatura))) {
@@ -2941,17 +3057,38 @@ Crosby`;
               {/* Grafico: clientes por faixa de atraso */}
               <Card className="shadow-lg rounded-xl bg-white">
                 <CardHeader className="pb-2">
-                  <div className="flex items-center gap-2">
-                    <ChartBar size={18} className="text-amber-600" />
-                    <CardTitle className="text-sm font-bold text-[#000638]">
-                      Clientes por Faixa de Atraso
-                    </CardTitle>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <ChartBar size={18} className="text-amber-600" />
+                      <CardTitle className="text-sm font-bold text-[#000638]">
+                        {porFatura ? 'Faturas' : 'Clientes'} por Faixa de
+                        Atraso
+                      </CardTitle>
+                    </div>
+                    <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+                      {[
+                        { id: 'CLIENTE', label: 'Cliente' },
+                        { id: 'FATURA', label: 'Fatura' },
+                      ].map(({ id, label }) => (
+                        <button
+                          key={id}
+                          onClick={() => setModoFaixa(id)}
+                          className={`px-3 py-1 rounded-md text-xs font-bold uppercase tracking-wide transition-colors ${
+                            modoFaixa === id
+                              ? 'bg-[#000638] text-white shadow-sm'
+                              : 'text-gray-600 hover:text-[#000638]'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                   <CardDescription className="text-xs text-gray-500">
-                    Quantos clientes estao em cada faixa, do atraso mais
-                    recente ao mais antigo. As barras verdes a esquerda sao a
-                    inadimplencia entrando agora; o 121+ e estoque velho.
-                    Passe o mouse para ver o valor de cada faixa.
+                    {porFatura
+                      ? 'Cada fatura vencida entra na faixa dela — o mesmo cliente pode aparecer em varias, com o valor separado por faixa. Mostra melhor a divida nova de quem ja devia.'
+                      : 'Cada cliente entra numa faixa so, pela fatura mais antiga dele, com o valor total da carteira. Mostra quem virou inadimplente agora.'}{' '}
+                    Clique numa barra para ver a lista.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="pt-0 px-4 pb-4">
@@ -2982,7 +3119,9 @@ Crosby`;
                           {formatarMoeda(f.valor)}
                         </div>
                         <div className="text-[10px] text-gray-500">
-                          {f.clientes} cliente(s)
+                          {porFatura
+                            ? `${f.faturas} fatura(s)`
+                            : `${f.clientes} cliente(s)`}
                         </div>
                       </div>
                     ))}
@@ -3018,6 +3157,7 @@ Crosby`;
                     Faturado de cada vendedor desde a data de entrada dele,
                     contra a carteira inadimplente (clientes com mais de 60
                     dias de atraso). Percentual = inadimplencia / faturado * 100.
+                    Clique no valor da inadimplencia para ver os clientes.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="pt-0 px-4 pb-4">
@@ -3077,8 +3217,20 @@ Crosby`;
                                 formatarMoeda(v.venda)
                               )}
                             </td>
-                            <td className="px-3 py-2 text-right font-semibold text-red-600">
-                              {formatarMoeda(v.inadimplencia)}
+                            <td className="px-3 py-2 text-right">
+                              {v.clientesInadimplentes.length > 0 ? (
+                                <button
+                                  onClick={() => abrirInadimplenciaVendedor(v)}
+                                  className="font-semibold text-red-600 underline decoration-dotted underline-offset-2 hover:text-red-700"
+                                  title={`Ver os ${v.clientesInadimplentes.length} cliente(s) acima de 60 dias`}
+                                >
+                                  {formatarMoeda(v.inadimplencia)}
+                                </button>
+                              ) : (
+                                <span className="font-semibold text-gray-400">
+                                  {formatarMoeda(v.inadimplencia)}
+                                </span>
+                              )}
                             </td>
                             <td className="px-3 py-2 text-right">
                               {v.percentual === null ? (

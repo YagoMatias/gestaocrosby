@@ -49,12 +49,43 @@ const CANAIS_BASE = [
   { canal: 'RICARDO ELETRO', fonte: 'RICARDO_ELETRO', meta: 12000, codes: [-512], direto: true },
   { canal: 'MALA', fonte: null, meta: 10 },
   // Cartões: contados em UNIDADES (qtd), fora dos totais em R$
-  { canal: 'CARTÃO PB', fonte: null, meta: 50, qtd: true },
-  { canal: 'CARTÃO RN', fonte: null, meta: 100, qtd: true },
-  { canal: 'CARTÃO PI', fonte: null, meta: 50, qtd: true },
-  { canal: 'CARTÃO PE', fonte: null, meta: 50, qtd: true },
-  { canal: 'CARTÃO PB - PATOS', fonte: null, meta: 50, qtd: true },
+  { canal: 'CARTÕES', fonte: null, meta: 300, qtd: true },
 ];
+
+// Linhas antigas de cartão por estado — somadas na linha única CARTÕES
+const CARTOES_ANTIGOS = [
+  'CARTÃO PB',
+  'CARTÃO RN',
+  'CARTÃO PI',
+  'CARTÃO PE',
+  'CARTÃO PB - PATOS',
+];
+const juntaCartoes = (st) => {
+  const antigos = CARTOES_ANTIGOS.filter((c) => st.manual?.[c]);
+  const metasAntigas = CARTOES_ANTIGOS.filter((c) => st.metas?.[c] != null);
+  if (!antigos.length && !metasAntigas.length) return st;
+  const manual = { ...st.manual };
+  if (!manual['CARTÕES']) {
+    const soma = {};
+    for (const c of antigos)
+      for (const [k, v] of Object.entries(manual[c] || {}))
+        soma[k] = (soma[k] || 0) + parseNum(v);
+    if (Object.keys(soma).length) manual['CARTÕES'] = soma;
+  }
+  const metas = { ...st.metas };
+  if (metasAntigas.length && metas['CARTÕES'] == null) {
+    const padrao = { 'CARTÃO RN': 100 };
+    metas['CARTÕES'] = CARTOES_ANTIGOS.reduce(
+      (a, c) => a + parseNum(metas[c] ?? padrao[c] ?? 50),
+      0,
+    );
+  }
+  for (const c of CARTOES_ANTIGOS) {
+    delete manual[c];
+    delete metas[c];
+  }
+  return { ...st, manual, metas };
+};
 
 const OP_NOVIDADES = 7255;
 const OPS_BAZAR = [887, 888, 889];
@@ -304,6 +335,7 @@ const NewForecast = () => {
       }
       if (!vivo) return;
       if (!st) st = loadLocal(periodKey);
+      st = juntaCartoes(st);
       setStore(st);
       storeLoaded.current = true;
       const semanas = st.semanas?.length

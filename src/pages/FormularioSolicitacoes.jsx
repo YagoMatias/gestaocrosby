@@ -105,6 +105,7 @@ const FORMAS_PAGAMENTO = [
   { value: 'pix', label: 'PIX' },
   { value: 'debito', label: 'Débito' },
   { value: 'boleto', label: 'Boleto' },
+  { value: 'saldo_pagbank', label: 'Saldo PagBank' },
   ...Array.from({ length: 12 }, (_, i) => ({
     value: `credito_${i + 1}x`,
     label: `Crédito ${i + 1}x`,
@@ -1098,6 +1099,12 @@ const FormularioSolicitacoes = () => {
       return 'Informe a chave PIX.';
     if (
       exigeFormaPagamento &&
+      formaPagamento === 'saldo_pagbank' &&
+      !chavePix.trim()
+    )
+      return 'Informe a chave PagBank.';
+    if (
+      exigeFormaPagamento &&
       formaPagamento === 'boleto' &&
       !codigoBarras.trim()
     )
@@ -1304,7 +1311,11 @@ const FormularioSolicitacoes = () => {
         contatos_prestadores: [],
         comprovante_gestor_url: comprovanteGestorUrl,
         comprovante_fabio_url: comprovanteFabioUrl,
-        chave_pix: formaPagamento === 'pix' ? chavePix.trim() || null : null,
+        // chave_pix guarda a chave PIX ou, no Saldo PagBank, a chave PagBank
+        chave_pix:
+          formaPagamento === 'pix' || formaPagamento === 'saldo_pagbank'
+            ? chavePix.trim() || null
+            : null,
         codigo_barras:
           formaPagamento === 'boleto' ? codigoBarras.trim() || null : null,
         tem_nota_fiscal: exigeFormaPagamento ? temNotaFiscal === 'sim' : null,
@@ -2029,6 +2040,25 @@ const FormularioSolicitacoes = () => {
                     placeholder="CPF, CNPJ, e-mail, telefone, chave aleatória ou PIX copia e cola"
                     className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm font-mono break-all resize-y focus:outline-none focus:border-[#000638] transition-colors"
                   />
+                </div>
+              )}
+              {formaPagamento === 'saldo_pagbank' && (
+                <div>
+                  <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
+                    <Hash size={14} weight="bold" />
+                    Chave PagBank *
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={chavePix}
+                    onChange={(e) => setChavePix(e.target.value)}
+                    placeholder="Chave da conta PagBank do fornecedor (CPF, CNPJ, e-mail, telefone ou chave aleatória)"
+                    className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm font-mono break-all resize-y focus:outline-none focus:border-[#000638] transition-colors"
+                  />
+                  <p className="mt-1 text-[10px] text-gray-500">
+                    Pagamento com saldo da conta PagBank — informe a chave que
+                    recebe a transferência.
+                  </p>
                 </div>
               )}
               {formaPagamento === 'boleto' && (

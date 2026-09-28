@@ -50,6 +50,11 @@ const AVAILABLE_PAGES = [
     category: 'Solicitações Crosby',
   },
   {
+    path: '/devolucoes-mercadoria',
+    name: 'Devoluções de Mercadoria',
+    category: 'Solicitações Crosby',
+  },
+  {
     path: '/solicitacoes-crosby/compras-manutencao',
     name: 'Compras & Manutenção',
     category: 'Solicitações Crosby',
@@ -170,6 +175,11 @@ const AVAILABLE_PAGES = [
     category: 'Financeiro — Contas a Receber',
   },
   {
+    path: '/fluxo-caixa',
+    name: 'Fluxo de Caixa',
+    category: 'Financeiro — Contas a Receber',
+  },
+  {
     path: '/dash-inadimplencia',
     name: 'Dashboard Inadimplência',
     category: 'Financeiro — Contas a Receber',
@@ -206,11 +216,58 @@ const AVAILABLE_PAGES = [
     name: 'Conciliação (Stone)',
     category: 'Financeiro',
   },
-  { path: '/dre', name: 'DRE', category: 'Financeiro' },
+  {
+    path: '/extrato-stone',
+    name: 'Extrato Stone (OFX → CNAB 240)',
+    category: 'Financeiro',
+  },
   {
     path: '/extratos-bancos',
     name: 'Extratos Bancos',
     category: 'Financeiro',
+  },
+
+  // ─── DRE ─────────────────────────────────────────────────────
+  { path: '/dre', name: 'DRE Gerencial', category: 'DRE' },
+  {
+    path: '/despesas-gerais/visao-geral',
+    name: 'Visão Geral',
+    category: 'DRE',
+  },
+  {
+    path: '/despesas-gerais/dre-analitica',
+    name: 'DRE Analítica',
+    category: 'DRE',
+  },
+  {
+    path: '/despesas-gerais/graficos',
+    name: 'Gráficos',
+    category: 'DRE',
+  },
+  {
+    path: '/despesas-gerais/analise-horizontal',
+    name: 'Análise Horizontal',
+    category: 'DRE',
+  },
+  {
+    path: '/despesas-gerais/analise-vertical',
+    name: 'Análise Vertical',
+    category: 'DRE',
+  },
+  {
+    path: '/despesas-gerais/correcoes',
+    name: 'Correções DRE',
+    category: 'DRE',
+  },
+  {
+    path: '/despesas-gerais/corte',
+    name: 'Corte de Custo',
+    category: 'DRE',
+  },
+  {
+    path: '/despesas-gerais/headcoach',
+    name: 'Contas Sintéticas',
+    category: 'DRE',
   },
 
   // ─── Comercial ───────────────────────────────────────
@@ -242,6 +299,7 @@ const AVAILABLE_PAGES = [
     name: 'Forecast Varejo (Competição)',
     category: 'Varejo',
   },
+  { path: '/varejo/vendas-pdv', name: 'Vendas PDV (HeadCoach)', category: 'Varejo' },
   { path: '/dashboard-varejo', name: 'Dashboard Varejo', category: 'Varejo' },
   { path: '/metas-varejo', name: 'Metas Varejo', category: 'Varejo' },
   {
@@ -498,8 +556,18 @@ const AVAILABLE_PAGES = [
     category: 'Tecnologia',
   },
   {
+    path: '/tecnologia/pdv-crosby',
+    name: 'PDV Crosby',
+    category: 'Tecnologia',
+  },
+  {
     path: '/tecnologia/orcamento-rfid',
     name: 'Orçamento RFID',
+    category: 'Tecnologia',
+  },
+  {
+    path: '/tecnologia/devolucao-rfid',
+    name: 'Devolução RFID',
     category: 'Tecnologia',
   },
   {
@@ -542,6 +610,7 @@ const AVAILABLE_PAGES = [
   },
   { path: '/api-claude', name: 'API Claude', category: 'Administração' },
   { path: '/crosby-manage', name: 'Crosby Manage', category: 'Administração' },
+  { path: '/admin/fiscal-pdv', name: 'Fiscal PDV', category: 'Administração' },
 ];
 
 // Hierarquia espelhando o sidebar: estas categorias aparecem DENTRO do bloco

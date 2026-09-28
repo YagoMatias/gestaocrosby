@@ -77,6 +77,11 @@ const TABBED_PAGES = {
     group: 'Contas a Receber',
     dot: 'bg-green-500',
   },
+  '/fluxo-caixa': {
+    label: 'Fluxo de Caixa',
+    group: 'Contas a Receber',
+    dot: 'bg-green-500',
+  },
   '/dash-inadimplencia': {
     label: 'Dashboard Inadimplência',
     group: 'Contas a Receber',
@@ -111,6 +116,11 @@ const TABBED_PAGES = {
   // ---- Financeiro › demais ----
   '/conciliacao-stone': {
     label: 'Conciliação',
+    group: 'Financeiro',
+    dot: 'bg-blue-500',
+  },
+  '/extrato-stone': {
+    label: 'Extrato Stone',
     group: 'Financeiro',
     dot: 'bg-blue-500',
   },

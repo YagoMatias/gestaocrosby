@@ -22,6 +22,7 @@ const PAGE_COMPONENTS = {
   '/dash-contas-a-receber': lazy(
     () => import('../../pages/DashContasAReceber'),
   ),
+  '/fluxo-caixa': lazy(() => import('../../pages/FluxoCaixa')),
   '/dash-inadimplencia': lazy(() => import('../../pages/DashInadimplencia')),
   '/metas-inadimplencia': lazy(() => import('../../pages/MetasInadimplencia')),
   '/esteira-protesto': lazy(() => import('../../pages/EsteiraProtesto')),
@@ -31,6 +32,7 @@ const PAGE_COMPONENTS = {
 
   // ---- Financeiro › demais ----
   '/conciliacao-stone': lazy(() => import('../../pages/ConciliacaoStone')),
+  '/extrato-stone': lazy(() => import('../../pages/ExtratoStone')),
   '/dre': lazy(() => import('../../pages/DRE')),
 
   // ---- Financeiro › Fiscal ----
