@@ -68,6 +68,7 @@ const linkWhatsapp = (telefone) => {
 const ClientesCashbackFranquia = ({ lojasFixas = null } = {}) => {
   const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
   const [dias, setDias] = useState(3);
+  const [dataManual, setDataManual] = useState('');
   const [dataAlvo, setDataAlvo] = useState('');
   const [lista, setLista] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -82,7 +83,7 @@ const ClientesCashbackFranquia = ({ lojasFixas = null } = {}) => {
     }
     setLoading(true);
     setErro('');
-    const date = diasAtras(dias);
+    const date = dataManual || diasAtras(dias);
     setDataAlvo(date);
     try {
       const branchCodes = empresasSelecionadas.map((e) => Number(e.cd_empresa));
@@ -180,7 +181,7 @@ const ClientesCashbackFranquia = ({ lojasFixas = null } = {}) => {
     const blob = new Blob([buffer], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });
-    saveAs(blob, `clientes-cashback-${dias}dias-${dataAlvo}.xlsx`);
+    saveAs(blob, `clientes-cashback-${dataManual ? 'data' : dias + 'dias'}-${dataAlvo}.xlsx`);
   };
 
   return (
@@ -233,9 +234,12 @@ const ClientesCashbackFranquia = ({ lojasFixas = null } = {}) => {
                   <button
                     key={op.value}
                     type="button"
-                    onClick={() => setDias(op.value)}
+                    onClick={() => {
+                      setDias(op.value);
+                      setDataManual('');
+                    }}
                     className={`flex-1 px-2 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
-                      dias === op.value
+                      !dataManual && dias === op.value
                         ? 'bg-[#000638] text-white border-[#000638]'
                         : 'bg-[#f8f9fb] text-[#000638] border-[#000638]/30 hover:bg-gray-100'
                     }`}
@@ -243,6 +247,32 @@ const ClientesCashbackFranquia = ({ lojasFixas = null } = {}) => {
                     {op.label}
                   </button>
                 ))}
+              </div>
+            </div>
+
+            {/* Data específica da compra */}
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Ou escolha a data da compra
+              </label>
+              <div className="flex gap-1">
+                <input
+                  type="date"
+                  value={dataManual}
+                  max={diasAtras(0)}
+                  onChange={(e) => setDataManual(e.target.value)}
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+                />
+                {dataManual && (
+                  <button
+                    type="button"
+                    onClick={() => setDataManual('')}
+                    title="Limpar data e voltar para dias após a compra"
+                    className="px-2 py-1.5 rounded-lg text-xs font-bold border border-[#000638]/30 bg-[#f8f9fb] text-[#000638] hover:bg-gray-100 transition-colors"
+                  >
+                    Limpar
+                  </button>
+                )}
               </div>
             </div>
 
@@ -299,7 +329,7 @@ const ClientesCashbackFranquia = ({ lojasFixas = null } = {}) => {
                 {dadosFiltrados.length} cliente(s) com cashback
               </span>
               <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
-                compras de {fmtData(dataAlvo)} ({dias} dias)
+                compras de {fmtData(dataAlvo)}{dataManual ? '' : ` (${dias} dias)`}
               </span>
               {totalCashback > 0 && (
                 <span className="text-xs font-semibold text-green-700 bg-green-50 px-2 py-0.5 rounded-full">
