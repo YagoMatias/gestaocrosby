@@ -121,6 +121,7 @@ const DownloadNotificacao = lazy(() => import('./pages/DownloadNotificacao'));
 const FilaDaVez = lazy(() => import('./pages/FilaDaVez'));
 const PrintForecast = lazy(() => import('./pages/PrintForecast'));
 const ApresentacaoForecast = lazy(() => import('./pages/ApresentacaoForecast'));
+const PainelFechamento = lazy(() => import('./pages/PainelFechamento'));
 const CrosbyForm = lazy(() => import('./crosby/CrosbyForm'));
 const CrosbyFormIndicacao = lazy(() => import('./crosby/CrosbyFormIndicacao'));
 const CrosbyObrigado = lazy(() => import('./crosby/CrosbyObrigado'));
@@ -454,6 +455,15 @@ function App() {
           element={
             <Suspense fallback={<PageLoadingFallback />}>
               <ApresentacaoForecast />
+            </Suspense>
+          }
+        />
+        {/* Pública: painel de fechamento de mês — TVs (horizontal/vertical), auto-refresh */}
+        <Route
+          path="/apresentacao/fechamento"
+          element={
+            <Suspense fallback={<PageLoadingFallback />}>
+              <PainelFechamento />
             </Suspense>
           }
         />

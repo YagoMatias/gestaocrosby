@@ -802,6 +802,10 @@ const useApiClient = () => {
     newForecastConfigSave: (body) =>
       apiMutate('/api/totvs/new-forecast/config', 'POST', body),
 
+    /** Painel de fechamento de mês (TVs) — lê sales_closing_records */
+    salePanelClosing: (mes) =>
+      apiCall('/api/totvs/sale-panel/closing', mes ? { mes } : {}),
+
     sellerPanelTopCustomers: (body) =>
       apiMutate(
         '/api/totvs/seller-panel/top-customers',
