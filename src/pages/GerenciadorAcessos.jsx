@@ -288,6 +288,11 @@ const AVAILABLE_PAGES = [
     category: 'Comercial',
   },
   {
+    path: '/apresentacao/fechamento',
+    name: 'Painel de Fechamento (TV)',
+    category: 'Comercial',
+  },
+  {
     path: '/ranking-compras-franquias',
     name: 'Compras Franquias (Sellin)',
     category: 'Franquias',

@@ -13,17 +13,38 @@ const REFRESH_MS = 60_000; // 1 min (fonte tem cache ~30min; isso mantém a TV v
 
 const CANAL_LABELS = {
   VAREJO: 'Varejo',
-  FRANQUIAS: 'Franquias',
   REVENDA: 'Revenda',
-  MTM_RAFAEL: 'MTM Rafael',
-  MTM_DAVID: 'MTM David',
-  MTM_ARTHUR: 'MTM Arthur',
-  NOVIDADES: 'Novidades',
-  SHOWROOM: 'Showroom',
-  BAZAR: 'Bazar',
-  RICARDO_ELETRO: 'Ricardo Eletro',
-  BLUECRED: 'BlueCred',
+  MULTIMARCAS: 'Multimarcas',
+  FRANQUIAS: 'Franquias',
 };
+
+// Só os 4 canais principais, nesta ordem. MULTIMARCAS = soma dos 3 MTM.
+const CANAIS_PRINCIPAIS = ['VAREJO', 'REVENDA', 'MULTIMARCAS', 'FRANQUIAS'];
+const MTM_KEYS = ['MTM_RAFAEL', 'MTM_DAVID', 'MTM_ARTHUR'];
+
+// Reduz a lista completa de canais do backend aos 4 principais (somando os MTM).
+function montarPrincipais(canais) {
+  const porCanal = Object.fromEntries((canais || []).map((c) => [c.canal, c]));
+  const campos = ['s1', 's2', 's3', 's4', 's5', 'total_mes'];
+  const r2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
+  const somaMtm = campos.reduce((acc, f) => {
+    acc[f] = r2(MTM_KEYS.reduce((s, k) => s + Number(porCanal[k]?.[f] || 0), 0));
+    return acc;
+  }, {});
+  return CANAIS_PRINCIPAIS.map((canal) => {
+    if (canal === 'MULTIMARCAS') return { canal, ...somaMtm };
+    const c = porCanal[canal] || {};
+    return {
+      canal,
+      s1: r2(c.s1),
+      s2: r2(c.s2),
+      s3: r2(c.s3),
+      s4: r2(c.s4),
+      s5: r2(c.s5),
+      total_mes: r2(c.total_mes),
+    };
+  });
+}
 
 const MESES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -153,8 +174,9 @@ export default function PainelFechamento() {
     return () => clearInterval(id);
   }, [buscar]);
 
-  const canais = dados?.canais || [];
-  const total = Number(dados?.total_geral?.total_mes || 0);
+  const canais = dados ? montarPrincipais(dados.canais) : [];
+  // Herói = soma dos 4 canais principais (mesmo universo mostrado nos cards).
+  const total = canais.reduce((s, c) => s + Number(c.total_mes || 0), 0);
   const maxCanal = canais.reduce((m, c) => Math.max(m, Number(c.total_mes || 0)), 0) || 1;
   const fechado = dados?.fechado;
 
@@ -259,21 +281,22 @@ export default function PainelFechamento() {
           Carregando…
         </div>
       )}
-      {!erro && dados && canais.length === 0 && (
+      {!erro && dados && !dados?.canais?.length && (
         <div className="flex-1 flex items-center justify-center text-blue-200/70 text-center px-[4vw]" style={{ fontSize: vertical ? '2.4vw' : '1.5vw' }}>
           Ainda sem dados para {nomeMes(dados?.mes)}. Assim que a primeira sincronização rodar, os canais aparecem aqui.
         </div>
       )}
 
       {/* Canais */}
-      {canais.length > 0 && (
+      {dados?.canais?.length > 0 && (
         <section className="flex-1 px-[3vw] pb-[3vh]">
           <div
-            className="grid gap-[1.4vw] h-full content-start"
+            className="grid gap-[1.4vw] h-full"
             style={{
+              gridAutoRows: '1fr',
               gridTemplateColumns: vertical
-                ? 'repeat(2, minmax(0, 1fr))'
-                : `repeat(${canais.length > 6 ? 3 : 2}, minmax(0, 1fr))`,
+                ? '1fr'
+                : 'repeat(2, minmax(0, 1fr))',
             }}
           >
             {canais.map((c) => {
@@ -283,7 +306,7 @@ export default function PainelFechamento() {
               return (
                 <div
                   key={c.canal}
-                  className="rounded-[1vw] px-[1.8vw] py-[1.6vh]"
+                  className="rounded-[1vw] px-[2vw] py-[2vh] flex flex-col justify-center"
                   style={{
                     background: 'rgba(255,255,255,0.05)',
                     border: '1px solid rgba(255,255,255,0.10)',
@@ -292,19 +315,19 @@ export default function PainelFechamento() {
                   <div className="flex items-baseline justify-between">
                     <span
                       className="font-bold text-blue-50"
-                      style={{ fontSize: vertical ? '2vw' : '1.5vw' }}
+                      style={{ fontSize: vertical ? '3vw' : '2vw' }}
                     >
                       {label}
                     </span>
                     <span
                       className="font-black tabular-nums"
-                      style={{ fontSize: vertical ? '2.2vw' : '1.7vw' }}
+                      style={{ fontSize: vertical ? '3.4vw' : '2.4vw' }}
                     >
                       {fmtBRLCompact(val)}
                     </span>
                   </div>
                   {/* barra proporcional */}
-                  <div className="mt-[1vh] h-[1.2vh] rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
+                  <div className="mt-[1.4vh] h-[1.4vh] rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
                     <div
                       className="h-full rounded-full"
                       style={{
@@ -315,8 +338,8 @@ export default function PainelFechamento() {
                   </div>
                   {/* semanas */}
                   <div
-                    className="mt-[1vh] flex flex-wrap gap-x-[1.4vw] gap-y-[0.4vh] text-blue-200/70 tabular-nums"
-                    style={{ fontSize: vertical ? '1.15vw' : '0.85vw' }}
+                    className="mt-[1.4vh] flex flex-wrap gap-x-[1.6vw] gap-y-[0.4vh] text-blue-200/70 tabular-nums"
+                    style={{ fontSize: vertical ? '1.5vw' : '1vw' }}
                   >
                     {['s1', 's2', 's3', 's4', 's5'].map((s, i) =>
                       Number(c[s]) ? (

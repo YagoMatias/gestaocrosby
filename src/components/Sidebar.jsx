@@ -428,6 +428,12 @@ const painelVendasItems = [
     color: 'text-fuchsia-600',
   },
   {
+    name: 'Painel de Fechamento (TV)',
+    href: '/apresentacao/fechamento',
+    icon: ChartLineUp,
+    color: 'text-red-600',
+  },
+  {
     name: 'Painel Competição',
     href: '/crm/competicao',
     icon: Trophy,
