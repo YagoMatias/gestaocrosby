@@ -227,37 +227,70 @@ export default function PainelFechamento() {
       `}</style>
 
       {/* Cabeçalho */}
-      <header className="flex items-center justify-between px-[3vw] pt-[3vh] pb-[1.5vh]">
-        <div className="flex items-center gap-[1.5vw]">
-          <span
-            className="font-black tracking-[0.15em] text-white/95"
-            style={{ fontSize: vertical ? '3.6vw' : '2.2vw' }}
-          >
-            CROSBY
-          </span>
-          <div
-            className="w-[2px] self-stretch bg-white/20 mx-[0.5vw]"
-            style={{ minHeight: '5vh' }}
+      <header
+        className={`flex px-[3vw] pt-[3vh] pb-[1.5vh] ${
+          vertical
+            ? 'flex-col items-center gap-[1.4vh] text-center'
+            : 'items-center justify-between'
+        }`}
+      >
+        {/* Marca + título */}
+        <div className={`flex items-center ${vertical ? 'flex-col gap-[1vh]' : 'gap-[1.5vw]'}`}>
+          <img
+            src="/crosby-branca.png"
+            alt="Crosby"
+            className="w-auto object-contain"
+            style={{ height: vertical ? '4vh' : '4.2vh' }}
+            onError={(e) => {
+              e.currentTarget.outerHTML =
+                '<span style="font-weight:900;letter-spacing:.15em;color:rgba(255,255,255,.95);font-size:' +
+                (vertical ? '4.5vw' : '2.2vw') +
+                '">CROSBY</span>';
+            }}
           />
-          <div>
+          {!vertical && (
+            <div
+              className="w-[2px] self-stretch bg-white/20 mx-[0.5vw]"
+              style={{ minHeight: '5vh' }}
+            />
+          )}
+          <div className={vertical ? 'text-center' : ''}>
             <div
               className="font-black tracking-tight leading-none"
-              style={{ fontSize: vertical ? '3.2vw' : '2.6vw' }}
+              style={{ fontSize: vertical ? '4vw' : '2.6vw' }}
             >
               FECHAMENTO DO MÊS
             </div>
             <div
               className="text-blue-200/80 font-semibold leading-none mt-[0.6vh]"
-              style={{ fontSize: vertical ? '2.6vw' : '1.4vw' }}
+              style={{ fontSize: vertical ? '2.8vw' : '1.4vw' }}
             >
               {nomeMes(dados?.mes || mesParam)}
             </div>
           </div>
         </div>
-        <div className="text-right">
+
+        {/* Relógio + status */}
+        <div
+          className={
+            vertical
+              ? 'flex items-center justify-center gap-[3vw] flex-wrap'
+              : 'text-right'
+          }
+        >
           <div
-            className="font-mono font-bold tabular-nums leading-none flex items-center justify-end gap-[0.4vw]"
-            style={{ fontSize: vertical ? '2.6vw' : '1.9vw' }}
+            className={`font-mono font-black tabular-nums leading-none flex items-center gap-[0.5vw] rounded-[0.9vw] ${
+              vertical ? 'justify-center' : 'justify-end'
+            }`}
+            style={{
+              fontSize: vertical ? '4.2vw' : '3vw',
+              padding: vertical ? '1vh 2.2vw' : '0.9vh 1.4vw',
+              background: 'rgba(255,255,255,0.08)',
+              border: '1px solid rgba(130,170,255,0.45)',
+              boxShadow: '0 0 24px rgba(79,123,255,0.35), inset 0 0 12px rgba(79,123,255,0.12)',
+              textShadow: '0 0 16px rgba(150,185,255,0.6)',
+              color: '#eaf1ff',
+            }}
           >
             {(() => {
               const [rh = '--', rm = '--', rs = '--'] = (relogio || '').split(':');
@@ -273,8 +306,10 @@ export default function PainelFechamento() {
             })()}
           </div>
           <div
-            className="text-blue-200/70 mt-[0.6vh] flex items-center justify-end gap-[0.5vw]"
-            style={{ fontSize: vertical ? '1.9vw' : '1vw' }}
+            className={`text-blue-200/70 flex items-center gap-[0.5vw] ${
+              vertical ? 'justify-center' : 'justify-end mt-[0.6vh]'
+            }`}
+            style={{ fontSize: vertical ? '2vw' : '1vw' }}
           >
             <span
               className="inline-block rounded-full bg-green-400"
