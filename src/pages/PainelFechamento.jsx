@@ -97,16 +97,31 @@ const DEMO_CANAIS = [
   _c('SHOWROOM', 2100, 1900, 2400, 2200, 800),
   _c('BAZAR', 1500, 1200, 1800, 1600, 600),
 ];
-const DEMO_DADOS = {
-  mes: _mesDemo,
-  fechado: false,
-  atualizado_em: new Date().toISOString(),
-  total_geral: {
-    canal: 'TOTAL_GERAL',
-    total_mes: DEMO_CANAIS.reduce((a, c) => a + c.total_mes, 0),
-  },
-  canais: DEMO_CANAIS,
-};
+// Demo com pequena variação a cada chamada, pra dar pra ver os efeitos de
+// "mudança" (valores piscando/brilhando) sem depender do backend.
+function demoDados() {
+  const jitter = (v) => Math.round(v * (0.95 + Math.random() * 0.1));
+  const canais = DEMO_CANAIS.map((c) => {
+    const s = {
+      s1: jitter(c.s1),
+      s2: jitter(c.s2),
+      s3: jitter(c.s3),
+      s4: jitter(c.s4),
+      s5: jitter(c.s5),
+    };
+    return { ...c, ...s, total_mes: s.s1 + s.s2 + s.s3 + s.s4 + s.s5 };
+  });
+  return {
+    mes: _mesDemo,
+    fechado: false,
+    atualizado_em: new Date().toISOString(),
+    total_geral: {
+      canal: 'TOTAL_GERAL',
+      total_mes: canais.reduce((a, c) => a + c.total_mes, 0),
+    },
+    canais,
+  };
+}
 
 export default function PainelFechamento() {
   const params = new URLSearchParams(window.location.search);
@@ -149,7 +164,7 @@ export default function PainelFechamento() {
   const buscar = useCallback(async () => {
     // Modo demo: dados de exemplo para posicionar/testar a TV sem depender do backend.
     if (params.get('demo')) {
-      setDados(DEMO_DADOS);
+      setDados(demoDados());
       setErro('');
       return;
     }
@@ -170,8 +185,10 @@ export default function PainelFechamento() {
 
   useEffect(() => {
     buscar();
-    const id = setInterval(buscar, REFRESH_MS);
+    const ms = params.get('demo') ? 4000 : REFRESH_MS;
+    const id = setInterval(buscar, ms);
     return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [buscar]);
 
   const canais = dados ? montarPrincipais(dados.canais) : [];
@@ -189,6 +206,26 @@ export default function PainelFechamento() {
         fontFamily: 'Inter, system-ui, sans-serif',
       }}
     >
+      <style>{`
+        @keyframes flashVal {
+          0% { transform: scale(1); }
+          18% { transform: scale(1.07); color: #ffe4a3; text-shadow: 0 0 26px rgba(255,210,120,.85); }
+          100% { transform: scale(1); }
+        }
+        @keyframes livePulse {
+          0%,100% { opacity: 1; transform: scale(1); }
+          50% { opacity: .35; transform: scale(.8); }
+        }
+        @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+        @keyframes cardGlow {
+          0% { box-shadow: 0 0 0 rgba(79,123,255,0); border-color: rgba(255,255,255,.10); }
+          25% { box-shadow: 0 0 32px rgba(79,123,255,.45); border-color: rgba(130,170,255,.7); }
+          100% { box-shadow: 0 0 0 rgba(79,123,255,0); border-color: rgba(255,255,255,.10); }
+        }
+        .flash-val { animation: flashVal .9s ease; }
+        .card-glow { animation: cardGlow 1.1s ease; }
+      `}</style>
+
       {/* Cabeçalho */}
       <header className="flex items-center justify-between px-[3vw] pt-[3vh] pb-[1.5vh]">
         <div className="flex items-center gap-[1.5vw]">
@@ -219,16 +256,37 @@ export default function PainelFechamento() {
         </div>
         <div className="text-right">
           <div
-            className="font-mono font-bold tabular-nums leading-none"
+            className="font-mono font-bold tabular-nums leading-none flex items-center justify-end gap-[0.4vw]"
             style={{ fontSize: vertical ? '2.6vw' : '1.9vw' }}
           >
-            {relogio}
+            {(() => {
+              const [rh = '--', rm = '--', rs = '--'] = (relogio || '').split(':');
+              return (
+                <>
+                  <span>{rh}</span>
+                  <span style={{ animation: 'blink 1.2s ease-in-out infinite' }}>:</span>
+                  <span>{rm}</span>
+                  <span style={{ animation: 'blink 1.2s ease-in-out infinite' }}>:</span>
+                  <span>{rs}</span>
+                </>
+              );
+            })()}
           </div>
           <div
-            className="text-blue-200/70 mt-[0.6vh]"
+            className="text-blue-200/70 mt-[0.6vh] flex items-center justify-end gap-[0.5vw]"
             style={{ fontSize: vertical ? '1.9vw' : '1vw' }}
           >
-            atualizado {fmtHora(dados?.atualizado_em)}
+            <span
+              className="inline-block rounded-full bg-green-400"
+              style={{
+                width: vertical ? '1.1vw' : '0.6vw',
+                height: vertical ? '1.1vw' : '0.6vw',
+                animation: 'livePulse 1.4s ease-in-out infinite',
+              }}
+            />
+            <span key={dados?.atualizado_em || 'x'} className="flash-val">
+              atualizado {fmtHora(dados?.atualizado_em)}
+            </span>
           </div>
           {fechado && (
             <div
@@ -257,7 +315,8 @@ export default function PainelFechamento() {
             Faturamento total do mês
           </div>
           <div
-            className="font-black tabular-nums leading-none mt-[1vh]"
+            key={total}
+            className="font-black tabular-nums leading-none mt-[1vh] flash-val"
             style={{
               fontSize: vertical ? '7.5vw' : '6.5vw',
               textShadow: '0 0 30px rgba(120,160,255,0.35)',
@@ -306,12 +365,17 @@ export default function PainelFechamento() {
               return (
                 <div
                   key={c.canal}
-                  className="rounded-[1vw] px-[2vw] py-[2vh] flex flex-col justify-center"
+                  className="relative rounded-[1vw] px-[2vw] py-[2vh] flex flex-col justify-center"
                   style={{
                     background: 'rgba(255,255,255,0.05)',
                     border: '1px solid rgba(255,255,255,0.10)',
                   }}
                 >
+                  {/* glow quando o valor do canal muda */}
+                  <div
+                    key={`glow-${val}`}
+                    className="card-glow absolute inset-0 rounded-[1vw] pointer-events-none"
+                  />
                   <div className="flex items-baseline justify-between">
                     <span
                       className="font-bold text-blue-50"
@@ -320,7 +384,8 @@ export default function PainelFechamento() {
                       {label}
                     </span>
                     <span
-                      className="font-black tabular-nums"
+                      key={val}
+                      className="font-black tabular-nums flash-val"
                       style={{ fontSize: vertical ? '3.4vw' : '2.4vw' }}
                     >
                       {fmtBRLCompact(val)}
@@ -333,6 +398,7 @@ export default function PainelFechamento() {
                       style={{
                         width: `${pct}%`,
                         background: 'linear-gradient(90deg, #4f7bff, #fe0000)',
+                        transition: 'width .8s ease',
                       }}
                     />
                   </div>
