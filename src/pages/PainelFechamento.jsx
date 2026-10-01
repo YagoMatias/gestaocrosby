@@ -21,6 +21,14 @@ const CANAL_LABELS = {
 // Só os 4 canais principais, nesta ordem. MULTIMARCAS = soma dos 3 MTM.
 const CANAIS_PRINCIPAIS = ['VAREJO', 'REVENDA', 'MULTIMARCAS', 'FRANQUIAS'];
 const MTM_KEYS = ['MTM_RAFAEL', 'MTM_DAVID', 'MTM_ARTHUR'];
+const MTM_NOMES = { MTM_RAFAEL: 'Rafael', MTM_DAVID: 'David', MTM_ARTHUR: 'Arthur' };
+// Rótulo do detalhe por canal (loja/vendedor)
+const DETALHE_LABEL = {
+  VAREJO: 'por loja',
+  REVENDA: 'por vendedor',
+  MULTIMARCAS: 'por vendedor',
+  FRANQUIAS: 'por vendedor',
+};
 
 // Reduz a lista completa de canais do backend aos 4 principais (somando os MTM).
 function montarPrincipais(canais) {
@@ -31,8 +39,15 @@ function montarPrincipais(canais) {
     acc[f] = r2(MTM_KEYS.reduce((s, k) => s + Number(porCanal[k]?.[f] || 0), 0));
     return acc;
   }, {});
+  // Detalhe de Multimarcas: os 3 MTM viram "vendedores" (nome + total).
+  const detalheMtm = MTM_KEYS.map((k) => ({
+    nome: MTM_NOMES[k],
+    valor: r2(porCanal[k]?.total_mes || 0),
+  }))
+    .filter((x) => x.valor > 0)
+    .sort((a, b) => b.valor - a.valor);
   return CANAIS_PRINCIPAIS.map((canal) => {
-    if (canal === 'MULTIMARCAS') return { canal, ...somaMtm };
+    if (canal === 'MULTIMARCAS') return { canal, ...somaMtm, detalhe: detalheMtm };
     const c = porCanal[canal] || {};
     return {
       canal,
@@ -42,6 +57,7 @@ function montarPrincipais(canais) {
       s4: r2(c.s4),
       s5: r2(c.s5),
       total_mes: r2(c.total_mes),
+      detalhe: Array.isArray(c.detalhe) ? c.detalhe : [],
     };
   });
 }
@@ -83,13 +99,26 @@ function fmtHora(iso) {
 
 const _hoje = new Date();
 const _mesDemo = `${_hoje.getFullYear()}-${String(_hoje.getMonth() + 1).padStart(2, '0')}`;
-const _c = (canal, s1, s2, s3, s4, s5) => ({
-  canal, s1, s2, s3, s4, s5, total_mes: s1 + s2 + s3 + s4 + s5,
+const _c = (canal, s1, s2, s3, s4, s5, detalhe = []) => ({
+  canal, s1, s2, s3, s4, s5, total_mes: s1 + s2 + s3 + s4 + s5, detalhe,
 });
 const DEMO_CANAIS = [
-  _c('VAREJO', 78000, 82000, 91000, 88000, 30000),
-  _c('FRANQUIAS', 41000, 39000, 44000, 47000, 15000),
-  _c('REVENDA', 22000, 25000, 21000, 28000, 9000),
+  _c('VAREJO', 78000, 82000, 91000, 88000, 30000, [
+    { nome: 'Midway', valor: 92000 },
+    { nome: 'Ayrton Senna', valor: 81000 },
+    { nome: 'Guararapes', valor: 74000 },
+    { nome: 'Shopping Recife', valor: 58000 },
+    { nome: 'Cidade Jardim', valor: 44000 },
+    { nome: 'Parnamirim', valor: 20000 },
+  ]),
+  _c('FRANQUIAS', 41000, 39000, 44000, 47000, 15000, [
+    { nome: 'Equipe Franquias', valor: 186000 },
+  ]),
+  _c('REVENDA', 22000, 25000, 21000, 28000, 9000, [
+    { nome: 'Carlos (B2R)', valor: 52000 },
+    { nome: 'Marina (B2R)', valor: 33000 },
+    { nome: 'João (B2R)', valor: 20000 },
+  ]),
   _c('MTM_RAFAEL', 8000, 9500, 7800, 10200, 3100),
   _c('MTM_DAVID', 7200, 6800, 8100, 7600, 2400),
   _c('MTM_ARTHUR', 5100, 4800, 5600, 6100, 1900),
@@ -196,10 +225,29 @@ export default function PainelFechamento() {
   const total = canais.reduce((s, c) => s + Number(c.total_mes || 0), 0);
   const maxCanal = canais.reduce((m, c) => Math.max(m, Number(c.total_mes || 0)), 0) || 1;
   const fechado = dados?.fechado;
+  const temDetalhe = canais.some((c) => (c.detalhe || []).length > 0);
+
+  // Visão rotativa: resumo (4 canais) ⇄ detalhe (varejo por loja, resto por vendedor)
+  const [modo, setModo] = useState('resumo');
+  const RESUMO_MS = (Number(params.get('resumoSeg')) || (params.get('demo') ? 8 : 90)) * 1000;
+  const DETALHE_MS = (Number(params.get('detSeg')) || (params.get('demo') ? 8 : 25)) * 1000;
+  useEffect(() => {
+    if (!temDetalhe) {
+      setModo('resumo');
+      return;
+    }
+    const dur = modo === 'resumo' ? RESUMO_MS : DETALHE_MS;
+    const id = setTimeout(
+      () => setModo((m) => (m === 'resumo' ? 'detalhe' : 'resumo')),
+      dur,
+    );
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modo, temDetalhe, RESUMO_MS, DETALHE_MS]);
 
   return (
     <div
-      className="min-h-screen w-full text-white flex flex-col"
+      className="h-screen w-full text-white flex flex-col overflow-hidden"
       style={{
         background:
           'radial-gradient(1200px 800px at 50% -10%, #0a1a5a 0%, #000638 45%, #00021f 100%)',
@@ -224,6 +272,11 @@ export default function PainelFechamento() {
         }
         .flash-val { animation: flashVal .9s ease; }
         .card-glow { animation: cardGlow 1.1s ease; }
+        @keyframes viewIn {
+          from { opacity: 0; transform: translateY(2.5vh) scale(.99); }
+          to { opacity: 1; transform: none; }
+        }
+        .view-in { animation: viewIn .55s ease; }
       `}</style>
 
       {/* Cabeçalho */}
@@ -278,29 +331,41 @@ export default function PainelFechamento() {
               : 'text-right'
           }
         >
-          <div
-            className={`font-mono font-black tabular-nums leading-none flex items-center gap-[0.5vw] rounded-[0.9vw] ${
-              vertical ? 'justify-center' : 'justify-end'
-            }`}
-            style={{
-              fontSize: vertical ? '4.2vw' : '3vw',
-              padding: vertical ? '1vh 2.2vw' : '0.9vh 1.4vw',
-              background: 'rgba(255,255,255,0.08)',
-              border: '1px solid rgba(130,170,255,0.45)',
-              boxShadow: '0 0 24px rgba(79,123,255,0.35), inset 0 0 12px rgba(79,123,255,0.12)',
-              textShadow: '0 0 16px rgba(150,185,255,0.6)',
-              color: '#eaf1ff',
-            }}
-          >
+          <div className={`flex items-center gap-[0.5vw] ${vertical ? 'justify-center' : 'justify-end'}`}>
             {(() => {
               const [rh = '--', rm = '--', rs = '--'] = (relogio || '').split(':');
+              const cellFs = vertical ? '3.4vw' : '2.2vw';
+              const sepFs = vertical ? '2.6vw' : '1.7vw';
+              const Cell = ({ children }) => (
+                <span
+                  className="font-mono font-black tabular-nums rounded-[0.6vw]"
+                  style={{
+                    fontSize: cellFs,
+                    padding: vertical ? '0.7vh 1.4vw' : '0.6vh 0.9vw',
+                    background: 'rgba(255,255,255,0.10)',
+                    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12)',
+                    color: '#eef3ff',
+                    lineHeight: 1,
+                  }}
+                >
+                  {children}
+                </span>
+              );
+              const Sep = () => (
+                <span
+                  className="font-black text-blue-200/80"
+                  style={{ fontSize: sepFs, animation: 'blink 1.2s ease-in-out infinite', lineHeight: 1 }}
+                >
+                  :
+                </span>
+              );
               return (
                 <>
-                  <span>{rh}</span>
-                  <span style={{ animation: 'blink 1.2s ease-in-out infinite' }}>:</span>
-                  <span>{rm}</span>
-                  <span style={{ animation: 'blink 1.2s ease-in-out infinite' }}>:</span>
-                  <span>{rs}</span>
+                  <Cell>{rh}</Cell>
+                  <Sep />
+                  <Cell>{rm}</Cell>
+                  <Sep />
+                  <Cell>{rs}</Cell>
                 </>
               );
             })()}
@@ -381,78 +446,137 @@ export default function PainelFechamento() {
         </div>
       )}
 
-      {/* Canais */}
+      {/* Canais — alterna entre resumo e detalhe (rotação animada) */}
       {dados?.canais?.length > 0 && (
-        <section className="flex-1 px-[3vw] pb-[3vh]">
-          <div
-            className="grid gap-[1.4vw] h-full"
-            style={{
-              gridAutoRows: '1fr',
-              gridTemplateColumns: vertical
-                ? '1fr'
-                : 'repeat(2, minmax(0, 1fr))',
-            }}
-          >
-            {canais.map((c) => {
-              const val = Number(c.total_mes || 0);
-              const pct = Math.max(2, Math.round((val / maxCanal) * 100));
-              const label = CANAL_LABELS[c.canal] || c.canal;
-              return (
-                <div
-                  key={c.canal}
-                  className="relative rounded-[1vw] px-[2vw] py-[2vh] flex flex-col justify-center"
-                  style={{
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid rgba(255,255,255,0.10)',
-                  }}
-                >
-                  {/* glow quando o valor do canal muda */}
-                  <div
-                    key={`glow-${val}`}
-                    className="card-glow absolute inset-0 rounded-[1vw] pointer-events-none"
-                  />
-                  <div className="flex items-baseline justify-between">
-                    <span
-                      className="font-bold text-blue-50"
-                      style={{ fontSize: vertical ? '3vw' : '2vw' }}
-                    >
-                      {label}
-                    </span>
-                    <span
-                      key={val}
-                      className="font-black tabular-nums flash-val"
-                      style={{ fontSize: vertical ? '3.4vw' : '2.4vw' }}
-                    >
-                      {fmtBRLCompact(val)}
-                    </span>
-                  </div>
-                  {/* barra proporcional */}
-                  <div className="mt-[1.4vh] h-[1.4vh] rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
-                    <div
-                      className="h-full rounded-full"
-                      style={{
-                        width: `${pct}%`,
-                        background: 'linear-gradient(90deg, #4f7bff, #fe0000)',
-                        transition: 'width .8s ease',
-                      }}
-                    />
-                  </div>
-                  {/* semanas */}
-                  <div
-                    className="mt-[1.4vh] flex flex-wrap gap-x-[1.6vw] gap-y-[0.4vh] text-blue-200/70 tabular-nums"
-                    style={{ fontSize: vertical ? '1.5vw' : '1vw' }}
-                  >
-                    {['s1', 's2', 's3', 's4', 's5'].map((s, i) =>
-                      Number(c[s]) ? (
-                        <span key={s}>
-                          <span className="text-blue-300/60">S{i + 1}</span> {fmtBRLCompact(c[s])}
-                        </span>
-                      ) : null,
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+        <section className="flex-1 px-[3vw] pb-[3vh] min-h-0">
+          <div key={modo} className="view-in h-full">
+            <div
+              className="grid gap-[1.4vw] h-full"
+              style={{
+                gridAutoRows: '1fr',
+                gridTemplateColumns: vertical ? '1fr' : 'repeat(2, minmax(0, 1fr))',
+              }}
+            >
+              {modo === 'resumo'
+                ? canais.map((c) => {
+                    const val = Number(c.total_mes || 0);
+                    const pct = Math.max(2, Math.round((val / maxCanal) * 100));
+                    const label = CANAL_LABELS[c.canal] || c.canal;
+                    return (
+                      <div
+                        key={c.canal}
+                        className="relative rounded-[1vw] px-[2vw] py-[2vh] flex flex-col justify-center"
+                        style={{
+                          background: 'rgba(255,255,255,0.05)',
+                          border: '1px solid rgba(255,255,255,0.10)',
+                        }}
+                      >
+                        <div
+                          key={`glow-${val}`}
+                          className="card-glow absolute inset-0 rounded-[1vw] pointer-events-none"
+                        />
+                        <div className="flex items-baseline justify-between">
+                          <span className="font-bold text-blue-50" style={{ fontSize: vertical ? '3vw' : '2vw' }}>
+                            {label}
+                          </span>
+                          <span
+                            key={val}
+                            className="font-black tabular-nums flash-val"
+                            style={{ fontSize: vertical ? '3.4vw' : '2.4vw' }}
+                          >
+                            {fmtBRLCompact(val)}
+                          </span>
+                        </div>
+                        <div className="mt-[1.4vh] h-[1.4vh] rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
+                          <div
+                            className="h-full rounded-full"
+                            style={{
+                              width: `${pct}%`,
+                              background: 'linear-gradient(90deg, #4f7bff, #fe0000)',
+                              transition: 'width .8s ease',
+                            }}
+                          />
+                        </div>
+                        <div
+                          className="mt-[1.4vh] flex flex-wrap gap-x-[1.6vw] gap-y-[0.4vh] text-blue-200/70 tabular-nums"
+                          style={{ fontSize: vertical ? '1.5vw' : '1vw' }}
+                        >
+                          {['s1', 's2', 's3', 's4', 's5'].map((s, i) =>
+                            Number(c[s]) ? (
+                              <span key={s}>
+                                <span className="text-blue-300/60">S{i + 1}</span> {fmtBRLCompact(c[s])}
+                              </span>
+                            ) : null,
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                : canais.map((c) => {
+                    const label = CANAL_LABELS[c.canal] || c.canal;
+                    const lista = c.detalhe || [];
+                    const maxItem = lista.reduce((m, i) => Math.max(m, Number(i.valor || 0)), 0) || 1;
+                    const topN = vertical ? 5 : 6;
+                    const itens = lista.slice(0, topN);
+                    const extra = lista.length - itens.length;
+                    return (
+                      <div
+                        key={c.canal}
+                        className="rounded-[1vw] px-[2vw] py-[1.6vh] flex flex-col overflow-hidden"
+                        style={{
+                          background: 'rgba(255,255,255,0.05)',
+                          border: '1px solid rgba(255,255,255,0.10)',
+                        }}
+                      >
+                        <div className="flex items-baseline justify-between">
+                          <span className="font-bold text-blue-50" style={{ fontSize: vertical ? '2.6vw' : '1.7vw' }}>
+                            {label}{' '}
+                            <span className="text-blue-300/60 font-semibold" style={{ fontSize: vertical ? '1.6vw' : '1vw' }}>
+                              {DETALHE_LABEL[c.canal] || ''}
+                            </span>
+                          </span>
+                          <span className="font-black tabular-nums text-blue-100" style={{ fontSize: vertical ? '2.4vw' : '1.6vw' }}>
+                            {fmtBRLCompact(c.total_mes)}
+                          </span>
+                        </div>
+                        <div className="mt-[1vh] flex flex-col gap-[0.7vh] flex-1 justify-center">
+                          {itens.length === 0 && (
+                            <span className="text-blue-200/50" style={{ fontSize: vertical ? '1.8vw' : '1.1vw' }}>
+                              sem detalhe disponível
+                            </span>
+                          )}
+                          {itens.map((it, idx) => {
+                            const v = Number(it.valor || 0);
+                            const pct = Math.max(3, Math.round((v / maxItem) * 100));
+                            return (
+                              <div key={idx} className="flex flex-col gap-[0.3vh]">
+                                <div className="flex items-baseline justify-between gap-[1vw]">
+                                  <span className="truncate text-blue-50/90" style={{ fontSize: vertical ? '1.9vw' : '1.2vw' }}>
+                                    {it.nome}
+                                  </span>
+                                  <span className="font-bold tabular-nums whitespace-nowrap" style={{ fontSize: vertical ? '1.9vw' : '1.2vw' }}>
+                                    {fmtBRLCompact(v)}
+                                  </span>
+                                </div>
+                                <div className="h-[0.6vh] rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.07)' }}>
+                                  <div
+                                    className="h-full rounded-full"
+                                    style={{ width: `${pct}%`, background: 'linear-gradient(90deg, #4f7bff, #fe0000)' }}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                          {extra > 0 && (
+                            <span className="text-blue-300/50" style={{ fontSize: vertical ? '1.5vw' : '0.95vw' }}>
+                              +{extra} {c.canal === 'VAREJO' ? 'lojas' : 'vendedores'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+            </div>
           </div>
         </section>
       )}
