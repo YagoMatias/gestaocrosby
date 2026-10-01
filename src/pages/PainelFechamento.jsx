@@ -22,6 +22,12 @@ const CANAL_LABELS = {
 const CANAIS_PRINCIPAIS = ['VAREJO', 'REVENDA', 'MULTIMARCAS', 'FRANQUIAS'];
 const MTM_KEYS = ['MTM_RAFAEL', 'MTM_DAVID', 'MTM_ARTHUR'];
 const MTM_NOMES = { MTM_RAFAEL: 'Rafael', MTM_DAVID: 'David', MTM_ARTHUR: 'Arthur' };
+// Nomes amigáveis das lojas varejo (alinha com o backend VAREJO_BRANCH_NAMES)
+const VAREJO_LOJAS = {
+  2: 'João Pessoa', 5: 'Nova Cruz', 55: 'Parnamirim', 65: 'Canguaretama',
+  87: 'Cidade Jardim', 88: 'Guararapes', 90: 'Ayrton Senna', 93: 'Imperatriz',
+  94: 'Patos', 95: 'Midway', 97: 'Teresina', 98: 'Shopping Recife',
+};
 // Rótulo do detalhe por canal (loja/vendedor)
 const DETALHE_LABEL = {
   VAREJO: 'por loja',
@@ -57,7 +63,11 @@ function montarPrincipais(canais) {
       s4: r2(c.s4),
       s5: r2(c.s5),
       total_mes: r2(c.total_mes),
-      detalhe: Array.isArray(c.detalhe) ? c.detalhe : [],
+      detalhe: (Array.isArray(c.detalhe) ? c.detalhe : []).map((it) =>
+        canal === 'VAREJO' && it.branch_code
+          ? { ...it, nome: VAREJO_LOJAS[it.branch_code] || it.nome }
+          : it,
+      ),
     };
   });
 }
