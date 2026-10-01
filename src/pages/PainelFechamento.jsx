@@ -13,14 +13,18 @@ const REFRESH_MS = 60_000; // 1 min (fonte tem cache ~30min; isso mantém a TV v
 
 const CANAL_LABELS = {
   VAREJO: 'Varejo',
+  SHOWROOM: 'Showroom',
   REVENDA: 'Revenda',
   MULTIMARCAS: 'Multimarcas',
+  BAZAR: 'Bazar',
   FRANQUIAS: 'Franquias',
+  RICARDO_ELETRO: 'Ricardo Eletro',
+  NOVIDADES: 'Novidades',
 };
 
-// Só os 4 canais principais, nesta ordem. MULTIMARCAS = soma dos 3 MTM.
-const CANAIS_PRINCIPAIS = ['VAREJO', 'REVENDA', 'MULTIMARCAS', 'FRANQUIAS'];
 const MTM_KEYS = ['MTM_RAFAEL', 'MTM_DAVID', 'MTM_ARTHUR'];
+// Canais que NÃO viram card próprio: TOTAL_GERAL (resumo) e BLUECRED (somado no Varejo).
+const CANAIS_OCULTOS = new Set(['TOTAL_GERAL', 'BLUECRED', ...MTM_KEYS, 'VAREJO']);
 const MTM_NOMES = { MTM_RAFAEL: 'Rafael', MTM_DAVID: 'David', MTM_ARTHUR: 'Arthur' };
 // Nomes amigáveis das lojas varejo (alinha com o backend VAREJO_BRANCH_NAMES)
 const VAREJO_LOJAS = {
@@ -36,40 +40,53 @@ const DETALHE_LABEL = {
   FRANQUIAS: 'por vendedor',
 };
 
-// Reduz a lista completa de canais do backend aos 4 principais (somando os MTM).
+// Monta a lista de canais do painel a partir do retorno do backend:
+//  • VAREJO soma o BLUECRED (crediário é venda de loja)
+//  • MULTIMARCAS = soma dos 3 MTM (detalhe = os 3 vendedores)
+//  • demais canais (Showroom, Revenda, Bazar, Franquias, Ricardo, Novidades) passam direto
+//  • ordena por total desc. O total do painel = soma de tudo = faturamento cheio.
 function montarPrincipais(canais) {
   const porCanal = Object.fromEntries((canais || []).map((c) => [c.canal, c]));
   const campos = ['s1', 's2', 's3', 's4', 's5', 'total_mes'];
   const r2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
+
+  // VAREJO + BLUECRED
+  const varejo = porCanal.VAREJO || {};
+  const bluecred = porCanal.BLUECRED || {};
+  const varejoComBc = campos.reduce((acc, f) => {
+    acc[f] = r2(Number(varejo[f] || 0) + Number(bluecred[f] || 0));
+    return acc;
+  }, {});
+  const lojas = (Array.isArray(varejo.detalhe) ? varejo.detalhe : [])
+    .map((it) => (it.branch_code ? { ...it, nome: VAREJO_LOJAS[it.branch_code] || it.nome } : it));
+
+  // MULTIMARCAS = soma dos 3 MTM
   const somaMtm = campos.reduce((acc, f) => {
     acc[f] = r2(MTM_KEYS.reduce((s, k) => s + Number(porCanal[k]?.[f] || 0), 0));
     return acc;
   }, {});
-  // Detalhe de Multimarcas: os 3 MTM viram "vendedores" (nome + total).
-  const detalheMtm = MTM_KEYS.map((k) => ({
-    nome: MTM_NOMES[k],
-    valor: r2(porCanal[k]?.total_mes || 0),
-  }))
+  const detalheMtm = MTM_KEYS.map((k) => ({ nome: MTM_NOMES[k], valor: r2(porCanal[k]?.total_mes || 0) }))
     .filter((x) => x.valor > 0)
     .sort((a, b) => b.valor - a.valor);
-  return CANAIS_PRINCIPAIS.map((canal) => {
-    if (canal === 'MULTIMARCAS') return { canal, ...somaMtm, detalhe: detalheMtm };
-    const c = porCanal[canal] || {};
-    return {
-      canal,
+
+  const lista = [
+    { canal: 'VAREJO', ...varejoComBc, detalhe: lojas },
+    { canal: 'MULTIMARCAS', ...somaMtm, detalhe: detalheMtm },
+  ];
+  for (const c of canais || []) {
+    if (CANAIS_OCULTOS.has(c.canal)) continue; // oculta TOTAL_GERAL, BLUECRED, MTM_*, VAREJO
+    lista.push({
+      canal: c.canal,
       s1: r2(c.s1),
       s2: r2(c.s2),
       s3: r2(c.s3),
       s4: r2(c.s4),
       s5: r2(c.s5),
       total_mes: r2(c.total_mes),
-      detalhe: (Array.isArray(c.detalhe) ? c.detalhe : []).map((it) =>
-        canal === 'VAREJO' && it.branch_code
-          ? { ...it, nome: VAREJO_LOJAS[it.branch_code] || it.nome }
-          : it,
-      ),
-    };
-  });
+      detalhe: Array.isArray(c.detalhe) ? c.detalhe : [],
+    });
+  }
+  return lista.filter((c) => c.total_mes > 0).sort((a, b) => b.total_mes - a.total_mes);
 }
 
 const MESES = [
@@ -132,9 +149,11 @@ const DEMO_CANAIS = [
   _c('MTM_RAFAEL', 8000, 9500, 7800, 10200, 3100),
   _c('MTM_DAVID', 7200, 6800, 8100, 7600, 2400),
   _c('MTM_ARTHUR', 5100, 4800, 5600, 6100, 1900),
+  _c('SHOWROOM', 52000, 48000, 55000, 50000, 16000),
+  _c('BLUECRED', 12000, 13000, 14000, 11000, 5500),
+  _c('BAZAR', 7000, 6000, 8000, 6500, 3200),
   _c('NOVIDADES', 3200, 2800, 3600, 3100, 1200),
-  _c('SHOWROOM', 2100, 1900, 2400, 2200, 800),
-  _c('BAZAR', 1500, 1200, 1800, 1600, 600),
+  _c('RICARDO_ELETRO', 700, 600, 800, 400, 190),
 ];
 // Demo com pequena variação a cada chamada, pra dar pra ver os efeitos de
 // "mudança" (valores piscando/brilhando) sem depender do backend.
@@ -231,11 +250,14 @@ export default function PainelFechamento() {
   }, [buscar]);
 
   const canais = dados ? montarPrincipais(dados.canais) : [];
-  // Herói = soma dos 4 canais principais (mesmo universo mostrado nos cards).
+  // Herói = soma de TODOS os canais do painel = faturamento cheio do mês.
   const total = canais.reduce((s, c) => s + Number(c.total_mes || 0), 0);
   const maxCanal = canais.reduce((m, c) => Math.max(m, Number(c.total_mes || 0)), 0) || 1;
   const fechado = dados?.fechado;
-  const temDetalhe = canais.some((c) => (c.detalhe || []).length > 0);
+  const canaisDetalhe = canais.filter((c) => (c.detalhe || []).length > 0);
+  const temDetalhe = canaisDetalhe.length > 0;
+  // colunas do grid conforme a quantidade de cards
+  const colsPara = (n) => (vertical ? (n > 4 ? 2 : 1) : n <= 4 ? 2 : n <= 6 ? 3 : 4);
 
   // Visão rotativa: resumo (4 canais) ⇄ detalhe (varejo por loja, resto por vendedor)
   const [modo, setModo] = useState('resumo');
@@ -464,7 +486,9 @@ export default function PainelFechamento() {
               className="grid gap-[1.4vw] h-full"
               style={{
                 gridAutoRows: '1fr',
-                gridTemplateColumns: vertical ? '1fr' : 'repeat(2, minmax(0, 1fr))',
+                gridTemplateColumns: `repeat(${colsPara(
+                  modo === 'resumo' ? canais.length : canaisDetalhe.length,
+                )}, minmax(0, 1fr))`,
               }}
             >
               {modo === 'resumo'
@@ -485,17 +509,17 @@ export default function PainelFechamento() {
                           key={`glow-${val}`}
                           className="card-glow absolute inset-0 rounded-[1vw] pointer-events-none"
                         />
-                        <div className="flex items-baseline justify-between">
-                          <span className="font-bold text-blue-50" style={{ fontSize: vertical ? '3vw' : '2vw' }}>
+                        <div>
+                          <div className="font-bold text-blue-100/90 truncate" style={{ fontSize: vertical ? '2.4vw' : '1.35vw' }}>
                             {label}
-                          </span>
-                          <span
+                          </div>
+                          <div
                             key={val}
-                            className="font-black tabular-nums flash-val"
-                            style={{ fontSize: vertical ? '3.4vw' : '2.4vw' }}
+                            className="font-black tabular-nums flash-val leading-none mt-[0.4vh]"
+                            style={{ fontSize: vertical ? '3.2vw' : '2.1vw' }}
                           >
                             {fmtBRLCompact(val)}
-                          </span>
+                          </div>
                         </div>
                         <div className="mt-[1.4vh] h-[1.4vh] rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.08)' }}>
                           <div
@@ -522,7 +546,7 @@ export default function PainelFechamento() {
                       </div>
                     );
                   })
-                : canais.map((c) => {
+                : canaisDetalhe.map((c) => {
                     const label = CANAL_LABELS[c.canal] || c.canal;
                     const lista = c.detalhe || [];
                     const maxItem = lista.reduce((m, i) => Math.max(m, Number(i.valor || 0)), 0) || 1;
