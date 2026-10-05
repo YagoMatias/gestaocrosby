@@ -802,6 +802,13 @@ const useApiClient = () => {
     newForecastConfigSave: (body) =>
       apiMutate('/api/totvs/new-forecast/config', 'POST', body),
 
+    /** Canais extras do New Forecast (criados na tela, valem para todo período) */
+    newForecastCanaisGet: () => apiCall('/api/totvs/new-forecast/canais'),
+    newForecastCanalSave: (body) =>
+      apiMutate('/api/totvs/new-forecast/canais', 'POST', body),
+    newForecastCanalRemove: (nome) =>
+      apiMutate('/api/totvs/new-forecast/canais', 'DELETE', null, { nome }),
+
     /** Painel de fechamento de mês (TVs) — lê sales_closing_records */
     salePanelClosing: (mes) =>
       apiCall('/api/totvs/sale-panel/closing', mes ? { mes } : {}),

@@ -25,6 +25,8 @@ import {
   CornersIn,
   FloppyDisk,
   Database,
+  Plus,
+  Trash,
   CurrencyDollar,
   Percent,
   Warning,
@@ -67,10 +69,18 @@ const CANAIS_BASE = [
       { canal: 'REVENDA MICHEL', rotulo: 'MICHEL', fonte: 'VEND_165', code: 165 },
       // sem equivalente antigo por vendedor: ficam zerados até o painel novo
     ],
+    // vendedor que está saindo (ver canaisDoPeriodo): entra como filho extra
+    filhoYago: {
+      canal: 'REVENDA YAGO',
+      rotulo: 'YAGO (até 05/10)',
+      fonte: 'VEND_241_REV',
+      code: 241,
+      semMeta: true,
+    },
   },
   {
     canal: 'MULTIMARCAS',
-    fontes: ['VEND_21', 'VEND_26', 'VEND_259', 'VEND_241'],
+    fontes: ['VEND_21', 'VEND_26', 'VEND_259', 'VEND_241_MTM'],
     fontesLegado: ['MTM_RAFAEL', 'MTM_DAVID', 'MTM_ARTHUR', 'MTM_YAGO'],
     codes: [21, 26, 259, 241],
     metaSoma: true,
@@ -79,7 +89,7 @@ const CANAIS_BASE = [
       { canal: 'MTM RAFAEL', rotulo: 'MTM RAFAEL', fonte: 'VEND_21', fontesLegado: ['MTM_RAFAEL'], code: 21, meta: 100000 },
       { canal: 'MTM DAVID', rotulo: 'MTM DAVID', fonte: 'VEND_26', fontesLegado: ['MTM_DAVID'], code: 26, meta: 65000 },
       { canal: 'MTM ARTHUR', rotulo: 'MTM ARTHUR', fonte: 'VEND_259', fontesLegado: ['MTM_ARTHUR'], code: 259, meta: 90000 },
-      { canal: 'MTM YAGO', rotulo: 'MTM YAGO', fonte: 'VEND_241', fontesLegado: ['MTM_YAGO'], code: 241, meta: 0 },
+      { canal: 'MTM YAGO', rotulo: 'MTM YAGO', fonte: 'VEND_241_MTM', fontesLegado: ['MTM_YAGO'], code: 241, meta: 0 },
     ],
   },
   { canal: 'VAREJO', fonte: 'VAREJO', meta: 363400, varejo: true },
@@ -92,31 +102,40 @@ const CANAIS_BASE = [
   { canal: 'CARTÕES', fonte: null, meta: 300, qtd: true },
 ];
 
-// YAGO SMITH (vendedor 241) era REVENDA e virou canal próprio (MTM YAGO) a
-// partir de 01/10/2026. Períodos anteriores continuam com ele na REVENDA e
-// sem a linha de MTM YAGO — senão o histórico mudava retroativamente.
-const MTM_YAGO_DESDE = '2026-10-01';
-const FONTE_YAGO = 'VEND_241';
-const canaisDoPeriodo = (ini) => {
-  if (String(ini || '') >= MTM_YAGO_DESDE) return CANAIS_BASE;
+// YAGO SMITH (vendedor 241) vendia REVENDA e passou a vender MULTIMARCAS
+// em 06/10/2026. A régua é a data da VENDA — o backend divide o período por
+// dia e manda os dois lados separados.
+const MTM_YAGO_DESDE = '2026-10-06';
+// O backend divide o 241 por dia de venda e publica os dois lados
+// (VEND_241_REV / VEND_241_MTM). Aqui só decidimos em quais linhas ele
+// aparece, conforme o período pedido:
+//   período inteiro antes da virada → só REVENDA
+//   período inteiro depois          → só MULTIMARCAS
+//   período que pega a virada       → nos dois (cada um com a sua parte)
+const canaisDoPeriodo = (ini, fim) => {
+  const soMtm = String(ini || '') >= MTM_YAGO_DESDE;
+  const soRev = String(fim || '') < MTM_YAGO_DESDE;
   return CANAIS_BASE.map((c) => {
-    if (c.canal === 'MULTIMARCAS')
+    if (c.canal === 'MULTIMARCAS' && soRev)
       return {
         ...c,
-        fontes: c.fontes.filter((f) => f !== FONTE_YAGO),
+        fontes: c.fontes.filter((f) => f !== 'VEND_241_MTM'),
         codes: c.codes.filter((x) => x !== 241),
         filhos: c.filhos.filter((f) => f.code !== 241),
       };
-    if (c.canal === 'REVENDA')
+    if (c.canal === 'REVENDA' && !soMtm) {
+      // antes da virada ele era vendedor pleno da revenda (entra na divisão
+      // da meta); no mês da virada é só a parte dos dias anteriores
+      const filho = soRev
+        ? { ...c.filhoYago, rotulo: 'YAGO', semMeta: false }
+        : c.filhoYago;
       return {
         ...c,
-        fontes: [...c.fontes, FONTE_YAGO],
+        fontes: [...c.fontes, 'VEND_241_REV'],
         codes: [...c.codes, 241],
-        filhos: [
-          ...c.filhos,
-          { canal: 'REVENDA YAGO', rotulo: 'YAGO', fonte: FONTE_YAGO, code: 241 },
-        ],
+        filhos: [...c.filhos, filho],
       };
+    }
     return c;
   });
 };
@@ -413,8 +432,41 @@ const NewForecast = () => {
   });
   const periodKey = `${periodo.ini}|${periodo.fim}`;
 
-  // Canais exibidos (depende do período: MTM YAGO só de out/2026 em diante)
-  const CANAIS = useMemo(() => canaisDoPeriodo(periodo.ini), [periodo.ini]);
+  // Canais extras criados na tela (tabela new_forecast_canais_extra) — valem
+  // para qualquer período; os valores digitados ficam no `manual` do período.
+  const [canaisExtra, setCanaisExtra] = useState([]);
+  const [novoCanal, setNovoCanal] = useState(null); // null = formulário fechado
+  useEffect(() => {
+    let vivo = true;
+    apiClient.totvs
+      .newForecastCanaisGet()
+      .then((r) => {
+        if (!vivo) return;
+        const lista = (r?.data ?? r)?.canais || [];
+        setCanaisExtra(lista.map((c) => ({ nome: c.nome, qtd: Boolean(c.qtd) })));
+      })
+      .catch(() => {
+        /* tabela ainda não criada ou API fora: segue sem canais extras */
+      });
+    return () => {
+      vivo = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Canais exibidos: fixos do período + os criados na tela
+  const CANAIS = useMemo(
+    () => [
+      ...canaisDoPeriodo(periodo.ini, periodo.fim),
+      ...canaisExtra.map((c) => ({
+        canal: c.nome,
+        meta: 0,
+        qtd: c.qtd,
+        extra: true,
+      })),
+    ],
+    [periodo.ini, periodo.fim, canaisExtra],
+  );
 
   const [store, setStore] = useState(emptyStore);
   const [auto, setAuto] = useState({});
@@ -625,6 +677,38 @@ const NewForecast = () => {
     }
   };
 
+  const adicionarCanal = async () => {
+    const nome = String(novoCanal?.nome || '').trim().toUpperCase();
+    if (!nome) return;
+    if (CANAIS.some((c) => c.canal === nome)) {
+      window.alert('Já existe um canal com esse nome.');
+      return;
+    }
+    const qtd = Boolean(novoCanal?.qtd);
+    try {
+      await apiClient.totvs.newForecastCanalSave({ nome, qtd });
+      setCanaisExtra((prev) => [...prev, { nome, qtd }]);
+      setNovoCanal(null);
+    } catch (e) {
+      window.alert(`Não deu para salvar o canal: ${e.message || e}`);
+    }
+  };
+
+  const removerCanal = async (nome) => {
+    if (
+      !window.confirm(
+        `Remover o canal ${nome}? Ele sai da tabela para todos os períodos (os valores digitados ficam guardados, mas deixam de aparecer).`,
+      )
+    )
+      return;
+    try {
+      await apiClient.totvs.newForecastCanalRemove(nome);
+      setCanaisExtra((prev) => prev.filter((c) => c.nome !== nome));
+    } catch (e) {
+      window.alert(`Não deu para remover o canal: ${e.message || e}`);
+    }
+  };
+
   // SALVAR DB (owner): rebusca tudo no TOTVS e grava os blocos fechados
   const salvarNoBanco = async () => {
     if (
@@ -738,10 +822,12 @@ const NewForecast = () => {
     return (c.meta ?? 0) * nMeses;
   };
   // Meta do vendedor: a dele, ou a do grupo dividida igualmente
-  const metaFilho = (pai, filho) =>
-    pai.metaDividida
-      ? parseNum(metaValue(pai)) / ((pai.filhos || []).length || 1)
-      : parseNum(metaValue(filho));
+  const metaFilho = (pai, filho) => {
+    if (filho.semMeta) return 0; // vendedor em transição (saindo do canal)
+    if (!pai.metaDividida) return parseNum(metaValue(filho));
+    const quantos = (pai.filhos || []).filter((f) => !f.semMeta).length || 1;
+    return parseNum(metaValue(pai)) / quantos;
+  };
   // Linha de vendedor: valores vêm sempre do painel (sem ajuste manual)
   const calcFilho = (pai, filho) => {
     const realizado = SEMANAS.reduce((a, k) => a + valorDoPainel(filho, k), 0);
@@ -1416,128 +1502,103 @@ const NewForecast = () => {
 
       {/* Filtros */}
       <div className="bg-white p-3 rounded-lg shadow-md border border-[#000638]/10">
-        <div
-          className={`grid grid-cols-2 sm:grid-cols-3 gap-2 items-end ${
-            ehOwner ? 'lg:grid-cols-8' : 'lg:grid-cols-7'
-          }`}
-        >
-          <div>
-            <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="w-[150px]">
+            <label className="block text-xs font-semibold mb-1 text-[#000638]">
               Data Início
             </label>
             <input
               type="date"
               value={draftIni}
               onChange={(e) => setDraftIni(e.target.value)}
-              className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+              className="h-8 w-full border border-[#000638]/30 rounded-lg px-2 focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
             />
           </div>
-          <div>
-            <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+          <div className="w-[150px]">
+            <label className="block text-xs font-semibold mb-1 text-[#000638]">
               Data Fim
             </label>
             <input
               type="date"
               value={draftFim}
               onChange={(e) => setDraftFim(e.target.value)}
-              className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+              className="h-8 w-full border border-[#000638]/30 rounded-lg px-2 focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
             />
           </div>
-          <div>
+          <button
+            onClick={aplicarPeriodo}
+            disabled={autoLoading || !draftIni || !draftFim || draftIni > draftFim}
+            className="h-8 w-[130px] flex gap-1 items-center justify-center bg-[#000638] text-white px-3 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-xs font-bold tracking-wide uppercase"
+          >
+            {autoLoading ? (
+              <>
+                <Spinner size={12} className="animate-spin" /> Buscando...
+              </>
+            ) : (
+              <>
+                <MagnifyingGlass size={12} /> Buscar
+              </>
+            )}
+          </button>
+          <button
+            onClick={() => buscarPainel(periodo, undefined, { usarCache: false })}
+            disabled={autoLoading}
+            title="Rebuscar no TOTVS, ignorando o que está salvo no banco (traz o detalhamento)"
+            className={`${btnSec} w-[120px] justify-center`}
+          >
+            <Plugs size={14} /> Painel
+          </button>
+          <button
+            onClick={() => setEditSemanas((v) => !v)}
+            disabled={multiMes}
+            title={
+              multiMes
+                ? 'Período de vários meses usa a régua fixa por dia do mês'
+                : 'Ajustar as datas das semanas'
+            }
+            className={`h-8 w-[120px] justify-center flex items-center gap-1.5 border rounded-lg px-3 text-xs font-semibold transition-colors disabled:opacity-50 ${
+              editSemanas || store.semanas?.length
+                ? 'border-amber-300 text-amber-700 bg-amber-50'
+                : 'border-[#000638]/30 text-[#000638] hover:bg-[#000638]/5'
+            }`}
+          >
+            Semanas
+          </button>
+          <button
+            onClick={handleReset}
+            title="Limpar edições do período"
+            className={`${btnSec} w-[120px] justify-center`}
+          >
+            <ArrowClockwise size={14} /> Limpar
+          </button>
+          <button
+            onClick={alternarTelaCheia}
+            title={tv ? 'Sair da tela cheia' : 'Tela cheia (TV/apresentação)'}
+            className={`${btnSec} w-[130px] justify-center`}
+          >
+            {tv ? <CornersIn size={14} /> : <CornersOut size={14} />}
+            {tv ? 'Sair da tela cheia' : 'Tela cheia'}
+          </button>
+          {ehOwner && (
             <button
-              onClick={aplicarPeriodo}
-              disabled={autoLoading || !draftIni || !draftFim || draftIni > draftFim}
-              className="flex gap-1 items-center justify-center bg-[#000638] text-white px-4 py-1.5 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed transition-colors h-8 text-xs font-bold shadow-md tracking-wide uppercase w-full"
+              onClick={salvarNoBanco}
+              disabled={autoLoading || salvando}
+              title="Buscar no TOTVS e salvar no banco os blocos de datas já fechados"
+              className="h-8 w-[130px] justify-center flex items-center gap-1.5 border border-emerald-300 text-emerald-700 bg-emerald-50 rounded-lg px-3 text-xs font-semibold hover:bg-emerald-100 disabled:opacity-50 transition-colors"
             >
-              {autoLoading ? (
+              {salvando ? (
                 <>
-                  <Spinner size={12} className="animate-spin" /> Buscando...
+                  <Spinner size={14} className="animate-spin" /> Salvando...
                 </>
               ) : (
                 <>
-                  <MagnifyingGlass size={12} /> Buscar
+                  <FloppyDisk size={14} /> Salvar DB
                 </>
               )}
             </button>
-          </div>
-          <div>
-            <button
-              onClick={() => buscarPainel(periodo, undefined, { usarCache: false })}
-              disabled={autoLoading}
-              title="Rebuscar no TOTVS, ignorando o que está salvo no banco (traz o detalhamento)"
-              className={`${btnSec} w-full justify-center`}
-            >
-              <Plugs size={14} /> Painel
-            </button>
-          </div>
-          <div>
-            <button
-              onClick={() => setEditSemanas((v) => !v)}
-              disabled={multiMes}
-              title={
-                multiMes
-                  ? 'Período de vários meses usa a régua fixa por dia do mês'
-                  : 'Ajustar as datas das semanas'
-              }
-              className={`w-full justify-center flex items-center gap-1.5 border rounded-lg px-3 py-1.5 text-xs font-semibold h-8 transition-colors ${
-                editSemanas || store.semanas?.length
-                  ? 'border-amber-300 text-amber-700 bg-amber-50'
-                  : 'border-[#000638]/30 text-[#000638] hover:bg-[#000638]/5'
-              }`}
-            >
-              Semanas
-            </button>
-          </div>
-          <div>
-            <button
-              onClick={handleReset}
-              title="Limpar edições do período"
-              className={`${btnSec} w-full justify-center`}
-            >
-              <ArrowClockwise size={14} /> Limpar
-            </button>
-          </div>
-          <div>
-            <button
-              onClick={alternarTelaCheia}
-              title={tv ? 'Sair da tela cheia' : 'Tela cheia (TV/apresentação)'}
-              className={`${btnSec} w-full justify-center`}
-            >
-              {tv ? <CornersIn size={14} /> : <CornersOut size={14} />}
-              {tv ? 'Sair' : 'Tela cheia'}
-            </button>
-          </div>
-          {ehOwner && (
-            <div>
-              <button
-                onClick={salvarNoBanco}
-                disabled={autoLoading || salvando}
-                title="Buscar no TOTVS e salvar no banco os blocos de datas já fechados"
-                className="w-full justify-center flex items-center gap-1.5 border border-emerald-300 text-emerald-700 bg-emerald-50 rounded-lg px-3 py-1.5 text-xs font-semibold hover:bg-emerald-100 disabled:opacity-50 transition-colors h-8"
-              >
-                {salvando ? (
-                  <>
-                    <Spinner size={14} className="animate-spin" /> Salvando...
-                  </>
-                ) : (
-                  <>
-                    <FloppyDisk size={14} /> Salvar DB
-                  </>
-                )}
-              </button>
-            </div>
           )}
         </div>
       </div>
-
-      {!jaBuscou && !autoLoading && (
-        <div className="bg-[#000638]/5 border border-[#000638]/15 text-[#000638] rounded-lg px-4 py-2.5 text-sm">
-          Escolha o período e clique em <strong>Buscar</strong> para trazer os
-          valores do Painel de Vendas. Os canais manuais e as metas já salvas
-          aparecem na tabela; os automáticos mostram o último valor conhecido
-          até a busca.
-        </div>
-      )}
 
       {multiMes && (
         <div className="bg-blue-50 border border-blue-200 text-blue-900 rounded-lg px-4 py-2.5 text-sm">
@@ -1695,6 +1756,56 @@ const NewForecast = () => {
         </div>
       )}
 
+      {/* Canal criado na tela: entra como linha manual e fica salvo no banco */}
+      <div className="flex justify-end">
+        {novoCanal ? (
+          <div className="flex items-center gap-2 bg-white rounded-lg shadow-md border border-[#000638]/10 p-2">
+            <input
+              autoFocus
+              value={novoCanal.nome}
+              onChange={(e) =>
+                setNovoCanal((v) => ({ ...v, nome: e.target.value }))
+              }
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') adicionarCanal();
+                if (e.key === 'Escape') setNovoCanal(null);
+              }}
+              placeholder="Nome do canal"
+              maxLength={40}
+              className="h-8 w-52 border border-[#000638]/30 rounded-lg px-2 text-xs uppercase focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
+            />
+            <select
+              value={novoCanal.qtd ? 'und' : 'brl'}
+              onChange={(e) =>
+                setNovoCanal((v) => ({ ...v, qtd: e.target.value === 'und' }))
+              }
+              className="h-8 border border-[#000638]/30 rounded-lg px-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
+            >
+              <option value="brl">Valor (R$)</option>
+              <option value="und">Unidades (und)</option>
+            </select>
+            <button
+              onClick={adicionarCanal}
+              disabled={!String(novoCanal.nome || '').trim()}
+              className="h-8 px-4 flex items-center gap-1.5 bg-[#000638] text-white rounded-lg text-xs font-bold uppercase tracking-wide hover:bg-[#fe0000] disabled:opacity-50 transition-colors"
+            >
+              <Plus size={14} /> Adicionar
+            </button>
+            <button onClick={() => setNovoCanal(null)} className={btnSec}>
+              Cancelar
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setNovoCanal({ nome: '', qtd: false })}
+            title="Criar um canal manual (fica salvo no banco, em todos os períodos)"
+            className={btnSec}
+          >
+            <Plus size={14} /> Adicionar canal
+          </button>
+        )}
+      </div>
+
       {/* Tabela */}
       <div className="bg-white rounded-lg shadow-md border border-[#000638]/10 overflow-x-auto">
         <table className="w-full text-sm border-collapse min-w-[980px]">
@@ -1780,12 +1891,6 @@ const NewForecast = () => {
                         linhaFoco ? 'font-bold' : 'hover:text-violet-700'
                       }`}
                     >
-                      {temFilhos &&
-                        (aberto ? (
-                          <CaretDown size={12} className="text-gray-500" />
-                        ) : (
-                          <CaretRight size={12} className="text-gray-500" />
-                        ))}
                       {c.canal}
                       {ehAuto(c) && (
                         <span
@@ -1793,7 +1898,22 @@ const NewForecast = () => {
                           className="inline-block w-1.5 h-1.5 rounded-full bg-violet-400"
                         />
                       )}
+                      {temFilhos &&
+                        (aberto ? (
+                          <CaretDown size={12} className="text-gray-500" />
+                        ) : (
+                          <CaretRight size={12} className="text-gray-500" />
+                        ))}
                     </button>
+                    {c.extra && (
+                      <button
+                        onClick={() => removerCanal(c.canal)}
+                        title="Remover este canal"
+                        className="ml-1.5 align-middle text-gray-300 hover:text-rose-600 transition-colors"
+                      >
+                        <Trash size={12} />
+                      </button>
+                    )}
                   </td>
                   {semanasDef.map((w) => {
                     const k = `s${w.s}`;
