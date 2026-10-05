@@ -933,12 +933,15 @@ const NewForecast = () => {
     for (const k of SEMANAS) acc[k] = 0;
     for (const c of CANAIS) {
       if (c.qtd) continue;
-      const { realizado, meta, falta } = calc(c);
+      const { realizado, meta } = calc(c);
       for (const k of SEMANAS) acc[k] += parseNum(cellValue(c, k));
       acc.realizado += realizado;
       acc.meta += meta;
-      acc.falta += falta;
     }
+    // Falta do TOTAL é meta − realizado da empresa: o excedente de um canal
+    // compensa o que falta em outro. (Na linha de cada canal continua sendo
+    // a falta dele, sem compensação.)
+    acc.falta = Math.max(acc.meta - acc.realizado, 0);
     return acc;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store, auto, SEMANAS, CANAIS]);
