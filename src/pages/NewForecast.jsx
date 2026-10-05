@@ -19,6 +19,8 @@ import {
   MagnifyingGlass,
   X,
   CaretLeft,
+  CaretRight,
+  CaretDown,
   CurrencyDollar,
   Percent,
   Warning,
@@ -43,11 +45,38 @@ const CANAIS_BASE = [
     expedicao: 'showroom',
   },
   { canal: 'FRANQUIAS', fonte: 'FRANQUIAS', meta: 150000, codes: [40] },
-  { canal: 'REVENDA', fonte: 'REVENDA', meta: 165000, codes: [161, 165] },
-  { canal: 'MTM YAGO', fonte: 'MTM_YAGO', meta: 0, codes: [241] },
-  { canal: 'MTM RAFAEL', fonte: 'MTM_RAFAEL', meta: 100000, codes: [21] },
-  { canal: 'MTM DAVID', fonte: 'MTM_DAVID', meta: 65000, codes: [26] },
-  { canal: 'MTM ARTHUR', fonte: 'MTM_ARTHUR', meta: 90000, codes: [259] },
+  // REVENDA e MULTIMARCAS são linhas-grupo: o valor é a soma dos vendedores
+  // (chaves VEND_<código> do painel) e o clique na seta abre uma linha por
+  // vendedor, com as mesmas colunas.
+  //   metaDividida → meta de cada vendedor = meta do grupo ÷ nº de vendedores
+  //   metaSoma     → meta do grupo = soma das metas dos vendedores
+  {
+    canal: 'REVENDA',
+    fontes: ['VEND_161', 'VEND_165'],
+    fontesLegado: ['REVENDA'],
+    codes: [161, 165],
+    meta: 165000,
+    metaDividida: true,
+    filhos: [
+      { canal: 'REVENDA KLEITON', rotulo: 'KLEITON', fonte: 'VEND_161', code: 161 },
+      { canal: 'REVENDA MICHEL', rotulo: 'MICHEL', fonte: 'VEND_165', code: 165 },
+      // sem equivalente antigo por vendedor: ficam zerados até o painel novo
+    ],
+  },
+  {
+    canal: 'MULTIMARCAS',
+    fontes: ['VEND_21', 'VEND_26', 'VEND_259', 'VEND_241'],
+    fontesLegado: ['MTM_RAFAEL', 'MTM_DAVID', 'MTM_ARTHUR', 'MTM_YAGO'],
+    codes: [21, 26, 259, 241],
+    metaSoma: true,
+    filhos: [
+      // fontesLegado: chave antiga do mesmo vendedor (pré-VEND_<cod>)
+      { canal: 'MTM RAFAEL', rotulo: 'MTM RAFAEL', fonte: 'VEND_21', fontesLegado: ['MTM_RAFAEL'], code: 21, meta: 100000 },
+      { canal: 'MTM DAVID', rotulo: 'MTM DAVID', fonte: 'VEND_26', fontesLegado: ['MTM_DAVID'], code: 26, meta: 65000 },
+      { canal: 'MTM ARTHUR', rotulo: 'MTM ARTHUR', fonte: 'VEND_259', fontesLegado: ['MTM_ARTHUR'], code: 259, meta: 90000 },
+      { canal: 'MTM YAGO', rotulo: 'MTM YAGO', fonte: 'VEND_241', fontesLegado: ['MTM_YAGO'], code: 241, meta: 0 },
+    ],
+  },
   { canal: 'VAREJO', fonte: 'VAREJO', meta: 363400, varejo: true },
   // clientes com contrato BlueCred × faturas de crediário (pseudo-vendedor -1000)
   { canal: 'BLUECRED', fonte: 'BLUECRED', meta: 25000, codes: [-1000], direto: true },
@@ -62,12 +91,29 @@ const CANAIS_BASE = [
 // partir de 01/10/2026. Períodos anteriores continuam com ele na REVENDA e
 // sem a linha de MTM YAGO — senão o histórico mudava retroativamente.
 const MTM_YAGO_DESDE = '2026-10-01';
+const FONTE_YAGO = 'VEND_241';
 const canaisDoPeriodo = (ini) => {
-  const yagoEhMtm = String(ini || '') >= MTM_YAGO_DESDE;
-  if (yagoEhMtm) return CANAIS_BASE;
-  return CANAIS_BASE.filter((c) => c.canal !== 'MTM YAGO').map((c) =>
-    c.canal === 'REVENDA' ? { ...c, codes: [161, 241, 165] } : c,
-  );
+  if (String(ini || '') >= MTM_YAGO_DESDE) return CANAIS_BASE;
+  return CANAIS_BASE.map((c) => {
+    if (c.canal === 'MULTIMARCAS')
+      return {
+        ...c,
+        fontes: c.fontes.filter((f) => f !== FONTE_YAGO),
+        codes: c.codes.filter((x) => x !== 241),
+        filhos: c.filhos.filter((f) => f.code !== 241),
+      };
+    if (c.canal === 'REVENDA')
+      return {
+        ...c,
+        fontes: [...c.fontes, FONTE_YAGO],
+        codes: [...c.codes, 241],
+        filhos: [
+          ...c.filhos,
+          { canal: 'REVENDA YAGO', rotulo: 'YAGO', fonte: FONTE_YAGO, code: 241 },
+        ],
+      };
+    return c;
+  });
 };
 
 // Linhas antigas de cartão por estado — somadas na linha única CARTÕES
@@ -173,6 +219,9 @@ const formatBRL = (v) =>
   });
 
 const formatInt = (v) => (Number(v) || 0).toLocaleString('pt-BR');
+
+// Canal automático = alimentado pelo Painel de Vendas (uma fonte ou várias)
+const ehAuto = (c) => Boolean(c.fonte || c.fontes?.length);
 
 // Canais de cartão são medidos em unidades; o resto em R$
 const fmtValor = (v, qtd) =>
@@ -316,6 +365,9 @@ const NewForecast = () => {
       prev.includes(v) ? prev.filter((x) => x !== v) : [...prev, v],
     );
   const toggleCanal = toggleFoco(setFocoCanais);
+  // Grupos abertos na tabela (REVENDA / MULTIMARCAS → linhas por vendedor)
+  const [abertos, setAbertos] = useState([]);
+  const toggleAberto = toggleFoco(setAbertos);
   const toggleSemana = toggleFoco(setFocoSemanas);
 
   // Nomes das lojas (mesma rota do FiltroEmpresa) — o drill do varejo mostra
@@ -482,25 +534,32 @@ const NewForecast = () => {
   // ─── Valores das células ────────────────────────────────────────────────
   // Canal com `fontes` soma várias chaves do painel na mesma linha
   // (SHOWROOM / FABRICAS = showroom + novidades).
-  const valorDoPainel = (c, k) =>
-    (c.fontes || [c.fonte]).reduce((a, f) => a + (auto?.[f]?.[k] ?? 0), 0);
+  // `fontesLegado` cobre a janela entre o deploy do site e o da API: se as
+  // chaves novas (VEND_<código>) ainda não vieram, usa as antigas. Pode sair
+  // quando a API nova estiver no ar.
+  const valorDoPainel = (c, k) => {
+    const fontes = c.fontes || (c.fonte ? [c.fonte] : []);
+    const temNovas = fontes.some((f) => auto?.[f] !== undefined);
+    const usar = temNovas || !c.fontesLegado ? fontes : c.fontesLegado;
+    return usar.reduce((a, f) => a + (auto?.[f]?.[k] ?? 0), 0);
+  };
   const cellValue = (c, k) => {
-    if (c.fonte) {
+    if (ehAuto(c)) {
       const ovr = store.overrides?.[c.canal]?.[k];
       if (ovr !== undefined && ovr !== null && ovr !== '') return ovr;
       return valorDoPainel(c, k);
     }
     return store.manual?.[c.canal]?.[k] ?? 0;
   };
-  const autoValue = (c, k) => (c.fonte ? valorDoPainel(c, k) : null);
+  const autoValue = (c, k) => (ehAuto(c) ? valorDoPainel(c, k) : null);
   const isOverridden = (c, k) => {
     const ovr = store.overrides?.[c.canal]?.[k];
-    return !!c.fonte && ovr !== undefined && ovr !== null && ovr !== '';
+    return ehAuto(c) && ovr !== undefined && ovr !== null && ovr !== '';
   };
 
   const setCell = (c, k, value) => {
     setStore((prev) => {
-      const bucket = c.fonte ? 'overrides' : 'manual';
+      const bucket = ehAuto(c) ? 'overrides' : 'manual';
       return {
         ...prev,
         [bucket]: {
@@ -547,7 +606,35 @@ const NewForecast = () => {
     buscarPainel(periodo, padrao);
   };
 
-  const metaValue = (c) => store.metas?.[c.canal] ?? c.meta;
+  const metaValue = (c) => {
+    if (c.metaSoma)
+      return (c.filhos || []).reduce((a, f) => a + parseNum(metaValue(f)), 0);
+    return store.metas?.[c.canal] ?? c.meta ?? 0;
+  };
+  // Meta do vendedor: a dele, ou a do grupo dividida igualmente
+  const metaFilho = (pai, filho) =>
+    pai.metaDividida
+      ? parseNum(metaValue(pai)) / ((pai.filhos || []).length || 1)
+      : parseNum(metaValue(filho));
+  // Linha de vendedor: valores vêm sempre do painel (sem ajuste manual)
+  const calcFilho = (pai, filho) => {
+    const realizado = SEMANAS.reduce((a, k) => a + valorDoPainel(filho, k), 0);
+    const meta = metaFilho(pai, filho);
+    return {
+      realizado,
+      meta,
+      pct: meta > 0 ? (realizado / meta) * 100 : 0,
+      falta: Math.max(meta - realizado, 0),
+    };
+  };
+  // Canal "virtual" de um vendedor, para o drill da célula dele
+  const canalDoFilho = (filho) => ({
+    canal: filho.rotulo || filho.canal,
+    fontes: [filho.fonte],
+    codes: [filho.code],
+    direto: true,
+    semAjuste: true,
+  });
   const setMeta = (c, value) => {
     setStore((prev) => ({
       ...prev,
@@ -980,39 +1067,39 @@ const NewForecast = () => {
     const valorPainel = autoValue(c, kSem);
     const ovr = store.overrides?.[c.canal]?.[kSem];
 
-    const blocoAjuste = !w ? null : (
+    const blocoAjuste = !w || c.semAjuste ? null : (
       <div className="mb-4 border border-[#000638]/10 rounded-lg p-3 bg-[#f8f9fb]">
         <div className="flex flex-wrap items-end gap-3">
           <div>
             <p className="text-[11px] text-gray-500 mb-0.5">
-              {c.fonte ? 'Valor do Painel de Vendas' : 'Valor da célula'}
+              {ehAuto(c) ? 'Valor do Painel de Vendas' : 'Valor da célula'}
             </p>
             <p className="text-sm font-bold text-[#000638]">
-              {c.fonte
+              {ehAuto(c)
                 ? fmtValor(valorPainel, c.qtd)
                 : fmtValor(parseNum(cellValue(c, kSem)), c.qtd)}
             </p>
           </div>
           <div className="flex-1 min-w-[160px]">
             <p className="text-[11px] text-gray-500 mb-0.5">
-              {c.fonte ? 'Ajustar valor (override)' : 'Digitar valor'}
+              {ehAuto(c) ? 'Ajustar valor (override)' : 'Digitar valor'}
             </p>
             <input
               type="text"
               inputMode="decimal"
               defaultValue={
-                c.fonte
+                ehAuto(c)
                   ? ovr !== undefined && ovr !== null && ovr !== ''
                     ? ovr
                     : ''
                   : store.manual?.[c.canal]?.[kSem] || ''
               }
               placeholder={
-                c.fonte ? fmtValor(valorPainel, c.qtd) : c.qtd ? '0 und' : 'R$ 0,00'
+                ehAuto(c) ? fmtValor(valorPainel, c.qtd) : c.qtd ? '0 und' : 'R$ 0,00'
               }
               onBlur={(e) => {
                 const raw = e.target.value.trim();
-                if (c.fonte && raw === '') clearOverrideCell(c, kSem);
+                if (ehAuto(c) && raw === '') clearOverrideCell(c, kSem);
                 else setCell(c, kSem, parseNum(raw));
               }}
               className="w-full border border-[#000638]/30 rounded-md px-3 py-1.5 text-sm text-right bg-white focus:outline-none focus:ring-2 focus:ring-[#000638]/30 focus:border-[#000638]"
@@ -1027,7 +1114,7 @@ const NewForecast = () => {
             </button>
           )}
         </div>
-        {c.fonte && (
+        {ehAuto(c) && (
           <p className="text-[10px] text-gray-400 mt-1.5">
             O ajuste vale só para esta célula; deixe vazio para usar o valor do
             painel.
@@ -1108,7 +1195,7 @@ const NewForecast = () => {
           </table>
         );
       }
-    } else if (c.fonte) {
+    } else if (ehAuto(c)) {
       if (!dSem) corpo = carregando;
       else {
         const rows = (c.codes || [])
@@ -1468,11 +1555,13 @@ const NewForecast = () => {
             {CANAIS.map((c, idx) => {
               const { realizado, pct, falta } = calc(c);
               const linhaFoco = focoCanais.includes(c.canal);
+              const temFilhos = (c.filhos || []).length > 0;
+              const aberto = temFilhos && abertos.includes(c.canal);
               // zebra suave nas linhas sem foco
               const zebra = idx % 2 === 1 ? 'bg-[#000638]/[0.02]' : '';
               return (
+                <React.Fragment key={c.canal}>
                 <tr
-                  key={c.canal}
                   className={`border-t transition-colors ${
                     linhaFoco
                       ? 'border-violet-200 bg-violet-50'
@@ -1487,14 +1576,28 @@ const NewForecast = () => {
                     }`}
                   >
                     <button
-                      onClick={() => toggleCanal(c.canal)}
-                      title="Clique para destacar esta linha"
+                      onClick={() =>
+                        temFilhos ? toggleAberto(c.canal) : toggleCanal(c.canal)
+                      }
+                      title={
+                        temFilhos
+                          ? aberto
+                            ? 'Fechar os vendedores'
+                            : 'Abrir por vendedor'
+                          : 'Clique para destacar esta linha'
+                      }
                       className={`inline-flex items-center gap-1.5 rounded px-1 -mx-1 transition ${
                         linhaFoco ? 'font-bold' : 'hover:text-violet-700'
                       }`}
                     >
+                      {temFilhos &&
+                        (aberto ? (
+                          <CaretDown size={12} className="text-gray-500" />
+                        ) : (
+                          <CaretRight size={12} className="text-gray-500" />
+                        ))}
                       {c.canal}
-                      {c.fonte && (
+                      {ehAuto(c) && (
                         <span
                           title="Alimentado pelo Painel de Vendas"
                           className="inline-block w-1.5 h-1.5 rounded-full bg-violet-400"
@@ -1535,7 +1638,7 @@ const NewForecast = () => {
                       linhaFoco ? 'bg-violet-100' : 'bg-[#000638]/5'
                     }`}
                   >
-                    {c.fonte ? (
+                    {ehAuto(c) ? (
                       <button
                         onClick={() => abrirRealizado(c)}
                         title="Ver o consolidado do período"
@@ -1548,12 +1651,21 @@ const NewForecast = () => {
                     )}
                   </td>
                   <td className="px-1 py-1">
-                    <MoneyInput
-                      value={metaValue(c)}
-                      onChange={(v) => setMeta(c, v)}
-                      strong
-                      qtd={c.qtd}
-                    />
+                    {c.metaSoma ? (
+                      <p
+                        title="Soma das metas dos vendedores — ajuste na linha de cada um"
+                        className="text-right px-2 py-1.5 text-sm font-semibold text-[#000638]"
+                      >
+                        {fmtValor(parseNum(metaValue(c)), c.qtd)}
+                      </p>
+                    ) : (
+                      <MoneyInput
+                        value={metaValue(c)}
+                        onChange={(v) => setMeta(c, v)}
+                        strong
+                        qtd={c.qtd}
+                      />
+                    )}
                   </td>
                   <td className="px-3 py-1.5">
                     <div className="flex items-center gap-2">
@@ -1574,6 +1686,78 @@ const NewForecast = () => {
                     {falta > 0 ? fmtValor(falta, c.qtd) : '—'}
                   </td>
                 </tr>
+
+                {/* Vendedores do grupo — valores sempre do Painel de Vendas */}
+                {aberto &&
+                  c.filhos.map((f) => {
+                    const cf = calcFilho(c, f);
+                    return (
+                      <tr
+                        key={f.canal}
+                        className="border-t border-gray-100 bg-[#000638]/[0.015] text-[13px]"
+                      >
+                        <td className="pl-9 pr-4 py-1 sticky left-0 z-10 bg-[#fbfbfc] whitespace-nowrap text-gray-700">
+                          <span className="text-gray-300 mr-1.5">└</span>
+                          {f.rotulo || f.canal}
+                          <span className="text-gray-400 ml-1">#{f.code}</span>
+                        </td>
+                        {semanasDef.map((w) => (
+                          <td key={w.s} className="px-1 py-0.5">
+                            <button
+                              onClick={() => abrirCelula(canalDoFilho(f), w)}
+                              title="Ver as vendas desta semana"
+                              className="w-full text-right px-2 py-1 rounded-md text-gray-600 hover:bg-[#000638]/5 hover:ring-1 hover:ring-[#000638]/20 transition"
+                            >
+                              {formatBRL(valorDoPainel(f, `s${w.s}`))}
+                            </button>
+                          </td>
+                        ))}
+                        <td className="px-3 py-1 text-right font-semibold text-[#000638] bg-[#000638]/5 whitespace-nowrap">
+                          <button
+                            onClick={() => abrirRealizado(canalDoFilho(f))}
+                            title="Ver o consolidado do período"
+                            className="w-full text-right rounded-md px-1 py-0.5 hover:bg-[#000638]/10 hover:ring-1 hover:ring-[#000638]/20 transition"
+                          >
+                            {formatBRL(cf.realizado)}
+                          </button>
+                        </td>
+                        <td className="px-1 py-0.5">
+                          {c.metaDividida ? (
+                            <p
+                              title="Meta do canal dividida igualmente entre os vendedores"
+                              className="text-right px-2 py-1 text-gray-500"
+                            >
+                              {formatBRL(cf.meta)}
+                            </p>
+                          ) : (
+                            <MoneyInput
+                              value={metaValue(f)}
+                              onChange={(v) => setMeta(f, v)}
+                            />
+                          )}
+                        </td>
+                        <td className="px-3 py-1">
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${barColor(cf.pct)}`}
+                                style={{ width: `${Math.min(cf.pct, 100)}%` }}
+                              />
+                            </div>
+                            <span
+                              className={`text-[11px] font-semibold w-12 text-right ${pctColor(cf.pct)}`}
+                            >
+                              {cf.pct.toFixed(0)}%
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-1 text-right text-gray-500 whitespace-nowrap">
+                          {cf.falta > 0 ? formatBRL(cf.falta) : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </React.Fragment>
               );
             })}
           </tbody>
@@ -1610,7 +1794,9 @@ const NewForecast = () => {
         <span className="inline-block w-1.5 h-1.5 rounded-full bg-violet-400 mr-1" />
         canal alimentado pelo Painel de Vendas. Clique numa célula para ver o
         detalhamento e ajustar o valor; células âmbar têm ajuste manual.
-        Semanas, metas e ajustes ficam salvos no servidor.
+        REVENDA e MULTIMARCAS abrem por vendedor na seta ao lado do nome — ali
+        os valores vêm sempre do painel, sem ajuste manual. Semanas, metas e
+        ajustes ficam salvos no servidor.
       </p>
 
       {/* Modal de drill da célula */}
