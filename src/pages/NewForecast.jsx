@@ -21,6 +21,10 @@ import {
   CaretLeft,
   CaretRight,
   CaretDown,
+  CornersOut,
+  CornersIn,
+  FloppyDisk,
+  Database,
   CurrencyDollar,
   Percent,
   Warning,
@@ -28,6 +32,7 @@ import {
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import useApiClient from '../hooks/useApiClient';
+import { useAuth } from '../components/AuthContext';
 import { TotvsURL } from '../config/constants';
 
 // --- Canais + metas padrão (planilha FORCAST) --------------------------------
@@ -211,6 +216,74 @@ const defaultSemanas = (ini, fim) => {
   return out;
 };
 
+const ultimoDiaDoMes = (mes) => {
+  const [y, m] = mes.split('-').map(Number);
+  return new Date(y, m, 0).getDate();
+};
+
+// Meses ('YYYY-MM') que o período cobre
+const mesesDoPeriodo = (ini, fim) => {
+  const out = [];
+  let y = Number(String(ini).slice(0, 4));
+  let m = Number(String(ini).slice(5, 7));
+  const fy = Number(String(fim).slice(0, 4));
+  const fm = Number(String(fim).slice(5, 7));
+  while (y < fy || (y === fy && m <= fm)) {
+    out.push(`${y}-${String(m).padStart(2, '0')}`);
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+  }
+  return out;
+};
+
+// Mais de um mês no período: a régua passa a ser fixa por DIA DO MÊS e cada
+// coluna soma aquele intervalo em TODOS os meses (faturamento e meta somados).
+// Cada coluna carrega os `blocos` de datas que a compõem — é o que vai para a
+// API, que soma os blocos de mesma coluna.
+const FAIXAS_DIA = [
+  [1, 7],
+  [8, 14],
+  [15, 21],
+  [22, 28],
+  [29, 31],
+];
+const semanasMultiMes = (ini, fim) => {
+  const meses = mesesDoPeriodo(ini, fim);
+  return FAIXAS_DIA.map(([d1, d2], idx) => {
+    const blocos = [];
+    for (const mes of meses) {
+      const ultimo = ultimoDiaDoMes(mes);
+      if (d1 > ultimo) continue;
+      const de = `${mes}-${String(d1).padStart(2, '0')}`;
+      const ate = `${mes}-${String(Math.min(d2, ultimo)).padStart(2, '0')}`;
+      const a = de < ini ? ini : de;
+      const b = ate > fim ? fim : ate;
+      if (a > b) continue;
+      blocos.push({ datemin: a, datemax: b });
+    }
+    return {
+      s: idx + 1,
+      rotulo: d2 >= 31 ? 'dia 29+' : `dias ${d1}–${d2}`,
+      datemin: blocos[0]?.datemin || ini,
+      datemax: blocos[blocos.length - 1]?.datemax || fim,
+      blocos,
+    };
+  }).filter((w) => w.blocos.length > 0);
+};
+
+// Colunas → blocos de datas que a API precisa buscar (mesmo `s` = soma)
+const semanasParaApi = (semanas) =>
+  (semanas || []).flatMap((w) =>
+    (w.blocos || [{ datemin: w.datemin, datemax: w.datemax }]).map((b) => ({
+      s: w.s,
+      datemin: b.datemin,
+      datemax: b.datemax,
+    })),
+  );
+
 const formatBRL = (v) =>
   (Number(v) || 0).toLocaleString('pt-BR', {
     style: 'currency',
@@ -329,6 +402,9 @@ const MoneyInput = ({ value, onChange, strong, qtd }) => {
 
 const NewForecast = () => {
   const apiClient = useApiClient();
+  const { user } = useAuth();
+  const ehOwner =
+    (user?.role || user?.user_metadata?.role) === 'owner';
   const [draftIni, setDraftIni] = useState(inicioMesAtual());
   const [draftFim, setDraftFim] = useState(fimMesAtual());
   const [periodo, setPeriodo] = useState({
@@ -353,6 +429,22 @@ const NewForecast = () => {
   // as semanas usadas na busca).
   const buscarAoCarregar = useRef(false);
   const [jaBuscou, setJaBuscou] = useState(false);
+  // Resumo da última busca: quantos blocos vieram do banco / foram salvos
+  const [cacheInfo, setCacheInfo] = useState(null);
+  const [salvando, setSalvando] = useState(false);
+
+  // ─── Tela cheia (para a TV / apresentação) ──────────────────────────────
+  const telaRef = useRef(null);
+  const [tv, setTv] = useState(false);
+  useEffect(() => {
+    const onChange = () => setTv(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+  const alternarTelaCheia = () => {
+    if (document.fullscreenElement) document.exitFullscreen?.();
+    else telaRef.current?.requestFullscreen?.().catch(() => {});
+  };
   const saveTimer = useRef(null);
   const storeLoaded = useRef(false);
 
@@ -405,13 +497,19 @@ const NewForecast = () => {
   // clientes de vendedor de loja (varejo, nível 3 — único fetch sob demanda)
   const [vendasCache, setVendasCache] = useState({});
 
-  const semanasDef = useMemo(
-    () =>
-      store.semanas?.length
-        ? store.semanas
-        : defaultSemanas(periodo.ini, periodo.fim),
-    [store.semanas, periodo],
+  // Meses do período: com 2+ meses, faturamento e metas somam e a régua de
+  // semanas vira fixa por dia do mês (1-7, 8-14, 15-21, 22-28, 29+).
+  const nMeses = useMemo(
+    () => mesesDoPeriodo(periodo.ini, periodo.fim).length,
+    [periodo],
   );
+  const multiMes = nMeses > 1;
+  const semanasDef = useMemo(() => {
+    if (multiMes) return semanasMultiMes(periodo.ini, periodo.fim);
+    return store.semanas?.length
+      ? store.semanas
+      : defaultSemanas(periodo.ini, periodo.fim);
+  }, [store.semanas, periodo, multiMes]);
   const SEMANAS = useMemo(() => semanasDef.map((w) => `s${w.s}`), [semanasDef]);
 
   // ─── Carrega config (Supabase → fallback local) + busca painel ──────────
@@ -485,7 +583,9 @@ const NewForecast = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store, periodKey]);
 
-  const buscarPainel = async (p, semanas) => {
+  // opts.usarCache = false força o TOTVS (ignora o que está no banco)
+  // opts.salvar = true grava no banco os blocos fechados que vierem do TOTVS
+  const buscarPainel = async (p, semanas, opts = {}) => {
     const seq = ++fetchSeq.current;
     setJaBuscou(true);
     const semanasUsadas = semanas || semanasDef;
@@ -495,13 +595,20 @@ const NewForecast = () => {
       const r = await apiClient.totvs.salePanelFaturamentoVendedorSemanal({
         datemin: p.ini,
         datemax: p.fim,
-        semanas: semanasUsadas,
+        semanas: semanasParaApi(semanasUsadas),
+        ...(opts.usarCache === false ? { usarCache: false } : {}),
+        ...(opts.salvar ? { salvar: true } : {}),
       });
       if (seq !== fetchSeq.current) return;
       const payload = r?.data ?? r;
       const canais = payload?.canais || {};
       setAuto(canais);
       setDrillData(payload?.drill || {});
+      setCacheInfo({
+        doBanco: payload?.cache?.doBanco?.length || 0,
+        salvos: payload?.cache?.salvos || 0,
+        blocos: semanasParaApi(semanasUsadas).length,
+      });
       try {
         localStorage.setItem(
           AUTO_CACHE_PREFIX + `${p.ini}|${p.fim}|${semanasSig(semanasUsadas)}`,
@@ -515,6 +622,22 @@ const NewForecast = () => {
       setAutoErro(e.message || 'Falha ao buscar o Painel de Vendas.');
     } finally {
       if (seq === fetchSeq.current) setAutoLoading(false);
+    }
+  };
+
+  // SALVAR DB (owner): rebusca tudo no TOTVS e grava os blocos fechados
+  const salvarNoBanco = async () => {
+    if (
+      !window.confirm(
+        'Buscar tudo no TOTVS e salvar no banco os blocos de datas já fechados?\n\nPode levar alguns minutos. Nas próximas buscas esses blocos vêm do banco.',
+      )
+    )
+      return;
+    setSalvando(true);
+    try {
+      await buscarPainel(periodo, semanasDef, { usarCache: false, salvar: true });
+    } finally {
+      setSalvando(false);
     }
   };
 
@@ -609,7 +732,10 @@ const NewForecast = () => {
   const metaValue = (c) => {
     if (c.metaSoma)
       return (c.filhos || []).reduce((a, f) => a + parseNum(metaValue(f)), 0);
-    return store.metas?.[c.canal] ?? c.meta ?? 0;
+    const salva = store.metas?.[c.canal];
+    if (salva !== undefined && salva !== null && salva !== '') return salva;
+    // Meta padrão é mensal: período de vários meses soma uma por mês
+    return (c.meta ?? 0) * nMeses;
   };
   // Meta do vendedor: a dele, ou a do grupo dividida igualmente
   const metaFilho = (pai, filho) =>
@@ -987,7 +1113,7 @@ const NewForecast = () => {
         <Spinner size={18} className="animate-spin" />
         {autoLoading
           ? 'O Painel de Vendas ainda está carregando esta semana...'
-          : 'Sem dados desta semana — clique em "Painel" para buscar.'}
+          : 'Sem detalhamento desta semana (não foi buscada, ou veio do banco — que guarda só os totais). Clique em "Painel" para buscar no TOTVS.'}
       </div>
     );
 
@@ -1273,7 +1399,14 @@ const NewForecast = () => {
     'flex items-center gap-1.5 border border-[#000638]/30 text-[#000638] rounded-lg px-3 py-1.5 text-xs font-semibold hover:bg-[#000638]/5 disabled:opacity-50 transition-colors h-8';
 
   return (
-    <div className="w-full max-w-[1400px] mx-auto flex flex-col items-stretch justify-start py-3 px-2 gap-4">
+    <div
+      ref={telaRef}
+      className={`w-full mx-auto flex flex-col items-stretch justify-start gap-4 ${
+        tv
+          ? 'max-w-none bg-white h-screen overflow-y-auto p-5'
+          : 'max-w-[1400px] py-3 px-2'
+      }`}
+    >
       <PageTitle
         title="New Forecast"
         subtitle="Faturamento semanal por canal × meta • Painel de Vendas"
@@ -1283,7 +1416,11 @@ const NewForecast = () => {
 
       {/* Filtros */}
       <div className="bg-white p-3 rounded-lg shadow-md border border-[#000638]/10">
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 items-end">
+        <div
+          className={`grid grid-cols-2 sm:grid-cols-3 gap-2 items-end ${
+            ehOwner ? 'lg:grid-cols-8' : 'lg:grid-cols-7'
+          }`}
+        >
           <div>
             <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
               Data Início
@@ -1325,9 +1462,9 @@ const NewForecast = () => {
           </div>
           <div>
             <button
-              onClick={() => buscarPainel(periodo)}
+              onClick={() => buscarPainel(periodo, undefined, { usarCache: false })}
               disabled={autoLoading}
-              title="Rebuscar valores do Painel de Vendas"
+              title="Rebuscar no TOTVS, ignorando o que está salvo no banco (traz o detalhamento)"
               className={`${btnSec} w-full justify-center`}
             >
               <Plugs size={14} /> Painel
@@ -1336,7 +1473,12 @@ const NewForecast = () => {
           <div>
             <button
               onClick={() => setEditSemanas((v) => !v)}
-              title="Ajustar as datas das semanas"
+              disabled={multiMes}
+              title={
+                multiMes
+                  ? 'Período de vários meses usa a régua fixa por dia do mês'
+                  : 'Ajustar as datas das semanas'
+              }
               className={`w-full justify-center flex items-center gap-1.5 border rounded-lg px-3 py-1.5 text-xs font-semibold h-8 transition-colors ${
                 editSemanas || store.semanas?.length
                   ? 'border-amber-300 text-amber-700 bg-amber-50'
@@ -1355,6 +1497,36 @@ const NewForecast = () => {
               <ArrowClockwise size={14} /> Limpar
             </button>
           </div>
+          <div>
+            <button
+              onClick={alternarTelaCheia}
+              title={tv ? 'Sair da tela cheia' : 'Tela cheia (TV/apresentação)'}
+              className={`${btnSec} w-full justify-center`}
+            >
+              {tv ? <CornersIn size={14} /> : <CornersOut size={14} />}
+              {tv ? 'Sair' : 'Tela cheia'}
+            </button>
+          </div>
+          {ehOwner && (
+            <div>
+              <button
+                onClick={salvarNoBanco}
+                disabled={autoLoading || salvando}
+                title="Buscar no TOTVS e salvar no banco os blocos de datas já fechados"
+                className="w-full justify-center flex items-center gap-1.5 border border-emerald-300 text-emerald-700 bg-emerald-50 rounded-lg px-3 py-1.5 text-xs font-semibold hover:bg-emerald-100 disabled:opacity-50 transition-colors h-8"
+              >
+                {salvando ? (
+                  <>
+                    <Spinner size={14} className="animate-spin" /> Salvando...
+                  </>
+                ) : (
+                  <>
+                    <FloppyDisk size={14} /> Salvar DB
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1364,6 +1536,24 @@ const NewForecast = () => {
           valores do Painel de Vendas. Os canais manuais e as metas já salvas
           aparecem na tabela; os automáticos mostram o último valor conhecido
           até a busca.
+        </div>
+      )}
+
+      {multiMes && (
+        <div className="bg-blue-50 border border-blue-200 text-blue-900 rounded-lg px-4 py-2.5 text-sm">
+          Período de <strong>{nMeses} meses</strong>: faturamento e metas somam
+          os meses e as colunas são fixas por dia do mês (1–7, 8–14, 15–21,
+          22–28, 29+), cada uma somando aquele intervalo de todos os meses. As
+          datas das semanas não podem ser ajustadas neste modo.
+        </div>
+      )}
+
+      {cacheInfo && !autoLoading && (cacheInfo.doBanco > 0 || cacheInfo.salvos > 0) && (
+        <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-lg px-4 py-2 text-xs">
+          <Database size={14} className="inline mb-0.5 mr-1" />
+          {cacheInfo.doBanco > 0 &&
+            `${cacheInfo.doBanco} de ${cacheInfo.blocos} blocos vieram do banco. `}
+          {cacheInfo.salvos > 0 && `${cacheInfo.salvos} bloco(s) salvos no banco.`}
         </div>
       )}
 
@@ -1535,7 +1725,7 @@ const NewForecast = () => {
                           colFoco ? 'text-violet-100' : 'text-gray-400'
                         }`}
                       >
-                        {ddmm(w.datemin)}–{ddmm(w.datemax)}
+                        {w.rotulo || `${ddmm(w.datemin)}–${ddmm(w.datemax)}`}
                       </div>
                     </button>
                   </th>
