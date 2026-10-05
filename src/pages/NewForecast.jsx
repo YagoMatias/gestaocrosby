@@ -30,15 +30,21 @@ import { TotvsURL } from '../config/constants';
 
 // --- Canais + metas padrão (planilha FORCAST) --------------------------------
 // fonte: chave no endpoint semanal (null = 100% manual)
-// codes: vendedores do canal (drill) · expedicao: 'showroom'|'novidades'
+// codes: vendedores do canal (drill) · expedicao: 'showroom'|'bazar'
 const CANAIS_BASE = [
   { canal: 'BAZAR', fonte: 'BAZAR', meta: 20000, expedicao: 'bazar' },
-  { canal: 'NOVIDADES', fonte: 'NOVIDADES', meta: 0, expedicao: 'novidades' },
-  { canal: 'FARDAMENTO', fonte: null, meta: 0 },
-  { canal: 'SHOWROOM / FABRICAS', fonte: 'SHOWROOM', meta: 350000, expedicao: 'showroom' },
+  // Linha única da expedição fora do bazar: showroom/fábricas + novidades +
+  // fardamento. A separação por operação aparece só no drill.
+  {
+    canal: 'SHOWROOM / FABRICAS',
+    fonte: 'SHOWROOM',
+    fontes: ['SHOWROOM', 'NOVIDADES'],
+    meta: 350000,
+    expedicao: 'showroom',
+  },
   { canal: 'FRANQUIAS', fonte: 'FRANQUIAS', meta: 150000, codes: [40] },
-  { canal: 'REVENDA', fonte: 'REVENDA', meta: 165000, codes: [161, 241, 165] },
-  { canal: 'REVENDA MAX', fonte: null, meta: 0 },
+  { canal: 'REVENDA', fonte: 'REVENDA', meta: 165000, codes: [161, 165] },
+  { canal: 'MTM YAGO', fonte: 'MTM_YAGO', meta: 0, codes: [241] },
   { canal: 'MTM RAFAEL', fonte: 'MTM_RAFAEL', meta: 100000, codes: [21] },
   { canal: 'MTM DAVID', fonte: 'MTM_DAVID', meta: 65000, codes: [26] },
   { canal: 'MTM ARTHUR', fonte: 'MTM_ARTHUR', meta: 90000, codes: [259] },
@@ -46,11 +52,23 @@ const CANAIS_BASE = [
   // clientes com contrato BlueCred × faturas de crediário (pseudo-vendedor -1000)
   { canal: 'BLUECRED', fonte: 'BLUECRED', meta: 25000, codes: [-1000], direto: true },
   // op 512 não gera NF: vem do contas a receber como pseudo-vendedor -512
-  { canal: 'RICARDO ELETRO', fonte: 'RICARDO_ELETRO', meta: 12000, codes: [-512], direto: true },
-  { canal: 'MALA', fonte: null, meta: 10 },
+  // (antigo RICARDO ELETRO — renomeado, mesma origem de dados)
+  { canal: 'MAGAZINE JESUS', fonte: 'RICARDO_ELETRO', meta: 12000, codes: [-512], direto: true },
   // Cartões: contados em UNIDADES (qtd), fora dos totais em R$
   { canal: 'CARTÕES', fonte: null, meta: 300, qtd: true },
 ];
+
+// YAGO SMITH (vendedor 241) era REVENDA e virou canal próprio (MTM YAGO) a
+// partir de 01/10/2026. Períodos anteriores continuam com ele na REVENDA e
+// sem a linha de MTM YAGO — senão o histórico mudava retroativamente.
+const MTM_YAGO_DESDE = '2026-10-01';
+const canaisDoPeriodo = (ini) => {
+  const yagoEhMtm = String(ini || '') >= MTM_YAGO_DESDE;
+  if (yagoEhMtm) return CANAIS_BASE;
+  return CANAIS_BASE.filter((c) => c.canal !== 'MTM YAGO').map((c) =>
+    c.canal === 'REVENDA' ? { ...c, codes: [161, 241, 165] } : c,
+  );
+};
 
 // Linhas antigas de cartão por estado — somadas na linha única CARTÕES
 const CARTOES_ANTIGOS = [
@@ -60,6 +78,29 @@ const CARTOES_ANTIGOS = [
   'CARTÃO PE',
   'CARTÃO PB - PATOS',
 ];
+// Canais renomeados: o que foi digitado/ajustado na linha antiga passa
+// para a nova (as chaves do store são o nome do canal).
+const RENOMEADOS = { 'RICARDO ELETRO': 'MAGAZINE JESUS' };
+const renomeiaCanais = (st) => {
+  const balde = (obj) => {
+    let mudou = false;
+    const out = { ...(obj || {}) };
+    for (const [de, para] of Object.entries(RENOMEADOS)) {
+      if (out[de] === undefined) continue;
+      if (out[para] === undefined) out[para] = out[de];
+      delete out[de];
+      mudou = true;
+    }
+    return mudou ? out : obj;
+  };
+  return {
+    ...st,
+    manual: balde(st.manual),
+    overrides: balde(st.overrides),
+    metas: balde(st.metas),
+  };
+};
+
 const juntaCartoes = (st) => {
   const antigos = CARTOES_ANTIGOS.filter((c) => st.manual?.[c]);
   const metasAntigas = CARTOES_ANTIGOS.filter((c) => st.metas?.[c] != null);
@@ -89,6 +130,9 @@ const juntaCartoes = (st) => {
 
 const OP_NOVIDADES = 7255;
 const OPS_BAZAR = [887, 888, 889];
+// Rótulo das operações no drill da expedição; o que não estiver aqui usa o
+// nome que vem do TOTVS (op_nome) e, na falta dele, "Operação <código>".
+const OP_NOMES = { [OP_NOVIDADES]: 'NOVIDADES' };
 
 const STORAGE_PREFIX = 'new_forecast_v3_';
 const AUTO_CACHE_PREFIX = 'new_forecast_auto_v3_';
@@ -244,6 +288,9 @@ const NewForecast = () => {
   });
   const periodKey = `${periodo.ini}|${periodo.fim}`;
 
+  // Canais exibidos (depende do período: MTM YAGO só de out/2026 em diante)
+  const CANAIS = useMemo(() => canaisDoPeriodo(periodo.ini), [periodo.ini]);
+
   const [store, setStore] = useState(emptyStore);
   const [auto, setAuto] = useState({});
   // drill por semana (vem junto do endpoint semanal): { s1: {vendedores, varejo, expedicao} }
@@ -252,6 +299,11 @@ const NewForecast = () => {
   const [autoErro, setAutoErro] = useState('');
   const [editSemanas, setEditSemanas] = useState(false);
   const fetchSeq = useRef(0);
+  // A página não busca sozinha: o usuário escolhe o período e clica em Buscar.
+  // Esta flag leva o clique até depois do carregamento da config (que define
+  // as semanas usadas na busca).
+  const buscarAoCarregar = useRef(false);
+  const [jaBuscou, setJaBuscou] = useState(false);
   const saveTimer = useRef(null);
   const storeLoaded = useRef(false);
 
@@ -335,7 +387,7 @@ const NewForecast = () => {
       }
       if (!vivo) return;
       if (!st) st = loadLocal(periodKey);
-      st = juntaCartoes(st);
+      st = renomeiaCanais(juntaCartoes(st));
       setStore(st);
       storeLoaded.current = true;
       const semanas = st.semanas?.length
@@ -343,7 +395,10 @@ const NewForecast = () => {
         : defaultSemanas(periodo.ini, periodo.fim);
       setAuto(loadAutoCache(`${periodKey}|${semanasSig(semanas)}`));
       setDrillData({});
-      buscarPainel(periodo, semanas);
+      if (buscarAoCarregar.current) {
+        buscarAoCarregar.current = false;
+        buscarPainel(periodo, semanas);
+      }
     })();
     return () => {
       vivo = false;
@@ -380,6 +435,7 @@ const NewForecast = () => {
 
   const buscarPainel = async (p, semanas) => {
     const seq = ++fetchSeq.current;
+    setJaBuscou(true);
     const semanasUsadas = semanas || semanasDef;
     setAutoLoading(true);
     setAutoErro('');
@@ -414,19 +470,29 @@ const NewForecast = () => {
     if (!draftIni || !draftFim || draftIni > draftFim) return;
     setEditSemanas(false);
     setDrill(null);
+    // Mesmo período: o efeito de carregamento não roda de novo, busca direto.
+    if (draftIni === periodo.ini && draftFim === periodo.fim) {
+      buscarPainel(periodo);
+      return;
+    }
+    buscarAoCarregar.current = true;
     setPeriodo({ ini: draftIni, fim: draftFim });
   };
 
   // ─── Valores das células ────────────────────────────────────────────────
+  // Canal com `fontes` soma várias chaves do painel na mesma linha
+  // (SHOWROOM / FABRICAS = showroom + novidades).
+  const valorDoPainel = (c, k) =>
+    (c.fontes || [c.fonte]).reduce((a, f) => a + (auto?.[f]?.[k] ?? 0), 0);
   const cellValue = (c, k) => {
     if (c.fonte) {
       const ovr = store.overrides?.[c.canal]?.[k];
       if (ovr !== undefined && ovr !== null && ovr !== '') return ovr;
-      return auto?.[c.fonte]?.[k] ?? 0;
+      return valorDoPainel(c, k);
     }
     return store.manual?.[c.canal]?.[k] ?? 0;
   };
-  const autoValue = (c, k) => (c.fonte ? auto?.[c.fonte]?.[k] ?? 0 : null);
+  const autoValue = (c, k) => (c.fonte ? valorDoPainel(c, k) : null);
   const isOverridden = (c, k) => {
     const ovr = store.overrides?.[c.canal]?.[k];
     return !!c.fonte && ovr !== undefined && ovr !== null && ovr !== '';
@@ -501,7 +567,7 @@ const NewForecast = () => {
   const totals = useMemo(() => {
     const acc = { realizado: 0, meta: 0, falta: 0 };
     for (const k of SEMANAS) acc[k] = 0;
-    for (const c of CANAIS_BASE) {
+    for (const c of CANAIS) {
       if (c.qtd) continue;
       const { realizado, meta, falta } = calc(c);
       for (const k of SEMANAS) acc[k] += parseNum(cellValue(c, k));
@@ -511,7 +577,7 @@ const NewForecast = () => {
     }
     return acc;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store, auto, SEMANAS]);
+  }, [store, auto, SEMANAS, CANAIS]);
 
   const totalPct = totals.meta > 0 ? (totals.realizado / totals.meta) * 100 : 0;
 
@@ -519,8 +585,8 @@ const NewForecast = () => {
   // foco vale a coluna inteira; sem semana em foco, a linha inteira.
   const foco = useMemo(() => {
     const canais = focoCanais.length
-      ? CANAIS_BASE.filter((c) => focoCanais.includes(c.canal))
-      : CANAIS_BASE;
+      ? CANAIS.filter((c) => focoCanais.includes(c.canal))
+      : CANAIS;
     const semanas = focoSemanas.length
       ? semanasDef.filter((w) => focoSemanas.includes(w.s))
       : semanasDef;
@@ -548,7 +614,7 @@ const NewForecast = () => {
           : `${focoSemanas.length} semanas`;
     return { brl, und, label: `${parteCanal} × ${parteSemana}` };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focoCanais, focoSemanas, semanasDef, store, auto]);
+  }, [focoCanais, focoSemanas, semanasDef, store, auto, CANAIS]);
 
   const handleReset = () => {
     if (
@@ -766,6 +832,69 @@ const NewForecast = () => {
       </>
     );
 
+    // Expedição (showroom/fábricas + novidades + fardamento): primeiro nível
+    // por OPERAÇÃO, que é o que separa um do outro. Clique abre os clientes.
+    const tabelaOperacoes = (vendas) => {
+      const mapa = new Map();
+      for (const v of vendas) {
+        const cur = mapa.get(v.op) || {
+          op: v.op,
+          nome: OP_NOMES[v.op] || null,
+          qtd: 0,
+          valor: 0,
+          vendas: [],
+        };
+        if (!cur.nome && v.op_nome) cur.nome = v.op_nome;
+        cur.qtd += 1;
+        cur.valor = Math.round((cur.valor + (v.valor || 0)) * 100) / 100;
+        cur.vendas.push(v);
+        mapa.set(v.op, cur);
+      }
+      const ops = [...mapa.values()].sort((a, b) => b.valor - a.valor);
+      const total = ops.reduce((a, o) => a + o.valor, 0);
+      return (
+        <>
+          <p className="text-[11px] text-gray-400 mb-2">
+            {formatInt(ops.length)} operação(ões) &bull;{' '}
+            {formatInt(vendas.length)} venda(s) &bull; {formatBRL(total)}
+          </p>
+          <table className="w-full text-xs text-left border-collapse">
+            <thead>
+              <tr className="bg-[#000638]/5">
+                <th className={thCls}>Operação</th>
+                <th className={`${thCls} text-right`}>Vendas</th>
+                <th className={`${thCls} text-right`}>Valor</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ops.map((o) => (
+                <tr
+                  key={o.op}
+                  onClick={() =>
+                    pushView({
+                      tipo: 'vendas',
+                      titulo: o.nome || `Operação ${o.op}`,
+                      vendas: o.vendas,
+                    })
+                  }
+                  className="border-b last:border-0 hover:bg-gray-50 cursor-pointer"
+                >
+                  <td className="px-3 py-1.5 font-semibold">
+                    {o.nome || `Operação ${o.op}`}
+                    <span className="text-gray-400 font-normal ml-1">#{o.op}</span>
+                  </td>
+                  <td className="px-3 py-1.5 text-right">{formatInt(o.qtd)}</td>
+                  <td className="px-3 py-1.5 text-right whitespace-nowrap">
+                    {formatBRL(o.valor)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      );
+    };
+
     const carregando = (
       <div className="flex justify-center py-8 gap-2 text-gray-500 text-sm">
         <Spinner size={18} className="animate-spin" />
@@ -911,17 +1040,20 @@ const NewForecast = () => {
     if (c.expedicao) {
       if (!dSem) corpo = carregando;
       else {
-        const vendas = (dSem.expedicao || []).filter((v) => {
-          if (c.expedicao === 'novidades') return v.op === OP_NOVIDADES;
-          if (c.expedicao === 'bazar') return OPS_BAZAR.includes(v.op);
-          // showroom/fábricas = o que sobra da expedição
-          return v.op !== OP_NOVIDADES && !OPS_BAZAR.includes(v.op);
-        });
+        const vendas = (dSem.expedicao || []).filter((v) =>
+          c.expedicao === 'bazar'
+            ? OPS_BAZAR.includes(v.op)
+            : // showroom/fábricas = toda a expedição fora do bazar: novidades
+              // e fardamento entram aqui e se separam por operação
+              !OPS_BAZAR.includes(v.op),
+        );
         corpo =
           vendas.length === 0 ? (
             <div className="text-sm text-gray-400 py-6 text-center">Nenhuma venda.</div>
-          ) : (
+          ) : c.expedicao === 'bazar' ? (
             tabelaClientes(vendas)
+          ) : (
+            tabelaOperacoes(vendas)
           );
       }
     } else if (c.varejo) {
@@ -1139,6 +1271,15 @@ const NewForecast = () => {
         </div>
       </div>
 
+      {!jaBuscou && !autoLoading && (
+        <div className="bg-[#000638]/5 border border-[#000638]/15 text-[#000638] rounded-lg px-4 py-2.5 text-sm">
+          Escolha o período e clique em <strong>Buscar</strong> para trazer os
+          valores do Painel de Vendas. Os canais manuais e as metas já salvas
+          aparecem na tabela; os automáticos mostram o último valor conhecido
+          até a busca.
+        </div>
+      )}
+
       {autoErro && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-2.5 text-sm">
           Painel de Vendas indisponível: {autoErro} — exibindo últimos valores
@@ -1324,7 +1465,7 @@ const NewForecast = () => {
             </tr>
           </thead>
           <tbody>
-            {CANAIS_BASE.map((c, idx) => {
+            {CANAIS.map((c, idx) => {
               const { realizado, pct, falta } = calc(c);
               const linhaFoco = focoCanais.includes(c.canal);
               // zebra suave nas linhas sem foco

@@ -52,14 +52,14 @@ const agruparPorCliente = (vendas) => {
 // vendeu na 99 → card individual ATACADO; senão → entra no card VAREJO.
 // Pseudo-vendedores montados pelo backend a partir das NFs (régua TRAR008):
 //   -50   = EXPEDIÇÃO      (ops 7254, 7276, 7255, 7237, 7299, 7007, 887-889)
-//   -512  = RICARDO ELETRO (op 512)
+//   -512  = MAGAZINE JESUS (op 512, ex-Ricardo Eletro)
 //   -1000 = BLUECRED       (clientes com contrato × faturas de crediário)
 const GRUPOS_FIXOS = [
   { nome: 'FRANQUIA', codes: [40] },
   { nome: 'REVENDA', codes: [161, 241, 165] },
   { nome: 'MTM', codes: [259, 21, 26] },
   { nome: 'EXPEDIÇÃO', codes: [-50] },
-  { nome: 'RICARDO ELETRO', codes: [-512] },
+  { nome: 'MAGAZINE JESUS', codes: [-512] },
   { nome: 'BLUECRED', codes: [-1000] },
 ];
 
