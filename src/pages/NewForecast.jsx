@@ -65,8 +65,18 @@ const CANAIS_BASE = [
     meta: 165000,
     metaDividida: true,
     filhos: [
-      { canal: 'REVENDA KLEITON', rotulo: 'KLEITON', fonte: 'VEND_161', code: 161 },
-      { canal: 'REVENDA MICHEL', rotulo: 'MICHEL', fonte: 'VEND_165', code: 165 },
+      {
+        canal: 'REVENDA KLEITON',
+        rotulo: 'KLEITON',
+        fonte: 'VEND_161',
+        code: 161,
+      },
+      {
+        canal: 'REVENDA MICHEL',
+        rotulo: 'MICHEL',
+        fonte: 'VEND_165',
+        code: 165,
+      },
       // sem equivalente antigo por vendedor: ficam zerados até o painel novo
     ],
     // vendedor que está saindo (ver canaisDoPeriodo): entra como filho extra
@@ -86,18 +96,58 @@ const CANAIS_BASE = [
     metaSoma: true,
     filhos: [
       // fontesLegado: chave antiga do mesmo vendedor (pré-VEND_<cod>)
-      { canal: 'MTM RAFAEL', rotulo: 'MTM RAFAEL', fonte: 'VEND_21', fontesLegado: ['MTM_RAFAEL'], code: 21, meta: 100000 },
-      { canal: 'MTM DAVID', rotulo: 'MTM DAVID', fonte: 'VEND_26', fontesLegado: ['MTM_DAVID'], code: 26, meta: 65000 },
-      { canal: 'MTM ARTHUR', rotulo: 'MTM ARTHUR', fonte: 'VEND_259', fontesLegado: ['MTM_ARTHUR'], code: 259, meta: 90000 },
-      { canal: 'MTM YAGO', rotulo: 'MTM YAGO', fonte: 'VEND_241_MTM', fontesLegado: ['MTM_YAGO'], code: 241, meta: 0 },
+      {
+        canal: 'MTM RAFAEL',
+        rotulo: 'MTM RAFAEL',
+        fonte: 'VEND_21',
+        fontesLegado: ['MTM_RAFAEL'],
+        code: 21,
+        meta: 100000,
+      },
+      {
+        canal: 'MTM DAVID',
+        rotulo: 'MTM DAVID',
+        fonte: 'VEND_26',
+        fontesLegado: ['MTM_DAVID'],
+        code: 26,
+        meta: 65000,
+      },
+      {
+        canal: 'MTM ARTHUR',
+        rotulo: 'MTM ARTHUR',
+        fonte: 'VEND_259',
+        fontesLegado: ['MTM_ARTHUR'],
+        code: 259,
+        meta: 90000,
+      },
+      {
+        canal: 'MTM YAGO',
+        rotulo: 'MTM YAGO',
+        fonte: 'VEND_241_MTM',
+        fontesLegado: ['MTM_YAGO'],
+        code: 241,
+        meta: 0,
+      },
     ],
   },
   { canal: 'VAREJO', fonte: 'VAREJO', meta: 363400, varejo: true },
   // clientes com contrato BlueCred × faturas de crediário (pseudo-vendedor -1000)
-  { canal: 'BLUECRED', fonte: 'BLUECRED', meta: 25000, codes: [-1000], direto: true },
+  {
+    canal: 'BLUECRED',
+    fonte: 'BLUECRED',
+    meta: 25000,
+    codes: [-1000],
+    direto: true,
+  },
   // op 512 não gera NF: vem do contas a receber como pseudo-vendedor -512
   // (antigo RICARDO ELETRO — renomeado, mesma origem de dados)
-  { canal: 'MAGAZINE JESUS', fonte: 'RICARDO_ELETRO', meta: 12000, codes: [-512], direto: true },
+  {
+    canal: 'MAGAZINE JESUS',
+    fonte: 'RICARDO_ELETRO',
+    meta: 12000,
+    codes: [-512],
+    direto: true,
+  },
   // Cartões: contados em UNIDADES (qtd), fora dos totais em R$
   { canal: 'CARTÕES', fonte: null, meta: 300, qtd: true },
 ];
@@ -316,19 +366,25 @@ const formatInt = (v) => (Number(v) || 0).toLocaleString('pt-BR');
 const ehAuto = (c) => Boolean(c.fonte || c.fontes?.length);
 
 // Canais de cartão são medidos em unidades; o resto em R$
-const fmtValor = (v, qtd) =>
-  qtd ? `${formatInt(v)} und` : formatBRL(v);
+const fmtValor = (v, qtd) => (qtd ? `${formatInt(v)} und` : formatBRL(v));
 
 // Converte texto digitado ("1.234,56" ou "1234.56") em número.
 const parseNum = (str) => {
   if (str === '' || str == null) return 0;
-  let s = String(str).trim().replace(/\s|R\$/g, '');
+  let s = String(str)
+    .trim()
+    .replace(/\s|R\$/g, '');
   if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
   const n = parseFloat(s);
   return Number.isFinite(n) ? n : 0;
 };
 
-const emptyStore = () => ({ manual: {}, overrides: {}, metas: {}, semanas: null });
+const emptyStore = () => ({
+  manual: {},
+  overrides: {},
+  metas: {},
+  semanas: null,
+});
 
 const loadLocal = (key) => {
   try {
@@ -422,8 +478,7 @@ const MoneyInput = ({ value, onChange, strong, qtd }) => {
 const NewForecast = () => {
   const apiClient = useApiClient();
   const { user } = useAuth();
-  const ehOwner =
-    (user?.role || user?.user_metadata?.role) === 'owner';
+  const ehOwner = (user?.role || user?.user_metadata?.role) === 'owner';
   const [draftIni, setDraftIni] = useState(inicioMesAtual());
   const [draftFim, setDraftFim] = useState(fimMesAtual());
   const [periodo, setPeriodo] = useState({
@@ -443,7 +498,9 @@ const NewForecast = () => {
       .then((r) => {
         if (!vivo) return;
         const lista = (r?.data ?? r)?.canais || [];
-        setCanaisExtra(lista.map((c) => ({ nome: c.nome, qtd: Boolean(c.qtd) })));
+        setCanaisExtra(
+          lista.map((c) => ({ nome: c.nome, qtd: Boolean(c.qtd) })),
+        );
       })
       .catch(() => {
         /* tabela ainda não criada ou API fora: segue sem canais extras */
@@ -678,7 +735,9 @@ const NewForecast = () => {
   };
 
   const adicionarCanal = async () => {
-    const nome = String(novoCanal?.nome || '').trim().toUpperCase();
+    const nome = String(novoCanal?.nome || '')
+      .trim()
+      .toUpperCase();
     if (!nome) return;
     if (CANAIS.some((c) => c.canal === nome)) {
       window.alert('Já existe um canal com esse nome.');
@@ -719,7 +778,10 @@ const NewForecast = () => {
       return;
     setSalvando(true);
     try {
-      await buscarPainel(periodo, semanasDef, { usarCache: false, salvar: true });
+      await buscarPainel(periodo, semanasDef, {
+        usarCache: false,
+        salvar: true,
+      });
     } finally {
       setSalvando(false);
     }
@@ -855,7 +917,10 @@ const NewForecast = () => {
   };
 
   const calc = (c) => {
-    const realizado = SEMANAS.reduce((acc, k) => acc + parseNum(cellValue(c, k)), 0);
+    const realizado = SEMANAS.reduce(
+      (acc, k) => acc + parseNum(cellValue(c, k)),
+      0,
+    );
     const meta = parseNum(metaValue(c));
     const pct = meta > 0 ? (realizado / meta) * 100 : 0;
     const falta = Math.max(meta - realizado, 0);
@@ -1087,7 +1152,9 @@ const NewForecast = () => {
                 >
                   <td className="px-3 py-1.5">{cl.cliente_code}</td>
                   <td className="px-3 py-1.5">{cl.cliente_nome}</td>
-                  <td className="px-3 py-1.5 text-right">{formatInt(cl.qtd)}</td>
+                  <td className="px-3 py-1.5 text-right">
+                    {formatInt(cl.qtd)}
+                  </td>
                   <td className="px-3 py-1.5 text-right whitespace-nowrap">
                     {formatBRL(cl.valor)}
                   </td>
@@ -1118,7 +1185,9 @@ const NewForecast = () => {
           <tbody>
             {vendas.map((v, i) => (
               <tr key={i} className="border-b last:border-0 hover:bg-gray-50">
-                <td className="px-3 py-1.5 whitespace-nowrap">{ddmm(v.data)}</td>
+                <td className="px-3 py-1.5 whitespace-nowrap">
+                  {ddmm(v.data)}
+                </td>
                 <td className="px-3 py-1.5">{v.fatura || '—'}</td>
                 <td className="px-3 py-1.5">{nomeFilial(v.branch_code)}</td>
                 <td className="px-3 py-1.5 text-right whitespace-nowrap">
@@ -1180,7 +1249,9 @@ const NewForecast = () => {
                 >
                   <td className="px-3 py-1.5 font-semibold">
                     {o.nome || `Operação ${o.op}`}
-                    <span className="text-gray-400 font-normal ml-1">#{o.op}</span>
+                    <span className="text-gray-400 font-normal ml-1">
+                      #{o.op}
+                    </span>
                   </td>
                   <td className="px-3 py-1.5 text-right">{formatInt(o.qtd)}</td>
                   <td className="px-3 py-1.5 text-right whitespace-nowrap">
@@ -1213,7 +1284,9 @@ const NewForecast = () => {
       // vendas embutidas (atacado) ou sob demanda (vendedor de loja)
       if (view.vendas) {
         return view.vendas.length === 0 ? (
-          <div className="text-sm text-gray-400 py-6 text-center">Nenhuma venda.</div>
+          <div className="text-sm text-gray-400 py-6 text-center">
+            Nenhuma venda.
+          </div>
         ) : (
           tabelaClientes(view.vendas)
         );
@@ -1229,9 +1302,13 @@ const NewForecast = () => {
         return <div className="text-sm text-rose-600 py-4">{entry.erro}</div>;
       let vendas = entry.vendas;
       if (view.filial != null)
-        vendas = vendas.filter((v) => Number(v.branch_code) === Number(view.filial));
+        vendas = vendas.filter(
+          (v) => Number(v.branch_code) === Number(view.filial),
+        );
       return vendas.length === 0 ? (
-        <div className="text-sm text-gray-400 py-6 text-center">Nenhuma venda.</div>
+        <div className="text-sm text-gray-400 py-6 text-center">
+          Nenhuma venda.
+        </div>
       ) : (
         tabelaClientes(vendas)
       );
@@ -1279,61 +1356,66 @@ const NewForecast = () => {
     const valorPainel = autoValue(c, kSem);
     const ovr = store.overrides?.[c.canal]?.[kSem];
 
-    const blocoAjuste = !w || c.semAjuste ? null : (
-      <div className="mb-4 border border-[#000638]/10 rounded-lg p-3 bg-[#f8f9fb]">
-        <div className="flex flex-wrap items-end gap-3">
-          <div>
-            <p className="text-[11px] text-gray-500 mb-0.5">
-              {ehAuto(c) ? 'Valor do Painel de Vendas' : 'Valor da célula'}
-            </p>
-            <p className="text-sm font-bold text-[#000638]">
-              {ehAuto(c)
-                ? fmtValor(valorPainel, c.qtd)
-                : fmtValor(parseNum(cellValue(c, kSem)), c.qtd)}
-            </p>
+    const blocoAjuste =
+      !w || c.semAjuste ? null : (
+        <div className="mb-4 border border-[#000638]/10 rounded-lg p-3 bg-[#f8f9fb]">
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <p className="text-[11px] text-gray-500 mb-0.5">
+                {ehAuto(c) ? 'Valor do Painel de Vendas' : 'Valor da célula'}
+              </p>
+              <p className="text-sm font-bold text-[#000638]">
+                {ehAuto(c)
+                  ? fmtValor(valorPainel, c.qtd)
+                  : fmtValor(parseNum(cellValue(c, kSem)), c.qtd)}
+              </p>
+            </div>
+            <div className="flex-1 min-w-[160px]">
+              <p className="text-[11px] text-gray-500 mb-0.5">
+                {ehAuto(c) ? 'Ajustar valor (override)' : 'Digitar valor'}
+              </p>
+              <input
+                type="text"
+                inputMode="decimal"
+                defaultValue={
+                  ehAuto(c)
+                    ? ovr !== undefined && ovr !== null && ovr !== ''
+                      ? ovr
+                      : ''
+                    : store.manual?.[c.canal]?.[kSem] || ''
+                }
+                placeholder={
+                  ehAuto(c)
+                    ? fmtValor(valorPainel, c.qtd)
+                    : c.qtd
+                      ? '0 und'
+                      : 'R$ 0,00'
+                }
+                onBlur={(e) => {
+                  const raw = e.target.value.trim();
+                  if (ehAuto(c) && raw === '') clearOverrideCell(c, kSem);
+                  else setCell(c, kSem, parseNum(raw));
+                }}
+                className="w-full border border-[#000638]/30 rounded-md px-3 py-1.5 text-sm text-right bg-white focus:outline-none focus:ring-2 focus:ring-[#000638]/30 focus:border-[#000638]"
+              />
+            </div>
+            {isOverridden(c, kSem) && (
+              <button
+                onClick={() => clearOverrideCell(c, kSem)}
+                className="text-xs border border-amber-300 text-amber-700 rounded-md px-3 py-1.5 hover:bg-amber-50"
+              >
+                Voltar ao painel
+              </button>
+            )}
           </div>
-          <div className="flex-1 min-w-[160px]">
-            <p className="text-[11px] text-gray-500 mb-0.5">
-              {ehAuto(c) ? 'Ajustar valor (override)' : 'Digitar valor'}
+          {ehAuto(c) && (
+            <p className="text-[10px] text-gray-400 mt-1.5">
+              O ajuste vale só para esta célula; deixe vazio para usar o valor
+              do painel.
             </p>
-            <input
-              type="text"
-              inputMode="decimal"
-              defaultValue={
-                ehAuto(c)
-                  ? ovr !== undefined && ovr !== null && ovr !== ''
-                    ? ovr
-                    : ''
-                  : store.manual?.[c.canal]?.[kSem] || ''
-              }
-              placeholder={
-                ehAuto(c) ? fmtValor(valorPainel, c.qtd) : c.qtd ? '0 und' : 'R$ 0,00'
-              }
-              onBlur={(e) => {
-                const raw = e.target.value.trim();
-                if (ehAuto(c) && raw === '') clearOverrideCell(c, kSem);
-                else setCell(c, kSem, parseNum(raw));
-              }}
-              className="w-full border border-[#000638]/30 rounded-md px-3 py-1.5 text-sm text-right bg-white focus:outline-none focus:ring-2 focus:ring-[#000638]/30 focus:border-[#000638]"
-            />
-          </div>
-          {isOverridden(c, kSem) && (
-            <button
-              onClick={() => clearOverrideCell(c, kSem)}
-              className="text-xs border border-amber-300 text-amber-700 rounded-md px-3 py-1.5 hover:bg-amber-50"
-            >
-              Voltar ao painel
-            </button>
           )}
         </div>
-        {ehAuto(c) && (
-          <p className="text-[10px] text-gray-400 mt-1.5">
-            O ajuste vale só para esta célula; deixe vazio para usar o valor do
-            painel.
-          </p>
-        )}
-      </div>
-    );
+      );
 
     let corpo = null;
     if (c.expedicao) {
@@ -1348,7 +1430,9 @@ const NewForecast = () => {
         );
         corpo =
           vendas.length === 0 ? (
-            <div className="text-sm text-gray-400 py-6 text-center">Nenhuma venda.</div>
+            <div className="text-sm text-gray-400 py-6 text-center">
+              Nenhuma venda.
+            </div>
           ) : c.expedicao === 'bazar' ? (
             tabelaClientes(vendas)
           ) : (
@@ -1398,9 +1482,13 @@ const NewForecast = () => {
                       #{l.branch_code}
                     </span>
                   </td>
-                  <td className="px-3 py-1.5 text-right">{(l.sellers || []).length}</td>
+                  <td className="px-3 py-1.5 text-right">
+                    {(l.sellers || []).length}
+                  </td>
                   <td className="px-3 py-1.5 text-right">{l.qtd}</td>
-                  <td className="px-3 py-1.5 text-right">{formatBRL(l.valor)}</td>
+                  <td className="px-3 py-1.5 text-right">
+                    {formatBRL(l.valor)}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1462,7 +1550,9 @@ const NewForecast = () => {
                     <td className="px-3 py-1.5">{v.seller_code}</td>
                     <td className="px-3 py-1.5">{v.seller_name || '—'}</td>
                     <td className="px-3 py-1.5 text-right">{v.qtd}</td>
-                    <td className="px-3 py-1.5 text-right">{formatBRL(v.valor)}</td>
+                    <td className="px-3 py-1.5 text-right">
+                      {formatBRL(v.valor)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1502,7 +1592,7 @@ const NewForecast = () => {
 
       {/* Filtros */}
       <div className="bg-white p-3 rounded-lg shadow-md border border-[#000638]/10">
-        <div className="flex flex-wrap items-end gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="w-[150px]">
             <label className="block text-xs font-semibold mb-1 text-[#000638]">
               Data Início
@@ -1527,7 +1617,9 @@ const NewForecast = () => {
           </div>
           <button
             onClick={aplicarPeriodo}
-            disabled={autoLoading || !draftIni || !draftFim || draftIni > draftFim}
+            disabled={
+              autoLoading || !draftIni || !draftFim || draftIni > draftFim
+            }
             className="h-8 w-[130px] flex gap-1 items-center justify-center bg-[#000638] text-white px-3 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-xs font-bold tracking-wide uppercase"
           >
             {autoLoading ? (
@@ -1541,7 +1633,9 @@ const NewForecast = () => {
             )}
           </button>
           <button
-            onClick={() => buscarPainel(periodo, undefined, { usarCache: false })}
+            onClick={() =>
+              buscarPainel(periodo, undefined, { usarCache: false })
+            }
             disabled={autoLoading}
             title="Rebuscar no TOTVS, ignorando o que está salvo no banco (traz o detalhamento)"
             className={`${btnSec} w-[120px] justify-center`}
@@ -1597,6 +1691,58 @@ const NewForecast = () => {
               )}
             </button>
           )}
+          {/* Canal criado na tela: entra como linha manual e fica salvo no banco */}
+          <div className="flex justify-end">
+            {novoCanal ? (
+              <div className="flex items-center gap-2 bg-white rounded-lg shadow-md border border-[#000638]/10 p-2">
+                <input
+                  autoFocus
+                  value={novoCanal.nome}
+                  onChange={(e) =>
+                    setNovoCanal((v) => ({ ...v, nome: e.target.value }))
+                  }
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') adicionarCanal();
+                    if (e.key === 'Escape') setNovoCanal(null);
+                  }}
+                  placeholder="Nome do canal"
+                  maxLength={40}
+                  className="h-8 w-52 border border-[#000638]/30 rounded-lg px-2 text-xs uppercase focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
+                />
+                <select
+                  value={novoCanal.qtd ? 'und' : 'brl'}
+                  onChange={(e) =>
+                    setNovoCanal((v) => ({
+                      ...v,
+                      qtd: e.target.value === 'und',
+                    }))
+                  }
+                  className="h-8 border border-[#000638]/30 rounded-lg px-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
+                >
+                  <option value="brl">Valor (R$)</option>
+                  <option value="und">Unidades (und)</option>
+                </select>
+                <button
+                  onClick={adicionarCanal}
+                  disabled={!String(novoCanal.nome || '').trim()}
+                  className="h-8 px-4 flex items-center gap-1.5 bg-[#000638] text-white rounded-lg text-xs font-bold uppercase tracking-wide hover:bg-[#fe0000] disabled:opacity-50 transition-colors"
+                >
+                  <Plus size={14} /> Adicionar
+                </button>
+                <button onClick={() => setNovoCanal(null)} className={btnSec}>
+                  Cancelar
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setNovoCanal({ nome: '', qtd: false })}
+                title="Criar um canal manual (fica salvo no banco, em todos os períodos)"
+                className={btnSec}
+              >
+                <Plus size={14} /> Adicionar canal
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1609,14 +1755,17 @@ const NewForecast = () => {
         </div>
       )}
 
-      {cacheInfo && !autoLoading && (cacheInfo.doBanco > 0 || cacheInfo.salvos > 0) && (
-        <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-lg px-4 py-2 text-xs">
-          <Database size={14} className="inline mb-0.5 mr-1" />
-          {cacheInfo.doBanco > 0 &&
-            `${cacheInfo.doBanco} de ${cacheInfo.blocos} blocos vieram do banco. `}
-          {cacheInfo.salvos > 0 && `${cacheInfo.salvos} bloco(s) salvos no banco.`}
-        </div>
-      )}
+      {cacheInfo &&
+        !autoLoading &&
+        (cacheInfo.doBanco > 0 || cacheInfo.salvos > 0) && (
+          <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-lg px-4 py-2 text-xs">
+            <Database size={14} className="inline mb-0.5 mr-1" />
+            {cacheInfo.doBanco > 0 &&
+              `${cacheInfo.doBanco} de ${cacheInfo.blocos} blocos vieram do banco. `}
+            {cacheInfo.salvos > 0 &&
+              `${cacheInfo.salvos} bloco(s) salvos no banco.`}
+          </div>
+        )}
 
       {autoErro && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-4 py-2.5 text-sm">
@@ -1633,20 +1782,27 @@ const NewForecast = () => {
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
             {semanasDef.map((w, idx) => (
-              <div key={w.s} className="border border-[#000638]/10 rounded-lg p-2.5">
+              <div
+                key={w.s}
+                className="border border-[#000638]/10 rounded-lg p-2.5"
+              >
                 <p className="text-xs font-semibold text-[#000638] mb-1.5">
                   Semana {w.s}
                 </p>
                 <input
                   type="date"
                   value={w.datemin}
-                  onChange={(e) => setSemanaData(idx, 'datemin', e.target.value)}
+                  onChange={(e) =>
+                    setSemanaData(idx, 'datemin', e.target.value)
+                  }
                   className="w-full border border-[#000638]/20 rounded-md px-2 py-1 text-xs mb-1.5 focus:outline-none focus:ring-1 focus:ring-[#000638]/40"
                 />
                 <input
                   type="date"
                   value={w.datemax}
-                  onChange={(e) => setSemanaData(idx, 'datemax', e.target.value)}
+                  onChange={(e) =>
+                    setSemanaData(idx, 'datemax', e.target.value)
+                  }
                   className="w-full border border-[#000638]/20 rounded-md px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#000638]/40"
                 />
               </div>
@@ -1707,7 +1863,13 @@ const NewForecast = () => {
         <ResumoCard
           icon={Percent}
           color={pctColor(totalPct)}
-          bg={totalPct >= 100 ? 'bg-emerald-50' : totalPct >= 60 ? 'bg-amber-50' : 'bg-rose-50'}
+          bg={
+            totalPct >= 100
+              ? 'bg-emerald-50'
+              : totalPct >= 60
+                ? 'bg-amber-50'
+                : 'bg-rose-50'
+          }
           label="% Concluído"
           value={`${totalPct.toFixed(1)}%`}
         />
@@ -1755,57 +1917,6 @@ const NewForecast = () => {
           </button>
         </div>
       )}
-
-      {/* Canal criado na tela: entra como linha manual e fica salvo no banco */}
-      <div className="flex justify-end">
-        {novoCanal ? (
-          <div className="flex items-center gap-2 bg-white rounded-lg shadow-md border border-[#000638]/10 p-2">
-            <input
-              autoFocus
-              value={novoCanal.nome}
-              onChange={(e) =>
-                setNovoCanal((v) => ({ ...v, nome: e.target.value }))
-              }
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') adicionarCanal();
-                if (e.key === 'Escape') setNovoCanal(null);
-              }}
-              placeholder="Nome do canal"
-              maxLength={40}
-              className="h-8 w-52 border border-[#000638]/30 rounded-lg px-2 text-xs uppercase focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
-            />
-            <select
-              value={novoCanal.qtd ? 'und' : 'brl'}
-              onChange={(e) =>
-                setNovoCanal((v) => ({ ...v, qtd: e.target.value === 'und' }))
-              }
-              className="h-8 border border-[#000638]/30 rounded-lg px-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
-            >
-              <option value="brl">Valor (R$)</option>
-              <option value="und">Unidades (und)</option>
-            </select>
-            <button
-              onClick={adicionarCanal}
-              disabled={!String(novoCanal.nome || '').trim()}
-              className="h-8 px-4 flex items-center gap-1.5 bg-[#000638] text-white rounded-lg text-xs font-bold uppercase tracking-wide hover:bg-[#fe0000] disabled:opacity-50 transition-colors"
-            >
-              <Plus size={14} /> Adicionar
-            </button>
-            <button onClick={() => setNovoCanal(null)} className={btnSec}>
-              Cancelar
-            </button>
-          </div>
-        ) : (
-          <button
-            onClick={() => setNovoCanal({ nome: '', qtd: false })}
-            title="Criar um canal manual (fica salvo no banco, em todos os períodos)"
-            className={btnSec}
-          >
-            <Plus size={14} /> Adicionar canal
-          </button>
-        )}
-      </div>
-
       {/* Tabela */}
       <div className="bg-white rounded-lg shadow-md border border-[#000638]/10 overflow-x-auto">
         <table className="w-full text-sm border-collapse min-w-[980px]">
@@ -1862,218 +1973,224 @@ const NewForecast = () => {
               const zebra = idx % 2 === 1 ? 'bg-[#000638]/[0.02]' : '';
               return (
                 <React.Fragment key={c.canal}>
-                <tr
-                  className={`border-t transition-colors ${
-                    linhaFoco
-                      ? 'border-violet-200 bg-violet-50'
-                      : `border-gray-100 ${zebra} hover:bg-gray-50/60`
-                  }`}
-                >
-                  <td
-                    className={`px-4 py-1.5 font-medium sticky left-0 z-10 whitespace-nowrap transition-colors ${
+                  <tr
+                    className={`border-t transition-colors ${
                       linhaFoco
-                        ? 'bg-violet-100 text-violet-900'
-                        : `${idx % 2 === 1 ? 'bg-[#fbfbfc]' : 'bg-white'} text-[#000638]`
+                        ? 'border-violet-200 bg-violet-50'
+                        : `border-gray-100 ${zebra} hover:bg-gray-50/60`
                     }`}
                   >
-                    <button
-                      onClick={() =>
-                        temFilhos ? toggleAberto(c.canal) : toggleCanal(c.canal)
-                      }
-                      title={
-                        temFilhos
-                          ? aberto
-                            ? 'Fechar os vendedores'
-                            : 'Abrir por vendedor'
-                          : 'Clique para destacar esta linha'
-                      }
-                      className={`inline-flex items-center gap-1.5 rounded px-1 -mx-1 transition ${
-                        linhaFoco ? 'font-bold' : 'hover:text-violet-700'
+                    <td
+                      className={`px-4 py-1.5 font-medium sticky left-0 z-10 whitespace-nowrap transition-colors ${
+                        linhaFoco
+                          ? 'bg-violet-100 text-violet-900'
+                          : `${idx % 2 === 1 ? 'bg-[#fbfbfc]' : 'bg-white'} text-[#000638]`
                       }`}
                     >
-                      {c.canal}
-                      {ehAuto(c) && (
-                        <span
-                          title="Alimentado pelo Painel de Vendas"
-                          className="inline-block w-1.5 h-1.5 rounded-full bg-violet-400"
-                        />
-                      )}
-                      {temFilhos &&
-                        (aberto ? (
-                          <CaretDown size={12} className="text-gray-500" />
-                        ) : (
-                          <CaretRight size={12} className="text-gray-500" />
-                        ))}
-                    </button>
-                    {c.extra && (
                       <button
-                        onClick={() => removerCanal(c.canal)}
-                        title="Remover este canal"
-                        className="ml-1.5 align-middle text-gray-300 hover:text-rose-600 transition-colors"
-                      >
-                        <Trash size={12} />
-                      </button>
-                    )}
-                  </td>
-                  {semanasDef.map((w) => {
-                    const k = `s${w.s}`;
-                    const ovr = isOverridden(c, k);
-                    const colFoco = focoSemanas.includes(w.s);
-                    const cruz = linhaFoco && colFoco;
-                    return (
-                      <td
-                        key={k}
-                        className={`px-1 py-1 transition-colors ${
-                          colFoco && !linhaFoco ? 'bg-violet-50' : ''
+                        onClick={() =>
+                          temFilhos
+                            ? toggleAberto(c.canal)
+                            : toggleCanal(c.canal)
+                        }
+                        title={
+                          temFilhos
+                            ? aberto
+                              ? 'Fechar os vendedores'
+                              : 'Abrir por vendedor'
+                            : 'Clique para destacar esta linha'
+                        }
+                        className={`inline-flex items-center gap-1.5 rounded px-1 -mx-1 transition ${
+                          linhaFoco ? 'font-bold' : 'hover:text-violet-700'
                         }`}
                       >
+                        {c.canal}
+                        {ehAuto(c) && (
+                          <span
+                            title="Alimentado pelo Painel de Vendas"
+                            className="inline-block w-1.5 h-1.5 rounded-full bg-violet-400"
+                          />
+                        )}
+                        {temFilhos &&
+                          (aberto ? (
+                            <CaretDown size={12} className="text-gray-500" />
+                          ) : (
+                            <CaretRight size={12} className="text-gray-500" />
+                          ))}
+                      </button>
+                      {c.extra && (
                         <button
-                          onClick={() => abrirCelula(c, w)}
-                          title="Clique para detalhar / ajustar"
-                          className={`w-full text-right px-2 py-1.5 rounded-md text-sm transition hover:bg-[#000638]/5 hover:ring-1 hover:ring-[#000638]/20 ${
-                            cruz
-                              ? 'bg-violet-600 text-white font-bold ring-2 ring-violet-700 hover:bg-violet-700'
-                              : ovr
-                                ? 'bg-amber-50 text-amber-800 font-semibold'
-                                : 'text-gray-700'
+                          onClick={() => removerCanal(c.canal)}
+                          title="Remover este canal"
+                          className="ml-1.5 align-middle text-gray-300 hover:text-rose-600 transition-colors"
+                        >
+                          <Trash size={12} />
+                        </button>
+                      )}
+                    </td>
+                    {semanasDef.map((w) => {
+                      const k = `s${w.s}`;
+                      const ovr = isOverridden(c, k);
+                      const colFoco = focoSemanas.includes(w.s);
+                      const cruz = linhaFoco && colFoco;
+                      return (
+                        <td
+                          key={k}
+                          className={`px-1 py-1 transition-colors ${
+                            colFoco && !linhaFoco ? 'bg-violet-50' : ''
                           }`}
                         >
-                          {fmtValor(parseNum(cellValue(c, k)), c.qtd)}
-                        </button>
-                      </td>
-                    );
-                  })}
-                  <td
-                    className={`px-3 py-1.5 text-right font-semibold text-[#000638] whitespace-nowrap ${
-                      linhaFoco ? 'bg-violet-100' : 'bg-[#000638]/5'
-                    }`}
-                  >
-                    {ehAuto(c) ? (
-                      <button
-                        onClick={() => abrirRealizado(c)}
-                        title="Ver o consolidado do período"
-                        className="w-full text-right rounded-md px-1 py-0.5 hover:bg-[#000638]/10 hover:ring-1 hover:ring-[#000638]/20 transition"
-                      >
-                        {fmtValor(realizado, c.qtd)}
-                      </button>
-                    ) : (
-                      fmtValor(realizado, c.qtd)
-                    )}
-                  </td>
-                  <td className="px-1 py-1">
-                    {c.metaSoma ? (
-                      <p
-                        title="Soma das metas dos vendedores — ajuste na linha de cada um"
-                        className="text-right px-2 py-1.5 text-sm font-semibold text-[#000638]"
-                      >
-                        {fmtValor(parseNum(metaValue(c)), c.qtd)}
-                      </p>
-                    ) : (
-                      <MoneyInput
-                        value={metaValue(c)}
-                        onChange={(v) => setMeta(c, v)}
-                        strong
-                        qtd={c.qtd}
-                      />
-                    )}
-                  </td>
-                  <td className="px-3 py-1.5">
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${barColor(pct)}`}
-                          style={{ width: `${Math.min(pct, 100)}%` }}
-                        />
-                      </div>
-                      <span
-                        className={`text-xs font-semibold w-12 text-right ${pctColor(pct)}`}
-                      >
-                        {pct.toFixed(0)}%
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-3 py-1.5 text-right font-medium text-gray-600 whitespace-nowrap">
-                    {falta > 0 ? fmtValor(falta, c.qtd) : '—'}
-                  </td>
-                </tr>
-
-                {/* Vendedores do grupo — valores sempre do Painel de Vendas */}
-                {aberto &&
-                  c.filhos.map((f) => {
-                    const cf = calcFilho(c, f);
-                    return (
-                      <tr
-                        key={f.canal}
-                        className="border-t border-gray-100 bg-[#000638]/[0.015] text-[13px]"
-                      >
-                        <td className="pl-9 pr-4 py-1 sticky left-0 z-10 bg-[#fbfbfc] whitespace-nowrap text-gray-700">
-                          <span className="text-gray-300 mr-1.5">└</span>
-                          {f.rotulo || f.canal}
-                          <span className="text-gray-400 ml-1">#{f.code}</span>
-                        </td>
-                        {semanasDef.map((w) => (
-                          <td key={w.s} className="px-1 py-0.5">
-                            <button
-                              onClick={() => abrirCelula(canalDoFilho(f), w)}
-                              title="Ver as vendas desta semana"
-                              className="w-full text-right px-2 py-1 rounded-md text-gray-600 hover:bg-[#000638]/5 hover:ring-1 hover:ring-[#000638]/20 transition"
-                            >
-                              {formatBRL(valorDoPainel(f, `s${w.s}`))}
-                            </button>
-                          </td>
-                        ))}
-                        <td className="px-3 py-1 text-right font-semibold text-[#000638] bg-[#000638]/5 whitespace-nowrap">
                           <button
-                            onClick={() => abrirRealizado(canalDoFilho(f))}
-                            title="Ver o consolidado do período"
-                            className="w-full text-right rounded-md px-1 py-0.5 hover:bg-[#000638]/10 hover:ring-1 hover:ring-[#000638]/20 transition"
+                            onClick={() => abrirCelula(c, w)}
+                            title="Clique para detalhar / ajustar"
+                            className={`w-full text-right px-2 py-1.5 rounded-md text-sm transition hover:bg-[#000638]/5 hover:ring-1 hover:ring-[#000638]/20 ${
+                              cruz
+                                ? 'bg-violet-600 text-white font-bold ring-2 ring-violet-700 hover:bg-violet-700'
+                                : ovr
+                                  ? 'bg-amber-50 text-amber-800 font-semibold'
+                                  : 'text-gray-700'
+                            }`}
                           >
-                            {formatBRL(cf.realizado)}
+                            {fmtValor(parseNum(cellValue(c, k)), c.qtd)}
                           </button>
                         </td>
-                        <td className="px-1 py-0.5">
-                          {c.metaDividida ? (
-                            <p
-                              title="Meta do canal dividida igualmente entre os vendedores"
-                              className="text-right px-2 py-1 text-gray-500"
-                            >
-                              {formatBRL(cf.meta)}
-                            </p>
-                          ) : (
-                            <MoneyInput
-                              value={metaValue(f)}
-                              onChange={(v) => setMeta(f, v)}
-                            />
-                          )}
-                        </td>
-                        <td className="px-3 py-1">
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 h-1.5 rounded-full bg-gray-100 overflow-hidden">
-                              <div
-                                className={`h-full rounded-full ${barColor(cf.pct)}`}
-                                style={{ width: `${Math.min(cf.pct, 100)}%` }}
-                              />
-                            </div>
-                            <span
-                              className={`text-[11px] font-semibold w-12 text-right ${pctColor(cf.pct)}`}
-                            >
-                              {cf.pct.toFixed(0)}%
+                      );
+                    })}
+                    <td
+                      className={`px-3 py-1.5 text-right font-semibold text-[#000638] whitespace-nowrap ${
+                        linhaFoco ? 'bg-violet-100' : 'bg-[#000638]/5'
+                      }`}
+                    >
+                      {ehAuto(c) ? (
+                        <button
+                          onClick={() => abrirRealizado(c)}
+                          title="Ver o consolidado do período"
+                          className="w-full text-right rounded-md px-1 py-0.5 hover:bg-[#000638]/10 hover:ring-1 hover:ring-[#000638]/20 transition"
+                        >
+                          {fmtValor(realizado, c.qtd)}
+                        </button>
+                      ) : (
+                        fmtValor(realizado, c.qtd)
+                      )}
+                    </td>
+                    <td className="px-1 py-1">
+                      {c.metaSoma ? (
+                        <p
+                          title="Soma das metas dos vendedores — ajuste na linha de cada um"
+                          className="text-right px-2 py-1.5 text-sm font-semibold text-[#000638]"
+                        >
+                          {fmtValor(parseNum(metaValue(c)), c.qtd)}
+                        </p>
+                      ) : (
+                        <MoneyInput
+                          value={metaValue(c)}
+                          onChange={(v) => setMeta(c, v)}
+                          strong
+                          qtd={c.qtd}
+                        />
+                      )}
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${barColor(pct)}`}
+                            style={{ width: `${Math.min(pct, 100)}%` }}
+                          />
+                        </div>
+                        <span
+                          className={`text-xs font-semibold w-12 text-right ${pctColor(pct)}`}
+                        >
+                          {pct.toFixed(0)}%
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-medium text-gray-600 whitespace-nowrap">
+                      {falta > 0 ? fmtValor(falta, c.qtd) : '—'}
+                    </td>
+                  </tr>
+
+                  {/* Vendedores do grupo — valores sempre do Painel de Vendas */}
+                  {aberto &&
+                    c.filhos.map((f) => {
+                      const cf = calcFilho(c, f);
+                      return (
+                        <tr
+                          key={f.canal}
+                          className="border-t border-gray-100 bg-[#000638]/[0.015] text-[13px]"
+                        >
+                          <td className="pl-9 pr-4 py-1 sticky left-0 z-10 bg-[#fbfbfc] whitespace-nowrap text-gray-700">
+                            <span className="text-gray-300 mr-1.5">└</span>
+                            {f.rotulo || f.canal}
+                            <span className="text-gray-400 ml-1">
+                              #{f.code}
                             </span>
-                          </div>
-                        </td>
-                        <td className="px-3 py-1 text-right text-gray-500 whitespace-nowrap">
-                          {cf.falta > 0 ? formatBRL(cf.falta) : '—'}
-                        </td>
-                      </tr>
-                    );
-                  })}
+                          </td>
+                          {semanasDef.map((w) => (
+                            <td key={w.s} className="px-1 py-0.5">
+                              <button
+                                onClick={() => abrirCelula(canalDoFilho(f), w)}
+                                title="Ver as vendas desta semana"
+                                className="w-full text-right px-2 py-1 rounded-md text-gray-600 hover:bg-[#000638]/5 hover:ring-1 hover:ring-[#000638]/20 transition"
+                              >
+                                {formatBRL(valorDoPainel(f, `s${w.s}`))}
+                              </button>
+                            </td>
+                          ))}
+                          <td className="px-3 py-1 text-right font-semibold text-[#000638] bg-[#000638]/5 whitespace-nowrap">
+                            <button
+                              onClick={() => abrirRealizado(canalDoFilho(f))}
+                              title="Ver o consolidado do período"
+                              className="w-full text-right rounded-md px-1 py-0.5 hover:bg-[#000638]/10 hover:ring-1 hover:ring-[#000638]/20 transition"
+                            >
+                              {formatBRL(cf.realizado)}
+                            </button>
+                          </td>
+                          <td className="px-1 py-0.5">
+                            {c.metaDividida ? (
+                              <p
+                                title="Meta do canal dividida igualmente entre os vendedores"
+                                className="text-right px-2 py-1 text-gray-500"
+                              >
+                                {formatBRL(cf.meta)}
+                              </p>
+                            ) : (
+                              <MoneyInput
+                                value={metaValue(f)}
+                                onChange={(v) => setMeta(f, v)}
+                              />
+                            )}
+                          </td>
+                          <td className="px-3 py-1">
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full ${barColor(cf.pct)}`}
+                                  style={{ width: `${Math.min(cf.pct, 100)}%` }}
+                                />
+                              </div>
+                              <span
+                                className={`text-[11px] font-semibold w-12 text-right ${pctColor(cf.pct)}`}
+                              >
+                                {cf.pct.toFixed(0)}%
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-1 text-right text-gray-500 whitespace-nowrap">
+                            {cf.falta > 0 ? formatBRL(cf.falta) : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </React.Fragment>
               );
             })}
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-[#000638]/20 bg-[#000638]/5 font-semibold text-[#000638]">
-              <td className="px-4 py-3 sticky left-0 bg-[#f5f5f8] z-10">TOTAL</td>
+              <td className="px-4 py-3 sticky left-0 bg-[#f5f5f8] z-10">
+                TOTAL
+              </td>
               {semanasDef.map((w) => {
                 const colFoco = focoSemanas.includes(w.s);
                 return (
@@ -2094,7 +2211,9 @@ const NewForecast = () => {
               <td className={`px-3 py-3 text-center ${pctColor(totalPct)}`}>
                 {totalPct.toFixed(1)}%
               </td>
-              <td className="px-3 py-3 text-right">{formatBRL(totals.falta)}</td>
+              <td className="px-3 py-3 text-right">
+                {formatBRL(totals.falta)}
+              </td>
             </tr>
           </tfoot>
         </table>
@@ -2103,9 +2222,9 @@ const NewForecast = () => {
       <p className="text-xs text-gray-400">
         <span className="inline-block w-1.5 h-1.5 rounded-full bg-violet-400 mr-1" />
         canal alimentado pelo Painel de Vendas. Clique numa célula para ver o
-        detalhamento e ajustar o valor; células âmbar têm ajuste manual.
-        REVENDA e MULTIMARCAS abrem por vendedor na seta ao lado do nome — ali
-        os valores vêm sempre do painel, sem ajuste manual. Semanas, metas e
+        detalhamento e ajustar o valor; células âmbar têm ajuste manual. REVENDA
+        e MULTIMARCAS abrem por vendedor na seta ao lado do nome — ali os
+        valores vêm sempre do painel, sem ajuste manual. Semanas, metas e
         ajustes ficam salvos no servidor.
       </p>
 
