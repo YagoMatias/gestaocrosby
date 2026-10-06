@@ -359,6 +359,9 @@ const MinhasSolicitacoes = () => {
   const [busca, setBusca] = useState('');
   const [somenteMinhas, setSomenteMinhas] = useState(false);
   const [filtroSetor, setFiltroSetor] = useState('TODOS');
+  // Data da solicitação (data_solicitacao), AAAA-MM-DD
+  const [filtroDataInicio, setFiltroDataInicio] = useState('');
+  const [filtroDataFim, setFiltroDataFim] = useState('');
   // seleção de linhas (ids) para somar valores / exportar
   const [selecionados, setSelecionados] = useState(() => new Set());
   const [modalDetalhe, setModalDetalhe] = useState(null);
@@ -595,6 +598,13 @@ const MinhasSolicitacoes = () => {
       if (somenteMinhas && !ehMinha(sol)) return false;
       if (filtroSetor !== 'TODOS' && (sol.setor || '') !== filtroSetor)
         return false;
+      if (filtroDataInicio || filtroDataFim) {
+        const dia = sol.data_solicitacao
+          ? new Date(sol.data_solicitacao).toISOString().slice(0, 10)
+          : '';
+        if (filtroDataInicio && dia < filtroDataInicio) return false;
+        if (filtroDataFim && dia > filtroDataFim) return false;
+      }
       if (q) {
         const alvo = [
           sol.supplier_name,
@@ -612,7 +622,33 @@ const MinhasSolicitacoes = () => {
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [linhas, busca, filtroSetor, somenteMinhas, user?.id, user?.email]);
+  }, [
+    linhas,
+    busca,
+    filtroSetor,
+    filtroDataInicio,
+    filtroDataFim,
+    somenteMinhas,
+    user?.id,
+    user?.email,
+  ]);
+
+  const temFiltro =
+    busca.trim() !== '' ||
+    filtroSetor !== 'TODOS' ||
+    filtroDataInicio !== '' ||
+    filtroDataFim !== '' ||
+    somenteMinhas ||
+    filtroEtapa !== 'TODOS';
+
+  const limparFiltros = () => {
+    setBusca('');
+    setFiltroSetor('TODOS');
+    setFiltroDataInicio('');
+    setFiltroDataFim('');
+    setSomenteMinhas(false);
+    setFiltroEtapa('TODOS');
+  };
 
   const linhasFiltradas = useMemo(
     () =>
@@ -959,31 +995,8 @@ const MinhasSolicitacoes = () => {
         iconColor="text-indigo-600"
       />
 
-      {/* Cards de valores */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-3">
-        {[
-          { label: 'Valor total', value: valores.total, cls: 'text-[#000638]', bg: 'bg-white' },
-          { label: 'Pago', value: valores.pago, cls: 'text-green-700', bg: 'bg-green-50' },
-          { label: 'Em aberto', value: valores.aberto, cls: 'text-amber-700', bg: 'bg-amber-50' },
-          { label: 'Vencido', value: valores.vencido, cls: 'text-red-700', bg: 'bg-red-50' },
-          { label: 'A vencer', value: valores.aVencer, cls: 'text-blue-700', bg: 'bg-blue-50' },
-        ].map((c) => (
-          <div
-            key={c.label}
-            className={`p-3 rounded-xl border shadow-sm ${c.bg}`}
-          >
-            <p className="text-[10px] font-bold uppercase text-gray-500">
-              {c.label}
-            </p>
-            <p className={`text-lg font-extrabold mt-0.5 ${c.cls}`}>
-              {formatarMoeda(c.value)}
-            </p>
-          </div>
-        ))}
-      </div>
-
-      {/* Cards de resumo por etapa */}
-      <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2 mb-4">
+      {/* ① Cards de etapa — clicáveis, filtram a tabela */}
+      <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2 mb-3">
         {[
           { key: 'TODOS', label: 'Total', value: totais.total, text: 'text-gray-800' },
           ...ETAPAS.map((e) => ({
@@ -1022,25 +1035,70 @@ const MinhasSolicitacoes = () => {
         ))}
       </div>
 
-      {/* Barra de ações */}
-      <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={carregar}
-            className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-[#000638] bg-white border rounded-lg hover:bg-gray-50 transition-colors"
-          >
-            <ArrowClockwise size={14} weight="bold" />
-            Atualizar
-          </button>
-          <RouterLink
-            to="/formulario-solicitacoes"
-            className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-white bg-[#000638] hover:bg-[#fe0000] rounded-lg transition-colors"
-          >
-            <Plus size={14} weight="bold" />
-            Nova solicitação
-          </RouterLink>
+      {/* ② Filtros + ações */}
+      <div className="bg-white border rounded-xl p-3 mb-3">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-col min-w-[220px] flex-1">
+            <label className="text-[10px] font-bold text-gray-500 uppercase mb-1">
+              Buscar
+            </label>
+            <div className="relative">
+              <MagnifyingGlass
+                size={14}
+                className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400"
+              />
+              <input
+                type="text"
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                placeholder="Fornecedor, descrição, solicitante, duplicata..."
+                className="w-full pl-7 pr-2 py-1.5 text-xs border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#000638]"
+              />
+            </div>
+          </div>
+          <div className="flex flex-col">
+            <label className="text-[10px] font-bold text-gray-500 uppercase mb-1">
+              Setor
+            </label>
+            <select
+              value={filtroSetor}
+              onChange={(e) => setFiltroSetor(e.target.value)}
+              className="border rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#000638] min-w-[150px]"
+            >
+              <option value="TODOS">Todos</option>
+              {setoresDisponiveis.map((st) => (
+                <option key={st} value={st}>
+                  {st}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col">
+            <label className="text-[10px] font-bold text-gray-500 uppercase mb-1">
+              Solicitado de
+            </label>
+            <input
+              type="date"
+              value={filtroDataInicio}
+              max={filtroDataFim || undefined}
+              onChange={(e) => setFiltroDataInicio(e.target.value)}
+              className="border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#000638]"
+            />
+          </div>
+          <div className="flex flex-col">
+            <label className="text-[10px] font-bold text-gray-500 uppercase mb-1">
+              Até
+            </label>
+            <input
+              type="date"
+              value={filtroDataFim}
+              min={filtroDataInicio || undefined}
+              onChange={(e) => setFiltroDataFim(e.target.value)}
+              className="border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#000638]"
+            />
+          </div>
           {isFinanceiro && (
-            <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 cursor-pointer select-none">
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 cursor-pointer select-none pb-2">
               <input
                 type="checkbox"
                 checked={somenteMinhas}
@@ -1050,64 +1108,89 @@ const MinhasSolicitacoes = () => {
               Somente as minhas
             </label>
           )}
-          <div className="relative">
-            <MagnifyingGlass
-              size={14}
-              className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400"
-            />
-            <input
-              type="text"
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-              placeholder="Fornecedor, descrição, solicitante..."
-              className="pl-7 pr-2 py-1.5 text-xs border rounded-lg w-64 focus:outline-none focus:border-[#000638]"
-            />
-          </div>
-          <select
-            value={filtroSetor}
-            onChange={(e) => setFiltroSetor(e.target.value)}
-            className="px-2 py-1.5 text-xs border rounded-lg bg-white focus:outline-none focus:border-[#000638]"
-            title="Filtrar por setor"
-          >
-            <option value="TODOS">Todos os setores</option>
-            {setoresDisponiveis.map((st) => (
-              <option key={st} value={st}>
-                {st}
-              </option>
-            ))}
-          </select>
-          <button
-            onClick={exportarExcel}
-            disabled={!linhasFiltradas.length}
-            className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-green-800 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors disabled:opacity-40"
-            title={
-              selecao.qtd
-                ? `Exportar ${selecao.qtd} selecionada(s)`
-                : 'Exportar tudo que está na tabela'
-            }
-          >
-            <FileXls size={14} weight="bold" />
-            Excel{selecao.qtd ? ` (${selecao.qtd})` : ''}
-          </button>
-        </div>
-        <div className="flex items-center gap-3 text-xs text-gray-400">
-          {totvsLoading && (
-            <span className="inline-flex items-center gap-1 text-[#000638]">
-              <Spinner size={12} className="animate-spin" />
-              Consultando TOTVS...
-            </span>
-          )}
-          {totvsErro && (
-            <span
-              className="inline-flex items-center gap-1 text-red-600"
-              title={totvsErro}
+          {temFiltro && (
+            <button
+              onClick={limparFiltros}
+              className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
             >
-              <WarningCircle size={12} weight="bold" />
-              TOTVS indisponível
-            </span>
+              <X size={12} weight="bold" />
+              Limpar filtros
+            </button>
           )}
-          <span>{linhasFiltradas.length} solicitação(ões)</span>
         </div>
+
+        <div className="flex items-center justify-between flex-wrap gap-2 mt-3 pt-3 border-t">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={carregar}
+              className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-[#000638] bg-white border rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <ArrowClockwise size={14} weight="bold" />
+              Atualizar
+            </button>
+            <RouterLink
+              to="/formulario-solicitacoes"
+              className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-white bg-[#000638] hover:bg-[#fe0000] rounded-lg transition-colors"
+            >
+              <Plus size={14} weight="bold" />
+              Nova solicitação
+            </RouterLink>
+            <button
+              onClick={exportarExcel}
+              disabled={!linhasFiltradas.length}
+              className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-green-800 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors disabled:opacity-40"
+              title={
+                selecao.qtd
+                  ? `Exportar ${selecao.qtd} selecionada(s)`
+                  : 'Exportar tudo que está na tabela'
+              }
+            >
+              <FileXls size={14} weight="bold" />
+              Excel{selecao.qtd ? ` (${selecao.qtd})` : ''}
+            </button>
+          </div>
+          <div className="flex items-center gap-3 text-xs text-gray-400">
+            {totvsLoading && (
+              <span className="inline-flex items-center gap-1 text-[#000638]">
+                <Spinner size={12} className="animate-spin" />
+                Consultando TOTVS...
+              </span>
+            )}
+            {totvsErro && (
+              <span
+                className="inline-flex items-center gap-1 text-red-600"
+                title={totvsErro}
+              >
+                <WarningCircle size={12} weight="bold" />
+                TOTVS indisponível
+              </span>
+            )}
+            <span>{linhasFiltradas.length} solicitação(ões)</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ③ Cards de valores (respeitam os filtros acima, exceto o de etapa) */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-3">
+        {[
+          { label: 'Valor total', value: valores.total, cls: 'text-[#000638]', bg: 'bg-white' },
+          { label: 'Pago', value: valores.pago, cls: 'text-green-700', bg: 'bg-green-50' },
+          { label: 'Em aberto', value: valores.aberto, cls: 'text-amber-700', bg: 'bg-amber-50' },
+          { label: 'Vencido', value: valores.vencido, cls: 'text-red-700', bg: 'bg-red-50' },
+          { label: 'A vencer', value: valores.aVencer, cls: 'text-blue-700', bg: 'bg-blue-50' },
+        ].map((c) => (
+          <div
+            key={c.label}
+            className={`p-3 rounded-xl border shadow-sm ${c.bg}`}
+          >
+            <p className="text-[10px] font-bold uppercase text-gray-500">
+              {c.label}
+            </p>
+            <p className={`text-lg font-extrabold mt-0.5 ${c.cls}`}>
+              {formatarMoeda(c.value)}
+            </p>
+          </div>
+        ))}
       </div>
 
       {/* Soma das selecionadas */}
