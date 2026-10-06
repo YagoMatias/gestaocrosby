@@ -205,6 +205,20 @@ const pertenceASolicitacao = (sol, row) => {
 };
 
 /**
+ * Situação financeira da linha para os cards de valores / filtro:
+ * 'pago' | 'vencido' | 'aVencer' | null (rejeitada/cancelada/erro).
+ * "Em aberto" = vencido + aVencer.
+ */
+const situacaoValor = (sol, info, hoje) => {
+  if (info.pago) return 'pago';
+  if (info.idx < 0) return null;
+  const venc = sol.dt_vencimento
+    ? String(sol.dt_vencimento).slice(0, 10)
+    : null;
+  return venc && venc < hoje ? 'vencido' : 'aVencer';
+};
+
+/**
  * Deriva a etapa atual e as informações de pagamento de uma solicitação.
  * - `pg`      linha de pagamentos_liberacao vinculada por pagamento_liberacao_id
  * - `filaDup` linhas de pagamentos_liberacao cravadas por duplicata/fornecedor
@@ -362,6 +376,8 @@ const MinhasSolicitacoes = () => {
   // Data da solicitação (data_solicitacao), AAAA-MM-DD
   const [filtroDataInicio, setFiltroDataInicio] = useState('');
   const [filtroDataFim, setFiltroDataFim] = useState('');
+  // Card de valores clicado: 'TODOS' | 'pago' | 'aberto' | 'vencido' | 'aVencer'
+  const [filtroValor, setFiltroValor] = useState('TODOS');
   // seleção de linhas (ids) para somar valores / exportar
   const [selecionados, setSelecionados] = useState(() => new Set());
   const [modalDetalhe, setModalDetalhe] = useState(null);
@@ -639,7 +655,8 @@ const MinhasSolicitacoes = () => {
     filtroDataInicio !== '' ||
     filtroDataFim !== '' ||
     somenteMinhas ||
-    filtroEtapa !== 'TODOS';
+    filtroEtapa !== 'TODOS' ||
+    filtroValor !== 'TODOS';
 
   const limparFiltros = () => {
     setBusca('');
@@ -648,15 +665,23 @@ const MinhasSolicitacoes = () => {
     setFiltroDataFim('');
     setSomenteMinhas(false);
     setFiltroEtapa('TODOS');
+    setFiltroValor('TODOS');
   };
 
-  const linhasFiltradas = useMemo(
-    () =>
-      filtroEtapa === 'TODOS'
-        ? linhasBase
-        : linhasBase.filter((l) => l.info.etapa.key === filtroEtapa),
-    [linhasBase, filtroEtapa],
-  );
+  const linhasFiltradas = useMemo(() => {
+    const hoje = new Date().toISOString().slice(0, 10);
+    return linhasBase.filter((l) => {
+      if (filtroEtapa !== 'TODOS' && l.info.etapa.key !== filtroEtapa)
+        return false;
+      if (filtroValor !== 'TODOS') {
+        const sit = situacaoValor(l.sol, l.info, hoje);
+        if (filtroValor === 'aberto') {
+          if (sit !== 'vencido' && sit !== 'aVencer') return false;
+        } else if (sit !== filtroValor) return false;
+      }
+      return true;
+    });
+  }, [linhasBase, filtroEtapa, filtroValor]);
 
   const setoresDisponiveis = useMemo(
     () =>
@@ -672,12 +697,11 @@ const MinhasSolicitacoes = () => {
     linhasBase.forEach(({ sol, info }) => {
       const val = Number(sol.valor_total || 0);
       v.total += val;
-      if (info.pago) {
-        v.pago += val;
-      } else if (info.idx >= 0) {
+      const sit = situacaoValor(sol, info, hoje);
+      if (sit === 'pago') v.pago += val;
+      else if (sit) {
         v.aberto += val;
-        const venc = sol.dt_vencimento ? String(sol.dt_vencimento).slice(0, 10) : null;
-        if (venc && venc < hoje) v.vencido += val;
+        if (sit === 'vencido') v.vencido += val;
         else v.aVencer += val;
       }
     });
@@ -1037,7 +1061,7 @@ const MinhasSolicitacoes = () => {
 
       {/* ② Filtros + ações */}
       <div className="bg-white border rounded-xl p-3 mb-3">
-        <div className="flex flex-wrap items-end gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="flex flex-col min-w-[220px] flex-1">
             <label className="text-[10px] font-bold text-gray-500 uppercase mb-1">
               Buscar
@@ -1052,7 +1076,7 @@ const MinhasSolicitacoes = () => {
                 value={busca}
                 onChange={(e) => setBusca(e.target.value)}
                 placeholder="Fornecedor, descrição, solicitante, duplicata..."
-                className="w-full pl-7 pr-2 py-1.5 text-xs border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#000638]"
+                className="w-full h-9 pl-7 pr-2 text-xs border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#000638]"
               />
             </div>
           </div>
@@ -1063,7 +1087,7 @@ const MinhasSolicitacoes = () => {
             <select
               value={filtroSetor}
               onChange={(e) => setFiltroSetor(e.target.value)}
-              className="border rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#000638] min-w-[150px]"
+              className="h-9 border rounded-lg px-2 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#000638] min-w-[150px]"
             >
               <option value="TODOS">Todos</option>
               {setoresDisponiveis.map((st) => (
@@ -1082,7 +1106,7 @@ const MinhasSolicitacoes = () => {
               value={filtroDataInicio}
               max={filtroDataFim || undefined}
               onChange={(e) => setFiltroDataInicio(e.target.value)}
-              className="border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#000638]"
+              className="h-9 border rounded-lg px-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#000638]"
             />
           </div>
           <div className="flex flex-col">
@@ -1094,11 +1118,11 @@ const MinhasSolicitacoes = () => {
               value={filtroDataFim}
               min={filtroDataInicio || undefined}
               onChange={(e) => setFiltroDataFim(e.target.value)}
-              className="border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#000638]"
+              className="h-9 border rounded-lg px-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#000638]"
             />
           </div>
           {isFinanceiro && (
-            <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-600 cursor-pointer select-none pb-2">
+            <label className="flex items-center gap-1.5 h-9 self-end whitespace-nowrap text-xs font-semibold text-gray-600 cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={somenteMinhas}
@@ -1111,7 +1135,7 @@ const MinhasSolicitacoes = () => {
           {temFiltro && (
             <button
               onClick={limparFiltros}
-              className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+              className="flex items-center gap-1 h-9 self-end px-3 text-xs font-bold text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
             >
               <X size={12} weight="bold" />
               Limpar filtros
@@ -1170,18 +1194,29 @@ const MinhasSolicitacoes = () => {
         </div>
       </div>
 
-      {/* ③ Cards de valores (respeitam os filtros acima, exceto o de etapa) */}
+      {/* ③ Cards de valores — clicáveis, filtram a tabela (os valores
+          respeitam os filtros acima, exceto o de etapa e o próprio card) */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-3">
         {[
-          { label: 'Valor total', value: valores.total, cls: 'text-[#000638]', bg: 'bg-white' },
-          { label: 'Pago', value: valores.pago, cls: 'text-green-700', bg: 'bg-green-50' },
-          { label: 'Em aberto', value: valores.aberto, cls: 'text-amber-700', bg: 'bg-amber-50' },
-          { label: 'Vencido', value: valores.vencido, cls: 'text-red-700', bg: 'bg-red-50' },
-          { label: 'A vencer', value: valores.aVencer, cls: 'text-blue-700', bg: 'bg-blue-50' },
+          { key: 'TODOS', label: 'Valor total', value: valores.total, cls: 'text-[#000638]', bg: 'bg-white' },
+          { key: 'pago', label: 'Pago', value: valores.pago, cls: 'text-green-700', bg: 'bg-green-50' },
+          { key: 'aberto', label: 'Em aberto', value: valores.aberto, cls: 'text-amber-700', bg: 'bg-amber-50' },
+          { key: 'vencido', label: 'Vencido', value: valores.vencido, cls: 'text-red-700', bg: 'bg-red-50' },
+          { key: 'aVencer', label: 'A vencer', value: valores.aVencer, cls: 'text-blue-700', bg: 'bg-blue-50' },
         ].map((c) => (
-          <div
-            key={c.label}
-            className={`p-3 rounded-xl border shadow-sm ${c.bg}`}
+          <button
+            key={c.key}
+            onClick={() =>
+              setFiltroValor((atual) => (atual === c.key ? 'TODOS' : c.key))
+            }
+            className={`p-3 rounded-xl border shadow-sm text-left transition-all hover:shadow-md ${c.bg} ${
+              filtroValor === c.key ? 'ring-2 ring-[#000638]' : ''
+            }`}
+            title={
+              c.key === 'TODOS'
+                ? 'Mostrar tudo'
+                : `Mostrar só ${c.label.toLowerCase()} na tabela`
+            }
           >
             <p className="text-[10px] font-bold uppercase text-gray-500">
               {c.label}
@@ -1189,7 +1224,7 @@ const MinhasSolicitacoes = () => {
             <p className={`text-lg font-extrabold mt-0.5 ${c.cls}`}>
               {formatarMoeda(c.value)}
             </p>
-          </div>
+          </button>
         ))}
       </div>
 
