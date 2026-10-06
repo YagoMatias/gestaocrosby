@@ -6,6 +6,7 @@ import { supabaseAdmin } from '../lib/supabase';
 import { API_BASE_URL } from '../config/constants';
 import PageTitle from '../components/ui/PageTitle';
 import Notification from '../components/ui/Notification';
+import * as XLSX from 'xlsx';
 import {
   ClipboardText,
   Clock,
@@ -24,6 +25,8 @@ import {
   Plus,
   Link as LinkIcon,
   ArrowCounterClockwise,
+  FileXls,
+  Calculator,
 } from '@phosphor-icons/react';
 
 // =====================================================================
@@ -355,6 +358,9 @@ const MinhasSolicitacoes = () => {
   const [filtroEtapa, setFiltroEtapa] = useState('TODOS');
   const [busca, setBusca] = useState('');
   const [somenteMinhas, setSomenteMinhas] = useState(false);
+  const [filtroSetor, setFiltroSetor] = useState('TODOS');
+  // seleção de linhas (ids) para somar valores / exportar
+  const [selecionados, setSelecionados] = useState(() => new Set());
   const [modalDetalhe, setModalDetalhe] = useState(null);
 
   const notify = (type, message) => {
@@ -581,11 +587,13 @@ const MinhasSolicitacoes = () => {
       String(sol.solicitante_email || '').toLowerCase() ===
         String(user.email).toLowerCase());
 
-  const linhasFiltradas = useMemo(() => {
+  // Base = filtros de pessoa/setor/busca. Os cards (etapas e valores) são
+  // calculados sobre a base; o filtro de etapa só recorta a tabela.
+  const linhasBase = useMemo(() => {
     const q = busca.trim().toLowerCase();
-    return linhas.filter(({ sol, info }) => {
+    return linhas.filter(({ sol }) => {
       if (somenteMinhas && !ehMinha(sol)) return false;
-      if (filtroEtapa !== 'TODOS' && info.etapa.key !== filtroEtapa)
+      if (filtroSetor !== 'TODOS' && (sol.setor || '') !== filtroSetor)
         return false;
       if (q) {
         const alvo = [
@@ -604,10 +612,132 @@ const MinhasSolicitacoes = () => {
       return true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [linhas, busca, filtroEtapa, somenteMinhas, user?.id, user?.email]);
+  }, [linhas, busca, filtroSetor, somenteMinhas, user?.id, user?.email]);
+
+  const linhasFiltradas = useMemo(
+    () =>
+      filtroEtapa === 'TODOS'
+        ? linhasBase
+        : linhasBase.filter((l) => l.info.etapa.key === filtroEtapa),
+    [linhasBase, filtroEtapa],
+  );
+
+  const setoresDisponiveis = useMemo(
+    () =>
+      [...new Set(solicitacoes.map((s) => s.setor).filter(Boolean))].sort(),
+    [solicitacoes],
+  );
+
+  // Valores: total / pago / em aberto (vencido × a vencer). Rejeitadas e
+  // canceladas ficam fora de "em aberto".
+  const valores = useMemo(() => {
+    const hoje = new Date().toISOString().slice(0, 10);
+    const v = { total: 0, pago: 0, aberto: 0, vencido: 0, aVencer: 0 };
+    linhasBase.forEach(({ sol, info }) => {
+      const val = Number(sol.valor_total || 0);
+      v.total += val;
+      if (info.pago) {
+        v.pago += val;
+      } else if (info.idx >= 0) {
+        v.aberto += val;
+        const venc = sol.dt_vencimento ? String(sol.dt_vencimento).slice(0, 10) : null;
+        if (venc && venc < hoje) v.vencido += val;
+        else v.aVencer += val;
+      }
+    });
+    return v;
+  }, [linhasBase]);
+
+  // Seleção: só conta o que está visível na tabela
+  const selecao = useMemo(() => {
+    const sel = linhasFiltradas.filter((l) => selecionados.has(l.sol.id));
+    return {
+      qtd: sel.length,
+      soma: sel.reduce((a, l) => a + Number(l.sol.valor_total || 0), 0),
+      todas: linhasFiltradas.length > 0 && sel.length === linhasFiltradas.length,
+    };
+  }, [linhasFiltradas, selecionados]);
+
+  const toggleSelecionado = (id) =>
+    setSelecionados((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const toggleTodos = () =>
+    setSelecionados((prev) => {
+      if (selecao.todas) {
+        const next = new Set(prev);
+        linhasFiltradas.forEach((l) => next.delete(l.sol.id));
+        return next;
+      }
+      const next = new Set(prev);
+      linhasFiltradas.forEach((l) => next.add(l.sol.id));
+      return next;
+    });
+
+  // Excel: exporta as selecionadas (se houver) ou tudo que está na tabela
+  const exportarExcel = () => {
+    const alvo = selecao.qtd
+      ? linhasFiltradas.filter((l) => selecionados.has(l.sol.id))
+      : linhasFiltradas;
+    if (!alvo.length) {
+      notify('error', 'Nada para exportar.');
+      return;
+    }
+    const nfTexto = (sol) =>
+      sol.tem_nota_fiscal === true
+        ? sol.nf_escriturado_em
+          ? 'Escriturada'
+          : sol.nf_chamado_dryland_id || sol.status === 'nota_fiscal'
+            ? 'Pendente escriturar'
+            : 'Sim'
+        : sol.tem_nota_fiscal === false
+          ? 'Não'
+          : '';
+    const rows = alvo.map(({ sol, info }) => ({
+      Etapa: info.etapa.label,
+      Tipo: TIPO_LABEL[sol.tipo_solicitacao] || sol.tipo_solicitacao || '',
+      Solicitante: sol.solicitante || '',
+      Setor: sol.setor || '',
+      Empresa: sol.nm_empresa ? `${sol.cd_empresa} - ${sol.nm_empresa}` : '',
+      Fornecedor: sol.supplier_name || '',
+      'CNPJ/CPF': sol.supplier_cpf_cnpj || '',
+      Descrição: sol.descricao || '',
+      Valor: Number(sol.valor_total || 0),
+      Vencimento: formatarData(sol.dt_vencimento),
+      Emissão: formatarData(sol.dt_emissao),
+      'Forma Pgto.': FORMA_LABEL(sol.forma_pagamento),
+      'Nota Fiscal': nfTexto(sol),
+      Duplicata: sol.duplicate_code || '',
+      Pagamento: info.pago ? 'PAGO' : info.idx < 0 ? '' : 'Em aberto',
+      'Pago em': info.pago ? formatarData(info.pagoEm) : '',
+      'Origem Pgto.': info.origemPago || '',
+      'Solicitado em': formatarDataHora(sol.data_solicitacao),
+      'Aprovado gestor': formatarDataHora(sol.aprovado_gestor_em),
+      'Chamado Dryland': sol.nf_chamado_dryland_numero
+        ? `#${sol.nf_chamado_dryland_numero}`
+        : '',
+    }));
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [
+      { wch: 22 }, { wch: 11 }, { wch: 22 }, { wch: 14 }, { wch: 24 },
+      { wch: 28 }, { wch: 16 }, { wch: 40 }, { wch: 12 }, { wch: 12 },
+      { wch: 12 }, { wch: 14 }, { wch: 16 }, { wch: 12 }, { wch: 11 },
+      { wch: 12 }, { wch: 20 }, { wch: 17 }, { wch: 17 }, { wch: 12 },
+    ];
+    XLSX.utils.book_append_sheet(wb, ws, 'Solicitações');
+    XLSX.writeFile(
+      wb,
+      `solicitacoes-${new Date().toISOString().slice(0, 10)}.xlsx`,
+    );
+  };
 
   const totais = useMemo(() => {
-    const base = somenteMinhas ? linhas.filter((l) => ehMinha(l.sol)) : linhas;
+    const base = linhasBase;
     const t = { total: base.length };
     ETAPAS.forEach((e) => {
       t[e.key] = base.filter((l) => l.info.etapa.key === e.key).length;
@@ -619,8 +749,7 @@ const MinhasSolicitacoes = () => {
       t[k] = base.filter((l) => l.info.etapa.key === k).length;
     });
     return t;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [linhas, somenteMinhas, user?.id, user?.email]);
+  }, [linhasBase]);
 
   // ----- ações do financeiro -----
   const marcarPago = async ({ sol, pg, filaDup = [] }) => {
@@ -830,6 +959,29 @@ const MinhasSolicitacoes = () => {
         iconColor="text-indigo-600"
       />
 
+      {/* Cards de valores */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-3">
+        {[
+          { label: 'Valor total', value: valores.total, cls: 'text-[#000638]', bg: 'bg-white' },
+          { label: 'Pago', value: valores.pago, cls: 'text-green-700', bg: 'bg-green-50' },
+          { label: 'Em aberto', value: valores.aberto, cls: 'text-amber-700', bg: 'bg-amber-50' },
+          { label: 'Vencido', value: valores.vencido, cls: 'text-red-700', bg: 'bg-red-50' },
+          { label: 'A vencer', value: valores.aVencer, cls: 'text-blue-700', bg: 'bg-blue-50' },
+        ].map((c) => (
+          <div
+            key={c.label}
+            className={`p-3 rounded-xl border shadow-sm ${c.bg}`}
+          >
+            <p className="text-[10px] font-bold uppercase text-gray-500">
+              {c.label}
+            </p>
+            <p className={`text-lg font-extrabold mt-0.5 ${c.cls}`}>
+              {formatarMoeda(c.value)}
+            </p>
+          </div>
+        ))}
+      </div>
+
       {/* Cards de resumo por etapa */}
       <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2 mb-4">
         {[
@@ -911,6 +1063,32 @@ const MinhasSolicitacoes = () => {
               className="pl-7 pr-2 py-1.5 text-xs border rounded-lg w-64 focus:outline-none focus:border-[#000638]"
             />
           </div>
+          <select
+            value={filtroSetor}
+            onChange={(e) => setFiltroSetor(e.target.value)}
+            className="px-2 py-1.5 text-xs border rounded-lg bg-white focus:outline-none focus:border-[#000638]"
+            title="Filtrar por setor"
+          >
+            <option value="TODOS">Todos os setores</option>
+            {setoresDisponiveis.map((st) => (
+              <option key={st} value={st}>
+                {st}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={exportarExcel}
+            disabled={!linhasFiltradas.length}
+            className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-green-800 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 transition-colors disabled:opacity-40"
+            title={
+              selecao.qtd
+                ? `Exportar ${selecao.qtd} selecionada(s)`
+                : 'Exportar tudo que está na tabela'
+            }
+          >
+            <FileXls size={14} weight="bold" />
+            Excel{selecao.qtd ? ` (${selecao.qtd})` : ''}
+          </button>
         </div>
         <div className="flex items-center gap-3 text-xs text-gray-400">
           {totvsLoading && (
@@ -931,6 +1109,25 @@ const MinhasSolicitacoes = () => {
           <span>{linhasFiltradas.length} solicitação(ões)</span>
         </div>
       </div>
+
+      {/* Soma das selecionadas */}
+      {selecao.qtd > 0 && (
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-3 px-3 py-2 rounded-lg bg-[#000638] text-white text-xs">
+          <span className="inline-flex items-center gap-1.5 font-semibold">
+            <Calculator size={14} weight="bold" />
+            {selecao.qtd} selecionada(s) — soma:{' '}
+            <span className="text-base font-extrabold">
+              {formatarMoeda(selecao.soma)}
+            </span>
+          </span>
+          <button
+            onClick={() => setSelecionados(new Set())}
+            className="px-2 py-1 rounded bg-white/15 hover:bg-white/25 font-bold"
+          >
+            Limpar seleção
+          </button>
+        </div>
+      )}
 
       {/* Tabela */}
       {loading ? (
@@ -953,6 +1150,15 @@ const MinhasSolicitacoes = () => {
           <table className="min-w-full text-xs">
             <thead className="bg-[#000638] text-white sticky top-0">
               <tr>
+                <th className="px-3 py-2.5 text-center w-8">
+                  <input
+                    type="checkbox"
+                    checked={selecao.todas}
+                    onChange={toggleTodos}
+                    className="w-3.5 h-3.5 cursor-pointer accent-white"
+                    title="Selecionar todas as visíveis"
+                  />
+                </th>
                 <th className="px-3 py-2.5 text-left font-semibold">Etapa</th>
                 <th className="px-3 py-2.5 text-left font-semibold">Andamento</th>
                 <th className="px-3 py-2.5 text-left font-semibold">Tipo</th>
@@ -982,8 +1188,18 @@ const MinhasSolicitacoes = () => {
               {linhasFiltradas.map(({ sol, pg, filaDup, info }) => (
                 <tr
                   key={sol.id}
-                  className="border-b hover:bg-gray-50 transition-colors"
+                  className={`border-b hover:bg-gray-50 transition-colors ${
+                    selecionados.has(sol.id) ? 'bg-blue-50' : ''
+                  }`}
                 >
+                  <td className="px-3 py-2 text-center">
+                    <input
+                      type="checkbox"
+                      checked={selecionados.has(sol.id)}
+                      onChange={() => toggleSelecionado(sol.id)}
+                      className="w-3.5 h-3.5 cursor-pointer accent-[#000638]"
+                    />
+                  </td>
                   <td className="px-3 py-2">
                     <EtapaBadge etapa={info.etapa} />
                   </td>
