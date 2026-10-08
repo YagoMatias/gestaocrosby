@@ -209,6 +209,16 @@ const AVAILABLE_PAGES = [
     name: 'Solicitação de Baixa',
     category: 'Financeiro — Contas a Receber',
   },
+  {
+    path: '/remessa-boletos',
+    name: 'Remessa Boletos — Envio de Remessa',
+    category: 'Financeiro — Contas a Receber',
+  },
+  {
+    path: '/retorno-boleto',
+    name: 'Remessa Boletos — Retorno Boleto',
+    category: 'Financeiro — Contas a Receber',
+  },
 
   // ─── Financeiro (demais) ────────────────────────────────────
   {

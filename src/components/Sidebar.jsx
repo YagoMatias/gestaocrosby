@@ -307,6 +307,26 @@ const financeiro = [
         roles: ['owner', 'admin', 'manager', 'user'],
       },
       {
+        name: 'Remessa Boletos',
+        href: '#',
+        icon: Barcode,
+        color: 'text-green-600',
+        children: [
+          {
+            name: 'Envio de Remessa',
+            href: '/remessa-boletos',
+            icon: Barcode,
+            color: 'text-green-600',
+          },
+          {
+            name: 'Retorno Boleto',
+            href: '/retorno-boleto',
+            icon: Receipt,
+            color: 'text-green-600',
+          },
+        ],
+      },
+      {
         name: 'Inadimplência',
         href: '#',
         icon: Coins,

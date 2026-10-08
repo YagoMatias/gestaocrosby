@@ -29,6 +29,8 @@ const PAGE_COMPONENTS = {
   '/call-center': lazy(() => import('../../pages/CallCenter')),
   '/batida-carteira': lazy(() => import('../../pages/BatidaCarteira')),
   '/solicitacao-baixa': lazy(() => import('../../pages/SolicitacaoBaixa')),
+  '/remessa-boletos': lazy(() => import('../../pages/RemessaBoletos')),
+  '/retorno-boleto': lazy(() => import('../../pages/RetornoBoleto')),
 
   // ---- Financeiro › demais ----
   '/conciliacao-stone': lazy(() => import('../../pages/ConciliacaoStone')),

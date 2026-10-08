@@ -112,6 +112,16 @@ const TABBED_PAGES = {
     group: 'Contas a Receber',
     dot: 'bg-green-500',
   },
+  '/remessa-boletos': {
+    label: 'Envio de Remessa',
+    group: 'Contas a Receber',
+    dot: 'bg-green-500',
+  },
+  '/retorno-boleto': {
+    label: 'Retorno Boleto',
+    group: 'Contas a Receber',
+    dot: 'bg-green-500',
+  },
 
   // ---- Financeiro › demais ----
   '/conciliacao-stone': {
