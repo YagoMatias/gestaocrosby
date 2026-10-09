@@ -436,7 +436,9 @@ export default function RemessaBoletos() {
     );
   };
 
-  const gerarRemessa = async (lista = paraEnviar) => {
+  const gerarRemessa = async (selecao) => {
+    // sem lista explícita (botão principal) → vai o que está marcado
+    const lista = Array.isArray(selecao) ? selecao : paraEnviar;
     if (lista.length === 0) return;
     const valorLista = lista.reduce((t, f) => t + Number(f.vl_fatura || 0), 0);
     if (
@@ -693,7 +695,7 @@ export default function RemessaBoletos() {
                 <FileXls size={14} weight="bold" /> Baixar Excel
               </button>
               <button
-                onClick={gerarRemessa}
+                onClick={() => gerarRemessa()}
                 disabled={gerando || loading || tabelaAusente || paraEnviar.length === 0}
                 title={`Emite boleto na Pagar.me para as faturas dos portadores ${portadoresRemessa.join(', ')}`}
                 className="flex items-center gap-1.5 bg-green-700 text-white text-xs font-semibold rounded-lg px-3 py-2 hover:bg-green-800 transition-colors disabled:opacity-50"
