@@ -18,6 +18,7 @@ import {
   FloppyDisk,
   PaperPlaneTilt,
   FileXls,
+  ArrowCounterClockwise,
 } from '@phosphor-icons/react';
 import { TotvsURL } from '../config/constants';
 import PageTitle from '../components/ui/PageTitle';
@@ -265,6 +266,8 @@ export default function RemessaBoletos() {
   const [dataFim, setDataFim] = useState(isoMais(30));
   const [busca, setBusca] = useState('');
   const [filtroPortador, setFiltroPortador] = useState('todos');
+  // todos | enviado (boleto Pagar.me vivo) | pendente (última tentativa falhou) | nao_enviado
+  const [filtroEnvio, setFiltroEnvio] = useState('todos');
   const [selecionadas, setSelecionadas] = useState(() => new Set());
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
@@ -335,6 +338,9 @@ export default function RemessaBoletos() {
   const visiveis = useMemo(() => {
     const q = busca.trim().toLowerCase();
     return (faturas || []).filter((f) => {
+      if (filtroEnvio === 'enviado' && !f.pagarme) return false;
+      if (filtroEnvio === 'pendente' && !(f.ultimo_erro && !f.pagarme)) return false;
+      if (filtroEnvio === 'nao_enviado' && (f.pagarme || f.ultimo_erro)) return false;
       if (filtroPortador === 'PAGARME' && !f.pagarme) return false;
       if (filtroPortador !== 'todos' && filtroPortador !== 'PAGARME') {
         if (f.pagarme || String(f.cd_portador) !== filtroPortador) return false;
@@ -344,7 +350,7 @@ export default function RemessaBoletos() {
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q));
     });
-  }, [faturas, busca, filtroPortador]);
+  }, [faturas, busca, filtroPortador, filtroEnvio]);
 
   // Entram na remessa: portador "em carteira", cadastro completo e sem boleto Pagar.me
   const elegiveis = useMemo(
@@ -416,6 +422,8 @@ export default function RemessaBoletos() {
         Cadastro: c.pendencias?.length ? `Falta ${c.pendencias.join(', ')}` : 'OK',
         'Elegível remessa': elegiveis.includes(f) ? 'Sim' : 'Não',
         Selecionada: selecionadas.has(chaveDe(f)) ? 'Sim' : 'Não',
+        Envio: f.pagarme ? 'Enviado' : f.ultimo_erro ? 'Pendente' : 'Não enviado',
+        'Erro do envio': f.pagarme ? '' : f.ultimo_erro?.descricao || '',
       };
     });
     const ws = XLSX.utils.json_to_sheet(linhas);
@@ -428,12 +436,13 @@ export default function RemessaBoletos() {
     );
   };
 
-  const gerarRemessa = async () => {
-    if (paraEnviar.length === 0) return;
+  const gerarRemessa = async (lista = paraEnviar) => {
+    if (lista.length === 0) return;
+    const valorLista = lista.reduce((t, f) => t + Number(f.vl_fatura || 0), 0);
     if (
       !window.confirm(
-        `Gerar remessa de ${paraEnviar.length} boleto(s) selecionado(s) na Pagar.me?\n\n` +
-          `Valor total: ${fmtBRL(valorEnviar)}\n` +
+        `Gerar remessa de ${lista.length} boleto(s) selecionado(s) na Pagar.me?\n\n` +
+          `Valor total: ${fmtBRL(valorLista)}\n` +
           `Portadores: ${portadoresRemessa.join(', ')}\n\n` +
           'Os boletos são emitidos de verdade e a carteira das faturas passa a Simples no TOTVS.',
       )
@@ -446,7 +455,6 @@ export default function RemessaBoletos() {
     const remessaId = `R${Date.now()}`;
     const todos = [];
     try {
-      const lista = paraEnviar;
       for (let i = 0; i < lista.length; i += LOTE_REMESSA) {
         const lote = lista.slice(i, i + LOTE_REMESSA);
         setProgresso(`${Math.min(i + lote.length, lista.length)}/${lista.length}`);
@@ -485,6 +493,8 @@ export default function RemessaBoletos() {
   };
 
   const valorTotal = visiveis.reduce((s, f) => s + Number(f.vl_fatura || 0), 0);
+  const enviadas = (faturas || []).filter((f) => f.pagarme).length;
+  const pendentesErro = (faturas || []).filter((f) => f.ultimo_erro && !f.pagarme).length;
   const comPendencia = visiveis.filter((f) => f.cliente?.pendencias?.length).length;
 
   return (
@@ -580,8 +590,8 @@ export default function RemessaBoletos() {
                   {resultado.falhas.length} fatura(s) sem boleto:
                   <ul className="list-disc ml-5">
                     {resultado.falhas.map((r) => (
-                      <li key={r.chave}>
-                        {r.chave}: {r.motivo}
+                      <li key={r.chave} title={r.motivo}>
+                        {r.chave}: {r.descricao || r.motivo}
                       </li>
                     ))}
                   </ul>
@@ -590,7 +600,7 @@ export default function RemessaBoletos() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 mb-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-3">
             <div className="bg-white rounded-lg border border-gray-200 p-3">
               <div className="text-[11px] text-gray-500">Faturas a vencer</div>
               <div className="text-lg font-bold text-[#000638]">{visiveis.length}</div>
@@ -608,6 +618,26 @@ export default function RemessaBoletos() {
                 <span className="text-xs font-semibold text-gray-500">{fmtBRL(valorElegivel)}</span>
               </div>
             </div>
+            <button
+              onClick={() => setFiltroEnvio(filtroEnvio === 'enviado' ? 'todos' : 'enviado')}
+              className={`text-left bg-white rounded-lg border p-3 ${
+                filtroEnvio === 'enviado' ? 'border-[#000638] ring-1 ring-[#000638]' : 'border-gray-200'
+              }`}
+            >
+              <div className="text-[11px] text-gray-500">Enviadas (boleto Pagar.me)</div>
+              <div className="text-lg font-bold text-green-700">{enviadas}</div>
+            </button>
+            <button
+              onClick={() => setFiltroEnvio(filtroEnvio === 'pendente' ? 'todos' : 'pendente')}
+              className={`text-left bg-white rounded-lg border p-3 ${
+                filtroEnvio === 'pendente' ? 'border-[#000638] ring-1 ring-[#000638]' : 'border-gray-200'
+              }`}
+            >
+              <div className="text-[11px] text-gray-500">Pendentes (erro no envio)</div>
+              <div className={`text-lg font-bold ${pendentesErro ? 'text-red-600' : 'text-gray-400'}`}>
+                {pendentesErro}
+              </div>
+            </button>
             <div className="bg-white rounded-lg border border-gray-200 p-3">
               <div className="text-[11px] text-gray-500">Cadastro incompleto p/ boleto</div>
               <div
@@ -639,6 +669,17 @@ export default function RemessaBoletos() {
                     {p.label}
                   </option>
                 ))}
+              </select>
+              <select
+                value={filtroEnvio}
+                onChange={(e) => setFiltroEnvio(e.target.value)}
+                title="Filtrar pela situação do envio à Pagar.me"
+                className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs sm:w-48"
+              >
+                <option value="todos">Envio: todos</option>
+                <option value="enviado">Enviado</option>
+                <option value="pendente">Pendente (erro)</option>
+                <option value="nao_enviado">Não enviado</option>
               </select>
               <span className="text-[11px] text-gray-500 flex-1">
                 {paraEnviar.length} selecionada(s) · {fmtBRL(valorEnviar)}
@@ -689,12 +730,13 @@ export default function RemessaBoletos() {
                     <th className="px-2 py-2 text-left">Portador</th>
                     <th className="px-2 py-2 text-left">Carteira</th>
                     <th className="px-2 py-2 text-left">Cadastro</th>
+                    <th className="px-2 py-2 text-left">Envio</th>
                   </tr>
                 </thead>
                 <tbody>
                   {visiveis.length === 0 && (
                     <tr>
-                      <td colSpan={11} className="px-2 py-6 text-center text-gray-500">
+                      <td colSpan={12} className="px-2 py-6 text-center text-gray-500">
                         Nenhuma fatura a vencer no período.
                       </td>
                     </tr>
@@ -800,6 +842,41 @@ export default function RemessaBoletos() {
                               <Eye size={16} weight="bold" />
                             </button>
                           </div>
+                        </td>
+                        <td className="px-2 py-1.5 max-w-[320px]">
+                          {f.pagarme ? (
+                            <span className="inline-flex items-center gap-1 text-green-700 font-semibold">
+                              <CheckCircle size={13} weight="fill" /> Enviado
+                            </span>
+                          ) : f.ultimo_erro ? (
+                            <div className="flex items-start gap-2">
+                              <div>
+                                <span
+                                  className="inline-flex items-center gap-1 text-red-600 font-semibold"
+                                  title={`Erro técnico: ${f.ultimo_erro.tecnico || ''}`}
+                                >
+                                  <Warning size={13} weight="fill" /> Pendente
+                                </span>
+                                <div className="text-[11px] text-gray-700">{f.ultimo_erro.descricao}</div>
+                                <div className="text-[10px] text-gray-400">
+                                  tentativa em {fmtData(f.ultimo_erro.quando)}
+                                </div>
+                              </div>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  gerarRemessa([f]);
+                                }}
+                                disabled={gerando || !elegivel}
+                                title={elegivel ? 'Reenviar esta fatura à Pagar.me' : motivo}
+                                className="shrink-0 inline-flex items-center gap-1 text-[11px] font-semibold text-[#000638] border border-[#000638]/30 rounded px-1.5 py-0.5 hover:bg-gray-50 disabled:opacity-40"
+                              >
+                                <ArrowCounterClockwise size={12} weight="bold" /> Reenviar
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )}
                         </td>
                       </tr>
                     );
