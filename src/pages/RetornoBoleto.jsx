@@ -161,7 +161,7 @@ export default function RetornoBoleto() {
       />
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 mb-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-2 items-end">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-7 gap-2 items-center">
           <div className="lg:col-span-2">
             <FiltroEmpresa
               empresasSelecionadas={empresasSelecionadas}
@@ -217,7 +217,7 @@ export default function RetornoBoleto() {
           <button
             onClick={carregar}
             disabled={loading}
-            className="flex items-center justify-center gap-1.5 bg-[#000638] text-white text-xs font-semibold rounded-lg px-3 py-2 hover:bg-[#fe0000] transition-colors disabled:opacity-60"
+            className="flex items-center justify-center gap-1.5 bg-[#000638] text-white text-xs font-semibold rounded-lg px-3 py-2 hover:bg-[#fe0000] transition-colors disabled:opacity-60 lg:mt-4"
           >
             {loading ? (
               <Spinner size={14} className="animate-spin" />
@@ -308,8 +308,12 @@ export default function RetornoBoleto() {
             <tbody>
               {visiveis.length === 0 && (
                 <tr>
-                  <td colSpan={11} className="px-2 py-6 text-center text-gray-500">
-                    {loading ? 'Carregando...' : 'Nenhum boleto no filtro.'}
+                  <td colSpan={11} className="px-2 py-16 text-center text-gray-500">
+                    {loading
+                      ? 'Carregando...'
+                      : boletos.length === 0
+                        ? 'Nenhum boleto no período. Ajuste empresa, período e status e clique em Buscar.'
+                        : 'Nenhum boleto no filtro.'}
                   </td>
                 </tr>
               )}

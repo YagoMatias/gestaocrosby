@@ -507,7 +507,7 @@ export default function RemessaBoletos() {
       />
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 mb-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 items-end">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 items-center">
           <div className="lg:col-span-2">
             <FiltroEmpresa
               empresasSelecionadas={empresasSelecionadas}
@@ -541,7 +541,7 @@ export default function RemessaBoletos() {
           <button
             onClick={buscar}
             disabled={loading}
-            className="flex items-center justify-center gap-1.5 bg-[#000638] text-white text-xs font-semibold rounded-lg px-3 py-2 hover:bg-[#fe0000] transition-colors disabled:opacity-60"
+            className="flex items-center justify-center gap-1.5 bg-[#000638] text-white text-xs font-semibold rounded-lg px-3 py-2 hover:bg-[#fe0000] transition-colors disabled:opacity-60 lg:mt-4"
           >
             {loading ? (
               <Spinner size={14} className="animate-spin" />
@@ -886,6 +886,27 @@ export default function RemessaBoletos() {
             </div>
           </div>
         </>
+      )}
+
+      {!faturas && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 min-h-[60vh] flex flex-col items-center justify-center text-center text-gray-500 p-6">
+          {loading ? (
+            <>
+              <Spinner size={28} className="animate-spin text-[#000638] mb-2" />
+              <div className="text-sm">Buscando faturas no TOTVS...</div>
+            </>
+          ) : (
+            <>
+              <Barcode size={40} weight="duotone" className="text-gray-300 mb-2" />
+              <div className="text-sm font-semibold text-[#000638]">
+                Selecione a empresa e o período de vencimento e clique em Buscar faturas
+              </div>
+              <div className="text-xs mt-1">
+                As faturas a vencer aparecem aqui com o cadastro do cliente e a situação do envio.
+              </div>
+            </>
+          )}
+        </div>
       )}
 
       {detalhe && (
