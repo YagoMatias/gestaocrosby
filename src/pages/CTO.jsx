@@ -23,6 +23,23 @@ const CCUSTO_ACORDO = 999;
 // Centros de custo excluídos — mesma configuração da página de Despesas Fixas
 const CC_EXCLUIDOS = new Set(['4', '30', '35', '43']);
 
+// Normaliza nome (sem acento, maiúsculo, espaços colapsados) p/ comparação
+function normalizarNome(s) {
+  return (s || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toUpperCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Fornecedores removidos da visão (comparação por trecho normalizado)
+const FORNECEDORES_EXCLUIDOS = ['SOARES RIBEIRO ADVOGADOS'];
+function fornecedorExcluido(nm) {
+  const n = normalizarNome(nm);
+  return FORNECEDORES_EXCLUIDOS.some((alvo) => n.includes(alvo));
+}
+
 // Filiais fixas — mesmo conjunto da página de renegociações
 const FILIAIS_FIXAS = [
   { cd: '1', nome: 'FILIAL 1' },
@@ -263,6 +280,24 @@ const CTO = () => {
   // ─── Filtros ───
   const anoAtual = new Date().getFullYear();
   const [ano, setAno] = useState(anoAtual);
+  // Filtro de tipo aplicado sobre os dados já carregados: TODOS | ALUGUEL | ACORDO
+  const [filtroTipo, setFiltroTipo] = useState('TODOS');
+
+  // ─── Seleção de células (botão direito) para somar valores ───
+  const [selecionadas, setSelecionadas] = useState({});
+  const toggleSelecao = useCallback((id, valor) => {
+    setSelecionadas((prev) => {
+      const next = { ...prev };
+      if (next[id] !== undefined) delete next[id];
+      else next[id] = valor;
+      return next;
+    });
+  }, []);
+  const somaSelecao = useMemo(
+    () => Object.values(selecionadas).reduce((s, v) => s + (v || 0), 0),
+    [selecionadas],
+  );
+  const qtdSelecao = Object.keys(selecionadas).length;
 
   // ─── Dados ───
   const [dados, setDados] = useState([]);
@@ -338,6 +373,7 @@ const CTO = () => {
       const d = criarDataSemFuso(item.dt_vencimento);
       if (!d || d.getFullYear() !== ano) continue;
       if (CC_EXCLUIDOS.has(String(item.cd_ccusto))) continue;
+      if (fornecedorExcluido(item.nm_fornecedor)) continue;
       if (parseInt(item.cd_ccusto) === CCUSTO_ACORDO) acordoItems.push(item);
       else aluguelItems.push(item);
     }
@@ -430,13 +466,15 @@ const CTO = () => {
         const linhas = [
           montarLinha(local.aluguel, 'ALUGUEL'),
           montarLinha(local.acordo, 'ACORDO'),
-        ].filter(Boolean);
+        ]
+          .filter(Boolean)
+          .filter((l) => filtroTipo === 'TODOS' || l.tipoLabel === filtroTipo);
         const totalLocal = linhas.reduce((s, l) => s + l.total, 0);
         return { ...local, linhas, totalLocal };
       })
       .filter((l) => l.linhas.length > 0)
       .sort((a, b) => b.totalLocal - a.totalLocal);
-  }, [dados, ano]);
+  }, [dados, ano, filtroTipo]);
 
   // ─── Resumo ────────────────────────────────────────────────────────────────
   const resumo = useMemo(() => {
@@ -555,6 +593,20 @@ const CTO = () => {
                 ))}
               </select>
             </div>
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Tipo
+              </label>
+              <select
+                value={filtroTipo}
+                onChange={(e) => setFiltroTipo(e.target.value)}
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-32 text-xs bg-[#f8f9fb] text-[#000638] focus:outline-none focus:ring-2 focus:ring-[#000638]"
+              >
+                <option value="TODOS">Todos</option>
+                <option value="ALUGUEL">Aluguel</option>
+                <option value="ACORDO">Acordo</option>
+              </select>
+            </div>
             <button
               type="submit"
               disabled={loading}
@@ -667,6 +719,10 @@ const CTO = () => {
                 <span className="w-3 h-3 rounded bg-gray-50 border border-gray-300 inline-block" />
                 A vencer
               </span>
+              <span className="ml-auto inline-flex items-center gap-1 text-gray-400">
+                <span className="w-3 h-3 rounded bg-indigo-50 border-2 border-indigo-500 inline-block" />
+                Botão direito seleciona a célula para somar
+              </span>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-xs border-collapse">
@@ -730,7 +786,11 @@ const CTO = () => {
                             ? `dia ${linha.diaVencimento}`
                             : '—'}
                         </td>
-                        {linha.meses.map((cel, m) => (
+                        {linha.meses.map((cel, m) => {
+                          const cellId = `${local.key}|${linha.tipoLabel}|${m}`;
+                          const selecionada =
+                            selecionadas[cellId] !== undefined;
+                          return (
                           <td
                             key={m}
                             onClick={() =>
@@ -743,10 +803,24 @@ const CTO = () => {
                                 itens: cel.itens,
                               })
                             }
+                            onContextMenu={(e) => {
+                              if (cel.itens.length === 0) return;
+                              e.preventDefault();
+                              toggleSelecao(cellId, cel.total);
+                            }}
+                            title={
+                              cel.itens.length > 0
+                                ? 'Botão direito: selecionar para somar'
+                                : undefined
+                            }
                             className={`px-2 py-2 text-center align-middle ${
                               cel.itens.length > 0
                                 ? `cursor-pointer ${STATUS_ESTILOS[cel.status].celula}`
                                 : 'text-gray-300'
+                            } ${
+                              selecionada
+                                ? 'ring-2 ring-inset ring-indigo-500 bg-indigo-50'
+                                : ''
                             }`}
                           >
                             {cel.itens.length > 0 ? (
@@ -773,7 +847,8 @@ const CTO = () => {
                               '—'
                             )}
                           </td>
-                        ))}
+                          );
+                        })}
                         <td className="px-3 py-2 text-right font-bold border-l border-gray-100 whitespace-nowrap">
                           {linha.totalAtrasado > 0 ? (
                             <span className="text-red-600">
@@ -824,6 +899,28 @@ const CTO = () => {
           </div>
         )}
       </div>
+
+      {/* ─── Barra de soma das células selecionadas ──────────────────────── */}
+      {qtdSelecao > 0 && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 bg-[#000638] text-white rounded-xl shadow-2xl px-5 py-3 flex items-center gap-5">
+          <div>
+            <p className="text-[10px] uppercase tracking-wide text-indigo-200">
+              {qtdSelecao} célula{qtdSelecao > 1 ? 's' : ''} selecionada
+              {qtdSelecao > 1 ? 's' : ''}
+            </p>
+            <p className="text-lg font-bold leading-tight">
+              {formatarMoeda(somaSelecao)}
+            </p>
+          </div>
+          <button
+            onClick={() => setSelecionadas({})}
+            className="flex items-center gap-1.5 text-xs font-semibold bg-white/15 hover:bg-white/25 rounded-lg px-3 py-2 transition"
+          >
+            <X size={13} weight="bold" />
+            Limpar
+          </button>
+        </div>
+      )}
 
       {/* ─── Modal de faturas ──────────────────────────────────────────── */}
       {modalFaturas && (
