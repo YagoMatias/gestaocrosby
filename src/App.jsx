@@ -123,7 +123,6 @@ const DownloadNotificacao = lazy(() => import('./pages/DownloadNotificacao'));
 const FilaDaVez = lazy(() => import('./pages/FilaDaVez'));
 const PrintForecast = lazy(() => import('./pages/PrintForecast'));
 const ApresentacaoForecast = lazy(() => import('./pages/ApresentacaoForecast'));
-const PainelFechamento = lazy(() => import('./pages/PainelFechamento'));
 const CrosbyForm = lazy(() => import('./crosby/CrosbyForm'));
 const CrosbyFormIndicacao = lazy(() => import('./crosby/CrosbyFormIndicacao'));
 const CrosbyObrigado = lazy(() => import('./crosby/CrosbyObrigado'));
@@ -134,18 +133,15 @@ const FaturamentoHistorico = lazy(() => import('./pages/FaturamentoHistorico'));
 const DashboardVendas = lazy(() => import('./pages/DashboardVendas'));
 const NewForecast = lazy(() => import('./pages/NewForecast'));
 const ForecastCanal = lazy(() => import('./pages/ForecastCanal'));
+const MixCanais = lazy(() => import('./pages/MixCanais'));
 const ControleChips = lazy(() => import('./pages/ControleChips'));
 const ChamadosDryland = lazy(() => import('./pages/ChamadosDryland'));
 const MonitoramentoTotvs = lazy(() => import('./pages/MonitoramentoTotvs'));
 const InventarioPatrimonio = lazy(() => import('./pages/InventarioPatrimonio'));
-const LeituraRFID = lazy(() => import('./pages/LeituraRFID'));
-const PDVRfid = lazy(() => import('./pages/PDVRfid'));
-const PortalRFID = lazy(() => import('./pages/PortalRFID'));
 const OrcamentoRFID = lazy(() => import('./pages/OrcamentoRFID'));
 const DevolucaoRFID = lazy(() => import('./pages/DevolucaoRFID'));
 const DevolucoesMercadoria = lazy(() => import('./pages/DevolucoesMercadoria'));
 const DevolucaoPublica = lazy(() => import('./pages/DevolucaoPublica'));
-const PDVVarejo = lazy(() => import('./pages/PDVVarejo'));
 const PDVCrosby = lazy(() => import('./pages/PDVCrosby'));
 const VendasPDV = lazy(() => import('./pages/VendasPDV'));
 const FiscalPDV = lazy(() => import('./pages/FiscalPDV'));
@@ -217,13 +213,9 @@ const protectedRoutes = [
     path: '/tecnologia/inventario-patrimonio',
     component: InventarioPatrimonio,
   },
-  { path: '/tecnologia/leitura-rfid', component: LeituraRFID },
-  { path: '/tecnologia/pdv-rfid', component: PDVRfid },
-  { path: '/tecnologia/portal-rfid', component: PortalRFID },
   { path: '/tecnologia/orcamento-rfid', component: OrcamentoRFID },
   { path: '/tecnologia/devolucao-rfid', component: DevolucaoRFID },
   { path: '/devolucoes-mercadoria', component: DevolucoesMercadoria },
-  { path: '/tecnologia/pdv-varejo', component: PDVVarejo },
   { path: '/tecnologia/pdv-crosby', component: PDVCrosby },
   { path: '/varejo/vendas-pdv', component: VendasPDV },
   { path: '/admin/fiscal-pdv', component: FiscalPDV },
@@ -299,8 +291,6 @@ const protectedRoutes = [
   { path: '/consulta-cliente', component: ConsultaCliente },
   { path: '/clientes-totvs', component: ClientesTotvs },
   { path: '/creditos-clientes', component: CreditosClientes },
-  { path: '/remessa-boletos', component: RemessaBoletos },
-  { path: '/retorno-boleto', component: RetornoBoleto },
   { path: '/top-clientes', component: TopClientes },
   { path: '/documento-bluecred', component: DocumentoBluecred },
   { path: '/clientes-bluecred', component: ClientesBluecred },
@@ -309,6 +299,8 @@ const protectedRoutes = [
   { path: '/inadimplencia-bluecred', component: InadimplenciaBluecred },
   { path: '/antecipacao-bluecred', component: AntecipacaoBoletos },
   { path: '/solicitacao-baixa', component: SolicitacaoBaixa },
+  { path: '/remessa-boletos', component: RemessaBoletos },
+  { path: '/retorno-boleto', component: RetornoBoleto },
   { path: '/minhas-solicitacoes-baixa', component: MinhasSolicitacoesBaixa },
   {
     path: '/faturas-clientes-antecipacao',
@@ -330,6 +322,7 @@ const protectedRoutes = [
   { path: '/crm-vendas', component: CRMVendas },
   { path: '/new-forecast', component: NewForecast },
   { path: '/forecast-canal/:canal', component: ForecastCanal },
+  { path: '/mix-canais', component: MixCanais },
   { path: '/crm/competicao', component: PainelCompeticao },
   { path: '/voucher-usage', component: VoucherUsage },
   { path: '/voucher-varejo', component: VoucherVarejo },
@@ -459,15 +452,6 @@ function App() {
           element={
             <Suspense fallback={<PageLoadingFallback />}>
               <ApresentacaoForecast />
-            </Suspense>
-          }
-        />
-        {/* Pública: painel de fechamento de mês — TVs (horizontal/vertical), auto-refresh */}
-        <Route
-          path="/apresentacao/fechamento"
-          element={
-            <Suspense fallback={<PageLoadingFallback />}>
-              <PainelFechamento />
             </Suspense>
           }
         />

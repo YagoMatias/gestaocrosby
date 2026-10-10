@@ -90,18 +90,13 @@ const AVAILABLE_PAGES = [
   },
   { path: '/consulta-cliente', name: 'Consulta Cliente', category: 'Clientes' },
   { path: '/clientes-totvs', name: 'Clientes TOTVS', category: 'Clientes' },
-  {
-    path: '/creditos-clientes',
-    name: 'Créditos Clientes',
-    category: 'Clientes',
-  },
   { path: '/top-clientes', name: 'Top Clientes', category: 'Clientes' },
 
   // ─── Showroom ───────────────────────────────────────────────
   {
     path: '/showroom',
     name: 'Showroom — Pedidos (Wix)',
-    category: 'Showroom',
+    category: 'Comercial',
   },
 
   // ─── Financeiro › Contas a Pagar ────────────────────────────
@@ -167,6 +162,11 @@ const AVAILABLE_PAGES = [
   {
     path: '/contas-a-receber',
     name: 'Consulta (Contas a Receber)',
+    category: 'Financeiro — Contas a Receber',
+  },
+  {
+    path: '/creditos-clientes',
+    name: 'Créditos Clientes',
     category: 'Financeiro — Contas a Receber',
   },
   {
@@ -284,7 +284,7 @@ const AVAILABLE_PAGES = [
   {
     path: '/painel-vendas',
     name: 'Painel de Vendas',
-    category: 'Comercial',
+    category: 'Tecnologia',
   },
   { path: '/crm-vendas', name: 'CRM de Vendas', category: 'Comercial' },
   {
@@ -293,13 +293,13 @@ const AVAILABLE_PAGES = [
     category: 'Comercial',
   },
   {
-    path: '/crm/competicao',
-    name: 'Painel Competição',
+    path: '/mix-canais',
+    name: 'Mix de Canais',
     category: 'Comercial',
   },
   {
-    path: '/apresentacao/fechamento',
-    name: 'Painel de Fechamento (TV)',
+    path: '/crm/competicao',
+    name: 'Painel Competição',
     category: 'Comercial',
   },
   {
@@ -548,26 +548,6 @@ const AVAILABLE_PAGES = [
   {
     path: '/tecnologia/inventario-patrimonio',
     name: 'Inventário de Patrimônio',
-    category: 'Tecnologia',
-  },
-  {
-    path: '/tecnologia/leitura-rfid',
-    name: 'Leitura de RFID',
-    category: 'Tecnologia',
-  },
-  {
-    path: '/tecnologia/pdv-rfid',
-    name: 'PDV RFID',
-    category: 'Tecnologia',
-  },
-  {
-    path: '/tecnologia/portal-rfid',
-    name: 'Portal RFID',
-    category: 'Tecnologia',
-  },
-  {
-    path: '/tecnologia/pdv-varejo',
-    name: 'PDV Varejo',
     category: 'Tecnologia',
   },
   {

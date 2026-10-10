@@ -251,6 +251,13 @@ const financeiro = [
         roles: ['owner', 'admin', 'manager', 'user'],
       },
       {
+        name: 'Créditos Clientes',
+        href: '/creditos-clientes',
+        icon: Wallet,
+        color: 'text-emerald-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
         name: 'Dashboard',
         href: '/dash-contas-a-receber',
         icon: ChartBar,
@@ -436,22 +443,16 @@ const financeiro = [
 
 const painelVendasItems = [
   {
-    name: 'Painel de Vendas',
-    href: '/painel-vendas',
-    icon: ShoppingCart,
-    color: 'text-blue-600',
-  },
-  {
     name: 'New Forecast',
     href: '/new-forecast',
     icon: ChartBar,
     color: 'text-fuchsia-600',
   },
   {
-    name: 'Painel de Fechamento (TV)',
-    href: '/apresentacao/fechamento',
-    icon: ChartLineUp,
-    color: 'text-red-600',
+    name: 'Mix de Canais',
+    href: '/mix-canais',
+    icon: ChartPieSlice,
+    color: 'text-violet-600',
   },
   {
     name: 'Painel Competição',
@@ -819,12 +820,6 @@ const clientesItems = [
     color: 'text-indigo-600',
   },
   {
-    name: 'Créditos Clientes',
-    href: '/creditos-clientes',
-    icon: Wallet,
-    color: 'text-emerald-600',
-  },
-  {
     name: 'Top Clientes',
     href: '/top-clientes',
     icon: Trophy,
@@ -833,6 +828,12 @@ const clientesItems = [
 ];
 
 const tecnologiaItems = [
+  {
+    name: 'Painel de Vendas',
+    href: '/painel-vendas',
+    icon: ShoppingCart,
+    color: 'text-blue-600',
+  },
   {
     name: 'Controle de Chip',
     href: '/tecnologia/controle-chip',
@@ -846,24 +847,6 @@ const tecnologiaItems = [
     color: 'text-indigo-600',
   },
   {
-    name: 'Leitura de RFID',
-    href: '/tecnologia/leitura-rfid',
-    icon: Broadcast,
-    color: 'text-rose-600',
-  },
-  {
-    name: 'PDV RFID',
-    href: '/tecnologia/pdv-rfid',
-    icon: ShoppingCart,
-    color: 'text-emerald-600',
-  },
-  {
-    name: 'Portal RFID',
-    href: '/tecnologia/portal-rfid',
-    icon: WifiHigh,
-    color: 'text-blue-600',
-  },
-  {
     name: 'Orçamento RFID',
     href: '/tecnologia/orcamento-rfid',
     icon: Tag,
@@ -874,12 +857,6 @@ const tecnologiaItems = [
     href: '/tecnologia/devolucao-rfid',
     icon: ArrowUUpLeft,
     color: 'text-rose-600',
-  },
-  {
-    name: 'PDV Varejo',
-    href: '/tecnologia/pdv-varejo',
-    icon: Storefront,
-    color: 'text-emerald-600',
   },
   {
     name: 'PDV Crosby',
@@ -1048,6 +1025,12 @@ const expedicao = [
 // Comercial = páginas do antigo "Painel de Vendas" + os canais como subgrupos
 const comercialItems = [
   ...painelVendasItems,
+  {
+    name: 'Showroom',
+    href: '/showroom',
+    icon: Storefront,
+    color: 'text-emerald-600',
+  },
   {
     name: 'Varejo',
     href: '#',
@@ -1345,18 +1328,6 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
           onToggle={() => handleSectionToggle('clientes')}
           icon={IdentificationCard}
           color="text-blue-600"
-        />
-
-        {/* SHOWROOM */}
-        <MenuItem
-          {...menuProps}
-          item={{
-            name: 'Showroom',
-            href: '/showroom',
-            icon: Storefront,
-            color: 'text-emerald-600',
-          }}
-          isActive={pathname.startsWith('/showroom')}
         />
 
         {/* Seção Financeiro */}
