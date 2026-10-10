@@ -73,3 +73,58 @@ export async function portalClear() {
   const r = await fetch(`${b}/clear`, { method: 'POST' });
   return r.json();
 }
+
+// ─── Potência das antenas ────────────────────────────────────────────────────
+// GET devolve { antenas: [{ ant, leitura, escrita }], min, max } em dBm.
+// O agente precisa ser a versão 2+ (agentes antigos respondem 404).
+async function lerJson(r) {
+  let j = null;
+  try {
+    j = await r.json();
+  } catch {
+    /* corpo vazio */
+  }
+  if (!r.ok || !j?.success) {
+    const antigo = r.status === 404;
+    throw new Error(
+      antigo
+        ? 'O Agente do Portal desta máquina é antigo e não sabe configurar potência. Atualize o agente.'
+        : j?.message || `Falha ao falar com o portal (HTTP ${r.status})`,
+    );
+  }
+  return j.data;
+}
+
+// Buzzer (apito) do próprio portal a cada leitura
+export async function portalGetBeep() {
+  const b = await base();
+  return lerJson(await fetch(`${b}/beep`));
+}
+
+export async function portalSetBeep(ligado) {
+  const b = await base();
+  return lerJson(
+    await fetch(`${b}/beep`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ligado: !!ligado }),
+    }),
+  );
+}
+
+export async function portalGetPower() {
+  const b = await base();
+  return lerJson(await fetch(`${b}/power`));
+}
+
+// { potencia: 20 } aplica em todas; { antenas: [{ ant: 1, potencia: 20 }] } por antena
+export async function portalSetPower(body) {
+  const b = await base();
+  return lerJson(
+    await fetch(`${b}/power`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+  );
+}
