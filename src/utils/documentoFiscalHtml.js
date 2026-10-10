@@ -69,19 +69,21 @@ export function gerarHtmlCupomNFCe({ nota, venda, emitente }) {
 
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>NFC-e ${nota.numero}</title>
 <style>
-  @page { size: 80mm auto; margin: 3mm; }
-  body { font-family: "Courier New", monospace; font-size: 11px; width: 74mm; margin: 0 auto; color: #000; }
+  /* bobina de 80mm (área útil de 72mm nas térmicas Epson TM-T20/T20X) */
+  @page { size: 80mm auto; margin: 0; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; width: 70mm; margin: 0 auto; padding: 2mm 1mm 6mm; color: #000; }
   .c { text-align: center; } .r { text-align: right; } .b { font-weight: bold; }
   h1 { font-size: 13px; margin: 0; } .small { font-size: 9.5px; }
   hr { border: 0; border-top: 1px dashed #000; margin: 4px 0; }
   table { width: 100%; border-collapse: collapse; } td { padding: 1px 0; vertical-align: top; }
-  td.n { width: 14px; } td.desc { font-size: 10.5px; } .cod { font-size: 9px; color: #333; } tr.vals td { font-size: 10.5px; }
+  td.n { width: 14px; } td.desc { font-size: 10.5px; } .cod { font-size: 9px; color: #000; } tr.vals td { font-size: 10.5px; }
   .row { display: flex; justify-content: space-between; }
   .tot { font-size: 14px; }
   .hom { border: 2px solid #000; padding: 3px; text-align: center; font-weight: bold; margin: 4px 0; font-size: 10px; }
   .chave { font-size: 10px; word-break: break-all; }
   img.qr { width: 42mm; height: 42mm; display: block; margin: 4px auto; }
   @media screen { body { padding: 10px; } }
+  .cpl { font-size: 9px; word-break: break-word; }
 </style></head><body>
   <div class="c">
     <h1>${esc(emitente?.xFant || venda.empresa_nome || 'CROSBY')}</h1>
@@ -118,7 +120,8 @@ export function gerarHtmlCupomNFCe({ nota, venda, emitente }) {
   ${nota.protocolo ? `<div class="c small">Protocolo de autorização: ${esc(nota.protocolo)}<br/>${fmtData(nota.dh_autorizacao)}</div>` : ''}
   ${nota.qrDataUrl ? `<img class="qr" src="${nota.qrDataUrl}" alt="QR Code"/>` : ''}
   ${venda.vendedor_nome ? `<div class="c small">Vendedor: ${esc(venda.vendedor_nome)}</div>` : ''}
-  <div class="c small">Venda HeadCoach #${venda.id}</div>
+  ${nota.inf_cpl ? `<hr/><div class="cpl">${esc(nota.inf_cpl)}</div>` : ''}
+  <div class="c small">${venda.rodape ? esc(venda.rodape) : `Venda HeadCoach #${venda.id}`}</div>
   <script>window.onload = function(){ setTimeout(function(){ window.print(); }, 300); };</script>
 </body></html>`;
 }
@@ -209,6 +212,47 @@ export function gerarHtmlDanfeNFe({ nota, venda, emitente }) {
     <div class="lbl">Informações complementares</div>
     <div>Venda HeadCoach #${venda.id}${venda.vendedor_nome ? ' · Vendedor ' + esc(venda.vendedor_nome) : ''}. DANFE simplificado gerado pelo HeadCoach — o XML autorizado está disponível para download no PDV Crosby.</div>
   </div>
+  <script>window.onload = function(){ setTimeout(function(){ window.print(); }, 300); };</script>
+</body></html>`;
+}
+
+// Cupom de troca (bobina 80mm): acompanha toda venda do PDV Crosby. Não mostra
+// valores — é pensado para presente; o código leva à transação de origem.
+export function gerarHtmlCupomTroca({ cupom, empresaNome }) {
+  const itens = (cupom.itens || [])
+    .map((i) => `<tr><td class="r" style="width:22px">${Number(i.quantity)}x</td><td>${esc(i.name)}<br/><span class="cod">cód. ${esc(i.productCode)}</span></td></tr>`)
+    .join('');
+  const codigo = String(cupom.codigo || '').replace(/(.{4})(?=.)/g, '$1 ');
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Cupom de troca ${esc(cupom.codigo)}</title>
+<style>
+  @page { size: 80mm auto; margin: 0; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; width: 70mm; margin: 0 auto; padding: 2mm 1mm 6mm; color: #000; }
+  .c { text-align: center; } .r { text-align: right; } .b { font-weight: bold; }
+  h1 { font-size: 15px; margin: 0; } .small { font-size: 9.5px; }
+  hr { border: 0; border-top: 1px dashed #000; margin: 4px 0; }
+  table { width: 100%; border-collapse: collapse; } td { padding: 1px 2px; vertical-align: top; font-size: 10.5px; }
+  .cod { font-size: 9px; }
+  .codigo { font-family: "Courier New", monospace; font-size: 24px; font-weight: bold; letter-spacing: 2px; border: 2px solid #000; padding: 4px; margin: 4px 0; }
+  img.qr { width: 34mm; height: 34mm; display: block; margin: 4px auto; }
+  @media screen { body { padding: 10px; } }
+</style></head><body>
+  <div class="c">
+    <h1>${esc(empresaNome || 'CROSBY')}</h1>
+    <div class="b" style="font-size:14px;margin-top:3px">CUPOM DE TROCA</div>
+  </div>
+  <hr/>
+  <div class="c small">Código do cupom</div>
+  <div class="c codigo">${esc(codigo)}</div>
+  ${cupom.qrDataUrl ? `<img class="qr" src="${cupom.qrDataUrl}" alt="QR Code"/>` : ''}
+  <hr/>
+  <table>${itens}</table>
+  <hr/>
+  <div class="c small">Compra de ${fmtData(cupom.criado_em || new Date())}</div>
+  <div class="c small">Empresa ${esc(cupom.empresa)} · transação ${esc(cupom.transacao_code)}</div>
+  ${cupom.vendedor_nome ? `<div class="c small">Vendedor: ${esc(cupom.vendedor_nome)}</div>` : ''}
+  <hr/>
+  <div class="c small b">Apresente este cupom para trocar o produto.</div>
+  <div class="c small">Documento sem valor fiscal.</div>
   <script>window.onload = function(){ setTimeout(function(){ window.print(); }, 300); };</script>
 </body></html>`;
 }
