@@ -8,6 +8,14 @@
 //   • gera a transação "em andamento" no TOTVS e acompanha até ATENDIDA —
 //     o caixa finaliza no TRAFP005 (Continuar Transação → Encerrar → Receber)
 // Devoluções em andamento ficam salvas por usuário (localStorage).
+//
+// MODO NOTA FISCAL DO CLIENTE: quando o cliente (franquia = empresa no TOTVS)
+// já emitiu a nota de devolução, a tela busca essa nota (mesma origem do
+// FISFP082), confere peça a peça o que foi lido contra os itens da nota e gera
+// a transação de entrada SÓ COM AS PEÇAS CONFERIDAS, pelo valor da nota (não
+// da tabela de preço). O que falta ou sobra NÃO entra na transação — fica
+// registrado em Devoluções de Mercadoria → Transações (recebido / faltando /
+// sobrando). O recebimento/encerramento continua no TOTVS (TRAFM060/TRAFP005).
 import React, {
   useState,
   useEffect,
@@ -40,8 +48,14 @@ import {
   ClockCounterClockwise,
   UserPlus,
   Broadcast,
+  WifiHigh,
+  FileText,
+  XCircle,
+  SpeakerHigh,
+  SpeakerSlash,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
+import PortalPotenciaModal from '../components/PortalPotenciaModal';
 import { API_BASE_URL } from '../config/constants';
 import { useAuth } from '../components/AuthContext';
 import {
@@ -49,6 +63,7 @@ import {
   portalDisconnect,
   portalTags,
   portalClear,
+  portalSetBeep,
 } from '../utils/portalApi';
 
 // ─── Config da devolução ─────────────────────────────────────────────────────
@@ -261,6 +276,12 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
   // Portal RFID
   const [portalStatus, setPortalStatus] = useState({ status: 'desconectado' });
   const [portalBusy, setPortalBusy] = useState(false);
+  const [potenciaOpen, setPotenciaOpen] = useState(false);
+  // Som do portal (buzzer do aparelho a cada leitura). Preferência salva no
+  // navegador e aplicada toda vez que o portal é ligado; o "bip" do HeadCoach
+  // continua independente.
+  const [somPortal, setSomPortal] = useState(() => localStorage.getItem('portal_som') !== 'off');
+  const [somBusy, setSomBusy] = useState(false);
 
   // Itens
   const [items, setItems] = useState([]);
@@ -280,6 +301,17 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
   const [manualBusy, setManualBusy] = useState(false);
   const [toast, setToast] = useState(null);
   const [posting, setPosting] = useState(false);
+
+  // Nota fiscal emitida pelo cliente (modo conferência)
+  const hojeIso = () => new Date().toISOString().slice(0, 10);
+  const [nf, setNf] = useState(null); // nota escolhida
+  const [nfPainel, setNfPainel] = useState(false);
+  const [nfLista, setNfLista] = useState(null); // null = ainda não buscou
+  const [nfLoading, setNfLoading] = useState(false);
+  const [nfErro, setNfErro] = useState('');
+  const [nfDe, setNfDe] = useState(() => new Date(Date.now() - 45 * 86400000).toISOString().slice(0, 10));
+  const [nfAte, setNfAte] = useState(hojeIso);
+  const [forcarDivergencia, setForcarDivergencia] = useState(false);
 
   // Transação gerada
   const [trx, setTrx] = useState(null);
@@ -364,6 +396,18 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
     })();
   }, [branch]);
 
+  // Trocou de cliente: a nota escolhida e a lista não valem mais
+  const clienteDaNota = useRef(null);
+  useEffect(() => {
+    const code = customer?.code ?? null;
+    if (clienteDaNota.current === code) return;
+    clienteDaNota.current = code;
+    setNfLista(null);
+    setNfErro('');
+    setNf((atual) => (atual && atual.clienteCode === code ? atual : null));
+    setForcarDivergencia(false);
+  }, [customer]);
+
   // Dados do cliente (tabela de preço)
   useEffect(() => {
     if (!customer) {
@@ -418,12 +462,13 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
       customer,
       customerInfo,
       items,
+      nf,
     };
     const lista = [registro, ...drafts.filter((d) => d.id !== id)].slice(0, 30);
     persistDrafts(lista);
     setDraftId(id);
     showToast('ok', 'Devolução salva para continuar depois');
-  }, [items, draftId, branch, seller, operacao, cfop, customer, customerInfo, drafts, persistDrafts, showToast]);
+  }, [items, draftId, branch, seller, operacao, cfop, customer, customerInfo, nf, drafts, persistDrafts, showToast]);
 
   const abrirRascunho = useCallback(
     (d) => {
@@ -434,6 +479,8 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
       setCustomer(d.customer || null);
       setCustomerInfo(d.customerInfo || null);
       setItems(d.items || []);
+      clienteDaNota.current = d.customer?.code ?? null;
+      setNf(d.nf || null);
       setDraftId(d.id);
       processedEpcs.current = new Set(
         (d.items || []).flatMap((i) => i.epcs || []),
@@ -458,6 +505,27 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
     portalStatus.status === 'conectando' ||
     portalStatus.status === 'reconectando';
 
+  // Som do portal: manda o comando e guarda a preferência
+  const aplicarSomPortal = useCallback(
+    async (ligado, { avisar = true } = {}) => {
+      setSomBusy(true);
+      try {
+        const j = await portalSetBeep(ligado);
+        if (!j?.success) throw new Error(j?.message || 'o portal não aceitou');
+        setSomPortal(j.data?.ligado ?? ligado);
+        localStorage.setItem('portal_som', (j.data?.ligado ?? ligado) ? 'on' : 'off');
+        if (avisar) showToast('ok', (j.data?.ligado ?? ligado) ? 'Som do portal ligado' : 'Som do portal desligado — só o bip do HeadCoach');
+        return true;
+      } catch (e) {
+        if (avisar) showToast('erro', `Não deu para mudar o som do portal: ${e.message}`);
+        return false;
+      } finally {
+        setSomBusy(false);
+      }
+    },
+    [showToast],
+  );
+
   const ligarPortal = useCallback(async () => {
     if (!branchRef.current) {
       beep(false);
@@ -468,7 +536,11 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
     try {
       const j = await portalConnect({});
       if (!j.success) showToast('erro', j?.message || 'Falha ao ligar o portal');
-      else setPortalStatus(j.data);
+      else {
+        setPortalStatus(j.data);
+        // o portal volta a apitar quando reinicia: reaplica a preferência de silêncio
+        if (localStorage.getItem('portal_som') === 'off') aplicarSomPortal(false, { avisar: false });
+      }
     } catch (e) {
       showToast(
         'erro',
@@ -477,7 +549,7 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
     } finally {
       setPortalBusy(false);
     }
-  }, [showToast]);
+  }, [showToast, aplicarSomPortal]);
 
   const desligarPortal = useCallback(async () => {
     setPortalBusy(true);
@@ -693,6 +765,180 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
       .sort((a, b) => a.nome.localeCompare(b.nome));
   }, [items]);
 
+  // ─── Nota fiscal do cliente ──────────────────────────────────────────────
+  const buscarNotasCliente = useCallback(async () => {
+    if (!customer) return;
+    setNfLoading(true);
+    setNfErro('');
+    try {
+      const qs = new URLSearchParams({ customer: customer.code, de: nfDe, ate: nfAte });
+      if (branch) qs.set('branch', branch);
+      const r = await fetch(`${API_BASE_URL}/api/totvs/pdv/customer-invoices?${qs}`);
+      const j = await r.json();
+      if (!r.ok || !j.success) throw new Error(j?.message || 'Falha ao buscar as notas');
+      setNfLista(j.data.notas || []);
+    } catch (e) {
+      setNfErro(e.message);
+      setNfLista([]);
+    } finally {
+      setNfLoading(false);
+    }
+  }, [customer, branch, nfDe, nfAte]);
+
+  const escolherNota = useCallback(
+    (nota) => {
+      setNf({ ...nota, clienteCode: customer?.code ?? null, clienteNome: customer?.name ?? null });
+      setNfPainel(false);
+      setForcarDivergencia(false);
+      beep(true);
+    },
+    [customer],
+  );
+
+  const removerNota = useCallback(() => {
+    setNf(null);
+    setForcarDivergencia(false);
+  }, []);
+
+  // Peça prevista na nota e ainda não lida: soma 1 "sem tag"
+  const maisUmDaNota = useCallback(
+    async (productCode) => {
+      const existente = items.find((i) => i.productCode === productCode);
+      if (existente) {
+        ajustarManualQty(productCode, 1);
+        return;
+      }
+      try {
+        const res = await consultarProduto(productCode);
+        if (res?.ok) mergeProduto(res.data, { manual: 1 });
+        else showToast('erro', res?.message || `Produto ${productCode} não encontrado`);
+      } catch (e) {
+        showToast('erro', e.message);
+      }
+    },
+    [items, ajustarManualQty, consultarProduto, mergeProduto, showToast],
+  );
+
+  // Conferência: o que a nota diz × o que foi lido (por produto)
+  const conferencia = useMemo(() => {
+    if (!nf) return null;
+    const porProduto = new Map();
+    for (const it of nf.itens || []) {
+      const cur = porProduto.get(it.productCode) || {
+        productCode: it.productCode,
+        name: it.name,
+        esperado: 0,
+        totalNf: 0,
+        unitNet: it.unitNet,
+      };
+      cur.esperado += Number(it.quantity);
+      cur.totalNf += Number(it.quantity) * Number(it.unitNet);
+      porProduto.set(it.productCode, cur);
+    }
+    const lidos = new Map(items.map((i) => [i.productCode, i]));
+    const linhas = [...porProduto.values()]
+      .map((l) => {
+        const item = lidos.get(l.productCode) || null;
+        const lido = item ? qtyOf(item) : 0;
+        return {
+          ...l,
+          lido,
+          item,
+          situacao: lido === l.esperado ? 'ok' : lido < l.esperado ? 'falta' : 'sobra',
+        };
+      })
+      .sort((a, b) => {
+        const peso = { falta: 0, sobra: 1, ok: 2 };
+        return peso[a.situacao] - peso[b.situacao] || String(a.name).localeCompare(String(b.name));
+      });
+    const fora = items.filter((i) => !porProduto.has(i.productCode));
+    const esperado = linhas.reduce((s, l) => s + l.esperado, 0);
+    const conferidas = linhas.reduce((s, l) => s + Math.min(l.lido, l.esperado), 0);
+    const faltando = linhas.reduce((s, l) => s + Math.max(0, l.esperado - l.lido), 0);
+    const sobrando = linhas.reduce((s, l) => s + Math.max(0, l.lido - l.esperado), 0) + fora.reduce((s, i) => s + qtyOf(i), 0);
+    const totalNf = Number(
+      (nf.itens || []).reduce((s, it) => s + Number(it.quantity) * (Number(it.unitGross) - Number(it.unitDiscount)), 0).toFixed(2),
+    );
+
+    // Só o que foi conferido entra na transação. A quantidade conferida de cada
+    // produto é distribuída pelas linhas da nota na ordem em que aparecem (um
+    // mesmo produto pode vir em mais de uma linha, com valores diferentes).
+    const restante = new Map(linhas.map((l) => [l.productCode, Math.min(l.lido, l.esperado)]));
+    const linhasPayload = [];
+    const recebidoPorProduto = new Map();
+    const faltaPorProduto = new Map();
+    for (const it of nf.itens || []) {
+      const disponivel = restante.get(it.productCode) || 0;
+      const q = Math.min(Number(it.quantity), disponivel);
+      const unitNet = Number(it.unitGross) - Number(it.unitDiscount);
+      if (q > 0) {
+        restante.set(it.productCode, disponivel - q);
+        linhasPayload.push({ productCode: it.productCode, quantity: q, unitGross: Number(it.unitGross), unitDiscount: Number(it.unitDiscount) });
+        const r = recebidoPorProduto.get(it.productCode) || { productCode: it.productCode, name: it.name, quantidade: 0, total: 0, unit: unitNet };
+        r.quantidade += q;
+        r.total += q * unitNet;
+        recebidoPorProduto.set(it.productCode, r);
+      }
+      const naoVeio = Number(it.quantity) - q;
+      if (naoVeio > 0) {
+        const f = faltaPorProduto.get(it.productCode) || { productCode: it.productCode, name: it.name, quantidade: 0, total: 0, unit: unitNet };
+        f.quantidade += naoVeio;
+        f.total += naoVeio * unitNet;
+        faltaPorProduto.set(it.productCode, f);
+      }
+    }
+    const linhaDe = new Map(linhas.map((l) => [l.productCode, l]));
+    const arred = (v) => Number(Number(v).toFixed(2));
+    // EPCs do recebido: até o limite conferido (o excedente vai para "sobrando")
+    const recebidos = [...recebidoPorProduto.values()].map((r) => {
+      const l = linhaDe.get(r.productCode);
+      return { ...r, total: arred(r.total), esperado: l.esperado, lido: l.lido, epcs: (l.item?.epcs || []).slice(0, r.quantidade) };
+    });
+    const faltantes = [...faltaPorProduto.values()].map((f) => {
+      const l = linhaDe.get(f.productCode);
+      return { ...f, total: arred(f.total), esperado: l.esperado, lido: l.lido, epcs: [] };
+    });
+    const sobras = [
+      ...linhas
+        .filter((l) => l.lido > l.esperado)
+        .map((l) => ({
+          productCode: l.productCode,
+          name: l.name,
+          quantidade: l.lido - l.esperado,
+          esperado: l.esperado,
+          lido: l.lido,
+          motivo: 'excedente',
+          epcs: (l.item?.epcs || []).slice(l.esperado),
+        })),
+      ...fora.map((i) => ({
+        productCode: i.productCode,
+        name: i.name,
+        quantidade: qtyOf(i),
+        esperado: 0,
+        lido: qtyOf(i),
+        motivo: 'fora_da_nota',
+        epcs: i.epcs,
+      })),
+    ];
+    const totalConferido = arred(linhasPayload.reduce((s, l) => s + l.quantity * (l.unitGross - l.unitDiscount), 0));
+    return {
+      linhas,
+      fora,
+      esperado,
+      conferidas,
+      faltando,
+      sobrando,
+      totalNf,
+      totalConferido,
+      valorFaltando: arred(faltantes.reduce((s, f) => s + f.total, 0)),
+      linhasPayload,
+      recebidos,
+      faltantes,
+      sobras,
+      ok: faltando === 0 && sobrando === 0,
+    };
+  }, [nf, items]);
+
   const totals = useMemo(() => {
     const qty = items.reduce((s, i) => s + qtyOf(i), 0);
     const subtotal = items.reduce((s, i) => s + qtyOf(i) * i.unit, 0);
@@ -785,6 +1031,10 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
     setTrx(null);
     setTrxStatus(null);
     setDraftId(null);
+    setNf(null);
+    setNfLista(null);
+    setForcarDivergencia(false);
+    clienteDaNota.current = null;
     processedEpcs.current = new Set();
     portalClear().catch(() => {});
   }, []);
@@ -792,31 +1042,40 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
   const operacaoValida = /^\d+$/.test(String(operacao).trim());
   const cfopValido = /^\d{4}$/.test(String(cfop).trim());
 
-  const canGenerate =
-    !posting &&
-    items.length > 0 &&
-    branch &&
-    customer &&
-    seller &&
-    operacaoValida &&
-    cfopValido &&
-    items.every((i) => qtyOf(i) > 0 && i.unit > 0);
+  const baseOk = !posting && branch && customer && seller && operacaoValida && cfopValido;
+  // Com nota do cliente: entram SÓ as peças conferidas (pelo valor da nota);
+  // basta ter ao menos uma. Sem nota: vale o que foi lido, pela tabela.
+  const canGenerate = nf
+    ? baseOk && !nf.recebida && (conferencia?.conferidas || 0) > 0
+    : baseOk && items.length > 0 && items.every((i) => qtyOf(i) > 0 && i.unit > 0);
 
   const gerarTransacao = useCallback(async () => {
     if (!canGenerate) return;
     setPosting(true);
     try {
-      const itensPayload = items.map((i) => {
-        const q = qtyOf(i);
-        const discountValue = Number(Number(i.discount || 0).toFixed(3));
-        return {
-          productCode: i.productCode,
-          quantity: q,
-          value: Number(Number(i.unit).toFixed(3)),
-          ...(discountValue > 0 ? { discountValue } : {}),
-          cfop: parseInt(cfop, 10),
-        };
-      });
+      const itensPayload = nf
+        ? // só as peças CONFERIDAS, pelo valor da nota do cliente
+          conferencia.linhasPayload.map((it) => {
+            const discountValue = Number(Number(it.unitDiscount || 0).toFixed(3));
+            return {
+              productCode: it.productCode,
+              quantity: Number(it.quantity),
+              value: Number(Number(it.unitGross).toFixed(3)),
+              ...(discountValue > 0 ? { discountValue } : {}),
+              cfop: parseInt(cfop, 10),
+            };
+          })
+        : items.map((i) => {
+            const q = qtyOf(i);
+            const discountValue = Number(Number(i.discount || 0).toFixed(3));
+            return {
+              productCode: i.productCode,
+              quantity: q,
+              value: Number(Number(i.unit).toFixed(3)),
+              ...(discountValue > 0 ? { discountValue } : {}),
+              cfop: parseInt(cfop, 10),
+            };
+          });
       const totalExato = Number(
         itensPayload
           .reduce(
@@ -836,6 +1095,19 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
         status: 1,
         totalAmountTransaction: totalExato,
         items: itensPayload,
+        // Observação da transação (máx. 80 caracteres por linha no TOTVS):
+        // deixa registrado de qual nota do cliente esta entrada veio
+        ...(nf
+          ? {
+              observations: [
+                { observation: `REF NF ${nf.invoiceCode}/${nf.serialCode} DE ${nf.invoiceDate.split('-').reverse().join('/')} EMP ${nf.branchCode} - HEADCOACH`.slice(0, 80) },
+                ...(nf.accessKey ? [{ observation: `CHAVE ${nf.accessKey}`.slice(0, 80) }] : []),
+                ...(conferencia && !conferencia.ok
+                  ? [{ observation: `PARCIAL: RECEBIDAS ${conferencia.conferidas} DE ${conferencia.esperado} - FALTAM ${conferencia.faltando} SOBRAM ${conferencia.sobrando}`.slice(0, 80) }]
+                  : []),
+              ],
+            }
+          : {}),
       };
       const r = await fetch(`${API_BASE_URL}/api/totvs/pdv/transactions`, {
         method: 'POST',
@@ -855,12 +1127,58 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
         cfop: parseInt(cfop, 10),
         qtdEpcs: totals.epcs,
         customerCode: customer.code,
-        epcs: items.flatMap((i) => i.epcs),
+        // com nota, só os EPCs das peças que entraram (sobras ficam de fora)
+        epcs: nf ? conferencia.recebidos.flatMap((r) => r.epcs) : items.flatMap((i) => i.epcs),
+        nf: nf ? { invoiceCode: nf.invoiceCode, serialCode: nf.serialCode, accessKey: nf.accessKey, branchCode: nf.branchCode } : null,
       };
       setTrx(nova);
       setTrxStatus(1);
       beep(true);
       onTransacaoGerada?.(nova);
+
+      // Registra a transação em Devoluções de Mercadoria → Transações, com o
+      // detalhe do que entrou e do que ficou de fora (faltando / sobrando)
+      try {
+        const vend = sellers.find((sl) => String(sl.code) === String(seller));
+        const semNota = items.map((i) => ({
+          productCode: i.productCode,
+          name: i.name,
+          quantidade: qtyOf(i),
+          unit: Number((i.unit - (i.discount || 0)).toFixed(2)),
+          total: Number((qtyOf(i) * (i.unit - (i.discount || 0))).toFixed(2)),
+          epcs: i.epcs,
+        }));
+        const rr = await fetch(`${API_BASE_URL}/api/devolucoes/transacoes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            devolucaoId: solicitacao?.id || null,
+            empresa: nova.branchCode,
+            transactionCode: nova.transactionCode,
+            transactionDate: nova.transactionDate,
+            status: 1,
+            operacao: nova.operacao,
+            cfop: nova.cfop,
+            total: totalExato,
+            clienteCode: customer.code,
+            clienteNome: customer.name,
+            vendedorCode: parseInt(seller, 10),
+            vendedorNome: vend?.name || null,
+            nf: nf
+              ? { invoiceCode: nf.invoiceCode, serialCode: nf.serialCode, invoiceDate: nf.invoiceDate, branchCode: nf.branchCode, accessKey: nf.accessKey, totalValue: nf.totalValue, quantity: nf.quantity }
+              : null,
+            recebidos: nf ? conferencia.recebidos : semNota,
+            faltando: nf ? conferencia.faltantes : [],
+            sobrando: nf ? conferencia.sobras : [],
+            por: user?.name || user?.email || null,
+          }),
+        });
+        const jr = await rr.json();
+        if (rr.ok && jr.success) setTrx((t) => (t ? { ...t, registroId: jr.data.id } : t));
+        else showToast('erro', `Transação gerada, mas o registro do detalhe falhou: ${jr?.message || ''}`);
+      } catch (er) {
+        showToast('erro', `Transação gerada, mas o registro do detalhe falhou: ${er.message}`);
+      }
       // tira a devolução da lista de pendentes: virou transação
       if (draftId) apagarRascunho(draftId);
     } catch (e) {
@@ -868,7 +1186,7 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
     } finally {
       setPosting(false);
     }
-  }, [canGenerate, branch, customer, seller, operacao, cfop, items, totals.epcs, draftId, apagarRascunho, showToast, onTransacaoGerada]);
+  }, [canGenerate, branch, customer, seller, sellers, operacao, cfop, items, totals.epcs, draftId, apagarRascunho, showToast, onTransacaoGerada, nf, conferencia, solicitacao, user]);
 
   // ─── Acompanha o status até ATENDIDA (caixa finaliza no TRAFP005) ────────
   const verificarStatus = useCallback(async () => {
@@ -905,6 +1223,13 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
     if (ultimoStatusAvisado.current === chave) return;
     ultimoStatusAvisado.current = chave;
     onStatusTransacao?.(trx, trxStatus);
+    if (trx.registroId && trxStatus !== 1) {
+      fetch(`${API_BASE_URL}/api/devolucoes/transacoes/${trx.registroId}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: trxStatus }),
+      }).catch(() => {});
+    }
   }, [trx, trxStatus, onStatusTransacao]);
 
   const stInfo = TRX_STATUS[trxStatus] || {
@@ -1107,7 +1432,11 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
                   : '')
               }
             >
-              {!customer ? (
+              {nf ? (
+                <>
+                  <FileText size={13} /> Valores da nota fiscal
+                </>
+              ) : !customer ? (
                 '—'
               ) : !customerInfo ? (
                 <>
@@ -1130,8 +1459,237 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
           </div>
         </div>
 
+        {/* Nota fiscal emitida pelo cliente (conferência + entrada espelhando a nota) */}
+        <div className={`mb-2 rounded-xl border shadow-sm p-3 ${nf ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-gray-200'}`}>
+          {nf ? (
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#000638]">
+              <span className="inline-flex items-center gap-1.5 font-bold">
+                <FileText size={15} weight="bold" /> NF {nf.invoiceCode}/{nf.serialCode}
+              </span>
+              <span>{nf.invoiceDate.split('-').reverse().join('/')}</span>
+              <span>empresa {nf.branchCode}</span>
+              <span className="truncate max-w-[280px]" title={nf.operationName || ''}>
+                {nf.operationCode} · {nf.operationName}
+              </span>
+              <span>
+                <b>{nf.quantity}</b> peça(s) · <b>{fmtBRL(nf.totalValue)}</b>
+              </span>
+              {nf.recebida && (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700 ring-1 ring-rose-200 font-semibold">
+                  <Warning size={11} weight="bold" /> já recebida · transação {nf.recebida.transactionCode}
+                </span>
+              )}
+              {nf.paraEstaEmpresa === false && (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 ring-1 ring-amber-200 font-semibold">
+                  <Warning size={11} weight="bold" /> emitida para a empresa {nf.destinoBranch ?? '?'}
+                </span>
+              )}
+              <div className="flex-1" />
+              <button onClick={() => { setNfPainel(true); if (nfLista === null) buscarNotasCliente(); }} className="px-2 py-1 rounded-lg font-semibold ring-1 ring-indigo-300 hover:bg-white">
+                trocar nota
+              </button>
+              <button onClick={removerNota} className="px-2 py-1 rounded-lg font-semibold text-rose-600 ring-1 ring-rose-200 hover:bg-white" title="Voltar para a devolução sem nota (preço da tabela)">
+                remover
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <FileText size={16} className="text-[#000638]" />
+              <div className="flex-1 min-w-[220px]">
+                <p className="text-xs font-semibold text-[#000638]">O cliente já emitiu a nota de devolução?</p>
+                <p className="text-[11px] text-gray-500">
+                  Busque a nota dele para conferir as peças contra os itens e gerar a entrada com os valores da nota.
+                </p>
+              </div>
+              <button
+                onClick={() => { setNfPainel((v) => !v); if (!nfPainel && nfLista === null && customer) buscarNotasCliente(); }}
+                disabled={!customer}
+                className="h-9 px-3 rounded-lg text-xs font-bold text-white bg-[#000638] hover:bg-[#000638]/90 disabled:opacity-40"
+                title={customer ? '' : 'Selecione o cliente primeiro'}
+              >
+                Buscar nota do cliente
+              </button>
+            </div>
+          )}
+
+          {nfPainel && (
+            <div className="mt-2 pt-2 border-t border-gray-200/70">
+              <div className="flex flex-wrap items-end gap-2 mb-2">
+                <div>
+                  <label className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Emissão de</label>
+                  <input type="date" value={nfDe} onChange={(e) => setNfDe(e.target.value)} className="h-8 px-2 rounded-lg border border-gray-300 text-xs mb-0 w-auto" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-1">até</label>
+                  <input type="date" value={nfAte} onChange={(e) => setNfAte(e.target.value)} className="h-8 px-2 rounded-lg border border-gray-300 text-xs mb-0 w-auto" />
+                </div>
+                <button onClick={buscarNotasCliente} disabled={nfLoading || !customer} className="h-8 px-3 rounded-lg text-xs font-semibold text-[#000638] ring-1 ring-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40 inline-flex items-center gap-1.5">
+                  <ArrowsClockwise size={13} className={nfLoading ? 'animate-spin' : ''} /> Buscar
+                </button>
+                <div className="flex-1" />
+                <button onClick={() => setNfPainel(false)} className="text-gray-400 hover:text-gray-600"><X size={15} weight="bold" /></button>
+              </div>
+              {nfErro && <p className="text-xs text-rose-700 bg-rose-50 rounded-lg px-2 py-1.5 ring-1 ring-rose-200">{nfErro}</p>}
+              {nfLoading && <p className="text-xs text-gray-400 py-2 inline-flex items-center gap-1.5"><Spinner size={13} className="animate-spin" /> Buscando as notas do cliente no TOTVS…</p>}
+              {!nfLoading && nfLista && nfLista.length === 0 && !nfErro && (
+                <p className="text-xs text-gray-500 py-1">Nenhuma nota emitida pelo cliente para a Crosby neste período.</p>
+              )}
+              {!nfLoading && nfLista && nfLista.length > 0 && (
+                <div className="overflow-x-auto rounded-lg ring-1 ring-gray-200 bg-white">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50 text-[10px] uppercase tracking-wide text-gray-500">
+                      <tr>
+                        <th className="px-2 py-1.5 text-left">NF</th>
+                        <th className="px-2 py-1.5 text-left">Emissão</th>
+                        <th className="px-2 py-1.5 text-left">Operação</th>
+                        <th className="px-2 py-1.5 text-left">Destino</th>
+                        <th className="px-2 py-1.5 text-right">Peças</th>
+                        <th className="px-2 py-1.5 text-right">Total</th>
+                        <th className="px-2 py-1.5 text-left">Situação</th>
+                        <th className="px-2 py-1.5" />
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {nfLista.map((n) => (
+                        <tr key={`${n.invoiceCode}-${n.serialCode}-${n.invoiceSequence}`} className={`hover:bg-gray-50/60 ${n.recebida ? 'opacity-60' : ''}`}>
+                          <td className="px-2 py-1.5 font-mono font-bold text-[#000638]">{n.invoiceCode}/{n.serialCode}</td>
+                          <td className="px-2 py-1.5">{n.invoiceDate.split('-').reverse().join('/')}</td>
+                          <td className="px-2 py-1.5 truncate max-w-[260px]" title={n.operationName || ''}>{n.operationCode} · {n.operationName}</td>
+                          <td className="px-2 py-1.5">
+                            {n.destinoBranch ?? '—'}
+                            {n.paraEstaEmpresa === false && <span className="ml-1 text-amber-600">(outra empresa)</span>}
+                          </td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">{n.quantity}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtBRL(n.totalValue)}</td>
+                          <td className="px-2 py-1.5">
+                            {n.recebida ? (
+                              <span className="text-rose-600 font-semibold">recebida · trx {n.recebida.transactionCode}</span>
+                            ) : (
+                              <span className="text-emerald-700 font-semibold">não processada</span>
+                            )}
+                          </td>
+                          <td className="px-2 py-1.5 text-right">
+                            <button onClick={() => escolherNota(n)} className="px-2 py-0.5 rounded-lg text-[11px] font-bold text-white bg-[#000638] hover:bg-[#000638]/90">
+                              conferir
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Grid: produtos + coluna de ações */}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_290px] gap-2 items-start">
+          {nf && conferencia ? (
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="px-3 py-2 border-b border-gray-100 flex flex-wrap items-center gap-3 text-xs">
+              <span className="font-bold text-[#000638]">Conferência com a nota</span>
+              <span className="text-emerald-700"><b>{conferencia.conferidas}</b> de {conferencia.esperado} conferidas</span>
+              {conferencia.faltando > 0 && <span className="text-amber-700"><b>{conferencia.faltando}</b> faltando</span>}
+              {conferencia.sobrando > 0 && <span className="text-rose-700"><b>{conferencia.sobrando}</b> sobrando</span>}
+              {conferencia.ok && <span className="inline-flex items-center gap-1 text-emerald-700 font-bold"><CheckCircle size={14} weight="fill" /> tudo confere</span>}
+            </div>
+            <div className="max-h-[52vh] overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 z-10">
+                  <tr className="bg-gray-50 text-left text-[10px] uppercase tracking-wide text-gray-500">
+                    <th className="px-3 py-2 bg-gray-50">Produto da nota e etiquetas lidas</th>
+                    <th className="px-2 py-2 w-16 text-center bg-gray-50">Nota</th>
+                    <th className="px-2 py-2 w-24 text-center bg-gray-50">Lido</th>
+                    <th className="px-2 py-2 w-24 text-center bg-gray-50">Situação</th>
+                    <th className="px-2 py-2 w-24 text-right bg-gray-50">Vl. nota</th>
+                    <th className="px-2 py-2 w-24 text-right bg-gray-50">Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {conferencia.linhas.map((l) => (
+                    <tr key={l.productCode} className={`align-top ${l.situacao === 'ok' ? '' : l.situacao === 'falta' ? 'bg-amber-50/50' : 'bg-rose-50/50'}`}>
+                      <td className="px-3 py-1.5">
+                        <p className="font-medium text-[#000638] leading-tight text-[13px]">{l.name}</p>
+                        <p className="text-[11px] text-gray-400">cód. {l.productCode}{l.item?.manualQty > 0 ? ` · ${l.item.manualQty} sem tag` : ''}</p>
+                        {l.item?.epcs?.length > 0 && (
+                          <p className="mt-1 flex flex-wrap gap-1">
+                            {l.item.epcs.map((epc) => (
+                              <span key={epc} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-700 ring-1 ring-purple-200 font-mono text-[10px]">
+                                <Tag size={9} />
+                                {epc}
+                                <button onClick={() => removerEpc(l.productCode, epc)} className="text-purple-300 hover:text-rose-600"><X size={9} weight="bold" /></button>
+                              </span>
+                            ))}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5 text-center font-bold text-[#000638] tabular-nums">{l.esperado}</td>
+                      <td className="px-2 py-1.5 text-center">
+                        <span className="inline-flex items-center gap-1">
+                          {l.item?.manualQty > 0 && (
+                            <button onClick={() => ajustarManualQty(l.productCode, -1)} className="w-5 h-5 rounded ring-1 ring-gray-300 text-gray-500 hover:bg-gray-100 inline-flex items-center justify-center" title="Diminuir (sem tag)">
+                              <Minus size={10} weight="bold" />
+                            </button>
+                          )}
+                          <span className="font-bold tabular-nums min-w-[1.25rem] text-[13px]">{l.lido}</span>
+                          <button onClick={() => maisUmDaNota(l.productCode)} className="w-5 h-5 rounded ring-1 ring-gray-300 text-gray-500 hover:bg-gray-100 inline-flex items-center justify-center" title="Conferir 1 sem etiqueta">
+                            <Plus size={10} weight="bold" />
+                          </button>
+                        </span>
+                      </td>
+                      <td className="px-2 py-1.5 text-center">
+                        {l.situacao === 'ok' ? (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 text-[10px] font-semibold"><CheckCircle size={10} weight="bold" /> ok</span>
+                        ) : l.situacao === 'falta' ? (
+                          <span className="inline-flex px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200 text-[10px] font-semibold">falta {l.esperado - l.lido}</span>
+                        ) : (
+                          <span className="inline-flex px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-700 ring-1 ring-rose-200 text-[10px] font-semibold">sobra {l.lido - l.esperado}</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums text-[13px] text-gray-700">{fmtBRL(l.unitNet)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums text-[13px] font-semibold text-[#000638]">{fmtBRL(l.totalNf)}</td>
+                    </tr>
+                  ))}
+                  {conferencia.fora.length > 0 && (
+                    <tr className="bg-rose-100/70">
+                      <td colSpan={6} className="px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-rose-700">
+                        Lidas que NÃO estão na nota ({conferencia.fora.reduce((sm, i) => sm + qtyOf(i), 0)})
+                      </td>
+                    </tr>
+                  )}
+                  {conferencia.fora.map((i) => (
+                    <tr key={`fora-${i.productCode}`} className="bg-rose-50/50 align-top">
+                      <td className="px-3 py-1.5">
+                        <p className="font-medium text-rose-800 leading-tight text-[13px]">{i.name}</p>
+                        <p className="text-[11px] text-gray-400">cód. {i.productCode}</p>
+                        {i.epcs.length > 0 && (
+                          <p className="mt-1 flex flex-wrap gap-1">
+                            {i.epcs.map((epc) => (
+                              <span key={epc} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-white text-rose-700 ring-1 ring-rose-200 font-mono text-[10px]">
+                                <Tag size={9} /> {epc}
+                                <button onClick={() => removerEpc(i.productCode, epc)} className="text-rose-300 hover:text-rose-600"><X size={9} weight="bold" /></button>
+                              </span>
+                            ))}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5 text-center text-gray-400">0</td>
+                      <td className="px-2 py-1.5 text-center font-bold tabular-nums">{qtyOf(i)}</td>
+                      <td className="px-2 py-1.5 text-center">
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700 ring-1 ring-rose-200 text-[10px] font-semibold"><XCircle size={10} weight="bold" /> fora da nota</span>
+                      </td>
+                      <td />
+                      <td className="px-2 py-1.5 text-right">
+                        <button onClick={() => removeItem(i.productCode)} className="text-gray-300 hover:text-rose-500" title="Remover"><Trash size={14} /></button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          ) : (
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
             <div className="max-h-[52vh] overflow-y-auto">
               <table className="w-full text-sm">
@@ -1285,6 +1843,7 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
               </table>
             </div>
           </div>
+          )}
 
           {/* Coluna direita */}
           <div className="space-y-2 lg:sticky lg:top-2">
@@ -1319,6 +1878,27 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
                   <ArrowsClockwise size={13} className="animate-spin ml-1" />
                 )}
               </button>
+
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  onClick={() => setPotenciaOpen(true)}
+                  className="h-8 inline-flex items-center justify-center gap-1.5 rounded-lg text-[11px] font-semibold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50"
+                  title="Alcance de leitura das antenas"
+                >
+                  <WifiHigh size={13} weight="bold" /> Potência
+                </button>
+                <button
+                  onClick={() => aplicarSomPortal(!somPortal)}
+                  disabled={somBusy}
+                  className={`h-8 inline-flex items-center justify-center gap-1.5 rounded-lg text-[11px] font-semibold ring-1 disabled:opacity-50 ${
+                    somPortal ? 'text-[#000638] ring-gray-300 hover:bg-gray-50' : 'text-rose-700 ring-rose-300 bg-rose-50 hover:bg-rose-100'
+                  }`}
+                  title={somPortal ? 'Portal apita a cada leitura — clique para silenciar (fica só o bip do HeadCoach)' : 'Portal em silêncio — clique para voltar a apitar'}
+                >
+                  {somBusy ? <Spinner size={13} className="animate-spin" /> : somPortal ? <SpeakerHigh size={13} weight="bold" /> : <SpeakerSlash size={13} weight="bold" />}
+                  {somPortal ? 'Som do portal' : 'Portal mudo'}
+                </button>
+              </div>
 
               <form
                 onSubmit={(e) => {
@@ -1394,6 +1974,48 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
             {/* Resumo + gerar devolução */}
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3">
               <h2 className="text-xs font-semibold text-gray-700 mb-2">Resumo da devolução</h2>
+              {nf && conferencia ? (
+                <div className="space-y-1 text-[13px]">
+                  <div className="flex justify-between text-gray-500">
+                    <span>Peças na nota</span>
+                    <span className="tabular-nums">{conferencia.esperado}</span>
+                  </div>
+                  <div className="flex justify-between text-emerald-700">
+                    <span>Conferidas</span>
+                    <span className="tabular-nums">{conferencia.conferidas}</span>
+                  </div>
+                  {conferencia.faltando > 0 && (
+                    <div className="flex justify-between text-amber-700">
+                      <span>Faltando</span>
+                      <span className="tabular-nums">{conferencia.faltando}</span>
+                    </div>
+                  )}
+                  {conferencia.sobrando > 0 && (
+                    <div className="flex justify-between text-rose-700">
+                      <span>Sobrando / fora da nota</span>
+                      <span className="tabular-nums">{conferencia.sobrando}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-gray-500 pt-1.5 border-t border-gray-100">
+                    <span>Total da nota</span>
+                    <span className="tabular-nums">{fmtBRL(conferencia.totalNf)}</span>
+                  </div>
+                  {conferencia.valorFaltando > 0 && (
+                    <div className="flex justify-between text-amber-700">
+                      <span>Não conferido (fica fora)</span>
+                      <span className="tabular-nums">− {fmtBRL(conferencia.valorFaltando)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-baseline pt-1.5 border-t border-gray-100">
+                    <span className="font-semibold text-gray-700">Total a receber</span>
+                    <span className="text-xl font-bold text-[#000638] tabular-nums">{fmtBRL(conferencia.totalConferido)}</span>
+                  </div>
+                  <p className="text-[10px] text-gray-400">
+                    Só as peças conferidas entram na transação, pelo valor da nota. O que falta ou sobra fica registrado em
+                    Devoluções de Mercadoria, aba Transações.
+                  </p>
+                </div>
+              ) : (
               <div className="space-y-1 text-[13px]">
                 <div className="flex justify-between text-gray-500">
                   <span>Peças</span>
@@ -1414,6 +2036,7 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
                   </span>
                 </div>
               </div>
+              )}
 
               <button
                 onClick={gerarTransacao}
@@ -1426,17 +2049,21 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
                   </>
                 ) : (
                   <>
-                    <Receipt size={16} weight="bold" /> GERAR DEVOLUÇÃO
+                    <Receipt size={16} weight="bold" /> {nf ? `RECEBER ${conferencia?.conferidas || 0} PEÇA(S) CONFERIDA(S)` : 'GERAR DEVOLUÇÃO'}
                   </>
                 )}
               </button>
-              {!canGenerate && items.length > 0 && (
+              {!canGenerate && (items.length > 0 || nf) && (
                 <p className="mt-1.5 text-[10px] text-gray-400 text-center">
-                  {!operacaoValida
-                    ? 'Digite o código da operação de devolução.'
-                    : !cfopValido
-                      ? 'CFOP inválido (4 dígitos, ex.: 1202).'
-                      : 'Preencha empresa, vendedor e cliente.'}
+                  {nf?.recebida
+                    ? `Esta nota já foi recebida na transação ${nf.recebida.transactionCode}.`
+                    : !operacaoValida
+                      ? 'Digite o código da operação de devolução.'
+                      : !cfopValido
+                        ? 'CFOP inválido (4 dígitos, ex.: 1202).'
+                        : nf && conferencia && conferencia.conferidas === 0
+                          ? 'Confira ao menos uma peça da nota.'
+                          : 'Preencha empresa, vendedor e cliente.'}
                 </p>
               )}
             </div>
@@ -1468,6 +2095,12 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
                 </span>
                 <br />
                 Empresa {trx.branchCode} · operação {trx.operacao} · CFOP {trx.cfop}
+                {trx.nf && (
+                  <>
+                    <br />
+                    Ref. NF do cliente {trx.nf.invoiceCode}/{trx.nf.serialCode} (empresa {trx.nf.branchCode})
+                  </>
+                )}
                 <br />
                 {fmtBRL(trx.total)} · {trx.qtdEpcs} etiqueta(s)
               </p>
@@ -1535,6 +2168,13 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
               </div>
             </div>
           </div>
+        )}
+
+        {potenciaOpen && (
+          <PortalPotenciaModal
+            onClose={() => setPotenciaOpen(false)}
+            onSaved={() => showToast('ok', 'Potência do portal gravada')}
+          />
         )}
 
         {/* Toast */}

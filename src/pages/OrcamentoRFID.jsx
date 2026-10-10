@@ -40,8 +40,10 @@ import {
   Receipt,
   Copy,
   ArrowSquareOut,
+  WifiHigh,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
+import PortalPotenciaModal from '../components/PortalPotenciaModal';
 import { API_BASE_URL } from '../config/constants';
 import { useAuth } from '../components/AuthContext';
 import {
@@ -234,6 +236,7 @@ const OrcamentoRFID = () => {
   // Portal
   const [portalStatus, setPortalStatus] = useState({ status: 'desconectado' });
   const [portalBusy, setPortalBusy] = useState(false);
+  const [potenciaOpen, setPotenciaOpen] = useState(false);
 
   // Itens: { productCode, name, sku, unit, discount, fonte,
   //          referenceCode, referenceName, epcs: [], manualQty }
@@ -1365,6 +1368,14 @@ const OrcamentoRFID = () => {
                 )}
               </button>
 
+              <button
+                onClick={() => setPotenciaOpen(true)}
+                className="w-full h-8 inline-flex items-center justify-center gap-1.5 rounded-lg text-[11px] font-semibold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50"
+                title="Alcance de leitura das antenas"
+              >
+                <WifiHigh size={13} weight="bold" /> Potência do portal
+              </button>
+
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -1726,6 +1737,13 @@ const OrcamentoRFID = () => {
               )}
             </div>
           </div>
+        )}
+
+        {potenciaOpen && (
+          <PortalPotenciaModal
+            onClose={() => setPotenciaOpen(false)}
+            onSaved={() => showToast('ok', 'Potência do portal gravada')}
+          />
         )}
 
         {/* Toast */}

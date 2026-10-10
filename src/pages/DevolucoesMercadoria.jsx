@@ -27,6 +27,8 @@ import {
   CaretRight,
   ArrowSquareOut,
   Copy,
+  Tag,
+  ListMagnifyingGlass,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
@@ -91,6 +93,16 @@ const DevolucoesMercadoria = () => {
   const [toast, setToast] = useState(null);
   const [migracaoPendente, setMigracaoPendente] = useState(null);
   const [statusTrx, setStatusTrx] = useState({}); // devolucao id → status consultado
+  // Aba Transações: registro do que foi recebido / faltou / sobrou
+  const [trxLista, setTrxLista] = useState([]);
+  const [trxResumo, setTrxResumo] = useState(null);
+  const [trxLoading, setTrxLoading] = useState(false);
+  const [trxAviso, setTrxAviso] = useState(null);
+  const [trxDe, setTrxDe] = useState(() => new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10));
+  const [trxAte, setTrxAte] = useState(hojeBR());
+  const [trxBusca, setTrxBusca] = useState('');
+  const [trxDetalhe, setTrxDetalhe] = useState(null);
+  const [trxDetLoading, setTrxDetLoading] = useState(false);
 
   const showToast = useCallback((tipo, msg) => {
     setToast({ tipo, msg });
@@ -155,7 +167,74 @@ const DevolucoesMercadoria = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const transacoes = useMemo(() => items.filter((i) => i.transacao_code), [items]);
+  const carregarTransacoes = useCallback(async () => {
+    setTrxLoading(true);
+    setTrxAviso(null);
+    try {
+      const qs = new URLSearchParams({ de: trxDe, ate: trxAte });
+      if (trxBusca.trim()) qs.set('busca', trxBusca.trim());
+      const r = await fetch(`${API_BASE_URL}/api/devolucoes/transacoes?${qs}`);
+      const j = await r.json();
+      if (!r.ok || !j.success) {
+        if (j?.error === 'MIGRATION_PENDING') {
+          setTrxAviso(j.message);
+          setTrxLista([]);
+          setTrxResumo(null);
+          return;
+        }
+        throw new Error(j?.message || 'Falha ao carregar as transações');
+      }
+      setTrxLista(j.data.items || []);
+      setTrxResumo(j.data.resumo || null);
+    } catch (e) {
+      showToast('erro', e.message);
+    } finally {
+      setTrxLoading(false);
+    }
+  }, [trxDe, trxAte, trxBusca, showToast]);
+
+  useEffect(() => {
+    if (aba === 'transacoes') carregarTransacoes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aba, trxDe, trxAte]);
+
+  const detalharTransacao = async (t) => {
+    setTrxDetLoading(true);
+    setTrxDetalhe({ ...t, recebidos: [], faltando: [], sobrando: [], carregando: true });
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/devolucoes/transacoes/${t.id}`);
+      const j = await r.json();
+      if (!r.ok || !j.success) throw new Error(j?.message || 'Falha ao abrir o detalhe');
+      setTrxDetalhe(j.data);
+    } catch (e) {
+      showToast('erro', e.message);
+      setTrxDetalhe(null);
+    } finally {
+      setTrxDetLoading(false);
+    }
+  };
+
+  const consultarTransacao = async (t) => {
+    try {
+      const qs = new URLSearchParams({ branch: t.empresa, code: t.transacao_code, date: t.transacao_date });
+      const r = await fetch(`${API_BASE_URL}/api/totvs/pdv/transaction-status?${qs}`);
+      const j = await r.json();
+      const st = j?.data?.status;
+      if (st == null) throw new Error(j?.message || 'Sem resposta do TOTVS');
+      if (st !== t.transacao_status) {
+        await fetch(`${API_BASE_URL}/api/devolucoes/transacoes/${t.id}/status`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: st }),
+        });
+        carregarTransacoes();
+        setTrxDetalhe((d) => (d && d.id === t.id ? { ...d, transacao_status: st } : d));
+      }
+      showToast('ok', `Transação ${t.transacao_code}: ${TRX_STATUS[st] || st}`);
+    } catch (e) {
+      showToast('erro', e.message);
+    }
+  };
 
   const patch = async (id, corpo, msgOk) => {
     const r = await fetch(`${API_BASE_URL}/api/devolucoes/${id}`, {
@@ -279,7 +358,7 @@ const DevolucoesMercadoria = () => {
             {[
               { id: 'solicitacoes', label: 'Solicitações', icon: ClipboardText, badge: resumo ? resumo.aguardandoAvaliacao + resumo.aguardandoDevolucao : null },
               { id: 'rfid', label: 'Devolução RFID', icon: Broadcast, badge: selecionada ? `DEV-${selecionada.id}` : null },
-              { id: 'transacoes', label: 'Transações', icon: Receipt, badge: transacoes.length || null },
+              { id: 'transacoes', label: 'Transações', icon: Receipt, badge: trxLista.length || null },
             ].map((t) => {
               const Icon = t.icon;
               return (
@@ -464,59 +543,235 @@ const DevolucoesMercadoria = () => {
 
         {/* ───────────── Transações ───────────── */}
         {aba === 'transacoes' && (
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="px-3 py-2 border-b border-gray-100 text-[11px] text-gray-500">
-              Transações de devolução geradas pela Devolução RFID a partir das solicitações. O caixa finaliza no TRAFP005; consulte para atualizar a situação.
-              {filtroStatus === 'abertas' && ' Mostrando só as solicitações abertas — mude a situação para "Todas" na aba Solicitações para ver as concluídas.'}
+          <>
+            {trxAviso && <p className="mb-2 text-xs text-amber-700 bg-amber-50 rounded-xl px-3 py-2 ring-1 ring-amber-200">{trxAviso}</p>}
+            {trxResumo && (
+              <div className="mb-2 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
+                <Card label="Transações" valor={trxResumo.transacoes} />
+                <Card label="Peças recebidas" valor={trxResumo.recebidas} cor="text-emerald-700" />
+                <Card label="Faltando" valor={trxResumo.faltando} cor={trxResumo.faltando ? 'text-amber-700' : 'text-[#000638]'} sub="na nota, não vieram" />
+                <Card label="Sobrando" valor={trxResumo.sobrando} cor={trxResumo.sobrando ? 'text-rose-700' : 'text-[#000638]'} sub="vieram sem estar na nota" />
+                <Card label="Com divergência" valor={trxResumo.comDivergencia} />
+                <Card label="Total recebido" valor={fmtBRL(trxResumo.total)} />
+              </div>
+            )}
+            <div className="mb-2 bg-white rounded-xl border border-gray-200 shadow-sm p-3 flex flex-wrap items-end gap-2">
+              <div>
+                <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">De</label>
+                <input type="date" value={trxDe} onChange={(e) => setTrxDe(e.target.value)} className={`${inputCls} w-auto`} />
+              </div>
+              <div>
+                <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Até</label>
+                <input type="date" value={trxAte} onChange={(e) => setTrxAte(e.target.value)} className={`${inputCls} w-auto`} />
+              </div>
+              <div className="relative">
+                <MagnifyingGlass size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input
+                  value={trxBusca}
+                  onChange={(e) => setTrxBusca(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && carregarTransacoes()}
+                  placeholder="Cliente, nº da transação ou da nota…"
+                  className={`${inputCls} pl-8 w-72`}
+                />
+              </div>
+              <button onClick={carregarTransacoes} className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-[#000638] hover:bg-[#000638]/90 inline-flex items-center gap-1.5">
+                <ArrowsClockwise size={14} className={trxLoading ? 'animate-spin' : ''} /> Atualizar
+              </button>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead className="bg-gray-50 text-[10px] uppercase tracking-wide text-gray-500">
-                  <tr>
-                    <th className="px-2 py-2 text-left">Solicitação</th>
-                    <th className="px-2 py-2 text-left">Cliente</th>
-                    <th className="px-2 py-2 text-left">Empresa</th>
-                    <th className="px-2 py-2 text-left">Transação</th>
-                    <th className="px-2 py-2 text-left">Data</th>
-                    <th className="px-2 py-2 text-left">Operação</th>
-                    <th className="px-2 py-2 text-right">Etiquetas</th>
-                    <th className="px-2 py-2 text-right">Total</th>
-                    <th className="px-2 py-2 text-left">TOTVS</th>
-                    <th className="px-2 py-2 text-left">Por</th>
-                    <th className="px-2 py-2" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {transacoes.length === 0 && (
-                    <tr><td colSpan={11} className="py-10 text-center text-gray-400"><Receipt size={26} className="mx-auto mb-1.5 text-gray-300" />Nenhuma transação de devolução gerada.</td></tr>
+
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-gray-50 text-[10px] uppercase tracking-wide text-gray-500">
+                    <tr>
+                      <th className="px-2 py-2 text-left">Transação</th>
+                      <th className="px-2 py-2 text-left">Gerada em</th>
+                      <th className="px-2 py-2 text-left">Empresa</th>
+                      <th className="px-2 py-2 text-left">Cliente</th>
+                      <th className="px-2 py-2 text-left">Nota do cliente</th>
+                      <th className="px-2 py-2 text-right">Recebidas</th>
+                      <th className="px-2 py-2 text-right">Faltando</th>
+                      <th className="px-2 py-2 text-right">Sobrando</th>
+                      <th className="px-2 py-2 text-right">Total recebido</th>
+                      <th className="px-2 py-2 text-left">TOTVS</th>
+                      <th className="px-2 py-2" />
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {trxLoading && trxLista.length === 0 && (
+                      <tr><td colSpan={11} className="py-10 text-center text-gray-400"><Spinner size={20} className="animate-spin mx-auto" /></td></tr>
+                    )}
+                    {!trxLoading && trxLista.length === 0 && !trxAviso && (
+                      <tr><td colSpan={11} className="py-10 text-center text-gray-400"><Receipt size={26} className="mx-auto mb-1.5 text-gray-300" />Nenhuma transação de devolução no período.</td></tr>
+                    )}
+                    {trxLista.map((t) => {
+                      const st = t.transacao_status;
+                      const divergente = t.qtd_faltando > 0 || t.qtd_sobrando > 0;
+                      return (
+                        <tr key={t.id} className={`hover:bg-gray-50/60 ${st === 6 ? 'opacity-60' : ''}`}>
+                          <td className="px-2 py-1.5 font-mono font-bold text-[#000638]">
+                            {t.transacao_code}
+                            {t.devolucao_id && <span className="ml-1 font-sans font-normal text-[10px] text-gray-400">DEV-{t.devolucao_id}</span>}
+                          </td>
+                          <td className="px-2 py-1.5 whitespace-nowrap">{fmtDataHora(t.criado_em)}</td>
+                          <td className="px-2 py-1.5">{t.empresa}</td>
+                          <td className="px-2 py-1.5 truncate max-w-[200px]">{t.cliente_nome || t.cliente_code}</td>
+                          <td className="px-2 py-1.5">
+                            {t.nf_numero ? (
+                              <span title={`empresa ${t.nf_empresa} · ${fmtBRL(t.nf_total)}`}>
+                                {t.nf_numero}/{t.nf_serie} <span className="text-gray-400">· {t.nf_qtd_pecas} pç</span>
+                              </span>
+                            ) : (
+                              <span className="text-gray-400">sem nota</span>
+                            )}
+                          </td>
+                          <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-emerald-700">{t.qtd_recebida}</td>
+                          <td className={`px-2 py-1.5 text-right tabular-nums ${t.qtd_faltando ? 'font-bold text-amber-700' : 'text-gray-300'}`}>{t.qtd_faltando}</td>
+                          <td className={`px-2 py-1.5 text-right tabular-nums ${t.qtd_sobrando ? 'font-bold text-rose-700' : 'text-gray-300'}`}>{t.qtd_sobrando}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtBRL(t.total)}</td>
+                          <td className="px-2 py-1.5">
+                            <span className={`inline-flex px-1.5 py-0.5 rounded-full ring-1 text-[10px] font-semibold ${st === 4 ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : st === 6 ? 'bg-rose-50 text-rose-700 ring-rose-200' : 'bg-amber-50 text-amber-700 ring-amber-200'}`}>
+                              {TRX_STATUS[st] || `status ${st}`}
+                            </span>
+                          </td>
+                          <td className="px-2 py-1.5 whitespace-nowrap">
+                            <button onClick={() => detalharTransacao(t)} className={`px-2 py-0.5 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 ${divergente ? 'text-white bg-amber-600 hover:bg-amber-700' : 'text-white bg-[#000638] hover:bg-[#000638]/90'}`}>
+                              <ListMagnifyingGlass size={12} weight="bold" /> detalhar
+                            </button>
+                            <button onClick={() => consultarTransacao(t)} className="ml-1 p-1 rounded hover:bg-gray-100 text-[#000638]" title="Consultar a situação no TOTVS">
+                              <ArrowsClockwise size={13} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ───────────── Detalhe da transação: recebido / faltando / sobrando ───────────── */}
+        {trxDetalhe && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setTrxDetalhe(null)}>
+            <div className="bg-white rounded-2xl shadow-xl max-w-4xl w-full p-5 max-h-[92vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-start justify-between gap-2 mb-3">
+                <div>
+                  <h3 className="text-base font-bold text-[#000638]">
+                    Transação {trxDetalhe.transacao_code} · empresa {trxDetalhe.empresa}
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    {trxDetalhe.cliente_nome || trxDetalhe.cliente_code} · operação {trxDetalhe.operacao ?? '—'} · CFOP {trxDetalhe.cfop ?? '—'} ·{' '}
+                    {fmtDataHora(trxDetalhe.criado_em)}
+                    {trxDetalhe.criado_por ? ` · por ${trxDetalhe.criado_por}` : ''}
+                  </p>
+                  {trxDetalhe.nf_numero && (
+                    <p className="text-xs text-indigo-700 mt-0.5">
+                      Nota do cliente {trxDetalhe.nf_numero}/{trxDetalhe.nf_serie} (empresa {trxDetalhe.nf_empresa}) · {trxDetalhe.nf_qtd_pecas} peça(s) ·{' '}
+                      {fmtBRL(trxDetalhe.nf_total)}
+                    </p>
                   )}
-                  {transacoes.map((d) => {
-                    const st = statusTrx[d.id] ?? d.transacao_status;
-                    return (
-                      <tr key={d.id} className="hover:bg-gray-50/60">
-                        <td className="px-2 py-1.5 font-mono font-semibold text-[#000638]">DEV-{d.id}</td>
-                        <td className="px-2 py-1.5 truncate max-w-[200px]">{d.cliente_nome}</td>
-                        <td className="px-2 py-1.5">{d.transacao_branch}</td>
-                        <td className="px-2 py-1.5 font-mono font-bold">{d.transacao_code}</td>
-                        <td className="px-2 py-1.5">{d.transacao_date ? new Date(`${d.transacao_date}T12:00:00`).toLocaleDateString('pt-BR') : '—'}</td>
-                        <td className="px-2 py-1.5">{d.transacao_operacao ?? '—'}</td>
-                        <td className="px-2 py-1.5 text-right tabular-nums">{d.transacao_qtd_epcs ?? '—'}</td>
-                        <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtBRL(d.transacao_total)}</td>
-                        <td className="px-2 py-1.5">
-                          <span className={`inline-flex px-1.5 py-0.5 rounded-full ring-1 text-[10px] font-semibold ${st === 4 ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : st === 6 ? 'bg-rose-50 text-rose-700 ring-rose-200' : 'bg-amber-50 text-amber-700 ring-amber-200'}`}>
-                            {TRX_STATUS[st] || (st != null ? `status ${st}` : '—')}
-                          </span>
-                        </td>
-                        <td className="px-2 py-1.5 truncate max-w-[120px]">{d.transacao_por || '—'}</td>
-                        <td className="px-2 py-1.5 whitespace-nowrap">
-                          <button onClick={() => consultarTrx(d)} className="px-1.5 py-0.5 rounded text-[11px] font-semibold text-[#000638] hover:bg-gray-100 inline-flex items-center gap-1"><ArrowsClockwise size={11} /> consultar</button>
-                          <button onClick={() => setDetalhe(d)} className="px-1.5 py-0.5 rounded text-[11px] font-semibold text-[#000638] hover:bg-gray-100">abrir</button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                </div>
+                <button onClick={() => setTrxDetalhe(null)} className="text-gray-400 hover:text-gray-600"><X size={18} weight="bold" /></button>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                <div className="rounded-xl bg-emerald-50 ring-1 ring-emerald-200 p-2.5">
+                  <p className="text-[10px] font-bold uppercase text-emerald-700">Recebido</p>
+                  <p className="text-xl font-bold text-emerald-800 tabular-nums">{trxDetalhe.qtd_recebida} <span className="text-xs font-semibold">pç</span></p>
+                  <p className="text-[11px] text-emerald-700">{fmtBRL(trxDetalhe.total)} na transação</p>
+                </div>
+                <div className={`rounded-xl p-2.5 ring-1 ${trxDetalhe.qtd_faltando ? 'bg-amber-50 ring-amber-200' : 'bg-gray-50 ring-gray-200'}`}>
+                  <p className="text-[10px] font-bold uppercase text-amber-700">Faltando</p>
+                  <p className="text-xl font-bold text-amber-800 tabular-nums">{trxDetalhe.qtd_faltando} <span className="text-xs font-semibold">pç</span></p>
+                  <p className="text-[11px] text-amber-700">{fmtBRL(trxDetalhe.valor_faltando)} não recebido</p>
+                </div>
+                <div className={`rounded-xl p-2.5 ring-1 ${trxDetalhe.qtd_sobrando ? 'bg-rose-50 ring-rose-200' : 'bg-gray-50 ring-gray-200'}`}>
+                  <p className="text-[10px] font-bold uppercase text-rose-700">Sobrando</p>
+                  <p className="text-xl font-bold text-rose-800 tabular-nums">{trxDetalhe.qtd_sobrando} <span className="text-xs font-semibold">pç</span></p>
+                  <p className="text-[11px] text-rose-700">vieram e não entraram</p>
+                </div>
+              </div>
+
+              {trxDetLoading || trxDetalhe.carregando ? (
+                <div className="py-8 text-center text-gray-400"><Spinner size={20} className="animate-spin mx-auto" /></div>
+              ) : (
+                [
+                  { chave: 'recebidos', titulo: 'Recebido — entrou na transação', cor: 'emerald', vazio: 'Nada recebido.' },
+                  { chave: 'faltando', titulo: 'Faltando — está na nota e não veio (ficou fora da transação)', cor: 'amber', vazio: 'Nenhuma peça faltando.' },
+                  { chave: 'sobrando', titulo: 'Sobrando — veio e não está na nota (ficou fora da transação)', cor: 'rose', vazio: 'Nenhuma peça sobrando.' },
+                ].map((sec) => {
+                  const lista = trxDetalhe[sec.chave] || [];
+                  const corTitulo = { emerald: 'text-emerald-700', amber: 'text-amber-700', rose: 'text-rose-700' }[sec.cor];
+                  return (
+                    <div key={sec.chave} className="mb-3">
+                      <p className={`text-[10px] font-bold uppercase tracking-wide mb-1 ${corTitulo}`}>
+                        {sec.titulo} ({lista.reduce((sm, i) => sm + Number(i.quantidade || 0), 0)})
+                      </p>
+                      {lista.length === 0 ? (
+                        <p className="text-xs text-gray-400">{sec.vazio}</p>
+                      ) : (
+                        <div className="rounded-xl ring-1 ring-gray-200 overflow-hidden">
+                          <table className="w-full text-xs">
+                            <thead className="bg-gray-50 text-[10px] uppercase text-gray-500">
+                              <tr>
+                                <th className="px-2 py-1.5 text-left">Produto</th>
+                                <th className="px-2 py-1.5 text-right w-16">Qtd</th>
+                                <th className="px-2 py-1.5 text-right w-20">Nota</th>
+                                <th className="px-2 py-1.5 text-right w-20">Lido</th>
+                                <th className="px-2 py-1.5 text-right w-24">Vl. unit.</th>
+                                <th className="px-2 py-1.5 text-right w-24">Total</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                              {lista.map((i, idx) => (
+                                <tr key={`${i.productCode}-${idx}`} className="align-top">
+                                  <td className="px-2 py-1.5">
+                                    <p className="font-medium text-[#000638]">{i.name || `Produto ${i.productCode}`}</p>
+                                    <p className="text-[10px] text-gray-400">
+                                      cód. {i.productCode}
+                                      {i.motivo === 'fora_da_nota' ? ' · não consta na nota' : i.motivo === 'excedente' ? ' · acima da quantidade da nota' : ''}
+                                    </p>
+                                    {(i.epcs || []).length > 0 && (
+                                      <p className="mt-0.5 flex flex-wrap gap-1">
+                                        {i.epcs.map((e) => (
+                                          <button key={e} onClick={() => copiar(e)} title="Copiar EPC" className="inline-flex items-center gap-0.5 px-1.5 rounded-full bg-purple-50 text-purple-700 ring-1 ring-purple-200 font-mono text-[10px] hover:bg-purple-100">
+                                            <Tag size={9} /> {e}
+                                          </button>
+                                        ))}
+                                      </p>
+                                    )}
+                                  </td>
+                                  <td className="px-2 py-1.5 text-right tabular-nums font-bold">{i.quantidade}</td>
+                                  <td className="px-2 py-1.5 text-right tabular-nums text-gray-500">{i.esperado ?? '—'}</td>
+                                  <td className="px-2 py-1.5 text-right tabular-nums text-gray-500">{i.lido ?? '—'}</td>
+                                  <td className="px-2 py-1.5 text-right tabular-nums">{i.unit != null ? fmtBRL(i.unit) : '—'}</td>
+                                  <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{i.total != null ? fmtBRL(i.total) : '—'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`inline-flex px-2 py-1 rounded-full ring-1 text-[11px] font-semibold ${trxDetalhe.transacao_status === 4 ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : trxDetalhe.transacao_status === 6 ? 'bg-rose-50 text-rose-700 ring-rose-200' : 'bg-amber-50 text-amber-700 ring-amber-200'}`}>
+                  TOTVS: {TRX_STATUS[trxDetalhe.transacao_status] || trxDetalhe.transacao_status}
+                </span>
+                <button onClick={() => consultarTransacao(trxDetalhe)} className="h-8 px-2.5 rounded-lg text-[11px] font-semibold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50 inline-flex items-center gap-1">
+                  <ArrowsClockwise size={12} /> consultar no TOTVS
+                </button>
+                {trxDetalhe.nf_chave && (
+                  <button onClick={() => copiar(trxDetalhe.nf_chave)} className="h-8 px-2.5 rounded-lg text-[11px] text-gray-500 ring-1 ring-gray-200 hover:bg-gray-50 inline-flex items-center gap-1">
+                    <Copy size={12} /> chave da nota
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}
