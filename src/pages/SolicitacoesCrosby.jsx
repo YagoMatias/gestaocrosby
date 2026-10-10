@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Link as RouterLink } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
 import { useSetoresUsuario } from '../hooks/useSetoresUsuario';
 import { supabaseAdmin } from '../lib/supabase';
@@ -408,6 +407,8 @@ const SolicitacoesCrosby = () => {
   const [filtroStatusSec, setFiltroStatusSec] = useState('TODOS');
   const [filtroDataInicio, setFiltroDataInicio] = useState('');
   const [filtroDataFim, setFiltroDataFim] = useState('');
+  const [filtroFornecedor, setFiltroFornecedor] = useState('');
+  const [filtroSolicitante, setFiltroSolicitante] = useState('');
 
   const [modalDetalhe, setModalDetalhe] = useState(null);
   const [modalRejeicao, setModalRejeicao] = useState(null);
@@ -723,6 +724,22 @@ const SolicitacoesCrosby = () => {
       const fim = new Date(filtroDataFim + 'T23:59:59');
       lista = lista.filter((s) => new Date(s.data_solicitacao) <= fim);
     }
+    if (filtroFornecedor.trim()) {
+      const termo = filtroFornecedor.trim().toLowerCase();
+      lista = lista.filter((s) =>
+        String(s.supplier_name || '')
+          .toLowerCase()
+          .includes(termo),
+      );
+    }
+    if (filtroSolicitante.trim()) {
+      const termo = filtroSolicitante.trim().toLowerCase();
+      lista = lista.filter((s) =>
+        String(s.solicitante || '')
+          .toLowerCase()
+          .includes(termo),
+      );
+    }
     return lista;
   }, [
     solicitacoesGerais,
@@ -733,6 +750,8 @@ const SolicitacoesCrosby = () => {
     filtroStatusSec,
     filtroDataInicio,
     filtroDataFim,
+    filtroFornecedor,
+    filtroSolicitante,
   ]);
 
   const totais = useMemo(
@@ -1284,6 +1303,8 @@ const SolicitacoesCrosby = () => {
     setFiltroStatusSec('TODOS');
     setFiltroDataInicio('');
     setFiltroDataFim('');
+    setFiltroFornecedor('');
+    setFiltroSolicitante('');
   };
 
   // ----- seleção helpers -----
@@ -1817,100 +1838,6 @@ const SolicitacoesCrosby = () => {
         </button>
       </div>
 
-      {/* Navegação para Compras & Manutenção */}
-      <RouterLink
-        to="/solicitacoes-crosby/compras-manutencao"
-        className="mb-3 bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded-xl p-3 flex items-center gap-3 hover:from-blue-100 hover:to-cyan-100 transition-colors group"
-      >
-        <span className="bg-blue-600 text-white p-2 rounded-lg group-hover:bg-blue-700 transition-colors">
-          <ShoppingCart size={18} weight="bold" />
-        </span>
-        <div className="flex-1">
-          <p className="text-xs font-bold text-[#000638]">
-            Compras &amp; Manutenção
-          </p>
-          <p className="text-[11px] text-gray-600">
-            Controle de etapas dedicado (em processo, orçado, contratado,
-            finalizado) — acesse a página separada.
-          </p>
-        </div>
-        <span className="text-[11px] font-bold text-blue-700 group-hover:text-blue-900">
-          Abrir →
-        </span>
-      </RouterLink>
-
-      {/* Nova solicitação — formulário interno (exige usuário logado) */}
-      <div className="mb-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-3 flex flex-wrap items-center gap-2">
-        <FileText size={18} weight="bold" className="text-[#000638]" />
-        <div className="flex-1 min-w-[200px]">
-          <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
-            Formulário de Solicitações
-          </p>
-          <p className="text-[11px] text-gray-600">
-            Cada usuário abre a solicitação com o próprio login e acompanha o
-            andamento em Minhas Solicitações.
-          </p>
-        </div>
-        <RouterLink
-          to="/formulario-solicitacoes"
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-[#000638] hover:bg-[#fe0000] rounded-lg transition-colors"
-        >
-          <Plus size={14} weight="bold" />
-          Nova solicitação
-        </RouterLink>
-        <RouterLink
-          to="/minhas-solicitacoes"
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#000638] bg-white border border-[#000638]/30 hover:bg-gray-50 rounded-lg transition-colors"
-        >
-          Minhas Solicitações
-        </RouterLink>
-      </div>
-
-      {/* Link público de devolução de mercadoria — o cliente preenche sem login */}
-      <div className="mb-4 bg-gradient-to-r from-rose-50 to-orange-50 border border-rose-200 rounded-xl p-3 flex flex-wrap items-center gap-2">
-        <ArrowUUpLeft size={18} weight="bold" className="text-rose-700" />
-        <div className="flex-1 min-w-[200px]">
-          <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
-            Devolução de mercadoria · link público
-          </p>
-          <p className="text-[11px] text-gray-600">
-            Envie ao cliente. Ele informa CPF/CNPJ, vendedor, tipo, quantidade e
-            fotos por peça. Defeito abre chamado para a Produção; tudo aparece em
-            Devoluções de Mercadoria.
-          </p>
-        </div>
-        <code className="hidden md:inline text-[11px] px-2 py-1 rounded bg-white border border-rose-200 text-rose-800">
-          {`${window.location.origin}/devolucao`}
-        </code>
-        <button
-          type="button"
-          onClick={() => {
-            navigator.clipboard
-              ?.writeText(`${window.location.origin}/devolucao`)
-              .then(() => notify('success', 'Link público copiado'))
-              .catch(() => notify('error', 'Não consegui copiar o link'));
-          }}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-rose-700 hover:bg-rose-800 rounded-lg transition-colors"
-        >
-          <LinkSimple size={14} weight="bold" />
-          Copiar link
-        </button>
-        <a
-          href="/devolucao"
-          target="_blank"
-          rel="noreferrer"
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#000638] bg-white border border-[#000638]/30 hover:bg-gray-50 rounded-lg transition-colors"
-        >
-          Abrir
-        </a>
-        <RouterLink
-          to="/devolucoes-mercadoria"
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#000638] bg-white border border-[#000638]/30 hover:bg-gray-50 rounded-lg transition-colors"
-        >
-          Devoluções de Mercadoria
-        </RouterLink>
-      </div>
-
       {/* Cards resumo */}
       <div className="grid grid-cols-2 md:grid-cols-7 gap-2 mb-4">
         {[
@@ -2051,6 +1978,30 @@ const SolicitacoesCrosby = () => {
               </option>
             ))}
           </select>
+        </div>
+        <div className="flex flex-col">
+          <label className="text-[10px] font-bold text-gray-500 uppercase">
+            Fornecedor
+          </label>
+          <input
+            type="text"
+            value={filtroFornecedor}
+            onChange={(e) => setFiltroFornecedor(e.target.value)}
+            placeholder="Nome do fornecedor..."
+            className="border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#000638] min-w-[170px] mb-4"
+          />
+        </div>
+        <div className="flex flex-col">
+          <label className="text-[10px] font-bold text-gray-500 uppercase">
+            Solicitante
+          </label>
+          <input
+            type="text"
+            value={filtroSolicitante}
+            onChange={(e) => setFiltroSolicitante(e.target.value)}
+            placeholder="Nome do solicitante..."
+            className="border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-[#000638] min-w-[170px] mb-4"
+          />
         </div>
         <div className="flex flex-col">
           <label className="text-[10px] font-bold text-gray-500 uppercase">
