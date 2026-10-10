@@ -2158,6 +2158,221 @@ const ROUTE_CATEGORIES = [
     ],
   },
   {
+    id: 'pagarme-boletos',
+    name: 'Boletos Pagar.me (Remessa)',
+    description:
+      'Faturas enviadas para a Pagar.me pela Remessa Boletos: cliente, situação, linha digitável, PDF do boleto (Stone), pagamento e baixa no TOTVS — o mesmo que a tela Retorno Boleto mostra. Se o backend tiver PAGARME_BOLETOS_API_TOKEN, envie o header x-api-key.',
+    icon: '🧾',
+    routes: [
+      {
+        name: 'Listar boletos',
+        method: 'GET',
+        path: '/api/pagarme-boletos',
+        description:
+          'Lista paginada dos boletos emitidos na Pagar.me, com filtros de situação, período, empresa, cliente, CPF/CNPJ e fatura.',
+        params: {
+          query: {
+            situacao: {
+              type: 'string',
+              required: false,
+              description: 'aberto | vencido | pago | cancelado | falhou (vários separados por vírgula)',
+              placeholder: 'aberto,vencido',
+            },
+            modo: {
+              type: 'string',
+              required: false,
+              description: 'A que data dt_inicio/dt_fim se referem: vencimento (padrão) | emissao | pagamento',
+              placeholder: 'vencimento',
+            },
+            dt_inicio: {
+              type: 'string',
+              required: false,
+              description: 'Data inicial (YYYY-MM-DD)',
+              placeholder: '2026-10-01',
+            },
+            dt_fim: {
+              type: 'string',
+              required: false,
+              description: 'Data final (YYYY-MM-DD)',
+              placeholder: '2026-10-31',
+            },
+            empresa: {
+              type: 'string',
+              required: false,
+              description: 'Códigos de filial separados por vírgula',
+              placeholder: '1,2,5',
+            },
+            cliente: {
+              type: 'number',
+              required: false,
+              description: 'Código do cliente no TOTVS',
+              placeholder: '253',
+            },
+            documento: {
+              type: 'string',
+              required: false,
+              description: 'CPF/CNPJ do cliente (só dígitos)',
+              placeholder: '',
+            },
+            fatura: {
+              type: 'number',
+              required: false,
+              description: 'Número da fatura TOTVS',
+              placeholder: '',
+            },
+            page: {
+              type: 'number',
+              required: false,
+              description: 'Página (padrão 1)',
+              placeholder: '1',
+            },
+            pageSize: {
+              type: 'number',
+              required: false,
+              description: 'Itens por página (padrão 200, máx 1000)',
+              placeholder: '200',
+            },
+          },
+        },
+        response: `{
+  "success": true,
+  "data": {
+    "total": 984, "page": 1, "pageSize": 200, "totalPages": 5, "valorTotal": 812345.67,
+    "items": [ {
+        "id": 1234,
+        "remessa_id": "R1760000000000",
+        "emitido_em": "2026-10-08T14:02:11Z",
+        "situacao": "pago",                    // aberto | vencido | pago | cancelado | falhou
+        "situacao_descricao": "Pago",
+        "status_pagarme": "paid",
+        "erro": null,                          // motivo (em português) quando situacao = falhou
+        "fatura": {
+          "cd_empresa": 1, "nr_fatura": 253614, "nr_parcela": 1,
+          "dt_emissao": "2026-09-25", "dt_vencimento": "2026-10-12", "vl_fatura": 1122.23,
+          "portador_totvs": 1020, "nm_portador_totvs": "TITULO EM CARTEIRA",
+          "carteira_simples_totvs": true
+        },
+        "cliente": { "cd_cliente": 253, "nome": "EMPRESA EXEMPLO LTDA", "documento": "12345678000190" },
+        "boleto": {
+          "order_id": "or_XXXXXXXXXXXXXXXX", "charge_id": "ch_XXXXXXXXXXXXXXXX",
+          "nosso_numero": "4585199779",
+          "linha_digitavel": "19790000052400838865461183998212415900000000500",
+          "url": "https://api.pagar.me/1/boletos/live_xxx",          // boleto da Stone (HTML)
+          "pdf": "https://api.pagar.me/1/boletos/live_xxx?format=pdf",
+          "pdf_proxy": "https://<backend>/api/pagarme-boletos/1234/pdf",
+          "banco": "197", "banco_nome": "Stone"
+        },
+        "pagamento": { "pago_em": "2026-10-10T19:16:55Z", "vl_pago": 1122.23 },   // null se não pago
+        "baixa_totvs": { "status": "processada", "descricao": "Baixada no TOTVS",
+                         "baixada_em": "2026-10-10T19:40:02Z", "erro": null }    // null se não pago
+      } ]
+  }
+}`,
+      },
+      {
+        name: 'Resumo por situação',
+        method: 'GET',
+        path: '/api/pagarme-boletos/resumo',
+        description:
+          'Quantidade e valor por situação (aberto, vencido, pago, cancelado, falhou) e andamento da baixa no TOTVS. Aceita os mesmos filtros da listagem.',
+        params: {
+          query: {
+            dt_inicio: { type: 'string', required: false, description: 'Data inicial (YYYY-MM-DD)', placeholder: '' },
+            dt_fim: { type: 'string', required: false, description: 'Data final (YYYY-MM-DD)', placeholder: '' },
+            empresa: { type: 'string', required: false, description: 'Filiais separadas por vírgula', placeholder: '' },
+          },
+        },
+        response: `{
+  "success": true,
+  "data": {
+    "total": 984,
+    "por_situacao": {
+      "aberto":    { "quantidade": 700, "valor": 600000.00, "descricao": "Em aberto" },
+      "vencido":   { "quantidade": 120, "valor": 90000.00,  "descricao": "Vencido" },
+      "pago":      { "quantidade": 150, "valor": 115000.00, "descricao": "Pago" },
+      "cancelado": { "quantidade": 4,   "valor": 3000.00,   "descricao": "Cancelado" },
+      "falhou":    { "quantidade": 10,  "valor": 4345.67,   "descricao": "Não emitido" }
+    },
+    "baixa_totvs": { "baixadas": 140, "aguardando": 8, "erro": 2 }
+  }
+}`,
+      },
+      {
+        name: 'Boleto por id',
+        method: 'GET',
+        path: '/api/pagarme-boletos/:id',
+        description:
+          'Um boleto pelo id interno ou pelo order_id da Pagar.me (or_...). Traz linha digitável, links do boleto da Stone, pagamento e baixa.',
+        params: {
+          url: {
+            id: { type: 'string', required: true, description: 'id interno ou or_xxx', placeholder: '1234' },
+          },
+        },
+        response: `{ "success": true, "data": {
+    "id": 1234,
+    "remessa_id": "R1760000000000",
+    "emitido_em": "2026-10-08T14:02:11Z",
+    "situacao": "pago",                    // aberto | vencido | pago | cancelado | falhou
+    "situacao_descricao": "Pago",
+    "status_pagarme": "paid",
+    "erro": null,                          // motivo (em português) quando situacao = falhou
+    "fatura": {
+      "cd_empresa": 1, "nr_fatura": 253614, "nr_parcela": 1,
+      "dt_emissao": "2026-09-25", "dt_vencimento": "2026-10-12", "vl_fatura": 1122.23,
+      "portador_totvs": 1020, "nm_portador_totvs": "TITULO EM CARTEIRA",
+      "carteira_simples_totvs": true
+    },
+    "cliente": { "cd_cliente": 253, "nome": "EMPRESA EXEMPLO LTDA", "documento": "12345678000190" },
+    "boleto": {
+      "order_id": "or_XXXXXXXXXXXXXXXX", "charge_id": "ch_XXXXXXXXXXXXXXXX",
+      "nosso_numero": "4585199779",
+      "linha_digitavel": "19790000052400838865461183998212415900000000500",
+      "url": "https://api.pagar.me/1/boletos/live_xxx",          // boleto da Stone (HTML)
+      "pdf": "https://api.pagar.me/1/boletos/live_xxx?format=pdf",
+      "pdf_proxy": "https://<backend>/api/pagarme-boletos/1234/pdf",
+      "banco": "197", "banco_nome": "Stone"
+    },
+    "pagamento": { "pago_em": "2026-10-10T19:16:55Z", "vl_pago": 1122.23 },   // null se não pago
+    "baixa_totvs": { "status": "processada", "descricao": "Baixada no TOTVS",
+                     "baixada_em": "2026-10-10T19:40:02Z", "erro": null }    // null se não pago
+  } }`,
+      },
+      {
+        name: 'PDF do boleto',
+        method: 'GET',
+        path: '/api/pagarme-boletos/:id/pdf',
+        description:
+          'Devolve o PDF do boleto (emitido na Stone via Pagar.me) direto, sem precisar acessar a Pagar.me. Resposta: application/pdf.',
+        params: {
+          url: {
+            id: { type: 'string', required: true, description: 'id interno ou or_xxx', placeholder: '1234' },
+          },
+        },
+      },
+      {
+        name: 'Boletos de uma fatura TOTVS',
+        method: 'GET',
+        path: '/api/pagarme-boletos/fatura/:empresa/:fatura/:parcela?',
+        description:
+          'Boleto atual (vivo) e histórico de tentativas de uma fatura/parcela do TOTVS. 404 se a fatura nunca foi enviada à Pagar.me.',
+        params: {
+          url: {
+            empresa: { type: 'number', required: true, description: 'Código da filial', placeholder: '1' },
+            fatura: { type: 'number', required: true, description: 'Número da fatura', placeholder: '253614' },
+            parcela: { type: 'number', required: false, description: 'Parcela (todas se omitir)', placeholder: '1' },
+          },
+        },
+        response: `{
+  "success": true,
+  "data": {
+    "atual": { ...boleto },
+    "historico": [ { ...boleto }, { ...tentativa_que_falhou } ]
+  }
+}`,
+      },
+    ],
+  },
+  {
     id: 'token',
     name: 'Autenticação',
     description: 'Token da API TOTVS',
