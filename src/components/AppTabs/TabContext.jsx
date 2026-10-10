@@ -231,6 +231,11 @@ const TABBED_PAGES = {
     group: 'Comercial',
     dot: 'bg-sky-500',
   },
+  '/mix-canais': {
+    label: 'Mix de Canais',
+    group: 'Comercial',
+    dot: 'bg-sky-500',
+  },
   '/crm/competicao': {
     label: 'Painel Competição',
     group: 'Comercial',
@@ -470,16 +475,6 @@ const TABBED_PAGES = {
   },
   '/tecnologia/inventario-patrimonio': {
     label: 'Inventário de Patrimônio',
-    group: 'Tecnologia',
-    dot: 'bg-cyan-500',
-  },
-  '/tecnologia/leitura-rfid': {
-    label: 'Leitura de RFID',
-    group: 'Tecnologia',
-    dot: 'bg-cyan-500',
-  },
-  '/tecnologia/pdv-rfid': {
-    label: 'PDV RFID',
     group: 'Tecnologia',
     dot: 'bg-cyan-500',
   },

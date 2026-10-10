@@ -72,6 +72,7 @@ const PAGE_COMPONENTS = {
   '/painel-vendas': lazy(() => import('../../pages/PainelVendas')),
   '/crm-vendas': lazy(() => import('../../pages/CRMVendas')),
   '/new-forecast': lazy(() => import('../../pages/NewForecast')),
+  '/mix-canais': lazy(() => import('../../pages/MixCanais')),
   '/crm/competicao': lazy(() => import('../../pages/PainelCompeticao')),
   '/ranking-compras-franquias': lazy(
     () => import('../../pages/RankingComprasFranquias'),
@@ -172,8 +173,6 @@ const PAGE_COMPONENTS = {
   '/tecnologia/inventario-patrimonio': lazy(
     () => import('../../pages/InventarioPatrimonio'),
   ),
-  '/tecnologia/leitura-rfid': lazy(() => import('../../pages/LeituraRFID')),
-  '/tecnologia/pdv-rfid': lazy(() => import('../../pages/PDVRfid')),
   '/tecnologia/etiquetas-preco': lazy(
     () => import('../../pages/EtiquetasPreco'),
   ),

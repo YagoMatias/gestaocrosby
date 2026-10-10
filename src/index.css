@@ -146,3 +146,13 @@ input {
 .animate-fadeIn {
     animation: fadeIn 0.3s ease-out;
 }
+/* PDV Crosby — modo escuro: inverte as cores da tela mantendo os matizes.
+   Fora da tela cheia vai no <html>; em tela cheia, no contêiner do PDV. */
+html.pdv-dark,
+.pdv-dark-fs {
+  filter: invert(0.92) hue-rotate(180deg);
+}
+html.pdv-dark img,
+.pdv-dark-fs img {
+  filter: invert(1) hue-rotate(180deg);
+}

@@ -809,6 +809,14 @@ const useApiClient = () => {
     newForecastCanalRemove: (nome) =>
       apiMutate('/api/totvs/new-forecast/canais', 'DELETE', null, { nome }),
 
+    /** Mix de Canais — participação por canal mês a mês (histórico + New Forecast) */
+    mixCanaisGet: (ano, refresh) =>
+      apiCall('/api/totvs/mix-canais', { ano, ...(refresh ? { refresh: 1 } : {}) }),
+    mixCanaisMesSave: (body) =>
+      apiMutate('/api/totvs/mix-canais/mes', 'POST', body),
+    mixCanaisMesRemove: (mes) =>
+      apiMutate('/api/totvs/mix-canais/mes', 'DELETE', null, { mes }),
+
     /** Painel de fechamento de mês (TVs) — lê sales_closing_records */
     salePanelClosing: (mes) =>
       apiCall('/api/totvs/sale-panel/closing', mes ? { mes } : {}),

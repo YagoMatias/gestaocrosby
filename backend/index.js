@@ -64,6 +64,7 @@ import painelVendasRouter from './totvsrouter/painelVendas.js';
 import voucherRouter from './totvsrouter/voucher.js';
 import pdvRouter from './totvsrouter/pdv.js';
 import bluecredInadimplenciaRouter from './totvsrouter/bluecredInadimplencia.js';
+import mixCanaisRouter from './totvsrouter/mixCanais.js';
 import portalRfidRoutes from './routes/portalRfid.routes.js';
 import { iniciarJobFaturamentoDiario } from './jobs/faturamento-diario.job.js';
 import { iniciarJobForecastRefYoy } from './jobs/forecast-ref-yoy.job.js';
@@ -126,6 +127,7 @@ app.use('/api/totvs', painelVendasRouter); // sale-panel/*, seller-panel/*
 app.use('/api/totvs', voucherRouter); // vouchers/usage-enriched
 app.use('/api/totvs', pdvRouter); // PDV RFID â€” produto por cÃ³digo/EPC, condiÃ§Ãµes, transaÃ§Ã£o
 app.use('/api/totvs', bluecredInadimplenciaRouter); // BlueCred — inadimplência (faturas vencidas dos clientes do crediário)
+app.use('/api/totvs', mixCanaisRouter); // Mix de Canais — participação por canal mês a mês (histórico + New Forecast)
 app.use('/api/portal-rfid', portalRfidRoutes); // Portal RFID Chainway UR4 (bridge TCP)
 
 // â”€â”€â”€ Demais rotas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

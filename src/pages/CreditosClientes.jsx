@@ -150,26 +150,48 @@ const CreditosClientes = () => {
     setBuscaRealizada(true);
 
     try {
-      const isDigitsOnly = /^\d+$/.test(termo.replace(/[.\-/]/g, ''));
-      const params = new URLSearchParams();
+      const digitos = termo.replace(/[.\-/]/g, '');
+      const isDigitsOnly = /^\d+$/.test(digitos);
 
+      // Dispara as buscas aplicáveis em paralelo. Para um termo só de dígitos,
+      // ele pode ser um código de cliente OU um CPF/CNPJ — então busca pelos
+      // dois e junta os resultados (código primeiro, por ser o mais preciso).
+      const buscas = [];
       if (isDigitsOnly) {
-        params.set('cnpj', termo.replace(/[.\-/]/g, ''));
+        buscas.push(['code', `code=${encodeURIComponent(digitos)}`]);
+        buscas.push(['cnpj', `cnpj=${encodeURIComponent(digitos)}`]);
       } else {
-        params.set('nome', termo);
-        params.set('fantasia', termo);
+        const p = new URLSearchParams();
+        p.set('nome', termo);
+        p.set('fantasia', termo);
+        buscas.push(['nome', p.toString()]);
       }
 
-      const response = await fetchWithFallback(
-        `/api/totvs/clientes/search-name?${params.toString()}`,
+      const respostas = await Promise.all(
+        buscas.map(async ([, qs]) => {
+          try {
+            const response = await fetchWithFallback(
+              `/api/totvs/clientes/search-name?${qs}`,
+            );
+            if (!response.ok) return [];
+            const result = await response.json();
+            return result?.data?.clientes || [];
+          } catch {
+            return [];
+          }
+        }),
       );
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
+      // Mescla preservando a ordem (código antes de CPF/CNPJ) e sem duplicar.
+      const vistos = new Set();
+      const lista = [];
+      for (const grupo of respostas) {
+        for (const c of grupo) {
+          if (vistos.has(c.code)) continue;
+          vistos.add(c.code);
+          lista.push(c);
+        }
       }
-
-      const result = await response.json();
-      const lista = result?.data?.clientes || [];
 
       setClientes(
         lista.map((c) => ({
@@ -380,7 +402,7 @@ const CreditosClientes = () => {
           </h1>
           <p className="text-sm text-gray-500">
             Consulte CREDEV e Adiantamento de qualquer cliente por nome, nome
-            fantasia ou CNPJ
+            fantasia, código ou CNPJ
           </p>
         </div>
       </div>
@@ -401,7 +423,7 @@ const CreditosClientes = () => {
                     executarBusca();
                   }
                 }}
-                placeholder="Nome, nome fantasia ou CNPJ..."
+                placeholder="Nome, nome fantasia, código ou CNPJ..."
                 className="w-full rounded-lg border border-gray-200 bg-gray-50 pl-10 pr-4 py-2.5 text-sm text-gray-700 outline-none transition-all placeholder:text-gray-400 focus:bg-white focus:border-[#000638] focus:ring-2 focus:ring-[#000638]/10"
               />
               <button
@@ -441,7 +463,7 @@ const CreditosClientes = () => {
                 <span className="text-sm text-center px-4">
                   {buscaRealizada
                     ? 'Nenhum resultado encontrado'
-                    : 'Pesquise por nome, nome fantasia ou CNPJ'}
+                    : 'Pesquise por nome, nome fantasia, código ou CNPJ'}
                 </span>
               </div>
             ) : (
@@ -535,8 +557,9 @@ const CreditosClientes = () => {
                   Pesquise um cliente
                 </h3>
                 <p className="text-sm text-gray-400 max-w-sm">
-                  Digite o nome, nome fantasia ou CNPJ do cliente na barra de
-                  pesquisa e selecione-o para consultar CREDEV e Adiantamento.
+                  Digite o nome, nome fantasia, código ou CNPJ do cliente na
+                  barra de pesquisa e selecione-o para consultar CREDEV e
+                  Adiantamento.
                 </p>
               </div>
             </div>

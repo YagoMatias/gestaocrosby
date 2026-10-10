@@ -67,6 +67,7 @@ const ModalUsuario = ({
   empresasSelecionadas,
   setEmpresasSelecionadas,
   loadingEmpresas,
+  setorVarejo,
   onSubmit,
   onClose,
 }) => {
@@ -169,10 +170,12 @@ const ModalUsuario = ({
           </label>
 
           {/* Empresas vinculadas — obrigatório para o perfil franquias */}
-          {form.role === 'franquias' && (
+          {(form.role === 'franquias' || setorVarejo) && (
             <div>
               <label className="block text-xs font-semibold mb-1 text-[#000638]">
-                Empresas Vinculadas (obrigatório para Franquias)
+                {form.role === 'franquias'
+                  ? 'Empresas Vinculadas (obrigatório para Franquias)'
+                  : 'Empresas do usuário (setor Varejo) — o PDV Crosby mostra só estas'}
               </label>
               {loadingEmpresas ? (
                 <LoadingSpinner text="Carregando empresas..." />
@@ -182,11 +185,16 @@ const ModalUsuario = ({
                   onSelectEmpresas={setEmpresasSelecionadas}
                 />
               )}
-              {empresasSelecionadas.length === 0 && (
-                <p className="text-red-600 text-xs mt-1">
-                  Selecione pelo menos uma empresa
-                </p>
-              )}
+              {empresasSelecionadas.length === 0 &&
+                (form.role === 'franquias' ? (
+                  <p className="text-red-600 text-xs mt-1">
+                    Selecione pelo menos uma empresa
+                  </p>
+                ) : (
+                  <p className="text-gray-500 text-xs mt-1">
+                    Sem empresa marcada, o usuário vê todas as empresas no PDV Crosby.
+                  </p>
+                ))}
             </div>
           )}
 
@@ -601,10 +609,14 @@ export default function PainelAdmin() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, user?.role]);
 
-  // Carrega empresas vinculadas ao editar usuário franquias
+  // Usuário (já cadastrado) que é membro ou gestor de um setor de Varejo
+  const usuarioNoVarejo = (userId) =>
+    !!userId && (setoresPorUsuario[userId] || []).some((nome) => /varejo/i.test(nome));
+
+  // Carrega empresas vinculadas ao editar usuário franquias ou do setor Varejo
   useEffect(() => {
     const loadCompaniesForUser = async () => {
-      if (modalAberto && editando && form.id && form.role === 'franquias') {
+      if (modalAberto && editando && form.id && (form.role === 'franquias' || usuarioNoVarejo(form.id))) {
         setLoadingEmpresas(true);
         try {
           const { data } = await getUserCompanies(form.id);
@@ -616,12 +628,13 @@ export default function PainelAdmin() {
         } finally {
           setLoadingEmpresas(false);
         }
-      } else if (form.role !== 'franquias') {
+      } else if (form.role !== 'franquias' && !usuarioNoVarejo(form.id)) {
         setEmpresasSelecionadas([]);
       }
     };
     loadCompaniesForUser();
-  }, [modalAberto, editando, form.id, form.role]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modalAberto, editando, form.id, form.role, setoresPorUsuario]);
 
   // ─── Filtro de usuários ────────────────────────────────────────────────────
   const filtrados = useMemo(() => {
@@ -840,7 +853,7 @@ export default function PainelAdmin() {
         userId = newUser.id;
       }
 
-      if (form.role === 'franquias') {
+      if (form.role === 'franquias' || usuarioNoVarejo(userId)) {
         const companyCodes = empresasSelecionadas.map((emp) => emp.cd_empresa);
         const { error: companiesError } = await saveUserCompanies(
           userId,
@@ -1382,6 +1395,7 @@ export default function PainelAdmin() {
           empresasSelecionadas={empresasSelecionadas}
           setEmpresasSelecionadas={setEmpresasSelecionadas}
           loadingEmpresas={loadingEmpresas}
+          setorVarejo={editando && usuarioNoVarejo(form.id)}
           onSubmit={handleSubmit}
           onClose={fecharModal}
         />
