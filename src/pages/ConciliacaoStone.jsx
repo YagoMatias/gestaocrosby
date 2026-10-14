@@ -99,6 +99,12 @@ const ConciliacaoStone = () => {
   const [sortConfig, setSortConfig] = useState({ key: 'data', direction: 'desc' });
   const [lojaFoco, setLojaFoco] = useState(null); // stonecode em foco quando "todas"
   const [vinculando, setVinculando] = useState(null); // transação Stone escolhida p/ vínculo
+  // Drill-down: vendas do dia no TOTVS para escolher a que bate com a Stone
+  const [diaDrill, setDiaDrill] = useState(null);
+  const [transacoesDia, setTransacoesDia] = useState([]);
+  const [loadingDia, setLoadingDia] = useState(false);
+  const [erroDia, setErroDia] = useState(null);
+  const [mostrarTodasDia, setMostrarTodasDia] = useState(false);
   const [salvandoVinculo, setSalvandoVinculo] = useState(false);
 
   useEffect(() => {
@@ -262,6 +268,49 @@ const ConciliacaoStone = () => {
       .sort((a, b) => a.score - b.score)
       .map((x) => x.t);
   }, [vinculando, lojasResultado]);
+
+  useEffect(() => {
+    if (!vinculando) {
+      setDiaDrill(null);
+      setTransacoesDia([]);
+      setErroDia(null);
+      setMostrarTodasDia(false);
+      return;
+    }
+    setDiaDrill(vinculando.stone.dataVenda || String(vinculando.stone.dataCaptura || '').slice(0, 10));
+  }, [vinculando]);
+
+  useEffect(() => {
+    if (!vinculando || !diaDrill) return;
+    let vivo = true;
+    (async () => {
+      setLoadingDia(true);
+      setErroDia(null);
+      try {
+        const r = await fetch(`${API}/transacoes-dia?stonecode=${encodeURIComponent(vinculando.loja.stonecode)}&data=${diaDrill}`);
+        const j = await r.json();
+        if (!j?.success) throw new Error(j?.message || 'Falha ao buscar as vendas do dia.');
+        if (vivo) setTransacoesDia(j.data?.transacoes || []);
+      } catch (e) {
+        if (vivo) {
+          setErroDia(e.message);
+          setTransacoesDia([]);
+        }
+      } finally {
+        if (vivo) setLoadingDia(false);
+      }
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, [vinculando, diaDrill]);
+
+  const mudarDiaDrill = (delta) => {
+    if (!diaDrill) return;
+    const d = new Date(`${diaDrill}T12:00:00`);
+    d.setDate(d.getDate() + delta);
+    setDiaDrill(d.toISOString().slice(0, 10));
+  };
 
   const salvarVinculo = async (t) => {
     if (!vinculando) return;
@@ -781,8 +830,107 @@ const ConciliacaoStone = () => {
               </button>
             </div>
             <div className="overflow-y-auto flex-1">
+              <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between gap-2 flex-wrap">
+                <div className="text-xs font-semibold text-gray-700">
+                  Vendas do dia no TOTVS
+                  {diaDrill && <span className="font-normal text-gray-500"> · {fmtData(diaDrill)}</span>}
+                  {!loadingDia && !erroDia && (
+                    <span className="font-normal text-gray-400"> · {transacoesDia.length} venda(s)</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1 text-xs">
+                  <button onClick={() => mudarDiaDrill(-1)} className="px-2 py-1 rounded border border-gray-300 hover:bg-white">‹ dia anterior</button>
+                  <button onClick={() => mudarDiaDrill(1)} className="px-2 py-1 rounded border border-gray-300 hover:bg-white">dia seguinte ›</button>
+                  <label className="ml-2 flex items-center gap-1 text-gray-600">
+                    <input type="checkbox" checked={mostrarTodasDia} onChange={(e) => setMostrarTodasDia(e.target.checked)} />
+                    mostrar todas as formas
+                  </label>
+                </div>
+              </div>
+              {loadingDia ? (
+                <p className="p-6 text-center text-sm text-gray-400">Buscando as vendas do dia no TOTVS…</p>
+              ) : erroDia ? (
+                <p className="p-6 text-center text-sm text-red-500">{erroDia}</p>
+              ) : (
+                (() => {
+                  const alvo = vinculando.stone.valorBruto;
+                  const linhas = transacoesDia.flatMap((tx) =>
+                    tx.pagamentos
+                      .filter((p) => mostrarTodasDia || p.cartao)
+                      .map((p) => {
+                        const bateValor = Math.abs(p.valor - alvo) < 0.005;
+                        const bateNsu = p.nsu && vinculando.stone.nsu && String(p.nsu) === String(vinculando.stone.nsu);
+                        const bateAut = p.autorizacao && vinculando.stone.codAutorizacao && String(p.autorizacao) === String(vinculando.stone.codAutorizacao);
+                        return { tx, p, bateValor, bateNsu, bateAut, score: (bateNsu ? 0 : 4) + (bateAut ? 0 : 2) + (bateValor ? 0 : 1) };
+                      }),
+                  );
+                  linhas.sort((a, b) => a.score - b.score || String(a.tx.hora || '').localeCompare(String(b.tx.hora || '')));
+                  if (!linhas.length)
+                    return <p className="p-6 text-center text-sm text-gray-400">Nenhuma venda {mostrarTodasDia ? '' : 'no cartão '}neste dia para esta loja.</p>;
+                  return (
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="bg-gray-50 border-b text-gray-600">
+                          <th className="px-3 py-2 text-left">Hora</th>
+                          <th className="px-3 py-2 text-left">Transação / NF</th>
+                          <th className="px-3 py-2 text-left">Cliente</th>
+                          <th className="px-3 py-2 text-left">Pagamento</th>
+                          <th className="px-3 py-2 text-right">Valor</th>
+                          <th className="px-3 py-2 text-right">Δ</th>
+                          <th className="px-3 py-2"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {linhas.map(({ tx, p, bateValor, bateNsu, bateAut }, i) => {
+                          const delta = +(alvo - p.valor).toFixed(2);
+                          const destaque = bateNsu || bateAut ? 'bg-green-50' : bateValor ? 'bg-emerald-50/50' : '';
+                          return (
+                            <tr key={`${tx.filial}-${tx.nf}-${i}`} className={`border-b border-gray-100 hover:bg-gray-50 ${destaque}`}>
+                              <td className="px-3 py-2 whitespace-nowrap font-mono">{tx.hora ? tx.hora.slice(0, 5) : '—'}</td>
+                              <td className="px-3 py-2 whitespace-nowrap font-mono">
+                                {tx.transacao ? `T.${tx.transacao}` : '—'}
+                                {tx.nf ? <span className="text-gray-400"> · NF {tx.nf}</span> : null}
+                                <div className="text-gray-400 font-sans">filial {tx.filial} · total {fmt(tx.valorTotal)}</div>
+                              </td>
+                              <td className="px-3 py-2 max-w-[160px] truncate" title={tx.nomeCliente || ''}>{tx.nomeCliente || (tx.cliente ? `cód. ${tx.cliente}` : '—')}</td>
+                              <td className="px-3 py-2">
+                                <div>
+                                  {p.forma} {p.parcelas > 1 ? `${p.parcelas}x` : ''}{p.bandeira ? ` · ${p.bandeira}` : ''}
+                                </div>
+                                <div className="text-gray-400 font-mono">
+                                  {p.titulo ? `tít. ${p.titulo}` : 'sem título'}
+                                  {p.nsu ? <span className={bateNsu ? 'text-green-700 font-semibold' : ''}> · NSU {p.nsu}</span> : null}
+                                  {p.autorizacao ? <span className={bateAut ? 'text-green-700 font-semibold' : ''}> · AUT {p.autorizacao}</span> : null}
+                                </div>
+                                <div className="text-gray-400">{p.portador}</div>
+                              </td>
+                              <td className="px-3 py-2 text-right font-semibold whitespace-nowrap">{fmt(p.valor)}</td>
+                              <td className={`px-3 py-2 text-right whitespace-nowrap ${delta === 0 ? 'text-green-600' : 'text-red-600'}`}>{fmt(delta)}</td>
+                              <td className="px-3 py-2 text-right">
+                                <button
+                                  disabled={salvandoVinculo || !p.titulo}
+                                  title={p.titulo ? 'Vincular a venda da Stone a este título' : 'Pagamento sem título no contas a receber'}
+                                  onClick={() => salvarVinculo({ filial: tx.filial, titulo: p.titulo })}
+                                  className="px-2.5 py-1 rounded-md bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-40"
+                                >
+                                  Vincular
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  );
+                })()
+              )}
+
+              <div className="px-4 py-2 mt-2 bg-gray-50 border-y border-gray-200 text-xs font-semibold text-gray-700">
+                Títulos Stone sem par no período
+                <span className="font-normal text-gray-400"> · {candidatosVinculo.length}</span>
+              </div>
               {candidatosVinculo.length === 0 ? (
-                <p className="p-6 text-center text-sm text-gray-400">Não há títulos sem vínculo no TOTVS para esta loja no período.</p>
+                <p className="p-4 text-center text-xs text-gray-400">Nenhum título de portador Stone sem vínculo no período.</p>
               ) : (
                 <table className="w-full text-xs">
                   <thead>
