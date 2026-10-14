@@ -416,7 +416,7 @@ const ConciliacaoStone = () => {
     saveAs(new Blob([buf]), `conciliacao_stone_totvs_${inicio}_${fim}.xlsx`);
   };
 
-  const lojasSemChave = lojas.filter((l) => !l.temChave);
+  const lojasSemChave = lojas.filter((l) => !l.temChave || l.pendente);
   const lojaSelecionada = lojas.find((l) => l.stonecode === stonecode);
 
   const ABAS = [
@@ -450,10 +450,10 @@ const ConciliacaoStone = () => {
             >
               <option value="all">Todas as lojas com chave ({lojas.filter((l) => l.temChave).length})</option>
               {lojas.map((l) => (
-                <option key={l.stonecode} value={l.stonecode} disabled={!l.temChave}>
+                <option key={l.stonecode || l.cnpj} value={l.stonecode || ''} disabled={!l.temChave || l.pendente}>
                   {l.filiais.length ? `${l.filiais.join('/')} · ` : ''}
                   {l.filialTotvs?.nome || l.nome} — {l.cnpjFmt}
-                  {!l.temChave ? ' (sem chave Stone)' : ''}
+                  {l.pendente ? ' (falta StoneCode)' : !l.temChave ? ' (sem chave Stone)' : ''}
                 </option>
               ))}
             </select>
@@ -523,9 +523,10 @@ const ConciliacaoStone = () => {
         <div className="flex items-start gap-2 px-3.5 py-2.5 mb-4 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
           <Key size={16} className="shrink-0 mt-0.5" />
           <span>
-            <strong>{lojasSemChave.length} loja(s) ainda sem chave de API da Stone</strong> (gerar no Portal Stone de
-            cada CNPJ em Perfil › Chaves de Autenticação › API de Conciliação e cadastrar como{' '}
-            <code>STONE_KEY_&lt;stonecode&gt;</code>): {lojasSemChave.map((l) => l.nome).join(', ')}.
+            <strong>{lojasSemChave.length} loja(s) ainda fora da conciliação</strong>:{' '}
+            {lojasSemChave.map((l) => `${l.nome} (${l.pendente ? 'falta StoneCode' : 'falta chave sk_'})`).join(', ')}. A
+            chave é gerada no Portal Stone de cada CNPJ em Perfil › Chaves de Autenticação › API de Conciliação; o
+            StoneCode aparece em Dados da loja no mesmo portal.
           </span>
         </div>
       )}
