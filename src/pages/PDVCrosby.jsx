@@ -866,7 +866,7 @@ const PDVCrosby = () => {
           value: Number(Number(i.unit).toFixed(3)),
           cfop: cfopTroca(i.cfop),
         }));
-        const totalTroca = Number(itensTroca.reduce((sm, it) => sm + it.quantity * it.value, 0).toFixed(2));
+        const totalTroca = Number(itensTroca.reduce((sm, it) => sm + it.quantity * it.value, 0).toFixed(3));
         const notas = [...new Map(trocaItens.map((i) => [`${i.nota.branchCode}-${i.nota.invoiceSequence}`, i.nota])).values()];
         const rt = await fetch(`${API_BASE_URL}/api/totvs/pdv/transactions`, {
           method: 'POST',
@@ -941,14 +941,15 @@ const PDVCrosby = () => {
           cfop: PDV_VAREJO_CONFIG.cfop,
         };
       });
-      // Total exato a partir dos itens já arredondados (conferência do TOTVS)
+      // 3 casas: o TOTVS soma as linhas com os valores de 3 decimais; arredondar
+      // para 2 gerava "totalAmountCalculated != TotalAmountTransaction".
       const totalExato = Number(
         itensPayload
           .reduce(
             (s, it) => s + it.quantity * (it.value - (it.discountValue || 0)),
             0,
           )
-          .toFixed(2),
+          .toFixed(3),
       );
 
       const payload = {

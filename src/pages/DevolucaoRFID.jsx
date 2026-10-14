@@ -1103,13 +1103,16 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
               cfop: parseInt(cfop, 10),
             };
           });
+      // 3 casas: o TOTVS soma as linhas com os valores de 3 decimais (value/
+      // discountValue). Arredondar o total para 2 casas gerava divergência
+      // "totalAmountCalculated != TotalAmountTransaction".
       const totalExato = Number(
         itensPayload
           .reduce(
             (s, it) => s + it.quantity * (it.value - (it.discountValue || 0)),
             0,
           )
-          .toFixed(2),
+          .toFixed(3),
       );
 
       const payload = {
