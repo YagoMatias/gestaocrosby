@@ -67,6 +67,13 @@ import {
 } from '../utils/portalApi';
 
 // ─── Config da devolução ─────────────────────────────────────────────────────
+// Operações de devolução disponíveis (escolha obrigatória a cada devolução)
+const OPERACOES_DEVOLUCAO = [
+  { code: '7243', label: 'DEVOLUÇÕES FRANQUIAS' },
+  { code: '7244', label: 'DEVOLUÇÕES MULTIMARCAS' },
+  { code: '7245', label: 'DEVOLUÇÃO REVENDEDORES' },
+];
+
 const DEVOLUCAO_CONFIG = {
   // CFOP 1202 = devolução de venda de mercadoria adquirida ou recebida de
   // terceiros (entrada). É o mesmo que o TOTVS usa nas operações de troca.
@@ -265,13 +272,12 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
   const [customerInfo, setCustomerInfo] = useState(null);
 
   // Operação de devolução: digitada pelo operador (memoriza a última)
-  const [operacao, setOperacao] = useState(
-    () => localStorage.getItem('dev_rfid_operacao') || '',
-  );
-  const [cfop, setCfop] = useState(
-    () => localStorage.getItem('dev_rfid_cfop') || String(DEVOLUCAO_CONFIG.cfop),
-  );
-  const [operacaoSugerida, setOperacaoSugerida] = useState(null);
+  // Operação de devolução: sempre escolhida na hora (não fica salva)
+  const [operacao, setOperacao] = useState('');
+  // CFOP fixo pela UF: cliente no mesmo estado da empresa → 1202; outro estado → 2202
+  const [ufEmpresa, setUfEmpresa] = useState(null);
+  const ufCliente = customerInfo?.uf || null;
+  const cfop = ufEmpresa && ufCliente ? (ufEmpresa === ufCliente ? '1202' : '2202') : String(DEVOLUCAO_CONFIG.cfop);
 
   // Portal RFID
   const [portalStatus, setPortalStatus] = useState({ status: 'desconectado' });
@@ -320,8 +326,20 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
 
   useEffect(() => localStorage.setItem('dev_rfid_branch', branch), [branch]);
   useEffect(() => localStorage.setItem('dev_rfid_seller', seller), [seller]);
-  useEffect(() => localStorage.setItem('dev_rfid_operacao', operacao), [operacao]);
-  useEffect(() => localStorage.setItem('dev_rfid_cfop', cfop), [cfop]);
+  useEffect(() => {
+    setUfEmpresa(null);
+    if (!branch) return undefined;
+    let vivo = true;
+    fetch(`${API_BASE_URL}/api/totvs/pdv/branch/${branch}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (vivo && j?.success) setUfEmpresa(j.data?.uf || null);
+      })
+      .catch(() => {});
+    return () => {
+      vivo = false;
+    };
+  }, [branch]);
 
   const showToast = useCallback((type, msg) => {
     setToast({ type, msg });
@@ -380,21 +398,6 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
     })();
   }, [branch]);
 
-  // Sugestão da operação de devolução cadastrada em Administração → Fiscal PDV
-  useEffect(() => {
-    setOperacaoSugerida(null);
-    if (!branch) return;
-    (async () => {
-      try {
-        const r = await fetch(`${API_BASE_URL}/api/pdv-crosby/config/${branch}`);
-        const j = await r.json();
-        const op = j?.data?.config?.operacao_troca;
-        if (op) setOperacaoSugerida(String(op));
-      } catch {
-        /* sem configuração fiscal: o operador digita */
-      }
-    })();
-  }, [branch]);
 
   // Trocou de cliente: a nota escolhida e a lista não valem mais
   const clienteDaNota = useRef(null);
@@ -475,7 +478,6 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
       setBranch(d.branch || '');
       setSeller(d.seller || '');
       setOperacao(d.operacao || '');
-      setCfop(d.cfop || String(DEVOLUCAO_CONFIG.cfop));
       setCustomer(d.customer || null);
       setCustomerInfo(d.customerInfo || null);
       setItems(d.items || []);
@@ -1370,45 +1372,55 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
 
           <ClientePicker value={customer} onSelect={setCustomer} />
 
-          {/* Operação de devolução + CFOP */}
+          {/* Operação de devolução (sempre escolhida) + CFOP fixo pela UF */}
           <div>
-            <label className="flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">
+            <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">
               Operação de devolução
-              {operacaoSugerida && operacaoSugerida !== String(operacao) && (
-                <button
-                  onClick={() => setOperacao(operacaoSugerida)}
-                  className="normal-case font-semibold text-emerald-700 hover:underline"
-                  title="Operação cadastrada em Administração → Fiscal PDV"
-                >
-                  usar {operacaoSugerida}
-                </button>
-              )}
             </label>
             <div className="flex gap-1">
               <div className="relative flex-1">
                 <Gear size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                <input
+                <select
                   value={operacao}
-                  onChange={(e) => setOperacao(e.target.value.replace(/\D/g, ''))}
-                  placeholder="código"
-                  inputMode="numeric"
-                  title="Código da operação de devolução no TOTVS"
-                  className={`w-full h-9 pl-8 pr-2 rounded-lg border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#000638]/30 ${
-                    operacao && !operacaoValida ? 'border-rose-400' : 'border-gray-300'
+                  onChange={(e) => setOperacao(e.target.value)}
+                  title="Operação de devolução no TOTVS — escolha a cada devolução"
+                  className={`w-full h-9 pl-8 pr-2 mb-0 rounded-lg border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#000638]/30 ${
+                    operacao ? 'border-gray-300' : 'border-amber-400'
                   }`}
-                />
+                >
+                  <option value="">Selecione a operação…</option>
+                  {OPERACOES_DEVOLUCAO.map((o) => (
+                    <option key={o.code} value={o.code}>
+                      {o.code} - {o.label}
+                    </option>
+                  ))}
+                </select>
               </div>
-              <input
-                value={cfop}
-                onChange={(e) => setCfop(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                placeholder="CFOP"
-                inputMode="numeric"
-                title="CFOP dos itens (1202 = devolução de venda)"
-                className={`h-9 w-16 px-1.5 rounded-lg border bg-white text-sm text-center focus:outline-none focus:ring-2 focus:ring-[#000638]/30 ${
-                  cfop && !cfopValido ? 'border-rose-400' : 'border-gray-300'
+              <div
+                className={`h-9 w-[4.5rem] px-1.5 rounded-lg border bg-gray-50 text-sm text-center leading-9 font-semibold ${
+                  ufEmpresa && ufCliente ? 'border-gray-300 text-[#000638]' : 'border-amber-300 text-amber-700'
                 }`}
-              />
+                title={
+                  ufEmpresa && ufCliente
+                    ? `CFOP ${cfop}: empresa em ${ufEmpresa}, cliente em ${ufCliente} (${ufEmpresa === ufCliente ? 'mesmo estado' : 'outro estado'})`
+                    : !branch
+                      ? 'CFOP definido pela UF da empresa e do cliente'
+                      : !customer
+                        ? 'Selecione o cliente para definir o CFOP'
+                        : 'UF da empresa ou do cliente não encontrada no TOTVS — confira o cadastro'
+                }
+              >
+                {cfop}
+              </div>
             </div>
+            {branch && customer && !(ufEmpresa && ufCliente) && (
+              <p className="mt-1 text-[10px] text-amber-700">UF {!ufEmpresa ? 'da empresa' : 'do cliente'} não encontrada — usando CFOP {cfop}; confira o cadastro.</p>
+            )}
+            {ufEmpresa && ufCliente && (
+              <p className="mt-1 text-[10px] text-gray-400">
+                Empresa {ufEmpresa} · cliente {ufCliente} → CFOP {cfop}
+              </p>
+            )}
           </div>
 
           <div>
@@ -1593,6 +1605,14 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
               {conferencia.faltando > 0 && <span className="text-amber-700"><b>{conferencia.faltando}</b> faltando</span>}
               {conferencia.sobrando > 0 && <span className="text-rose-700"><b>{conferencia.sobrando}</b> sobrando</span>}
               {conferencia.ok && <span className="inline-flex items-center gap-1 text-emerald-700 font-bold"><CheckCircle size={14} weight="fill" /> tudo confere</span>}
+              <button
+                onClick={limpar}
+                disabled={items.length === 0}
+                className="ml-auto h-7 px-2.5 rounded-lg text-[11px] font-bold text-rose-600 ring-1 ring-rose-200 hover:bg-rose-50 disabled:opacity-40 inline-flex items-center gap-1"
+                title="Remover todos os produtos e zerar a leitura do portal"
+              >
+                <Trash size={13} weight="bold" /> REMOVER TODOS OS PRODUTOS
+              </button>
             </div>
             <div className="max-h-[52vh] overflow-y-auto">
               <table className="w-full text-sm">
@@ -1691,6 +1711,18 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
           </div>
           ) : (
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div className="px-3 py-1.5 border-b border-gray-100 flex items-center gap-3 text-xs">
+              <span className="font-bold text-[#000638]">Produtos</span>
+              <span className="text-gray-500">{totals.qty} peça(s)</span>
+              <button
+                onClick={limpar}
+                disabled={items.length === 0}
+                className="ml-auto h-7 px-2.5 rounded-lg text-[11px] font-bold text-rose-600 ring-1 ring-rose-200 hover:bg-rose-50 disabled:opacity-40 inline-flex items-center gap-1"
+                title="Remover todos os produtos e zerar a leitura do portal"
+              >
+                <Trash size={13} weight="bold" /> REMOVER TODOS OS PRODUTOS
+              </button>
+            </div>
             <div className="max-h-[52vh] overflow-y-auto">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 z-10">
@@ -1938,10 +1970,10 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
                 <button
                   onClick={limpar}
                   disabled={items.length === 0}
-                  className="h-9 px-2.5 rounded-lg text-xs font-semibold text-rose-600 ring-1 ring-rose-200 hover:bg-rose-50 disabled:opacity-40"
-                  title="Limpar itens e zerar a leitura do portal"
+                  className="h-9 px-2.5 rounded-lg text-xs font-semibold text-rose-600 ring-1 ring-rose-200 hover:bg-rose-50 disabled:opacity-40 inline-flex items-center gap-1"
+                  title="Remover todos os produtos e zerar a leitura do portal"
                 >
-                  <Trash size={14} />
+                  <Trash size={14} /> Remover todos
                 </button>
               </div>
             </div>
