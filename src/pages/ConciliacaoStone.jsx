@@ -43,6 +43,10 @@ const BRAND_COLORS = {
 const NIVEL_COLORS = {
   manual: 'bg-purple-100 text-purple-800 border-purple-300',
   exato: 'bg-green-100 text-green-800 border-green-300',
+  valor_diverge: 'bg-red-100 text-red-800 border-red-300',
+  nsu_diverge: 'bg-amber-100 text-amber-800 border-amber-300',
+  aut_diverge: 'bg-amber-100 text-amber-800 border-amber-300',
+  // níveis antigos (respostas em cache)
   bandeira: 'bg-amber-100 text-amber-800 border-amber-300',
   data: 'bg-amber-100 text-amber-800 border-amber-300',
   valor: 'bg-orange-100 text-orange-800 border-orange-300',
@@ -167,7 +171,7 @@ const ConciliacaoStone = () => {
       const loja = l.loja;
       if (aba === 'conciliadas' || aba === 'divergencias') {
         for (const p of l.pares) {
-          if (aba === 'divergencias' && !p.divergencias.length) continue;
+          if (aba === 'divergencias' && (p.tipo === 'exato' || p.tipo === 'manual')) continue;
           out.push({
             kind: 'par',
             loja,
@@ -238,7 +242,7 @@ const ConciliacaoStone = () => {
     const c = { conciliadas: 0, divergencias: 0, stone: 0, totvs: 0, pagamentos: 0, erros: 0 };
     for (const l of lojasVisiveis) {
       c.conciliadas += l.pares.length;
-      c.divergencias += l.pares.filter((p) => p.divergencias.length).length;
+      c.divergencias += l.pares.filter((p) => p.tipo !== 'exato' && p.tipo !== 'manual').length;
       c.stone += l.stoneSemTotvs.length;
       c.totvs += l.totvsSemStone.length;
       c.pagamentos += l.pagamentos.length;
