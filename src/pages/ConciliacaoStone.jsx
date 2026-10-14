@@ -337,6 +337,7 @@ const ConciliacaoStone = () => {
         Nível: p.rotulo,
         'Data Stone': p.stone.dataCaptura,
         NSU: p.stone.nsu,
+        Autorização: p.stone.codAutorizacao,
         'Bandeira Stone': p.stone.bandeira,
         'Tipo Stone': p.stone.tipoConta,
         'Parc. Stone': p.stone.parcelas,
@@ -362,6 +363,7 @@ const ConciliacaoStone = () => {
         Loja: l.loja.nome,
         Data: s.dataCaptura,
         NSU: s.nsu,
+        Autorização: s.codAutorizacao,
         Bandeira: s.bandeira,
         Tipo: s.tipoConta,
         Parcelas: s.parcelas,
@@ -767,6 +769,7 @@ const ConciliacaoStone = () => {
                 <p className="text-xs text-gray-500 mt-0.5">
                   {vinculando.loja.nome} · {fmtDataHora(vinculando.stone.dataCaptura)} · {vinculando.stone.bandeira} {vinculando.stone.tipoConta} ·{' '}
                   {vinculando.stone.parcelas}x · <strong>{fmt(vinculando.stone.valorBruto)}</strong> · NSU {vinculando.stone.nsu}
+                  {vinculando.stone.codAutorizacao ? <> · AUT {vinculando.stone.codAutorizacao}</> : null}
                 </p>
               </div>
               <button onClick={() => setVinculando(null)} className="text-gray-400 hover:text-gray-600">
@@ -870,6 +873,7 @@ const LinhaTabela = ({ ln, onVincular, onDesfazer, podeVincular }) => {
         </td>
         <td className={tdc}>
           <div className="font-mono">NSU {s.nsu}</div>
+          {s.codAutorizacao && <div className="font-mono text-gray-600">AUT {s.codAutorizacao}</div>}
           <div className="text-gray-400">
             {s.cartao} · {s.parcelas}x · líq. {fmt(s.valorLiquido)}
           </div>
@@ -916,8 +920,9 @@ const LinhaTabela = ({ ln, onVincular, onDesfazer, podeVincular }) => {
         </td>
         <td className={tdc}>
           <div className="font-mono">NSU {s.nsu}</div>
+          {s.codAutorizacao && <div className="font-mono text-gray-600">AUT {s.codAutorizacao}</div>}
           <div className="text-gray-400">
-            {s.cartao} · {s.parcelas}x · aut. {s.codAutorizacao} · POS {s.serialPos}
+            {s.cartao} · {s.parcelas}x · POS {s.serialPos}
           </div>
         </td>
         <td className={`${tdc} text-gray-400`}>sem título</td>
@@ -1000,6 +1005,7 @@ const CardMobile = ({ ln, onVincular, onDesfazer, podeVincular }) => {
       {s && (
         <p className="text-[11px] text-gray-600 mt-1">
           <BandeiraBadge bandeira={s.bandeira} tipo={s.tipoConta} /> {s.parcelas}x · NSU {s.nsu}
+          {s.codAutorizacao ? <> · AUT {s.codAutorizacao}</> : null}
         </p>
       )}
       {t && (
