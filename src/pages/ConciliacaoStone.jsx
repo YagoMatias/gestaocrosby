@@ -352,7 +352,9 @@ const ConciliacaoStone = () => {
         'Parc. TOTVS': p.totvs.parcelas,
         'Valor TOTVS': p.totvs.valor,
         'NF TOTVS': p.totvs.nf,
+        'Transação TOTVS': p.totvs.transacao,
         'Cliente TOTVS': p.totvs.cliente,
+        'Nome cliente TOTVS': p.totvs.nomeCliente,
         Divergências: p.divergencias.join('; '),
       })),
     );
@@ -391,7 +393,9 @@ const ConciliacaoStone = () => {
         Valor: t.valor,
         Pago: t.valorPago,
         NF: t.nf,
+        Transação: t.transacao,
         Cliente: t.cliente,
+        'Nome cliente': t.nomeCliente,
         'CPF/CNPJ': t.cpfCnpj,
         Status: t.status,
       })),
@@ -801,6 +805,8 @@ const ConciliacaoStone = () => {
                           <td className="px-3 py-2 whitespace-nowrap font-mono">
                             {t.filial}/{t.titulo}
                             {t.nf ? <span className="text-gray-400"> NF {t.nf}</span> : null}
+                            {t.transacao ? <span className="text-gray-500"> T.{t.transacao}</span> : null}
+                            {t.nomeCliente && <div className="font-sans text-gray-600 text-[11px]">{t.nomeCliente}</div>}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">{t.portador}</td>
                           <td className="px-3 py-2 text-center">{t.parcelas}x</td>
@@ -882,7 +888,9 @@ const LinhaTabela = ({ ln, onVincular, onDesfazer, podeVincular }) => {
           <div className="font-mono">
             Tít. {t.filial}/{t.titulo}
             {t.nf ? <span className="text-gray-400"> · NF {t.nf}</span> : null}
+            {t.transacao ? <span className="text-gray-600"> · Trans. {t.transacao}</span> : null}
           </div>
+          {t.nomeCliente && <div className="text-gray-700 truncate max-w-[260px]" title={t.nomeCliente}>{t.nomeCliente}</div>}
           <div className="text-gray-400">
             {fmtData(t.dataEmissao)} · {t.portador} · {t.parcelas}x
             {t.cancelado && <span className="text-red-500"> · CANCELADO</span>}
@@ -963,7 +971,8 @@ const LinhaTabela = ({ ln, onVincular, onDesfazer, podeVincular }) => {
           {t.nf ? <span className="text-gray-400"> · NF {t.nf}</span> : null}
         </div>
         <div className="text-gray-400">
-          {t.portador} · {t.parcelas}x · cliente {t.cliente}
+          {t.transacao ? <>Trans. {t.transacao} · </> : null}
+          {t.portador} · {t.parcelas}x · {t.nomeCliente || `cliente ${t.cliente}`}
           {t.dataPagamento ? ` · pago ${fmtData(t.dataPagamento)}` : ''}
         </div>
       </td>
@@ -1010,7 +1019,7 @@ const CardMobile = ({ ln, onVincular, onDesfazer, podeVincular }) => {
       )}
       {t && (
         <p className="text-[11px] text-gray-600 mt-1">
-          TOTVS tít. {t.filial}/{t.titulo} · {t.portador} · {t.parcelas}x {t.nf ? `· NF ${t.nf}` : ''}
+          TOTVS tít. {t.filial}/{t.titulo} · {t.portador} · {t.parcelas}x {t.nf ? `· NF ${t.nf}` : ''}{t.transacao ? ` · Trans. ${t.transacao}` : ''}{t.nomeCliente ? ` · ${t.nomeCliente}` : ''}
         </p>
       )}
       {ln.kind === 'par' && ln.par.divergencias.length > 0 && (
