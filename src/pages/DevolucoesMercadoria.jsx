@@ -54,6 +54,22 @@ const STATUS = {
   cancelada: { label: 'Cancelada', cls: 'bg-gray-100 text-gray-500 ring-gray-200', icon: Prohibit },
 };
 const TRX_STATUS = { 1: 'Em andamento', 2: 'Encerrada', 3: 'Processo externo', 4: 'ATENDIDA', 6: 'CANCELADA' };
+// Situação exibida: FISFP082 (nota do cliente, sem transação no TOTVS) usa
+// 1 = aguardando entrada no FISFP082, 4 = já lançada.
+const situacaoTrx = (t) =>
+  t.origem === 'fisfp082'
+    ? t.transacao_status === 4
+      ? { label: 'Lançada no FISFP082', cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200' }
+      : { label: 'Receber no FISFP082', cls: 'bg-amber-50 text-amber-700 ring-amber-200' }
+    : {
+        label: TRX_STATUS[t.transacao_status] || `status ${t.transacao_status}`,
+        cls:
+          t.transacao_status === 4
+            ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+            : t.transacao_status === 6
+              ? 'bg-rose-50 text-rose-700 ring-rose-200'
+              : 'bg-amber-50 text-amber-700 ring-amber-200',
+      };
 const inputCls = 'h-9 px-2 rounded-lg border border-gray-300 bg-white text-sm mb-0 focus:outline-none focus:ring-2 focus:ring-[#000638]/30';
 
 function Badge({ status }) {
@@ -211,6 +227,24 @@ const DevolucoesMercadoria = () => {
       setTrxDetalhe(null);
     } finally {
       setTrxDetLoading(false);
+    }
+  };
+
+  // FISFP082: marca como lançada (status 4) ou volta para pendente (1)
+  const marcarFisfp082 = async (t, lancada) => {
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/devolucoes/transacoes/${t.id}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: lancada ? 4 : 1 }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.success) throw new Error(j?.message || 'Falha ao atualizar');
+      carregarTransacoes();
+      setTrxDetalhe((d) => (d && d.id === t.id ? { ...d, transacao_status: lancada ? 4 : 1 } : d));
+      showToast('ok', lancada ? 'Marcada como lançada no FISFP082' : 'Voltou para pendente');
+    } catch (e) {
+      showToast('erro', e.message);
     }
   };
 
@@ -610,7 +644,11 @@ const DevolucoesMercadoria = () => {
                       return (
                         <tr key={t.id} className={`hover:bg-gray-50/60 ${st === 6 ? 'opacity-60' : ''}`}>
                           <td className="px-2 py-1.5 font-mono font-bold text-[#000638]">
-                            {t.transacao_code}
+                            {t.origem === 'fisfp082' ? (
+                              <span className="inline-flex px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 text-[10px] font-sans font-bold">FISFP082</span>
+                            ) : (
+                              t.transacao_code
+                            )}
                             {t.devolucao_id && <span className="ml-1 font-sans font-normal text-[10px] text-gray-400">DEV-{t.devolucao_id}</span>}
                           </td>
                           <td className="px-2 py-1.5 whitespace-nowrap">{fmtDataHora(t.criado_em)}</td>
@@ -630,17 +668,34 @@ const DevolucoesMercadoria = () => {
                           <td className={`px-2 py-1.5 text-right tabular-nums ${t.qtd_sobrando ? 'font-bold text-rose-700' : 'text-gray-300'}`}>{t.qtd_sobrando}</td>
                           <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtBRL(t.total)}</td>
                           <td className="px-2 py-1.5">
-                            <span className={`inline-flex px-1.5 py-0.5 rounded-full ring-1 text-[10px] font-semibold ${st === 4 ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : st === 6 ? 'bg-rose-50 text-rose-700 ring-rose-200' : 'bg-amber-50 text-amber-700 ring-amber-200'}`}>
-                              {TRX_STATUS[st] || `status ${st}`}
-                            </span>
+                            {(() => {
+                              const sit = situacaoTrx(t);
+                              return (
+                                <span className={`inline-flex px-1.5 py-0.5 rounded-full ring-1 text-[10px] font-semibold ${sit.cls}`}>
+                                  {sit.label}
+                                </span>
+                              );
+                            })()}
                           </td>
                           <td className="px-2 py-1.5 whitespace-nowrap">
                             <button onClick={() => detalharTransacao(t)} className={`px-2 py-0.5 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 ${divergente ? 'text-white bg-amber-600 hover:bg-amber-700' : 'text-white bg-[#000638] hover:bg-[#000638]/90'}`}>
                               <ListMagnifyingGlass size={12} weight="bold" /> detalhar
                             </button>
-                            <button onClick={() => consultarTransacao(t)} className="ml-1 p-1 rounded hover:bg-gray-100 text-[#000638]" title="Consultar a situação no TOTVS">
-                              <ArrowsClockwise size={13} />
-                            </button>
+                            {t.origem === 'fisfp082' ? (
+                              t.transacao_status === 4 ? (
+                                <button onClick={() => marcarFisfp082(t, false)} className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-semibold text-gray-500 hover:bg-gray-100" title="Voltar para pendente de entrada no FISFP082">
+                                  reabrir
+                                </button>
+                              ) : (
+                                <button onClick={() => marcarFisfp082(t, true)} className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-300 hover:bg-emerald-50" title="Já dei entrada no FISFP082">
+                                  lançada
+                                </button>
+                              )
+                            ) : (
+                              <button onClick={() => consultarTransacao(t)} className="ml-1 p-1 rounded hover:bg-gray-100 text-[#000638]" title="Consultar a situação no TOTVS">
+                                <ArrowsClockwise size={13} />
+                              </button>
+                            )}
                           </td>
                         </tr>
                       );
@@ -659,7 +714,7 @@ const DevolucoesMercadoria = () => {
               <div className="flex items-start justify-between gap-2 mb-3">
                 <div>
                   <h3 className="text-base font-bold text-[#000638]">
-                    Transação {trxDetalhe.transacao_code} · empresa {trxDetalhe.empresa}
+                    {trxDetalhe.origem === 'fisfp082' ? 'Recebimento (FISFP082)' : `Transação ${trxDetalhe.transacao_code}`} · empresa {trxDetalhe.empresa}
                   </h3>
                   <p className="text-xs text-gray-500">
                     {trxDetalhe.cliente_nome || trxDetalhe.cliente_code} · operação {trxDetalhe.operacao ?? '—'} · CFOP {trxDetalhe.cfop ?? '—'} ·{' '}
@@ -760,12 +815,29 @@ const DevolucoesMercadoria = () => {
               )}
 
               <div className="flex flex-wrap items-center gap-2">
-                <span className={`inline-flex px-2 py-1 rounded-full ring-1 text-[11px] font-semibold ${trxDetalhe.transacao_status === 4 ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : trxDetalhe.transacao_status === 6 ? 'bg-rose-50 text-rose-700 ring-rose-200' : 'bg-amber-50 text-amber-700 ring-amber-200'}`}>
-                  TOTVS: {TRX_STATUS[trxDetalhe.transacao_status] || trxDetalhe.transacao_status}
-                </span>
-                <button onClick={() => consultarTransacao(trxDetalhe)} className="h-8 px-2.5 rounded-lg text-[11px] font-semibold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50 inline-flex items-center gap-1">
-                  <ArrowsClockwise size={12} /> consultar no TOTVS
-                </button>
+                {(() => {
+                  const sit = situacaoTrx(trxDetalhe);
+                  return (
+                    <span className={`inline-flex px-2 py-1 rounded-full ring-1 text-[11px] font-semibold ${sit.cls}`}>
+                      {trxDetalhe.origem === 'fisfp082' ? sit.label : `TOTVS: ${sit.label}`}
+                    </span>
+                  );
+                })()}
+                {trxDetalhe.origem === 'fisfp082' ? (
+                  trxDetalhe.transacao_status === 4 ? (
+                    <button onClick={() => marcarFisfp082(trxDetalhe, false)} className="h-8 px-2.5 rounded-lg text-[11px] font-semibold text-gray-500 ring-1 ring-gray-300 hover:bg-gray-50">
+                      reabrir (voltar p/ pendente)
+                    </button>
+                  ) : (
+                    <button onClick={() => marcarFisfp082(trxDetalhe, true)} className="h-8 px-2.5 rounded-lg text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-300 hover:bg-emerald-50 inline-flex items-center gap-1">
+                      <CheckCircle size={12} weight="bold" /> já lancei no FISFP082
+                    </button>
+                  )
+                ) : (
+                  <button onClick={() => consultarTransacao(trxDetalhe)} className="h-8 px-2.5 rounded-lg text-[11px] font-semibold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50 inline-flex items-center gap-1">
+                    <ArrowsClockwise size={12} /> consultar no TOTVS
+                  </button>
+                )}
                 {trxDetalhe.nf_chave && (
                   <button onClick={() => copiar(trxDetalhe.nf_chave)} className="h-8 px-2.5 rounded-lg text-[11px] text-gray-500 ring-1 ring-gray-200 hover:bg-gray-50 inline-flex items-center gap-1">
                     <Copy size={12} /> chave da nota

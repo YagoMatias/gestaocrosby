@@ -1080,6 +1080,70 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
     if (!canGenerate) return;
     setPosting(true);
     try {
+      // Devolução com nota do cliente (FISFP082): NÃO gera transação no TOTVS.
+      // O HeadCoach só confere as peças e registra o recebimento; a entrada é
+      // feita manualmente no FISFP082. Registra direto na aba Transações.
+      if (nf) {
+        const vend = sellers.find((sl) => String(sl.code) === String(seller));
+        const totalRecebido = Number(
+          conferencia.recebidos.reduce((sm, r) => sm + Number(r.total || 0), 0).toFixed(2),
+        );
+        const epcsRecebidos = conferencia.recebidos.flatMap((r) => r.epcs);
+        const rr = await fetch(`${API_BASE_URL}/api/devolucoes/transacoes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            origem: 'fisfp082',
+            devolucaoId: solicitacao?.id || null,
+            empresa: parseInt(branch, 10),
+            operacao: parseInt(operacao, 10),
+            cfop: parseInt(cfop, 10),
+            total: totalRecebido,
+            clienteCode: customer.code,
+            clienteNome: customer.name,
+            vendedorCode: parseInt(seller, 10),
+            vendedorNome: vend?.name || null,
+            nf: {
+              invoiceCode: nf.invoiceCode,
+              serialCode: nf.notas.length > 1 ? `${nf.serialCode} +${nf.notas.length - 1}` : nf.serialCode,
+              invoiceDate: nf.invoiceDate,
+              branchCode: nf.branchCode,
+              accessKey: nf.notas.map((n) => n.accessKey).filter(Boolean).join(','),
+              totalValue: nf.totalValue,
+              quantity: nf.quantity,
+            },
+            recebidos: conferencia.recebidos,
+            faltando: conferencia.faltantes,
+            sobrando: conferencia.sobras,
+            por: user?.name || user?.email || null,
+          }),
+        });
+        const jr = await rr.json();
+        if (!rr.ok || !jr.success) {
+          beep(false);
+          showToast('erro', jr?.message || 'Falha ao registrar o recebimento');
+          return;
+        }
+        beep(true);
+        const nova = {
+          fisfp082: true,
+          registroId: jr.data.id,
+          branchCode: parseInt(branch, 10),
+          operacao: parseInt(operacao, 10),
+          cfop: parseInt(cfop, 10),
+          total: totalRecebido,
+          qtdEpcs: epcsRecebidos.length,
+          customerCode: customer.code,
+          epcs: epcsRecebidos,
+          nf: { invoiceCode: nf.invoiceCode, serialCode: nf.serialCode, accessKey: nf.accessKey, branchCode: nf.branchCode, notas: nf.notas },
+          conf: { conferidas: conferencia.conferidas, esperado: conferencia.esperado, faltando: conferencia.faltando, sobrando: conferencia.sobrando },
+        };
+        setTrx(nova);
+        onTransacaoGerada?.(nova);
+        if (draftId) apagarRascunho(draftId);
+        return;
+      }
+
       const itensPayload = nf
         ? // só as peças CONFERIDAS, pelo valor da nota do cliente
           conferencia.linhasPayload.map((it) => {
@@ -1230,7 +1294,7 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
 
   // ─── Acompanha o status até ATENDIDA (caixa finaliza no TRAFP005) ────────
   const verificarStatus = useCallback(async () => {
-    if (!trx || trxChecking) return;
+    if (!trx || trx.fisfp082 || trxChecking) return;
     setTrxChecking(true);
     try {
       const qs = new URLSearchParams({
@@ -1251,14 +1315,14 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
   }, [trx, trxChecking]);
 
   useEffect(() => {
-    if (!trx || trxStatus === 4 || trxStatus === 6) return undefined;
+    if (!trx || trx.fisfp082 || trxStatus === 4 || trxStatus === 6) return undefined;
     const t = setInterval(verificarStatus, 10000);
     return () => clearInterval(t);
   }, [trx, trxStatus, verificarStatus]);
 
   const ultimoStatusAvisado = useRef(null);
   useEffect(() => {
-    if (!trx || trxStatus == null) return;
+    if (!trx || trx.fisfp082 || trxStatus == null) return;
     const chave = `${trx.transactionCode}:${trxStatus}`;
     if (ultimoStatusAvisado.current === chave) return;
     ultimoStatusAvisado.current = chave;
@@ -2156,8 +2220,52 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
           </div>
         </div>
 
-        {/* Modal: devolução gerada + acompanhamento até ATENDIDA */}
-        {trx && (
+        {/* Modal: resultado — FISFP082 (nota do cliente) ou transação TOTVS */}
+        {trx && trx.fisfp082 && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 text-center">
+              <CheckCircle size={44} weight="fill" className="mx-auto mb-2 text-emerald-500" />
+              <h3 className="text-lg font-bold text-[#000638]">Peças recebidas no HeadCoach</h3>
+              <p className="mt-2 text-sm text-gray-600">
+                {trx.conf.conferidas} peça(s) conferida(s){' '}
+                {trx.conf.faltando > 0 && <span className="text-amber-700">· {trx.conf.faltando} faltando </span>}
+                {trx.conf.sobrando > 0 && <span className="text-rose-700">· {trx.conf.sobrando} sobrando </span>}
+                <br />
+                Empresa {trx.branchCode} · operação {trx.operacao} · CFOP {trx.cfop}
+                <br />
+                Ref. {(trx.nf.notas || [trx.nf]).length > 1 ? 'NFs do cliente' : 'NF do cliente'}{' '}
+                {(trx.nf.notas || [trx.nf]).map((n) => `${n.invoiceCode}/${n.serialCode}`).join(', ')} (empresa {trx.nf.branchCode})
+                <br />
+                <b>{fmtBRL(trx.total)}</b> · {trx.qtdEpcs} etiqueta(s)
+              </p>
+
+              <p className="mt-3 text-xs text-amber-800 bg-amber-50 rounded-xl p-2.5 ring-1 ring-amber-200 text-left">
+                Esta devolução <b>não gera transação no TOTVS</b>. Dê entrada da(s) nota(s) do cliente pelo{' '}
+                <b>FISFP082</b>. O recebimento, com o que foi conferido, faltou e sobrou, ficou salvo em{' '}
+                <b>Devoluções de Mercadoria → aba Transações</b>.
+              </p>
+
+              <div className="mt-4 space-y-1.5">
+                <button
+                  onClick={exportarEpcsCsv}
+                  disabled={trx.qtdEpcs === 0}
+                  className="w-full h-9 rounded-xl text-xs font-semibold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50 disabled:opacity-40 inline-flex items-center justify-center gap-1.5"
+                >
+                  <DownloadSimple size={13} /> Exportar a lista de EPC
+                </button>
+                <button
+                  onClick={novaDevolucao}
+                  className="w-full h-10 rounded-xl bg-[#000638] text-white text-sm font-bold hover:bg-[#000638]/90"
+                >
+                  Nova devolução
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Modal: devolução gerada no TOTVS + acompanhamento até ATENDIDA */}
+        {trx && !trx.fisfp082 && (
+
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
             <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 text-center">
               <CheckCircle
