@@ -894,6 +894,17 @@ const tecnologiaItems = [
     icon: Ticket,
     color: 'text-purple-600',
   },
+  {
+    // instalador do PDV Crosby (app de desktop): sempre a última versão
+    // publicada por `npm run release` no pdv-electron (bucket pdv-updates)
+    name: 'Baixar PDV Crosby (app)',
+    href: 'https://dorztqiunewggydvkjnf.supabase.co/storage/v1/object/public/pdv-updates/PDV-Crosby-Setup.exe',
+    external: true,
+    permissao: '/tecnologia/pdv-crosby',
+    ocultarNoApp: true,
+    icon: Package,
+    color: 'text-emerald-600',
+  },
 ];
 
 const adminItems = [
@@ -1076,10 +1087,13 @@ const getRoleLabel = (role) => {
 // ======================== COMPONENTES EXTRAÍDOS ========================
 
 // Folha: visível se tem acesso. Grupo: visível se QUALQUER descendente for.
+// `permissao`: página cuja permissão vale para o item (links externos não têm
+// página própria). `ocultarNoApp`: some dentro do PDV Crosby de desktop.
 const itemVisivel = (item, hasAccessToPage) =>
   Array.isArray(item.children)
     ? item.children.some((child) => itemVisivel(child, hasAccessToPage))
-    : hasAccessToPage(item.href);
+    : !(item.ocultarNoApp && typeof window !== 'undefined' && window.pdv) &&
+      hasAccessToPage(item.permissao || item.href);
 
 const MenuItem = memo(
   ({ item, isActive, level = 0, hasAccessToPage, pathname, onNavigate }) => {
