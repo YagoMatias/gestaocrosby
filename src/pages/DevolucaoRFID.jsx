@@ -310,7 +310,26 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
 
   // Nota fiscal emitida pelo cliente (modo conferência)
   const hojeIso = () => new Date().toISOString().slice(0, 10);
-  const [nf, setNf] = useState(null); // nota escolhida
+  // Notas do cliente em conferência (pode ser mais de uma de uma vez)
+  const [nfs, setNfs] = useState([]);
+  const chaveNf = (n) => `${n.branchCode}-${n.invoiceSequence ?? `${n.invoiceCode}/${n.serialCode}`}`;
+  // "nf" é a visão combinada das notas escolhidas: itens de todas, totais
+  // somados, dados de referência da primeira (quem usa nf não precisa saber
+  // se é uma ou várias)
+  const nf = useMemo(() => {
+    if (!nfs.length) return null;
+    const [primeira] = nfs;
+    return {
+      ...primeira,
+      notas: nfs,
+      itens: nfs.flatMap((n) => (n.itens || []).map((it) => ({ ...it, nfRef: `${n.invoiceCode}/${n.serialCode}` }))),
+      quantity: nfs.reduce((sm, n) => sm + Number(n.quantity || 0), 0),
+      totalValue: nfs.reduce((sm, n) => sm + Number(n.totalValue || 0), 0),
+      recebida: nfs.find((n) => n.recebida)?.recebida || null,
+      paraEstaEmpresa: nfs.every((n) => n.paraEstaEmpresa !== false),
+      destinoBranch: nfs.find((n) => n.paraEstaEmpresa === false)?.destinoBranch,
+    };
+  }, [nfs]);
   const [nfPainel, setNfPainel] = useState(false);
   const [nfLista, setNfLista] = useState(null); // null = ainda não buscou
   const [nfLoading, setNfLoading] = useState(false);
@@ -407,7 +426,7 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
     clienteDaNota.current = code;
     setNfLista(null);
     setNfErro('');
-    setNf((atual) => (atual && atual.clienteCode === code ? atual : null));
+    setNfs((atual) => atual.filter((n) => n.clienteCode === code));
     setForcarDivergencia(false);
   }, [customer]);
 
@@ -465,13 +484,13 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
       customer,
       customerInfo,
       items,
-      nf,
+      nfs,
     };
     const lista = [registro, ...drafts.filter((d) => d.id !== id)].slice(0, 30);
     persistDrafts(lista);
     setDraftId(id);
     showToast('ok', 'Devolução salva para continuar depois');
-  }, [items, draftId, branch, seller, operacao, cfop, customer, customerInfo, nf, drafts, persistDrafts, showToast]);
+  }, [items, draftId, branch, seller, operacao, cfop, customer, customerInfo, nfs, drafts, persistDrafts, showToast]);
 
   const abrirRascunho = useCallback(
     (d) => {
@@ -482,7 +501,7 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
       setCustomerInfo(d.customerInfo || null);
       setItems(d.items || []);
       clienteDaNota.current = d.customer?.code ?? null;
-      setNf(d.nf || null);
+      setNfs(d.nfs || (d.nf ? [d.nf] : []));
       setDraftId(d.id);
       processedEpcs.current = new Set(
         (d.items || []).flatMap((i) => i.epcs || []),
@@ -787,18 +806,24 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
     }
   }, [customer, branch, nfDe, nfAte]);
 
+  // Adiciona a nota à conferência (ou tira, se já estava): várias notas podem
+  // ser conferidas de uma vez — os itens de todas entram na mesma conferência
   const escolherNota = useCallback(
     (nota) => {
-      setNf({ ...nota, clienteCode: customer?.code ?? null, clienteNome: customer?.name ?? null });
-      setNfPainel(false);
+      setNfs((atual) => {
+        const k = chaveNf(nota);
+        if (atual.some((n) => chaveNf(n) === k)) return atual.filter((n) => chaveNf(n) !== k);
+        return [...atual, { ...nota, clienteCode: customer?.code ?? null, clienteNome: customer?.name ?? null }];
+      });
       setForcarDivergencia(false);
       beep(true);
     },
     [customer],
   );
 
-  const removerNota = useCallback(() => {
-    setNf(null);
+  // Sem argumento tira todas; com a nota, só aquela
+  const removerNota = useCallback((nota) => {
+    setNfs((atual) => (nota ? atual.filter((n) => chaveNf(n) !== chaveNf(nota)) : []));
     setForcarDivergencia(false);
   }, []);
 
@@ -1033,7 +1058,7 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
     setTrx(null);
     setTrxStatus(null);
     setDraftId(null);
-    setNf(null);
+    setNfs([]);
     setNfLista(null);
     setForcarDivergencia(false);
     clienteDaNota.current = null;
@@ -1102,8 +1127,10 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
         ...(nf
           ? {
               observations: [
-                { observation: `REF NF ${nf.invoiceCode}/${nf.serialCode} DE ${nf.invoiceDate.split('-').reverse().join('/')} EMP ${nf.branchCode} - HEADCOACH`.slice(0, 80) },
-                ...(nf.accessKey ? [{ observation: `CHAVE ${nf.accessKey}`.slice(0, 80) }] : []),
+                ...nf.notas.flatMap((n) => [
+                  { observation: `REF NF ${n.invoiceCode}/${n.serialCode} DE ${n.invoiceDate.split('-').reverse().join('/')} EMP ${n.branchCode} - HEADCOACH`.slice(0, 80) },
+                  ...(n.accessKey ? [{ observation: `CHAVE ${n.accessKey}`.slice(0, 80) }] : []),
+                ]),
                 ...(conferencia && !conferencia.ok
                   ? [{ observation: `PARCIAL: RECEBIDAS ${conferencia.conferidas} DE ${conferencia.esperado} - FALTAM ${conferencia.faltando} SOBRAM ${conferencia.sobrando}`.slice(0, 80) }]
                   : []),
@@ -1131,7 +1158,7 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
         customerCode: customer.code,
         // com nota, só os EPCs das peças que entraram (sobras ficam de fora)
         epcs: nf ? conferencia.recebidos.flatMap((r) => r.epcs) : items.flatMap((i) => i.epcs),
-        nf: nf ? { invoiceCode: nf.invoiceCode, serialCode: nf.serialCode, accessKey: nf.accessKey, branchCode: nf.branchCode } : null,
+        nf: nf ? { invoiceCode: nf.invoiceCode, serialCode: nf.serialCode, accessKey: nf.accessKey, branchCode: nf.branchCode, notas: nf.notas } : null,
       };
       setTrx(nova);
       setTrxStatus(1);
@@ -1167,7 +1194,15 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
             vendedorCode: parseInt(seller, 10),
             vendedorNome: vend?.name || null,
             nf: nf
-              ? { invoiceCode: nf.invoiceCode, serialCode: nf.serialCode, invoiceDate: nf.invoiceDate, branchCode: nf.branchCode, accessKey: nf.accessKey, totalValue: nf.totalValue, quantity: nf.quantity }
+              ? {
+                  invoiceCode: nf.invoiceCode,
+                  serialCode: nf.notas.length > 1 ? `${nf.serialCode} +${nf.notas.length - 1}` : nf.serialCode,
+                  invoiceDate: nf.invoiceDate,
+                  branchCode: nf.branchCode,
+                  accessKey: nf.notas.map((n) => n.accessKey).filter(Boolean).join(','),
+                  totalValue: nf.totalValue,
+                  quantity: nf.quantity,
+                }
               : null,
             recebidos: nf ? conferencia.recebidos : semNota,
             faltando: nf ? conferencia.faltantes : [],
@@ -1474,35 +1509,45 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
         {/* Nota fiscal emitida pelo cliente (conferência + entrada espelhando a nota) */}
         <div className={`mb-2 rounded-xl border shadow-sm p-3 ${nf ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-gray-200'}`}>
           {nf ? (
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#000638]">
-              <span className="inline-flex items-center gap-1.5 font-bold">
-                <FileText size={15} weight="bold" /> NF {nf.invoiceCode}/{nf.serialCode}
-              </span>
-              <span>{nf.invoiceDate.split('-').reverse().join('/')}</span>
-              <span>empresa {nf.branchCode}</span>
-              <span className="truncate max-w-[280px]" title={nf.operationName || ''}>
-                {nf.operationCode} · {nf.operationName}
-              </span>
-              <span>
-                <b>{nf.quantity}</b> peça(s) · <b>{fmtBRL(nf.totalValue)}</b>
-              </span>
-              {nf.recebida && (
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700 ring-1 ring-rose-200 font-semibold">
-                  <Warning size={11} weight="bold" /> já recebida · transação {nf.recebida.transactionCode}
+            <div className="space-y-1">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#000638]">
+                <span className="inline-flex items-center gap-1.5 font-bold">
+                  <FileText size={15} weight="bold" />
+                  {nf.notas.length === 1 ? `NF ${nf.invoiceCode}/${nf.serialCode}` : `${nf.notas.length} notas em conferência`}
                 </span>
-              )}
-              {nf.paraEstaEmpresa === false && (
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 ring-1 ring-amber-200 font-semibold">
-                  <Warning size={11} weight="bold" /> emitida para a empresa {nf.destinoBranch ?? '?'}
+                <span>
+                  <b>{nf.quantity}</b> peça(s) · <b>{fmtBRL(nf.totalValue)}</b>
                 </span>
-              )}
-              <div className="flex-1" />
-              <button onClick={() => { setNfPainel(true); if (nfLista === null) buscarNotasCliente(); }} className="px-2 py-1 rounded-lg font-semibold ring-1 ring-indigo-300 hover:bg-white">
-                trocar nota
-              </button>
-              <button onClick={removerNota} className="px-2 py-1 rounded-lg font-semibold text-rose-600 ring-1 ring-rose-200 hover:bg-white" title="Voltar para a devolução sem nota (preço da tabela)">
-                remover
-              </button>
+                {nf.recebida && (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700 ring-1 ring-rose-200 font-semibold">
+                    <Warning size={11} weight="bold" /> já recebida · transação {nf.recebida.transactionCode}
+                  </span>
+                )}
+                {nf.paraEstaEmpresa === false && (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 ring-1 ring-amber-200 font-semibold">
+                    <Warning size={11} weight="bold" /> nota emitida para a empresa {nf.destinoBranch ?? '?'}
+                  </span>
+                )}
+                <div className="flex-1" />
+                <button onClick={() => { setNfPainel(true); if (nfLista === null) buscarNotasCliente(); }} className="px-2 py-1 rounded-lg font-semibold ring-1 ring-indigo-300 hover:bg-white">
+                  + adicionar nota
+                </button>
+                <button onClick={() => removerNota()} className="px-2 py-1 rounded-lg font-semibold text-rose-600 ring-1 ring-rose-200 hover:bg-white" title="Voltar para a devolução sem nota (preço da tabela)">
+                  remover todas
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {nf.notas.map((n) => (
+                  <span key={chaveNf(n)} className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white ring-1 text-[11px] text-[#000638] ${n.recebida ? 'ring-rose-300' : 'ring-indigo-200'}`} title={n.operationName || ''}>
+                    <b className="font-mono">NF {n.invoiceCode}/{n.serialCode}</b>
+                    <span className="text-gray-500">{n.invoiceDate.split('-').reverse().join('/')} · emp {n.branchCode} · {n.quantity} pç · {fmtBRL(n.totalValue)}</span>
+                    {n.recebida && <span className="text-rose-600 font-semibold">já recebida</span>}
+                    <button onClick={() => removerNota(n)} className="text-gray-400 hover:text-rose-500" title="Tirar esta nota da conferência">
+                      <X size={12} weight="bold" />
+                    </button>
+                  </span>
+                ))}
+              </div>
             </div>
           ) : (
             <div className="flex flex-wrap items-center gap-2">
@@ -1563,7 +1608,7 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {nfLista.map((n) => (
-                        <tr key={`${n.invoiceCode}-${n.serialCode}-${n.invoiceSequence}`} className={`hover:bg-gray-50/60 ${n.recebida ? 'opacity-60' : ''}`}>
+                        <tr key={`${n.invoiceCode}-${n.serialCode}-${n.invoiceSequence}`} className={`hover:bg-gray-50/60 ${n.recebida ? 'opacity-60' : ''} ${nfs.some((x) => chaveNf(x) === chaveNf(n)) ? 'bg-indigo-50/60' : ''}`}>
                           <td className="px-2 py-1.5 font-mono font-bold text-[#000638]">{n.invoiceCode}/{n.serialCode}</td>
                           <td className="px-2 py-1.5">{n.invoiceDate.split('-').reverse().join('/')}</td>
                           <td className="px-2 py-1.5 truncate max-w-[260px]" title={n.operationName || ''}>{n.operationCode} · {n.operationName}</td>
@@ -1580,10 +1625,16 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
                               <span className="text-emerald-700 font-semibold">não processada</span>
                             )}
                           </td>
-                          <td className="px-2 py-1.5 text-right">
-                            <button onClick={() => escolherNota(n)} className="px-2 py-0.5 rounded-lg text-[11px] font-bold text-white bg-[#000638] hover:bg-[#000638]/90">
-                              conferir
-                            </button>
+                          <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                            {nfs.some((x) => chaveNf(x) === chaveNf(n)) ? (
+                              <button onClick={() => escolherNota(n)} className="px-2 py-0.5 rounded-lg text-[11px] font-bold text-emerald-700 bg-emerald-50 ring-1 ring-emerald-300 hover:bg-emerald-100 inline-flex items-center gap-1">
+                                <CheckCircle size={12} weight="fill" /> na conferência
+                              </button>
+                            ) : (
+                              <button onClick={() => escolherNota(n)} className="px-2 py-0.5 rounded-lg text-[11px] font-bold text-white bg-[#000638] hover:bg-[#000638]/90">
+                                + conferir
+                              </button>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -2130,7 +2181,8 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
                 {trx.nf && (
                   <>
                     <br />
-                    Ref. NF do cliente {trx.nf.invoiceCode}/{trx.nf.serialCode} (empresa {trx.nf.branchCode})
+                    Ref. {(trx.nf.notas || [trx.nf]).length > 1 ? 'NFs do cliente' : 'NF do cliente'}{' '}
+                    {(trx.nf.notas || [trx.nf]).map((n) => `${n.invoiceCode}/${n.serialCode}`).join(', ')} (empresa {trx.nf.branchCode})
                   </>
                 )}
                 <br />
