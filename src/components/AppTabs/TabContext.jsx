@@ -134,6 +134,11 @@ const TABBED_PAGES = {
     group: 'Financeiro',
     dot: 'bg-blue-500',
   },
+  '/fluxo-caixa-ext': {
+    label: 'Fluxo de Caixa Ext',
+    group: 'Financeiro',
+    dot: 'bg-blue-500',
+  },
   '/dre': {
     label: 'DRE',
     group: 'Financeiro',

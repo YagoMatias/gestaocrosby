@@ -56,6 +56,7 @@ import {
   Broadcast,
   Tag,
   WifiHigh,
+  Gear,
 } from '@phosphor-icons/react';
 
 // Componentes de ícones modernos
@@ -217,6 +218,13 @@ const financeiro = [
     name: 'Extrato Stone',
     href: '/extrato-stone',
     icon: Bank,
+    color: 'text-blue-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
+  },
+  {
+    name: 'Fluxo de Caixa Ext',
+    href: '/fluxo-caixa-ext',
+    icon: Wallet,
     color: 'text-blue-600',
     roles: ['owner', 'admin', 'manager', 'user'],
   },
@@ -863,6 +871,12 @@ const tecnologiaItems = [
     href: '/tecnologia/pdv-crosby',
     icon: Storefront,
     color: 'text-emerald-600',
+  },
+  {
+    name: 'PDV — Aparelhos',
+    href: '/tecnologia/pdv-perifericos',
+    icon: Gear,
+    color: 'text-slate-600',
   },
   {
     name: 'Etiquetas de Preço',

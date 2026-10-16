@@ -232,6 +232,11 @@ const AVAILABLE_PAGES = [
     category: 'Financeiro',
   },
   {
+    path: '/fluxo-caixa-ext',
+    name: 'Fluxo de Caixa Ext (extratos bancários)',
+    category: 'Financeiro',
+  },
+  {
     path: '/extratos-bancos',
     name: 'Extratos Bancos',
     category: 'Financeiro',
@@ -553,6 +558,11 @@ const AVAILABLE_PAGES = [
   {
     path: '/tecnologia/pdv-crosby',
     name: 'PDV Crosby',
+    category: 'Tecnologia',
+  },
+  {
+    path: '/tecnologia/pdv-perifericos',
+    name: 'PDV — Configurações dos Aparelhos',
     category: 'Tecnologia',
   },
   {

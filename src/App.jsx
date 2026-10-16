@@ -143,6 +143,7 @@ const DevolucaoRFID = lazy(() => import('./pages/DevolucaoRFID'));
 const DevolucoesMercadoria = lazy(() => import('./pages/DevolucoesMercadoria'));
 const DevolucaoPublica = lazy(() => import('./pages/DevolucaoPublica'));
 const PDVCrosby = lazy(() => import('./pages/PDVCrosby'));
+const PDVPerifericos = lazy(() => import('./pages/PDVPerifericos'));
 const VendasPDV = lazy(() => import('./pages/VendasPDV'));
 const FiscalPDV = lazy(() => import('./pages/FiscalPDV'));
 const EtiquetasPreco = lazy(() => import('./pages/EtiquetasPreco'));
@@ -180,6 +181,7 @@ const DuplicataVendas = lazy(() => import('./pages/DuplicataVendas'));
 const PagamentosFabricas = lazy(() => import('./pages/PagamentosFabricas'));
 const ConciliacaoStone = lazy(() => import('./pages/ConciliacaoStone'));
 const ExtratoStone = lazy(() => import('./pages/ExtratoStone'));
+const FluxoCaixaExt = lazy(() => import('./pages/FluxoCaixaExt'));
 const CrosbyBot = lazy(() => import('./pages/CrosbyBot'));
 // RH — Banco de Talentos (vagas + inscrições) + LP pública
 const RhVagas = lazy(() => import('./pages/rh/Vagas'));
@@ -217,6 +219,7 @@ const protectedRoutes = [
   { path: '/tecnologia/devolucao-rfid', component: DevolucaoRFID },
   { path: '/devolucoes-mercadoria', component: DevolucoesMercadoria },
   { path: '/tecnologia/pdv-crosby', component: PDVCrosby },
+  { path: '/tecnologia/pdv-perifericos', component: PDVPerifericos },
   { path: '/varejo/vendas-pdv', component: VendasPDV },
   { path: '/admin/fiscal-pdv', component: FiscalPDV },
   { path: '/tecnologia/etiquetas-preco', component: EtiquetasPreco },
@@ -235,6 +238,7 @@ const protectedRoutes = [
   { path: '/pagamentos-fabricas', component: PagamentosFabricas },
   { path: '/conciliacao-stone', component: ConciliacaoStone },
   { path: '/extrato-stone', component: ExtratoStone },
+  { path: '/fluxo-caixa-ext', component: FluxoCaixaExt },
   { path: '/emprestimos', component: Emprestimos },
   { path: '/despesa-filial', component: DespesaFilial },
   { path: '/despesas-fixas', component: DespesasFixas },
