@@ -51,7 +51,10 @@ const CANAIS_BASE = [
     meta: 350000,
     expedicao: 'showroom',
   },
-  { canal: 'FRANQUIAS', fonte: 'FRANQUIAS', meta: 150000, codes: [40] },
+  // JHEMYSON (40) vende franquias E multimarcas: o backend separa pelo
+  // cliente (franquia = "F<nº> - CROSBY <nome>"). FRANQUIAS fica só com as
+  // franquias; o drill usa '40_FRQ' (vendedor 40 filtrado).
+  { canal: 'FRANQUIAS', fonte: 'FRANQUIAS', meta: 150000, codes: ['40_FRQ'] },
   // REVENDA e MULTIMARCAS são linhas-grupo: o valor é a soma dos vendedores
   // (chaves VEND_<código> do painel) e o clique na seta abre uma linha por
   // vendedor, com as mesmas colunas.
@@ -90,9 +93,15 @@ const CANAIS_BASE = [
   },
   {
     canal: 'MULTIMARCAS',
-    fontes: ['VEND_21', 'VEND_26', 'VEND_259', 'VEND_241_MTM'],
-    fontesLegado: ['MTM_RAFAEL', 'MTM_DAVID', 'MTM_ARTHUR', 'MTM_YAGO'],
-    codes: [21, 26, 259, 241],
+    fontes: ['VEND_21', 'VEND_26', 'VEND_259', 'VEND_241_MTM', 'VEND_40_MTM'],
+    fontesLegado: [
+      'MTM_RAFAEL',
+      'MTM_DAVID',
+      'MTM_ARTHUR',
+      'MTM_YAGO',
+      'MTM_JHEMYSON',
+    ],
+    codes: [21, 26, 259, 241, '40_MTM'],
     metaSoma: true,
     filhos: [
       // fontesLegado: chave antiga do mesmo vendedor (pré-VEND_<cod>)
@@ -126,6 +135,18 @@ const CANAIS_BASE = [
         fonte: 'VEND_241_MTM',
         fontesLegado: ['MTM_YAGO'],
         code: 241,
+        meta: 0,
+      },
+      // JHEMYSON (40) continua sendo o vendedor das FRANQUIAS; aqui entra só
+      // o que ele vende para cliente que não é franquia. `vendedor` é o
+      // código exibido; `code` é a chave do drill ('40_MTM').
+      {
+        canal: 'MTM JHEMYSON',
+        rotulo: 'MTM JHEMYSON',
+        fonte: 'VEND_40_MTM',
+        fontesLegado: ['MTM_JHEMYSON'],
+        code: '40_MTM',
+        vendedor: 40,
         meta: 0,
       },
     ],
@@ -2126,7 +2147,7 @@ const NewForecast = () => {
                             <span className="text-gray-300 mr-1.5">└</span>
                             {f.rotulo || f.canal}
                             <span className="text-gray-400 ml-1">
-                              #{f.code}
+                              #{f.vendedor ?? f.code}
                             </span>
                           </td>
                           {semanasDef.map((w) => (

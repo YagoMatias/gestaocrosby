@@ -168,6 +168,12 @@ function recalcTotal(dataRow) {
   return summed;
 }
 
+import {
+  faturamentoPorPeriodo,
+  faturamentoPorVendedorJanelas,
+  fecharMesesPendentes,
+} from '../services/faturamentoVendedorMensal.js';
+
 const router = express.Router();
 
 // =============================================================================
@@ -846,6 +852,21 @@ const FAT_VEND_BAZAR_OPS = new Set([887, 888, 889]);
 const MTM_YAGO_CODE = 241;
 const MTM_YAGO_DESDE = '2026-10-06';
 const FAT_VEND_EXPEDICAO_CODE = -50;
+
+// JHEMYSON (vendedor 40) vende FRANQUIAS e, desde 10/2026, também
+// MULTIMARCAS. A régua é o CLIENTE: franquia tem nome fantasia
+// "F<nº> - CROSBY <nome>" (ou contém CROSBY); qualquer outro cliente é
+// multimarcas. O semanal publica FRANQUIAS só com as franquias e os dois
+// lados do 40 separados (VEND_40_FRQ / VEND_40_MTM / MTM_JHEMYSON); no
+// drill, '40_FRQ' e '40_MTM' são o vendedor 40 filtrado por cliente.
+const FRQ_JHEMYSON_CODE = 40;
+const ehClienteFranquia = (nome) => {
+  const n = String(nome || '')
+    .toUpperCase()
+    .trim();
+  if (!n) return false;
+  return /^F\s*\d{1,4}\s*-/.test(n) || /\bCROSBY\b/.test(n);
+};
 
 // RICARDO ELETRO: card próprio no Painel (pseudo-vendedor -512) e canal
 // automático no New Forecast. Diferente da expedição, a op 512 NÃO gera NF
@@ -2085,7 +2106,8 @@ router.post(
 // S3=15-21, S4=22-28, S5=29+ — mesma régua do PlanejamentoMensalModal) via
 // chamada interna (aproveita o cache de 30min de cada semana) e devolve os
 // canais do New Forecast já mapeados:
-//   FRANQUIAS(40) · REVENDA(161/165, +241 até 09/2026) · MTM_YAGO(241, de
+//   FRANQUIAS(40, só clientes franquia) · MTM_JHEMYSON(40, demais clientes)
+//   REVENDA(161/165, +241 até 09/2026) · MTM_YAGO(241, de
 //   10/2026) · MTM_RAFAEL(21) · MTM_DAVID(26)
 //   MTM_ARTHUR(259) · VAREJO(painel oficial) · NOVIDADES(exp op 7255)
 //   SHOWROOM(demais ops de expedição)
@@ -2187,6 +2209,29 @@ router.post(
           qtd: row.qtd,
           valor: row.valor,
           vendas: cached?.detalhes?.[code] || [],
+        };
+      }
+      // JHEMYSON (40) dividido por cliente: '40_FRQ' (franquias) e
+      // '40_MTM' (multimarcas). Sem o detalhe em cache, tudo fica em FRQ.
+      const jh = vendedores[FRQ_JHEMYSON_CODE];
+      if (jh) {
+        const frq = jh.vendas.filter((v) => ehClienteFranquia(v.cliente_nome));
+        const mtm = jh.vendas.filter((v) => !ehClienteFranquia(v.cliente_nome));
+        const somaV = (arr) =>
+          Math.round(arr.reduce((a, v) => a + (v.valor || 0), 0) * 100) / 100;
+        vendedores['40_FRQ'] = {
+          seller_code: FRQ_JHEMYSON_CODE,
+          seller_name: jh.seller_name,
+          qtd: jh.vendas.length ? frq.length : jh.qtd,
+          valor: jh.vendas.length ? somaV(frq) : jh.valor,
+          vendas: frq,
+        };
+        vendedores['40_MTM'] = {
+          seller_code: FRQ_JHEMYSON_CODE,
+          seller_name: jh.seller_name ? `${jh.seller_name} (MTM)` : null,
+          qtd: mtm.length,
+          valor: somaV(mtm),
+          vendas: mtm,
         };
       }
       return {
@@ -2305,7 +2350,31 @@ router.post(
           valores[key] =
             Math.round(((valores[key] || 0) + (valor || 0)) * 100) / 100;
         };
-        put('FRANQUIAS', w.s, rowVal(40));
+        // JHEMYSON (40): o que vendeu para cliente que NÃO é franquia vai
+        // para MULTIMARCAS (MTM_JHEMYSON); FRANQUIAS fica só com franquias.
+        const total40 = rowVal(FRQ_JHEMYSON_CODE);
+        let jhMtm = 0;
+        {
+          let vendas40 = null;
+          for (const [k, v] of FAT_VEND_CACHE.entries()) {
+            if (k.startsWith(`${w.datemin}|${w.datemax}|`)) {
+              vendas40 = v?.detalhes?.[FRQ_JHEMYSON_CODE] || [];
+              break;
+            }
+          }
+          if (vendas40?.length) {
+            const soma = vendas40.reduce(
+              (a, v) => (ehClienteFranquia(v.cliente_nome) ? a : a + (v.valor || 0)),
+              0,
+            );
+            jhMtm = Math.min(Math.round(soma * 100) / 100, total40);
+          }
+        }
+        const jhFrq = Math.round((total40 - jhMtm) * 100) / 100;
+        put('FRANQUIAS', w.s, jhFrq);
+        put('VEND_40_FRQ', w.s, jhFrq);
+        put('VEND_40_MTM', w.s, jhMtm);
+        put('MTM_JHEMYSON', w.s, jhMtm);
         // YAGO (241) virou MULTIMARCAS em 06/10/2026: divide o bloco por dia
         // de venda. Sem o detalhe das vendas em cache, cai na data de início
         // do bloco (mesma régua de antes).
@@ -2343,7 +2412,7 @@ router.post(
         // Valor por vendedor (VEND_<codigo>) — o New Forecast abre
         // MULTIMARCAS e REVENDA por vendedor a partir destas chaves.
         for (const code of [40, 161, 165, 241, 21, 26, 259])
-          put('VEND_' + code, w.s, rowVal(code));
+          put(`VEND_${code}`, w.s, rowVal(code));
         // ── BLUECRED É SUBCONJUNTO DO VAREJO (regra do gestor, 2026-09-08) ──
         // A venda do crediário é uma venda de loja: o mesmo valor está no
         // painel varejo do TOTVS. Mostrar os dois canais cheios no Forecast
@@ -2481,10 +2550,10 @@ router.post(
     if (error) {
       return errorResponse(res, `Supabase: ${error.message}`, 500);
     }
-
     return successResponse(res, row, 'Config salva');
   }),
 );
+
 
 // =============================================================================
 // NEW FORECAST — canais extras criados na própria tela
@@ -2546,6 +2615,51 @@ router.delete(
       return errorResponse(res, `Supabase: ${error.message}`, 500);
     }
     return successResponse(res, { nome }, 'Canal removido');
+  }),
+);
+
+// =============================================================================
+// GET /api/totvs/sale-panel/closing?mes=YYYY-MM
+// Leitura do painel de FECHAMENTO DE MÊS (TVs). Lê a tabela
+// sales_closing_records (alimentada pelo job sales-closing-sync). Sem `mes`,
+// usa o mês corrente no fuso de Natal (America/Fortaleza).
+// Devolve { mes, fechado, atualizado_em, total_geral, canais: [...] }.
+// =============================================================================
+router.get(
+  '/sale-panel/closing',
+  asyncHandler(async (req, res) => {
+    let mes = String(req.query?.mes || '').trim();
+    if (!/^\d{4}-\d{2}$/.test(mes)) {
+      // mês corrente em America/Fortaleza (UTC-3, Natal/RN)
+      const p = Object.fromEntries(
+        new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'America/Fortaleza',
+          year: 'numeric',
+          month: '2-digit',
+        })
+          .formatToParts(new Date())
+          .map((x) => [x.type, x.value]),
+      );
+      mes = `${p.year}-${p.month}`;
+    }
+    const { data, error } = await supabase
+      .from('sales_closing_records')
+      .select('*')
+      .eq('mes', mes)
+      .order('total_mes', { ascending: false });
+    if (error) {
+      return errorResponse(res, `Supabase: ${error.message}`, 500);
+    }
+    const rows = data || [];
+    const total = rows.find((r) => r.canal === 'TOTAL_GERAL') || null;
+    const canais = rows.filter((r) => r.canal !== 'TOTAL_GERAL');
+    return successResponse(res, {
+      mes,
+      fechado: rows[0]?.fechado || false,
+      atualizado_em: rows[0]?.atualizado_em || null,
+      total_geral: total,
+      canais,
+    });
   }),
 );
 
@@ -4069,6 +4183,94 @@ router.post(
         totais_por_segmento: totaisPorSegmento,
       },
       `${transacoes.length} NFs (${compras.length} compras, ${credevs.length} credev)`,
+    );
+  }),
+);
+
+// =============================================================================
+// FATURAMENTO POR VENDEDOR — PERÍODO LONGO (usa o cache mensal do banco)
+// GET /api/totvs/sale-panel/faturamento-vendedor-periodo?datemin=&datemax=
+//
+// A rota /faturamento-vendedor custa 50-110 s por mês e não responde em
+// janelas longas (jan→set estourou 542 s). Esta aqui lê os meses FECHADOS
+// de faturamento_vendedor_mensal e só vai ao TOTVS para o mês ainda aberto,
+// o que deixa "janeiro até hoje" em poucos segundos depois do 1º fechamento.
+//
+// POST /api/totvs/sale-panel/faturamento-vendedor-fechar força o fechamento
+// dos meses pendentes (é o mesmo que o job noturno faz).
+// =============================================================================
+router.get(
+  '/sale-panel/faturamento-vendedor-periodo',
+  asyncHandler(async (req, res) => {
+    req.setTimeout(600000);
+    res.setTimeout(600000);
+    const { datemin, datemax } = req.query || {};
+    const isYmd = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ''));
+    if (!isYmd(datemin) || !isYmd(datemax) || datemin > datemax) {
+      return errorResponse(
+        res,
+        'datemin e datemax (YYYY-MM-DD) obrigatórios',
+        400,
+        'MISSING_DATES',
+      );
+    }
+    const t0 = Date.now();
+    const r = await faturamentoPorPeriodo(datemin, datemax);
+    return successResponse(
+      res,
+      { ...r, timeMs: Date.now() - t0 },
+      `${r.vendedores.length} vendedor(es) — ${r.meses_do_banco.length} mês(es) do banco, ${r.meses_do_totvs.length} do TOTVS`,
+    );
+  }),
+);
+
+router.post(
+  '/sale-panel/faturamento-vendedor-fechar',
+  asyncHandler(async (req, res) => {
+    req.setTimeout(900000);
+    res.setTimeout(900000);
+    const desde = /^\d{4}-\d{2}$/.test(String(req.body?.desde || ''))
+      ? req.body.desde
+      : '2026-01';
+    const r = await fecharMesesPendentes(desde);
+    return successResponse(
+      res,
+      r,
+      `${r.gravados.length} mês(es) gravado(s), ${r.falhas.length} falha(s)`,
+    );
+  }),
+);
+
+// =============================================================================
+// FATURAMENTO POR VENDEDOR — JANELA PROPRIA DE CADA UM
+// POST /api/totvs/sale-panel/faturamento-vendedor-janelas
+// Body: { vendedores: [{ seller_code, datemin, datemax? }], datemax? }
+//
+// Cada vendedor entrou numa data diferente, entao somar todos a partir de
+// uma data unica inflaria quem entrou depois. As consultas sao agrupadas
+// por janela e reaproveitadas entre vendedores — o mes aberto e uma
+// consulta so para todo mundo.
+// =============================================================================
+router.post(
+  '/sale-panel/faturamento-vendedor-janelas',
+  asyncHandler(async (req, res) => {
+    req.setTimeout(600000);
+    res.setTimeout(600000);
+    const { vendedores, datemax } = req.body || {};
+    if (!Array.isArray(vendedores) || vendedores.length === 0) {
+      return errorResponse(
+        res,
+        'vendedores: [{ seller_code, datemin }] obrigatorio',
+        400,
+        'MISSING_PARAMS',
+      );
+    }
+    const t0 = Date.now();
+    const r = await faturamentoPorVendedorJanelas(vendedores, datemax);
+    return successResponse(
+      res,
+      { ...r, timeMs: Date.now() - t0 },
+      `${r.vendedores.length} vendedor(es) — ${r.consultas_totvs.length} consulta(s) ao TOTVS`,
     );
   }),
 );

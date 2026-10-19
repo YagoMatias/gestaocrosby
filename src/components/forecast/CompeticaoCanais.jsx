@@ -24,11 +24,17 @@ import { TotvsURL } from '../../config/constants';
 export const CANAIS_COMPETICAO = {
   varejo: { titulo: 'Varejo', icon: Storefront },
   revenda: { titulo: 'Revenda', icon: Package, codes: [161, 241, 165] },
-  multimarcas: { titulo: 'Multimarcas', icon: Tag, codes: [259, 21, 26] },
+  // '40_MTM' / '40_FRQ' = JHEMYSON (40) separado pelo cliente no backend:
+  // multimarcas recebe o que ele vende fora das franquias.
+  multimarcas: {
+    titulo: 'Multimarcas',
+    icon: Tag,
+    codes: [259, 21, 26, '40_MTM'],
+  },
   franquias: {
     titulo: 'Franquias',
     icon: Handshake,
-    codes: [40],
+    codes: ['40_FRQ'],
     clientes: true, // ranking = franquias (clientes), 1 vendedor só
   },
 };
@@ -143,7 +149,8 @@ const montarPorSemana = (payload, canal, hoje) => {
           ? canais.REVENDA?.[k] || 0
           : (canais.MTM_RAFAEL?.[k] || 0) +
             (canais.MTM_DAVID?.[k] || 0) +
-            (canais.MTM_ARTHUR?.[k] || 0);
+            (canais.MTM_ARTHUR?.[k] || 0) +
+            (canais.MTM_JHEMYSON?.[k] || 0);
       performers = (CANAIS_COMPETICAO[canal].codes || [])
         .map((c) => d.vendedores?.[c])
         .filter(Boolean)
@@ -156,7 +163,9 @@ const montarPorSemana = (payload, canal, hoje) => {
         .sort((a, b) => b.valor - a.valor);
     } else if (canal === 'franquias') {
       valor = canais.FRANQUIAS?.[k] || 0;
-      performers = agrupaClientes(d.vendedores?.[40]?.vendas || []);
+      performers = agrupaClientes(
+        (d.vendedores?.['40_FRQ'] || d.vendedores?.[40])?.vendas || [],
+      );
     }
     return {
       ...w,
