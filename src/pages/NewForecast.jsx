@@ -274,6 +274,16 @@ const OPS_BAZAR = [887, 888, 889];
 // Rótulo das operações no drill da expedição; o que não estiver aqui usa o
 // nome que vem do TOTVS (op_nome) e, na falta dele, "Operação <código>".
 const OP_NOMES = { [OP_NOVIDADES]: 'NOVIDADES' };
+// Cliente de franquia: nome fantasia "F<nº> - CROSBY <nome>" (ou contém
+// CROSBY) — mesma régua do backend para o JHEMYSON. O drill do SHOWROOM /
+// FABRICAS separa FRANQUIAS × MULTIMARCAS por isso.
+const ehClienteFranquia = (nome) => {
+  const n = String(nome || '')
+    .toUpperCase()
+    .trim();
+  if (!n) return false;
+  return /^F\s*\d{1,4}\s*-/.test(n) || /\bCROSBY\b/.test(n);
+};
 
 const STORAGE_PREFIX = 'new_forecast_v3_';
 const AUTO_CACHE_PREFIX = 'new_forecast_auto_v3_';
@@ -1224,8 +1234,67 @@ const NewForecast = () => {
       </>
     );
 
-    // Expedição (showroom/fábricas + novidades + fardamento): primeiro nível
-    // por OPERAÇÃO, que é o que separa um do outro. Clique abre os clientes.
+    // Expedição (showroom/fábricas): primeiro nível FRANQUIAS × MULTIMARCAS
+    // pelo cliente (franquia = "F<nº> - CROSBY"); clique abre as operações
+    // daquele grupo, que por sua vez abrem os clientes.
+    const tabelaGruposExpedicao = (vendas) => {
+      const grupos = [
+        { chave: 'FRANQUIAS', vendas: vendas.filter((v) => ehClienteFranquia(v.cliente_nome)) },
+        { chave: 'MULTIMARCAS', vendas: vendas.filter((v) => !ehClienteFranquia(v.cliente_nome)) },
+      ].map((g) => ({
+        ...g,
+        qtd: g.vendas.length,
+        clientes: new Set(g.vendas.map((v) => v.cliente_code)).size,
+        valor: Math.round(g.vendas.reduce((a, v) => a + (v.valor || 0), 0) * 100) / 100,
+      }));
+      const total = grupos.reduce((a, g) => a + g.valor, 0);
+      return (
+        <>
+          <p className="text-[11px] text-gray-400 mb-2">
+            {formatInt(vendas.length)} venda(s) &bull; {formatBRL(total)} &bull;
+            franquia = cliente &quot;F&lt;nº&gt; - CROSBY&quot;; o resto é multimarcas
+          </p>
+          <table className="w-full text-xs text-left border-collapse">
+            <thead>
+              <tr className="bg-[#000638]/5">
+                <th className={thCls}>Grupo</th>
+                <th className={`${thCls} text-right`}>Clientes</th>
+                <th className={`${thCls} text-right`}>Vendas</th>
+                <th className={`${thCls} text-right`}>Valor</th>
+                <th className={`${thCls} text-right`}>%</th>
+              </tr>
+            </thead>
+            <tbody>
+              {grupos.map((g) => (
+                <tr
+                  key={g.chave}
+                  onClick={() =>
+                    g.qtd > 0 &&
+                    pushView({ tipo: 'operacoes', titulo: g.chave, vendas: g.vendas })
+                  }
+                  className={`border-b last:border-0 ${
+                    g.qtd > 0 ? 'hover:bg-gray-50 cursor-pointer' : 'text-gray-400'
+                  }`}
+                >
+                  <td className="px-3 py-1.5 font-semibold">{g.chave}</td>
+                  <td className="px-3 py-1.5 text-right">{formatInt(g.clientes)}</td>
+                  <td className="px-3 py-1.5 text-right">{formatInt(g.qtd)}</td>
+                  <td className="px-3 py-1.5 text-right whitespace-nowrap">
+                    {formatBRL(g.valor)}
+                  </td>
+                  <td className="px-3 py-1.5 text-right">
+                    {total > 0 ? `${((g.valor / total) * 100).toFixed(1)}%` : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      );
+    };
+
+    // Expedição: nível por OPERAÇÃO (novidades, fardamento, showroom...).
+    // Clique abre os clientes.
     const tabelaOperacoes = (vendas) => {
       const mapa = new Map();
       for (const v of vendas) {
@@ -1301,6 +1370,15 @@ const NewForecast = () => {
     // ─ Nível faturas de um cliente (último nível) ─
     if (view.tipo === 'faturas') {
       return tabelaFaturas(view.vendas || []);
+    }
+
+    // ─ Nível operações de um grupo da expedição (FRANQUIAS / MULTIMARCAS) ─
+    if (view.tipo === 'operacoes') {
+      return (view.vendas || []).length === 0 ? (
+        <div className="text-sm text-gray-400 py-6 text-center">Nenhuma venda.</div>
+      ) : (
+        tabelaOperacoes(view.vendas)
+      );
     }
 
     // ─ Nível clientes (agrupados) do vendedor ─
@@ -1460,7 +1538,7 @@ const NewForecast = () => {
           ) : c.expedicao === 'bazar' ? (
             tabelaClientes(vendas)
           ) : (
-            tabelaOperacoes(vendas)
+            tabelaGruposExpedicao(vendas)
           );
       }
     } else if (c.varejo) {
