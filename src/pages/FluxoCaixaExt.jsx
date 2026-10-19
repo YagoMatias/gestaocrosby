@@ -28,6 +28,7 @@ import {
   Receipt,
   CreditCard,
   Storefront,
+  CaretDown,
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -82,13 +83,78 @@ const Th = ({ children, right, className = '' }) => (
   <th className={`px-3 py-2 font-semibold ${right ? 'text-right' : 'text-left'} ${className}`}>{children}</th>
 );
 
+// Seletor com múltipla escolha (checkboxes) usado nos filtros
+const MultiSelect = ({ label, opcoes, valor, onChange, renderOpcao, placeholder = 'Todos', larguraMin = 'min-w-[170px]', busca = false }) => {
+  const [aberto, setAberto] = useState(false);
+  const [q, setQ] = useState('');
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!aberto) return undefined;
+    const h = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setAberto(false);
+    };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [aberto]);
+  const visiveis = q ? opcoes.filter((o) => String(o.label).toLowerCase().includes(q.toLowerCase())) : opcoes;
+  const toggle = (v) => onChange(valor.includes(v) ? valor.filter((x) => x !== v) : [...valor, v]);
+  const resumo = !valor.length
+    ? placeholder
+    : valor.length === 1
+      ? opcoes.find((o) => o.value === valor[0])?.label || String(valor[0])
+      : `${valor.length} selecionados`;
+  return (
+    <div ref={ref} className={`relative ${larguraMin}`}>
+      <label className="block text-[11px] font-medium text-gray-500 mb-0.5">{label}</label>
+      <button
+        type="button"
+        onClick={() => setAberto((v) => !v)}
+        className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 text-xs border rounded-lg bg-white hover:bg-gray-50 ${valor.length ? 'border-blue-400 text-blue-700 font-medium' : 'border-gray-300 text-gray-600'}`}
+      >
+        <span className="truncate">{resumo}</span>
+        <CaretDown size={12} className={`shrink-0 transition-transform ${aberto ? 'rotate-180' : ''}`} />
+      </button>
+      {aberto && (
+        <div className="absolute z-40 mt-1 left-0 w-72 max-w-[90vw] bg-white border border-gray-200 rounded-lg shadow-lg p-2 text-xs">
+          {busca && (
+            <input
+              autoFocus
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Buscar…"
+              className="w-full mb-2 px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+            />
+          )}
+          <div className="flex justify-between mb-1 px-1 text-[11px]">
+            <button type="button" onClick={() => onChange([...new Set([...valor, ...visiveis.map((o) => o.value)])])} className="text-blue-600 hover:underline">
+              Marcar todos
+            </button>
+            <button type="button" onClick={() => onChange([])} className="text-gray-500 hover:underline">
+              Limpar
+            </button>
+          </div>
+          <div className="max-h-60 overflow-auto">
+            {visiveis.map((o) => (
+              <label key={String(o.value)} className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-gray-50 cursor-pointer">
+                <input type="checkbox" checked={valor.includes(o.value)} onChange={() => toggle(o.value)} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                <span className="truncate flex-1">{renderOpcao ? renderOpcao(o) : o.label}</span>
+              </label>
+            ))}
+            {!visiveis.length && <p className="px-1.5 py-2 text-gray-400">Nada encontrado.</p>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const FluxoCaixaExt = () => {
   const inputRef = useRef(null);
   const [de, setDe] = useState(primeiroDiaMes());
   const [ate, setAte] = useState(hoje());
   const [bancos, setBancos] = useState([]); // filtro
   const [contasSel, setContasSel] = useState([]);
-  const [tipo, setTipo] = useState('');
+  const [tipos, setTipos] = useState([]);
   const [formas, setFormas] = useState([]);
   const [contraparte, setContraparte] = useState('');
   const [busca, setBusca] = useState('');
@@ -125,7 +191,8 @@ const FluxoCaixaExt = () => {
       const p = new URLSearchParams({ de, ate });
       if (bancos.length) p.set('bancos', bancos.join(','));
       if (contasSel.length) p.set('contas', contasSel.join(','));
-      if (tipo) p.set('tipo', tipo);
+      if (tipos.length) p.set('tipos', tipos.join(','));
+      if (tipos.length === 1) p.set('tipo', tipos[0]); // compat. com API sem suporte a 'tipos'
       if (formas.length) p.set('formas', formas.join(','));
       if (contraparte) p.set('contraparte', contraparte);
       if (buscaDeb.trim()) p.set('busca', buscaDeb.trim());
@@ -146,7 +213,7 @@ const FluxoCaixaExt = () => {
     } finally {
       setCarregando(false);
     }
-  }, [de, ate, bancos, contasSel, tipo, formas, contraparte, buscaDeb]);
+  }, [de, ate, bancos, contasSel, tipos, formas, contraparte, buscaDeb]);
 
   useEffect(() => {
     carregar();
@@ -244,7 +311,7 @@ const FluxoCaixaExt = () => {
   const limparFiltros = () => {
     setBancos([]);
     setContasSel([]);
-    setTipo('');
+    setTipos([]);
     setFormas([]);
     setContraparte('');
     setBusca('');
@@ -268,7 +335,7 @@ const FluxoCaixaExt = () => {
       setAte(hoje());
     }
   };
-  const filtrosAtivos = bancos.length + contasSel.length + (tipo ? 1 : 0) + formas.length + (contraparte ? 1 : 0) + (busca ? 1 : 0);
+  const filtrosAtivos = bancos.length + contasSel.length + tipos.length + formas.length + (contraparte ? 1 : 0) + (busca ? 1 : 0);
 
   const contas = dados?.contas || [];
   const lancamentos = dados?.lancamentos || [];
@@ -352,7 +419,7 @@ const FluxoCaixaExt = () => {
       />
 
       {/* Barra: período + ações */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 mb-3 flex flex-wrap items-end gap-2">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 mb-3 flex flex-wrap items-center gap-2">
         <div>
           <label className="block text-[11px] font-medium text-gray-500 mb-0.5">De</label>
           <input type="date" value={de} onChange={(e) => setDe(e.target.value)} className="px-2 py-1.5 text-sm border border-gray-300 rounded-lg" />
@@ -407,59 +474,66 @@ const FluxoCaixaExt = () => {
 
       {/* Filtros */}
       {mostrarFiltros && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 mb-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4 text-xs">
-          <div>
-            <p className="font-medium text-gray-500 mb-1">Banco</p>
-            <div className="flex flex-wrap gap-1">
-              {(bancosPresentes.length ? bancosPresentes : Object.keys(BANCOS)).map((b) => {
-                const cfg = bancoCfg(b);
-                const on = bancos.includes(b);
-                return (
-                  <button key={b} onClick={() => toggle(bancos, setBancos, b)} className={`px-2.5 py-1 rounded-full border font-medium ${cfg.cor} ${on ? 'ring-2 ring-offset-1 ring-blue-400' : 'opacity-70 hover:opacity-100'}`}>
-                    {cfg.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          <div>
-            <p className="font-medium text-gray-500 mb-1">Conta</p>
-            <div className="flex flex-wrap gap-1 max-h-24 overflow-auto">
-              {contas
-                .filter((c) => !bancos.length || bancos.includes(c.banco))
-                .map((c) => {
-                  const on = contasSel.includes(c.id);
-                  return (
-                    <button key={c.id} onClick={() => toggle(contasSel, setContasSel, c.id)} title={`${c.titular_nome || ''} ${fmtDoc(c.titular_cnpj)}`} className={`px-2 py-1 rounded-lg border ${on ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
-                      <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1 ${bancoCfg(c.banco).ponto}`} />
-                      {c.apelido}
-                    </button>
-                  );
-                })}
-              {!contas.length && <span className="text-gray-400">Nenhuma conta importada ainda.</span>}
-            </div>
-          </div>
-          <div>
-            <p className="font-medium text-gray-500 mb-1">Tipo</p>
-            <div className="flex flex-wrap gap-1 mb-2">
-              {[
-                ['', 'Todos'],
-                ['ENTRADA', 'Entradas'],
-                ['SAIDA', 'Saídas'],
-                ['TRANSFERENCIA', 'Transferências'],
-              ].map(([k, l]) => (
-                <button key={k} onClick={() => setTipo(k)} className={`px-2.5 py-1 rounded-full border font-medium ${tipo === k ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-600 border-gray-300'}`}>
-                  {l}
-                </button>
-              ))}
-            </div>
-            <p className="font-medium text-gray-500 mb-1">Fornecedor / contraparte</p>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 mb-3 flex flex-wrap items-center justify-center gap-3 text-xs">
+          <MultiSelect
+            label="Banco"
+            opcoes={(bancosPresentes.length ? bancosPresentes : Object.keys(BANCOS)).map((b) => ({ value: b, label: bancoCfg(b).label, banco: b }))}
+            valor={bancos}
+            onChange={setBancos}
+            renderOpcao={(o) => (
+              <span className="flex items-center gap-1.5">
+                <span className={`inline-block w-2 h-2 rounded-full ${bancoCfg(o.banco).ponto}`} />
+                {o.label}
+              </span>
+            )}
+            larguraMin="min-w-[150px]"
+          />
+          <MultiSelect
+            label="Conta"
+            busca
+            opcoes={contas
+              .filter((c) => !bancos.length || bancos.includes(c.banco))
+              .map((c) => ({ value: c.id, label: c.apelido, banco: c.banco, sub: c.titular_nome }))}
+            valor={contasSel}
+            onChange={setContasSel}
+            renderOpcao={(o) => (
+              <span className="flex items-center gap-1.5 min-w-0">
+                <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${bancoCfg(o.banco).ponto}`} />
+                <span className="whitespace-nowrap">{o.label}</span>
+                <span className="text-gray-400 truncate">{o.sub}</span>
+              </span>
+            )}
+            placeholder={contas.length ? 'Todas as contas' : 'Nenhuma conta importada'}
+            larguraMin="min-w-[210px]"
+          />
+          <MultiSelect
+            label="Tipo"
+            opcoes={[
+              { value: 'ENTRADA', label: 'Entradas' },
+              { value: 'SAIDA', label: 'Saídas' },
+              { value: 'TRANSFERENCIA', label: 'Transferências' },
+            ]}
+            valor={tipos}
+            onChange={setTipos}
+            larguraMin="min-w-[150px]"
+          />
+          <MultiSelect
+            label="Forma de pagamento"
+            busca
+            opcoes={(dados?.opcoes?.formas?.length ? dados.opcoes.formas : dados?.opcoes?.todasFormas || []).map((f) => ({ value: f, label: f }))}
+            valor={formas}
+            onChange={setFormas}
+            placeholder="Todas as formas"
+            larguraMin="min-w-[190px]"
+          />
+          <div className="min-w-[230px]">
+            <label className="block text-[11px] font-medium text-gray-500 mb-0.5">Fornecedor / contraparte</label>
             <input
               list="fc-contrapartes"
               value={contraparte}
               onChange={(e) => setContraparte(e.target.value)}
               placeholder="Digite para escolher…"
-              className="w-full px-2 py-1.5 border border-gray-300 rounded-lg"
+              className="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             />
             <datalist id="fc-contrapartes">
               {(dados?.opcoes?.contrapartes || []).map((c) => (
@@ -469,24 +543,11 @@ const FluxoCaixaExt = () => {
               ))}
             </datalist>
           </div>
-          <div>
-            <p className="font-medium text-gray-500 mb-1">Forma de pagamento</p>
-            <div className="flex flex-wrap gap-1 max-h-28 overflow-auto">
-              {(dados?.opcoes?.formas?.length ? dados.opcoes.formas : dados?.opcoes?.todasFormas || []).map((f) => {
-                const on = formas.includes(f);
-                return (
-                  <button key={f} onClick={() => toggle(formas, setFormas, f)} className={`px-2 py-1 rounded-lg border ${on ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
-                    {f}
-                  </button>
-                );
-              })}
-            </div>
-            {filtrosAtivos > 0 && (
-              <button onClick={limparFiltros} className="mt-2 text-blue-600 hover:underline">
-                Limpar filtros
-              </button>
-            )}
-          </div>
+          {filtrosAtivos > 0 && (
+            <button onClick={limparFiltros} className="self-end px-2.5 py-1.5 text-xs text-blue-600 hover:underline whitespace-nowrap">
+              Limpar filtros
+            </button>
+          )}
         </div>
       )}
 
@@ -707,7 +768,7 @@ const FluxoCaixaExt = () => {
                       </thead>
                       <tbody>
                         {linhas.map((f) => (
-                          <tr key={f.forma} className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer" onClick={() => { setFormas([f.forma]); setTipo(campo === 'entradas' ? 'ENTRADA' : 'SAIDA'); setAba('lancamentos'); }}>
+                          <tr key={f.forma} className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer" onClick={() => { setFormas([f.forma]); setTipos([campo === 'entradas' ? 'ENTRADA' : 'SAIDA']); setAba('lancamentos'); }}>
                             <td className="px-3 py-2 font-medium text-gray-800">{f.forma}</td>
                             <td className="px-3 py-2 text-right text-gray-500">{f[qtd]}</td>
                             {bancosDoPorForma.map((b) => (
@@ -765,7 +826,7 @@ const FluxoCaixaExt = () => {
                 </thead>
                 <tbody>
                   {(subPag === 'fornecedores' ? dados.fornecedores : dados.pagadores).map((f, i) => (
-                    <tr key={f.chave || i} className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer" onClick={() => { setContraparte(f.doc || f.nome); setTipo(subPag === 'fornecedores' ? 'SAIDA' : 'ENTRADA'); setAba('lancamentos'); }}>
+                    <tr key={f.chave || i} className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer" onClick={() => { setContraparte(f.doc || f.nome); setTipos([subPag === 'fornecedores' ? 'SAIDA' : 'ENTRADA']); setAba('lancamentos'); }}>
                       <td className="px-3 py-2 text-gray-400">{i + 1}</td>
                       <td className="px-3 py-2 font-medium text-gray-800">
                         {f.nome}
