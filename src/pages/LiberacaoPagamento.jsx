@@ -13,6 +13,7 @@ import CENTROS_CUSTO from '../config/centrosCusto.json';
 import { useAuth } from '../components/AuthContext';
 import { useSetoresUsuario } from '../hooks/useSetoresUsuario';
 import PageTitle from '../components/ui/PageTitle';
+import ModalSelecionarDuplicatasProvisao from '../components/ModalSelecionarDuplicatasProvisao';
 import {
   gerarArquivoRemessaSicredi,
   proximoNomeArquivoRemessa,
@@ -48,6 +49,7 @@ import {
   CaretRight,
   Storefront,
   Sparkle,
+  ListChecks,
 } from '@phosphor-icons/react';
 
 const BANCOS = [
@@ -2872,6 +2874,8 @@ const LiberacaoPagamento = () => {
   // Execução manual do job de provisão automática (admin/owner)
   const [rodandoProvisao, setRodandoProvisao] = useState(false);
   const [showProvisaoMenu, setShowProvisaoMenu] = useState(false);
+  // Duplicatas específicas que a provisão automática deve incluir (admin/owner)
+  const [showModalSelecionarDup, setShowModalSelecionarDup] = useState(false);
 
   const toggleOrdem = useCallback((coluna) => {
     setOrdenacao((prev) =>
@@ -4461,6 +4465,17 @@ const LiberacaoPagamento = () => {
           </div>
         )}
 
+        {isAdmin && (
+          <button
+            onClick={() => setShowModalSelecionarDup(true)}
+            title="Escolher as duplicatas específicas que a provisão automática deve incluir"
+            className="flex items-center gap-1.5 bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold px-3 py-1.5 rounded transition-colors"
+          >
+            <ListChecks size={14} weight="bold" />
+            Selecionar duplicatas
+          </button>
+        )}
+
         {(isAdmin || isFinanceiro) && (
           <div className="ml-auto flex items-center gap-2">
             <button
@@ -4818,6 +4833,13 @@ const LiberacaoPagamento = () => {
           onClose={() => setShowModalAdicionar(false)}
           onSalvo={adicionarDuplicata}
           userEmail={user?.email}
+        />
+      )}
+
+      {showModalSelecionarDup && (
+        <ModalSelecionarDuplicatasProvisao
+          onClose={() => setShowModalSelecionarDup(false)}
+          podeEditar={isAdmin}
         />
       )}
 
