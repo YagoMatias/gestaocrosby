@@ -616,6 +616,8 @@ const AVAILABLE_PAGES = [
   { path: '/api-claude', name: 'API Claude', category: 'Administração' },
   { path: '/crosby-manage', name: 'Crosby Manage', category: 'Administração' },
   { path: '/admin/fiscal-pdv', name: 'Fiscal PDV', category: 'Administração' },
+  { path: '/admin/integracao-erp', name: 'Integração ERP', category: 'Administração' },
+  { path: '/admin/conferencia-erp', name: 'Conferência ERP', category: 'Administração' },
 ];
 
 // Hierarquia espelhando o sidebar: estas categorias aparecem DENTRO do bloco

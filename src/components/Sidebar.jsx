@@ -4,6 +4,8 @@ import { useAuth } from './AuthContext';
 import { useTabContext } from './AppTabs/TabContext';
 import {
   UserGear,
+  Plugs,
+  ArrowsLeftRight,
   X,
   Money,
   Receipt,
@@ -957,6 +959,18 @@ const adminItems = [
     href: '/admin/fiscal-pdv',
     icon: Barcode,
     color: 'text-blue-600',
+  },
+  {
+    name: 'Integração ERP',
+    href: '/admin/integracao-erp',
+    icon: Plugs,
+    color: 'text-teal-600',
+  },
+  {
+    name: 'Conferência ERP',
+    href: '/admin/conferencia-erp',
+    icon: ArrowsLeftRight,
+    color: 'text-cyan-600',
   },
 ];
 

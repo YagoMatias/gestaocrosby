@@ -1,4 +1,17 @@
 import { supabase, supabaseAdmin } from './supabase';
+import { apiJson } from '../utils/apiAuth';
+
+// Gestão de usuários (auth.users) passou para o backend — /api/erp/admin/usuarios
+// (service_role fica só no servidor; exige admin/owner logado).
+const mapUsuarioApi = (u) => ({
+  id: u.id,
+  email: u.email,
+  name: u.name || u.user_metadata?.name || 'Sem nome',
+  role: u.role || u.user_metadata?.role || 'guest',
+  active: u.email_confirmed_at ? true : false,
+  created_at: u.created_at,
+  last_sign_in_at: u.last_sign_in_at,
+});
 
 // Função para testar conectividade com o Supabase
 export const testSupabaseConnection = async () => {
@@ -282,110 +295,30 @@ export const getAllProfilesOrdered = async () => {
 
 // Função para buscar todos os usuários do auth.users
 export const fetchUsers = async () => {
-  try {
-    let allUsers = [];
-    let page = 1;
-    const perPage = 1000; // Máximo por página
-    let hasMore = true;
-
-    // Buscar todos os usuários com paginação
-    while (hasMore) {
-      const { data, error } = await supabaseAdmin.auth.admin.listUsers({
-        page: page,
-        perPage: perPage,
-      });
-
-      if (error) throw error;
-
-      allUsers = [...allUsers, ...data.users];
-
-      // Se retornou menos usuários que o limite, não há mais páginas
-      hasMore = data.users.length === perPage;
-      page++;
-    }
-
-    // Mapear os dados para o formato esperado pelo PainelAdmin
-    return allUsers.map((user) => ({
-      id: user.id,
-      email: user.email,
-      name: user.user_metadata?.name || 'Sem nome',
-      role: user.user_metadata?.role || 'guest',
-      active: user.email_confirmed_at ? true : false,
-      created_at: user.created_at,
-      last_sign_in_at: user.last_sign_in_at,
-    }));
-  } catch (error) {
-    throw error;
-  }
+  const { data } = await apiJson('/api/erp/admin/usuarios');
+  return (data?.usuarios || []).map(mapUsuarioApi);
 };
 
-// Função para criar um novo usuário no auth.users
+// Função para criar um novo usuário no auth.users (via backend)
 export const createUser = async (userData) => {
-  try {
-    const { data, error } = await supabaseAdmin.auth.admin.createUser({
-      email: userData.email,
-      password: userData.password,
-      email_confirm: true,
-      user_metadata: {
-        name: userData.name,
-        role: userData.role,
-      },
-    });
-
-    if (error) throw error;
-
-    return {
-      id: data.user.id,
-      email: data.user.email,
-      name: data.user.user_metadata?.name,
-      role: data.user.user_metadata?.role,
-      active: true,
-      created_at: data.user.created_at,
-    };
-  } catch (error) {
-    throw error;
-  }
+  const { data } = await apiJson('/api/erp/admin/usuarios', {
+    method: 'POST',
+    body: { email: userData.email, password: userData.password, name: userData.name, role: userData.role },
+  });
+  return { ...mapUsuarioApi(data.usuario), active: true };
 };
 
-// Função para atualizar um usuário no auth.users
+// Função para atualizar um usuário no auth.users (via backend)
 export const updateUser = async (userId, userData) => {
   try {
-    // Preparar dados de atualização
-    const updateData = {
-      user_metadata: {
-        name: userData.name,
-        role: userData.role,
-      },
-    };
-
-    // Se uma nova senha foi fornecida, incluí-la na atualização
-    if (userData.password) {
-      updateData.password = userData.password;
-    }
-
-    // Atualizar o usuário diretamente - não precisa buscar antes
-    const { data, error } = await supabaseAdmin.auth.admin.updateUserById(
-      userId,
-      updateData,
-    );
-
-    if (error) {
-      // Se o erro for que o usuário não foi encontrado
-      if (error.message?.includes('not found') || error.status === 404) {
-        throw new Error('Usuário não encontrado');
-      }
-      throw error;
-    }
-
-    return {
-      id: data.user.id,
-      email: data.user.email,
-      name: data.user.user_metadata?.name,
-      role: data.user.user_metadata?.role,
-      active: data.user.email_confirmed_at ? true : false,
-      created_at: data.user.created_at,
-    };
+    const body = { name: userData.name, role: userData.role };
+    if (userData.password) body.password = userData.password;
+    const { data } = await apiJson(`/api/erp/admin/usuarios/${userId}`, { method: 'PUT', body });
+    return mapUsuarioApi(data.usuario);
   } catch (error) {
+    if (error.status === 404 || /not found/i.test(error.message || '')) {
+      throw new Error('Usuário não encontrado');
+    }
     throw error;
   }
 };
@@ -455,10 +388,8 @@ export const deleteUser = async (userId) => {
       );
     }
 
-    // Agora deletar o usuário do auth.users
-    const { error } = await supabaseAdmin.auth.admin.deleteUser(userId);
-
-    if (error) throw error;
+    // Agora deletar o usuário do auth.users (via backend)
+    await apiJson(`/api/erp/admin/usuarios/${userId}`, { method: 'DELETE' });
 
     return true;
   } catch (error) {
@@ -472,15 +403,9 @@ export const deleteUser = async (userId) => {
 // Função para verificar se um email já existe no auth.users
 export const checkEmailExists = async (email, excludeUserId = null) => {
   try {
-    // Listar todos os usuários e verificar se o email existe
-    const { data, error } = await supabaseAdmin.auth.admin.listUsers();
-
-    if (error) {
-      throw error;
-    }
-
-    // Procurar por um usuário com o email especificado
-    const userWithEmail = data.users.find((user) => user.email === email);
+    // Listar todos os usuários (via backend) e verificar se o email existe
+    const { data } = await apiJson('/api/erp/admin/usuarios');
+    const userWithEmail = (data?.usuarios || []).find((user) => user.email === email);
 
     if (!userWithEmail) {
       return false; // Email não existe
@@ -504,14 +429,7 @@ export const changePassword = async (userId, currentPassword, newPassword) => {
     // Nota: O Supabase Admin API não tem uma maneira direta de verificar a senha atual
     // Por isso, vamos apenas atualizar a senha diretamente
 
-    const { data, error } = await supabaseAdmin.auth.admin.updateUserById(
-      userId,
-      {
-        password: newPassword,
-      },
-    );
-
-    if (error) throw error;
+    await apiJson(`/api/erp/admin/usuarios/${userId}`, { method: 'PUT', body: { password: newPassword } });
 
     return {
       success: true,

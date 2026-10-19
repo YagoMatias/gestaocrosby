@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { useAuth } from '../components/AuthContext';
+import { authHeaders } from '../utils/apiAuth';
 import {
   Copy,
   Check,
@@ -3827,7 +3828,7 @@ function QuickTestTab({ route, meta }) {
         url = `${API_BASE_URL}${route.path}`;
         options = {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: await authHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify(body),
         };
       } else {
@@ -3846,7 +3847,7 @@ function QuickTestTab({ route, meta }) {
         if (qs) url += `?${qs}`;
         options = {
           method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
+          headers: await authHeaders({ 'Content-Type': 'application/json' }),
         };
       }
       const res = await fetch(url, options);
@@ -4046,7 +4047,7 @@ function RouteConsole({ route, onClose }) {
       const body = buildRequestBody(route, paramValues);
       const options = {
         method: route.method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: await authHeaders({ 'Content-Type': 'application/json' }),
       };
       if (route.method === 'POST' && body) {
         options.body = JSON.stringify(body);
