@@ -10,6 +10,34 @@ import React, {
 import useApiClient from '../../hooks/useApiClient';
 import { getCategoriaPorCodigo } from '../../config/categoriasDespesas';
 import baseData from './dadosDespesasGerais.json';
+import { supabase } from '../../lib/supabase';
+
+// Observações importadas (planilha) ficam no Supabase em
+// observacoes_despesas_totvs. Buscamos as do período e casamos com os
+// lançamentos pela mesma chave do rowId: empresa|duplicata|parcela|fornecedor.
+async function fetchObsSupabase(dtInicio, dtFim) {
+  try {
+    const { data, error } = await supabase
+      .from('observacoes_despesas_totvs')
+      .select('cd_empresa,cd_fornecedor,nr_duplicata,nr_parcela,observacao,updated_at,is_active')
+      .eq('dt_inicio', dtInicio)
+      .eq('dt_fim', dtFim)
+      .eq('is_active', true);
+    if (error) {
+      console.warn('DespesasGerais: falha ao ler observações do Supabase', error.message);
+      return {};
+    }
+    const map = {};
+    for (const r of data || []) {
+      const key = `${r.cd_empresa}|${r.nr_duplicata}|${r.nr_parcela ?? ''}|${r.cd_fornecedor ?? ''}`;
+      map[key] = r.observacao; // se houver várias, a última lida vence
+    }
+    return map;
+  } catch (e) {
+    console.warn('DespesasGerais: erro ao buscar observações', e?.message);
+    return {};
+  }
+}
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
 export const MONTH_KEYS = [
@@ -377,6 +405,8 @@ export function DespesasGeraisProvider({ children }) {
           filtroPagamento: 'TODOS', // faturas em aberto E pagas
         };
         const result = await apiClient.totvs.accountsPayableSearch(payload);
+        // observações importadas (planilha) do mesmo período, do Supabase
+        const supaObs = await fetchObsSupabase(payload.dt_inicio, payload.dt_fim);
 
         let dadosArray = [];
         if (result && typeof result === 'object') {
@@ -421,7 +451,7 @@ export function DespesasGeraisProvider({ children }) {
                 ESTAGIO_MAP[it.tp_estagio] ||
                 it.tp_estagio ||
                 (it.dt_liq ? 'Liquidado' : 'Título não conferido'),
-              obs: st.obsEdits[rowId] || '',
+              obs: st.obsEdits[rowId] || supaObs[rowId] || '',
             });
           });
           // ordena lançamentos por valor desc dentro de cada categoria
