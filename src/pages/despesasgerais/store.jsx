@@ -27,15 +27,18 @@ async function fetchObsSupabase(dtInicio, dtFim) {
       console.warn('DespesasGerais: falha ao ler observações do Supabase', error.message);
       return {};
     }
-    const map = {};
+    const full = {}; // chave completa empresa|duplicata|parcela|fornecedor
+    const loose = {}; // chave leve empresa|duplicata (histórico importado do HTML)
     for (const r of data || []) {
-      const key = `${r.cd_empresa}|${r.nr_duplicata}|${r.nr_parcela ?? ''}|${r.cd_fornecedor ?? ''}`;
-      map[key] = r.observacao; // se houver várias, a última lida vence
+      const fk = `${r.cd_empresa}|${r.nr_duplicata}|${r.nr_parcela ?? ''}|${r.cd_fornecedor ?? ''}`;
+      full[fk] = r.observacao;
+      const lk = `${r.cd_empresa}|${r.nr_duplicata}`;
+      loose[lk] = r.observacao;
     }
-    return map;
+    return { full, loose };
   } catch (e) {
     console.warn('DespesasGerais: erro ao buscar observações', e?.message);
-    return {};
+    return { full: {}, loose: {} };
   }
 }
 
@@ -451,7 +454,11 @@ export function DespesasGeraisProvider({ children }) {
                 ESTAGIO_MAP[it.tp_estagio] ||
                 it.tp_estagio ||
                 (it.dt_liq ? 'Liquidado' : 'Título não conferido'),
-              obs: st.obsEdits[rowId] || supaObs[rowId] || '',
+              obs:
+                st.obsEdits[rowId] ||
+                supaObs.full[rowId] ||
+                supaObs.loose[`${it.cd_empresa}|${it.nr_duplicata}`] ||
+                '',
             });
           });
           // ordena lançamentos por valor desc dentro de cada categoria

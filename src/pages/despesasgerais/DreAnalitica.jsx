@@ -170,6 +170,39 @@ export default function DreAnalitica() {
   const obsFileRef = useRef(null);
   const [importandoObs, setImportandoObs] = useState(false);
   const [msgImportObs, setMsgImportObs] = useState(null);
+  // importação do histórico (HTML da ferramenta antiga) — jan a ago
+  const histFileRef = useRef(null);
+  const [importandoHist, setImportandoHist] = useState(false);
+  const importarHistoricoHtml = async (file) => {
+    if (!file) return;
+    setImportandoHist(true);
+    setMsgImportObs(null);
+    try {
+      const fd = new FormData();
+      fd.append('arquivo', file);
+      fd.append('ano', String(ANO));
+      const headers = await authHeaders();
+      const resp = await fetch(`${API_BASE_URL}/api/dre-observacoes/importar-historico-html`, {
+        method: 'POST',
+        headers,
+        body: fd,
+      });
+      const j = await resp.json();
+      if (!resp.ok || j.success === false)
+        throw new Error(j.message || `HTTP ${resp.status}`);
+      setMsgImportObs({
+        tipo: 'ok',
+        texto: `Histórico importado: ${j.data.gravadas} observações (jan–ago). Abra cada mês para ver.`,
+      });
+      await carregarMesTotvs(activeMonth, { somenteGerais });
+    } catch (e) {
+      setMsgImportObs({ tipo: 'erro', texto: e.message });
+    } finally {
+      setImportandoHist(false);
+      if (histFileRef.current) histFileRef.current.value = '';
+    }
+  };
+
   const importarObsPlanilha = async (file) => {
     if (!file) return;
     setImportandoObs(true);
@@ -810,6 +843,26 @@ export default function DreAnalitica() {
               <UploadSimple size={13} weight="bold" />
             )}
             {importandoObs ? 'Importando…' : 'Importar observações'}
+          </button>
+          <input
+            ref={histFileRef}
+            type="file"
+            accept=".html,.htm"
+            className="hidden"
+            onChange={(e) => importarHistoricoHtml(e.target.files?.[0])}
+          />
+          <button
+            onClick={() => histFileRef.current?.click()}
+            disabled={importandoHist}
+            title="Importar o histórico de observações jan–ago a partir do HTML da análise antiga"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-[#000638] text-[#000638] bg-white hover:bg-[#000638]/5 disabled:opacity-60 transition"
+          >
+            {importandoHist ? (
+              <Spinner size={13} className="animate-spin" />
+            ) : (
+              <UploadSimple size={13} weight="bold" />
+            )}
+            {importandoHist ? 'Importando…' : 'Importar histórico (HTML)'}
           </button>
         </div>
       </div>
