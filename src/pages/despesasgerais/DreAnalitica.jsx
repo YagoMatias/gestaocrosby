@@ -17,6 +17,7 @@ import {
   STATUS_LIST,
   EMPRESAS_DRE,
   CONSULTA_VERSAO,
+  MES_SEQ,
 } from './store';
 import { CardBox, StatusBadge, EditableText, ActionBtn } from './comum';
 
@@ -80,8 +81,9 @@ function Variacao({ real, fc }) {
   );
 }
 
-// célula de forecast editável
-function FcCell({ fcKey, value, onCommit }) {
+// célula de forecast editável. `auto` = valor é o padrão (realizado do mês
+// anterior), ainda não editado na mão; renderiza esmaecido mas continua editável.
+function FcCell({ fcKey, value, onCommit, auto }) {
   return (
     <EditableText
       value={
@@ -93,8 +95,8 @@ function FcCell({ fcKey, value, onCommit }) {
             })
       }
       placeholder="definir"
-      title="clique para definir o forecast"
-      className="font-medium text-violet-700"
+      title={auto ? 'padrão: realizado do mês anterior — clique para editar' : 'clique para definir o forecast'}
+      className={auto ? 'font-normal text-violet-400 italic' : 'font-medium text-violet-700'}
       onCommit={(raw) => {
         const v = parseFloat(String(raw).replace(/\./g, '').replace(',', '.'));
         onCommit(fcKey, isNaN(v) ? '' : v);
@@ -114,6 +116,7 @@ export default function DreAnalitica() {
     carregarMesTotvs,
     fcKeyFor,
     fcTotalFor,
+    forecastPadraoFor,
     mergeRealizedG,
     setForecast,
     updateRow,
@@ -144,6 +147,19 @@ export default function DreAnalitica() {
       carregarMesTotvs(activeMonth, { somenteGerais });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeMonth]);
+
+  // forecast = realizado do mês anterior → carrega também o mês anterior
+  // (quando o mês atual terminar de carregar), pra o padrão aparecer preenchido
+  useEffect(() => {
+    const i = MES_SEQ.indexOf(activeMonth);
+    const pm = i > 0 ? MES_SEQ[i - 1] : null;
+    if (!pm || carregandoMes) return;
+    const pmo = months[pm];
+    const pf = fontes[pm] || {};
+    const precisa = !pmo || pmo.cnt === 0 || pf.origem !== 'totvs' || pf.consulta !== CONSULTA_VERSAO;
+    if (precisa) carregarMesTotvs(pm, { somenteGerais });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMonth, carregandoMes]);
   const [expanded, setExpanded] = useState(() => new Set());
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -599,8 +615,10 @@ export default function DreAnalitica() {
       if (groupsDone.has(gp.g.canon)) return;
       groupsDone.add(gp.g.canon);
       const fcKey = fcKeyFor(gp.members[0].cat);
-      const fc =
-        forecasts[fcKey] !== undefined ? parseFloat(forecasts[fcKey]) : null;
+      const fcManual = forecasts[fcKey] !== undefined;
+      const fc = fcManual
+        ? parseFloat(forecasts[fcKey])
+        : forecastPadraoFor(gp.members[0].cat, activeMonth);
       const realComb = mergeRealizedG(gp.g, activeMonth);
       const n = gp.members.length;
       gp.members.forEach((gm, idx) => {
@@ -633,7 +651,7 @@ export default function DreAnalitica() {
                 className="px-2 py-2 text-right align-middle bg-violet-50/50 border-l border-violet-100"
                 onClick={(e) => e.stopPropagation()}
               >
-                <FcCell fcKey={fcKey} value={fc} onCommit={setForecast} />
+                <FcCell fcKey={fcKey} value={fc} onCommit={setForecast} auto={!fcManual} />
               </td>
             )}
             {idx === 0 && (
@@ -655,8 +673,10 @@ export default function DreAnalitica() {
     }
 
     const fcKey = fcKeyFor(s.cat);
-    const fc =
-      forecasts[fcKey] !== undefined ? parseFloat(forecasts[fcKey]) : null;
+    const fcManual = forecasts[fcKey] !== undefined;
+    const fc = fcManual
+      ? parseFloat(forecasts[fcKey])
+      : forecastPadraoFor(s.cat, activeMonth);
     bodyRows.push(
       <tr
         key={s.cat}
@@ -670,7 +690,7 @@ export default function DreAnalitica() {
           className="px-2 py-2 text-right"
           onClick={(e) => e.stopPropagation()}
         >
-          <FcCell fcKey={fcKey} value={fc} onCommit={setForecast} />
+          <FcCell fcKey={fcKey} value={fc} onCommit={setForecast} auto={!fcManual} />
         </td>
         <td className="px-2 py-2 text-right">
           <Variacao real={s.total} fc={fc} />

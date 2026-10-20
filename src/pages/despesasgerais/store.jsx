@@ -89,6 +89,9 @@ const MES_NUM = {
   dez: 12,
 };
 
+// ordem dos meses (p/ achar o mês anterior)
+export const MES_SEQ = Object.keys(MES_NUM);
+
 export const ANO = 2026;
 
 export const STATUS_LIST = [
@@ -290,6 +293,33 @@ export function DespesasGeraisProvider({ children }) {
     [activeMonth],
   );
 
+  // realizado de uma categoria (ou do seu grupo) num mês; null se o mês não foi carregado
+  const realizadoCatMes = useCallback(
+    (cat, m) => {
+      const mo = months[m];
+      if (!mo) return null;
+      const g = groupOf(cat);
+      if (g) return mo.summary.filter((s) => g.members.includes(s.cat)).reduce((sum, s) => sum + s.total, 0);
+      const row = mo.summary.find((s) => s.cat === cat);
+      return row ? row.total : 0;
+    },
+    [months],
+  );
+
+  // Forecast padrão (regra: forecast de um mês = realizado do mês anterior).
+  // Usado quando não há forecast definido na mão. null se não dá p/ calcular.
+  const forecastPadraoFor = useCallback(
+    (cat, m) => {
+      const atual = m || activeMonth;
+      const i = MES_SEQ.indexOf(atual);
+      const pm = i > 0 ? MES_SEQ[i - 1] : null;
+      if (!pm) return null;
+      const r = realizadoCatMes(cat, pm);
+      return r == null ? null : Math.round(r * 100) / 100;
+    },
+    [activeMonth, realizadoCatMes],
+  );
+
   const fcTotalFor = useCallback(
     (m) => {
       const mo = months[m];
@@ -301,12 +331,15 @@ export function DespesasGeraisProvider({ children }) {
         if (seen.has(key)) return;
         seen.add(key);
         const v = forecasts[key];
-        if (v !== undefined && v !== null && v !== '')
-          soma += parseFloat(v) || 0;
+        const fv =
+          v !== undefined && v !== null && v !== ''
+            ? parseFloat(v) || 0
+            : forecastPadraoFor(s.cat, m); // padrão: realizado do mês anterior
+        if (fv != null && !isNaN(fv)) soma += fv;
       });
       return Math.round(soma * 100) / 100;
     },
-    [months, forecasts, fcKeyFor],
+    [months, forecasts, fcKeyFor, forecastPadraoFor],
   );
 
   const mergeRealizedG = useCallback(
@@ -766,6 +799,8 @@ export function DespesasGeraisProvider({ children }) {
     carregarMesTotvs,
     fcKeyFor,
     fcTotalFor,
+    forecastPadraoFor,
+    realizadoCatMes,
     mergeRealizedG,
     setForecast,
     updateRow,
