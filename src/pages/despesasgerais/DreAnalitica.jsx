@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import {
   CaretRight,
   CaretDown,
@@ -9,7 +9,11 @@ import {
   Trash,
   ArrowsClockwise,
   CloudArrowDown,
+  UploadSimple,
+  Spinner,
 } from '@phosphor-icons/react';
+import { API_BASE_URL } from '../../config/constants';
+import { authHeaders } from '../../utils/apiAuth';
 import {
   useDespesasGerais,
   groupOf,
@@ -18,6 +22,7 @@ import {
   EMPRESAS_DRE,
   CONSULTA_VERSAO,
   MES_SEQ,
+  ANO,
 } from './store';
 import { CardBox, StatusBadge, EditableText, ActionBtn } from './comum';
 
@@ -160,6 +165,44 @@ export default function DreAnalitica() {
     if (precisa) carregarMesTotvs(pm, { somenteGerais });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeMonth, carregandoMes]);
+
+  // importação de observações por planilha (botão)
+  const obsFileRef = useRef(null);
+  const [importandoObs, setImportandoObs] = useState(false);
+  const [msgImportObs, setMsgImportObs] = useState(null);
+  const importarObsPlanilha = async (file) => {
+    if (!file) return;
+    setImportandoObs(true);
+    setMsgImportObs(null);
+    try {
+      const num = MES_SEQ.indexOf(activeMonth) + 1;
+      const pad = (n) => String(n).padStart(2, '0');
+      const ultimoDia = new Date(ANO, num, 0).getDate();
+      const fd = new FormData();
+      fd.append('arquivo', file);
+      fd.append('dt_inicio', `${ANO}-${pad(num)}-01`);
+      fd.append('dt_fim', `${ANO}-${pad(num)}-${pad(ultimoDia)}`);
+      const headers = await authHeaders();
+      const resp = await fetch(`${API_BASE_URL}/api/dre-observacoes/importar`, {
+        method: 'POST',
+        headers,
+        body: fd,
+      });
+      const j = await resp.json();
+      if (!resp.ok || j.success === false)
+        throw new Error(j.message || `HTTP ${resp.status}`);
+      setMsgImportObs({
+        tipo: 'ok',
+        texto: `Importado: ${j.data.gravadas} observações gravadas, ${j.data.puladas} já existiam${j.data.erros ? `, ${j.data.erros} com erro` : ''}.`,
+      });
+      await carregarMesTotvs(activeMonth, { somenteGerais }); // recarrega pra mostrar
+    } catch (e) {
+      setMsgImportObs({ tipo: 'erro', texto: e.message });
+    } finally {
+      setImportandoObs(false);
+      if (obsFileRef.current) obsFileRef.current.value = '';
+    }
+  };
   const [expanded, setExpanded] = useState(() => new Set());
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -748,8 +791,40 @@ export default function DreAnalitica() {
             />
             {carregando ? 'Consultando TOTVS…' : 'Sincronizar TOTVS'}
           </button>
+          <input
+            ref={obsFileRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            className="hidden"
+            onChange={(e) => importarObsPlanilha(e.target.files?.[0])}
+          />
+          <button
+            onClick={() => obsFileRef.current?.click()}
+            disabled={importandoObs}
+            title="Importar planilha de observações — preenche a coluna Observação dos lançamentos deste mês"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-[#000638] text-[#000638] bg-white hover:bg-[#000638]/5 disabled:opacity-60 transition"
+          >
+            {importandoObs ? (
+              <Spinner size={13} className="animate-spin" />
+            ) : (
+              <UploadSimple size={13} weight="bold" />
+            )}
+            {importandoObs ? 'Importando…' : 'Importar observações'}
+          </button>
         </div>
       </div>
+
+      {msgImportObs && (
+        <div
+          className={`rounded-xl px-4 py-2.5 text-xs font-semibold border ${
+            msgImportObs.tipo === 'erro'
+              ? 'bg-rose-50 text-rose-700 border-rose-200'
+              : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+          }`}
+        >
+          {msgImportObs.texto}
+        </div>
+      )}
 
       {carregando && (
         <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-xs text-blue-800">
