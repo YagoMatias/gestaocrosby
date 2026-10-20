@@ -147,6 +147,8 @@ const PDVPerifericos = lazy(() => import('./pages/PDVPerifericos'));
 const VendasPDV = lazy(() => import('./pages/VendasPDV'));
 const FiscalPDV = lazy(() => import('./pages/FiscalPDV'));
 const IntegracaoERP = lazy(() => import('./pages/IntegracaoERP'));
+const WhatsAppContasPagar = lazy(() => import('./pages/WhatsAppContasPagar'));
+const ImpostosFiscal = lazy(() => import('./pages/ImpostosFiscal'));
 const ConferenciaERP = lazy(() => import('./pages/ConferenciaERP'));
 const EtiquetasPreco = lazy(() => import('./pages/EtiquetasPreco'));
 const CotacaoCompras = lazy(() => import('./pages/CotacaoCompras'));
@@ -225,6 +227,8 @@ const protectedRoutes = [
   { path: '/varejo/vendas-pdv', component: VendasPDV },
   { path: '/admin/fiscal-pdv', component: FiscalPDV },
   { path: '/admin/integracao-erp', component: IntegracaoERP },
+  { path: '/financeiro/whatsapp-contas-pagar', component: WhatsAppContasPagar },
+  { path: '/fiscal/impostos', component: ImpostosFiscal },
   { path: '/admin/conferencia-erp', component: ConferenciaERP },
   { path: '/tecnologia/etiquetas-preco', component: EtiquetasPreco },
   { path: '/tecnologia/cotacao-compras', component: CotacaoCompras },

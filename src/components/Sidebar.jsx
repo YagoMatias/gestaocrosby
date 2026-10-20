@@ -59,6 +59,7 @@ import {
   Tag,
   WifiHigh,
   Gear,
+  Scales,
 } from '@phosphor-icons/react';
 
 // Componentes de ícones modernos
@@ -207,6 +208,13 @@ const financeiro = [
         color: 'text-red-600',
         roles: ['owner', 'admin', 'manager', 'user'],
       },
+      {
+        name: 'WhatsApp Contas a Pagar',
+        href: '/financeiro/whatsapp-contas-pagar',
+        icon: WhatsappLogo,
+        color: 'text-emerald-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
     ],
   },
   {
@@ -241,6 +249,13 @@ const financeiro = [
         name: 'Manifestação do Destinatário',
         href: '/manifestacao-destinatario',
         icon: ClipboardText,
+        color: 'text-amber-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
+        name: 'Impostos',
+        href: '/fiscal/impostos',
+        icon: Scales,
         color: 'text-amber-600',
         roles: ['owner', 'admin', 'manager', 'user'],
       },
