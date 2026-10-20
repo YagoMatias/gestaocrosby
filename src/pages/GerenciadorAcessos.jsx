@@ -150,11 +150,21 @@ const AVAILABLE_PAGES = [
     name: 'Pagamentos Fábricas',
     category: 'Financeiro — Contas a Pagar',
   },
+  {
+    path: '/financeiro/whatsapp-contas-pagar',
+    name: 'WhatsApp Contas a Pagar',
+    category: 'Financeiro — Contas a Pagar',
+  },
 
   // ─── Financeiro › Fiscal ────────────────────────────────────
   {
     path: '/manifestacao-destinatario',
     name: 'Manifestação do Destinatário',
+    category: 'Financeiro — Fiscal',
+  },
+  {
+    path: '/fiscal/impostos',
+    name: 'Impostos',
     category: 'Financeiro — Fiscal',
   },
 
