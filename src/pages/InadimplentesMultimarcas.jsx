@@ -321,6 +321,26 @@ const InadimplentesMultimarcas = () => {
     nome === 'SEM' || nome === 'SEM REPRESENTANTE';
 
   // ======================== TIMELINE SUPABASE ========================
+  // A serie por representante tem ~11 linhas por dia; o Supabase devolve no
+  // maximo 1000 linhas por consulta, entao pagina ate acabar (senao o
+  // historico parava em julho).
+  const buscarTimelineRepCompleta = async () => {
+    const PAGINA = 1000;
+    const tudo = [];
+    for (let de = 0; ; de += PAGINA) {
+      const { data, error } = await supabase
+        .from('inadimplencia_mtm_representantes_timeline')
+        .select('data, representante, valor_total, qtd_clientes')
+        .order('data', { ascending: true })
+        .order('representante', { ascending: true })
+        .range(de, de + PAGINA - 1);
+      if (error) return { data: null, error };
+      tudo.push(...(data || []));
+      if (!data || data.length < PAGINA) break;
+    }
+    return { data: tudo, error: null };
+  };
+
   const carregarTimeline = useCallback(async () => {
     setLoadingTimeline(true);
     try {
@@ -331,10 +351,7 @@ const InadimplentesMultimarcas = () => {
             'data, valor_total, qtd_clientes, qtd_titulos, valor_atrasados, valor_inadimplentes',
           )
           .order('data', { ascending: true }),
-        supabase
-          .from('inadimplencia_mtm_representantes_timeline')
-          .select('data, representante, valor_total, qtd_clientes')
-          .order('data', { ascending: true }),
+        buscarTimelineRepCompleta(),
       ]);
       if (resPrincipal.error) throw resPrincipal.error;
       if (resRep.error) throw resRep.error;
@@ -1812,6 +1829,64 @@ Crosby`;
     });
 
     return { labels, datasets };
+  }, [normalizedTimelineRep]);
+
+  // Tabela: historico de inadimplencia por vendedor (pedido do Recuperacao de
+  // Creditos, 20/10/2026). Uma coluna por mes = snapshot do ultimo dia do mes
+  // (no mes em aberto, o dia mais recente). Usa o valor gravado no dia, SEM o
+  // saneamento dos graficos: o saneamento herda o valor anterior em toda queda
+  // acima de 20% e nunca volta, entao inflaria vendedores cuja carteira caiu de
+  // verdade (ex.: WALTER 521 mil no grafico contra 309 mil reais em 20/10/2026).
+  // A soma das linhas bate com o valor total da inadimplencia do mesmo dia.
+  const [historicoVendMetrica, setHistoricoVendMetrica] = useState('valor'); // 'valor' | 'clientes'
+  const historicoVendedores = useMemo(() => {
+    if (!normalizedTimelineRep.length) return null;
+    const datas = [...new Set(normalizedTimelineRep.map((t) => t.data))].sort();
+    // ultimo dia de cada mes com snapshot
+    const marcos = [];
+    datas.forEach((d, i) => {
+      const mes = d.slice(0, 7);
+      const prox = datas[i + 1];
+      if (mes !== (prox ? prox.slice(0, 7) : null)) {
+        const dt = parseDateNoTZ(d);
+        marcos.push({
+          data: d,
+          rotulo: dt
+            ? `${MESES_CURTOS[dt.getMonth()]}/${String(dt.getFullYear()).slice(2)}`
+            : mes,
+        });
+      }
+    });
+    const reps = [...new Set(normalizedTimelineRep.map((t) => t.representante))];
+    const linhas = reps.map((rep) => {
+      const porData = {};
+      normalizedTimelineRep
+        .filter((t) => t.representante === rep)
+        .forEach((t) => {
+          porData[t.data] = t;
+        });
+      // null = vendedor sem registro naquele dia (mostra "-")
+      const celulas = marcos.map((m) => {
+        const t = porData[m.data];
+        return t
+          ? {
+              valor: parseFloat(t.valor_total) || 0,
+              clientes: parseInt(t.qtd_clientes) || 0,
+            }
+          : null;
+      });
+      const ultimo = celulas[celulas.length - 1] || { valor: 0, clientes: 0 };
+      return { representante: rep, celulas, ultimo };
+    });
+    linhas.sort((a, b) => b.ultimo.valor - a.ultimo.valor);
+    const totais = marcos.map((_, i) => ({
+      valor: linhas.reduce((acc, l) => acc + (l.celulas[i]?.valor || 0), 0),
+      clientes: linhas.reduce(
+        (acc, l) => acc + (l.celulas[i]?.clientes || 0),
+        0,
+      ),
+    }));
+    return { marcos, linhas, totais, ultimaData: datas[datas.length - 1] };
   }, [normalizedTimelineRep]);
 
   // Opções dos gráficos de linha
@@ -3293,6 +3368,196 @@ Crosby`;
                       </tfoot>
                     </table>
                   </div>
+                </CardContent>
+              </Card>
+
+              {/* Tabela: historico mensal de inadimplencia por vendedor */}
+              <Card className="shadow-lg rounded-xl bg-white">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <ClockClockwise size={18} className="text-[#000638]" />
+                      <CardTitle className="text-sm font-bold text-[#000638]">
+                        Historico de Inadimplencia por Vendedor
+                      </CardTitle>
+                    </div>
+                    <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+                      {[
+                        { id: 'valor', label: 'Valor' },
+                        { id: 'clientes', label: 'Clientes' },
+                      ].map(({ id, label }) => (
+                        <button
+                          key={id}
+                          onClick={() => setHistoricoVendMetrica(id)}
+                          className={`px-3 py-1 rounded-md text-xs font-bold uppercase tracking-wide transition-colors ${
+                            historicoVendMetrica === id
+                              ? 'bg-[#000638] text-white shadow-sm'
+                              : 'text-gray-600 hover:text-[#000638]'
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <CardDescription className="text-xs text-gray-500">
+                    Carteira inadimplente de cada vendedor no fechamento de
+                    cada mes (snapshot do ultimo dia do mes; o mes atual
+                    mostra o dia mais recente
+                    {historicoVendedores?.ultimaData
+                      ? `, ${formatarData(historicoVendedores.ultimaData)}`
+                      : ''}
+                    ). Vendedores agrupados pelo primeiro nome. "-" = sem
+                    registro naquele dia. A soma das linhas e o valor total
+                    da inadimplencia do dia. A ultima coluna compara o mes
+                    atual com o mes anterior.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="pt-0 px-4 pb-4">
+                  {!historicoVendedores ? (
+                    <div className="flex items-center justify-center h-24 text-gray-400 text-sm">
+                      Sem historico por vendedor ainda. Os snapshots sao
+                      salvos automaticamente a cada carga da pagina.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="bg-[#000638] text-white">
+                            <th className="px-3 py-2 text-left font-semibold sticky left-0 bg-[#000638]">
+                              Vendedor
+                            </th>
+                            {historicoVendedores.marcos.map((m) => (
+                              <th
+                                key={m.data}
+                                className="px-3 py-2 text-right font-semibold whitespace-nowrap"
+                                title={formatarData(m.data)}
+                              >
+                                {m.rotulo}
+                              </th>
+                            ))}
+                            <th className="px-3 py-2 text-right font-semibold whitespace-nowrap">
+                              Var. mes
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {historicoVendedores.linhas.map((l) => {
+                            const n = l.celulas.length;
+                            const atual = l.celulas[n - 1]?.[historicoVendMetrica];
+                            const anterior =
+                              n > 1 ? l.celulas[n - 2]?.[historicoVendMetrica] : null;
+                            const dif =
+                              atual == null || anterior == null
+                                ? null
+                                : atual - anterior;
+                            const pct = anterior ? (dif / anterior) * 100 : null;
+                            return (
+                              <tr
+                                key={l.representante}
+                                className="border-b border-gray-100 hover:bg-gray-50"
+                              >
+                                <td className="px-3 py-2 font-bold text-[#000638] sticky left-0 bg-white whitespace-nowrap">
+                                  {l.representante}
+                                </td>
+                                {l.celulas.map((c, i) => (
+                                  <td
+                                    key={historicoVendedores.marcos[i].data}
+                                    className="px-3 py-2 text-right whitespace-nowrap"
+                                  >
+                                    {!c ? (
+                                      <span className="text-gray-400">-</span>
+                                    ) : historicoVendMetrica === 'valor' ? (
+                                      formatarMoeda(c.valor)
+                                    ) : (
+                                      c.clientes
+                                    )}
+                                  </td>
+                                ))}
+                                <td className="px-3 py-2 text-right whitespace-nowrap">
+                                  {dif === null ? (
+                                    <span className="text-gray-400">-</span>
+                                  ) : (
+                                    <span
+                                      className={`inline-flex items-center gap-0.5 font-semibold ${
+                                        dif > 0
+                                          ? 'text-red-600'
+                                          : dif < 0
+                                            ? 'text-green-600'
+                                            : 'text-gray-400'
+                                      }`}
+                                    >
+                                      {dif > 0 ? (
+                                        <ArrowUp size={12} weight="bold" />
+                                      ) : dif < 0 ? (
+                                        <ArrowDown size={12} weight="bold" />
+                                      ) : null}
+                                      {historicoVendMetrica === 'valor'
+                                        ? formatarMoeda(Math.abs(dif))
+                                        : Math.abs(dif)}
+                                      {pct !== null && (
+                                        <span className="text-[10px] font-normal text-gray-500 ml-0.5">
+                                          ({pct > 0 ? '+' : ''}
+                                          {pct.toFixed(1)}%)
+                                        </span>
+                                      )}
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        <tfoot>
+                          <tr className="bg-gray-50 font-bold text-[#000638] border-t-2 border-gray-200">
+                            <td className="px-3 py-2 sticky left-0 bg-gray-50">
+                              TOTAL
+                            </td>
+                            {historicoVendedores.totais.map((t, i) => (
+                              <td
+                                key={historicoVendedores.marcos[i].data}
+                                className="px-3 py-2 text-right whitespace-nowrap"
+                              >
+                                {historicoVendMetrica === 'valor'
+                                  ? formatarMoeda(t.valor)
+                                  : t.clientes}
+                              </td>
+                            ))}
+                            <td className="px-3 py-2 text-right whitespace-nowrap">
+                              {(() => {
+                                const n = historicoVendedores.totais.length;
+                                if (n < 2)
+                                  return <span className="text-gray-400">-</span>;
+                                const d =
+                                  (historicoVendedores.totais[n - 1][
+                                    historicoVendMetrica
+                                  ] || 0) -
+                                  (historicoVendedores.totais[n - 2][
+                                    historicoVendMetrica
+                                  ] || 0);
+                                return (
+                                  <span
+                                    className={
+                                      d > 0
+                                        ? 'text-red-600'
+                                        : d < 0
+                                          ? 'text-green-600'
+                                          : 'text-gray-400'
+                                    }
+                                  >
+                                    {d > 0 ? '+' : d < 0 ? '-' : ''}
+                                    {historicoVendMetrica === 'valor'
+                                      ? formatarMoeda(Math.abs(d))
+                                      : Math.abs(d)}
+                                  </span>
+                                );
+                              })()}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </>
