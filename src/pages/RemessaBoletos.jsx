@@ -21,6 +21,8 @@ import {
   ArrowCounterClockwise,
   CaretDown,
   CaretUp,
+  Prohibit,
+  Trash,
 } from '@phosphor-icons/react';
 import { TotvsURL } from '../config/constants';
 import PageTitle from '../components/ui/PageTitle';
@@ -267,6 +269,59 @@ export default function RemessaBoletos() {
   const { user } = useAuth();
   const [portadoresRemessa, setPortadoresRemessa] = useState([1020, 1098]);
   const [contasPagarme, setContasPagarme] = useState(null); // { emissao, contas }
+  // ── clientes bloqueados para boleto (trava) ──
+  const [bloqAberto, setBloqAberto] = useState(false);
+  const [bloqueados, setBloqueados] = useState([]);
+  const [bloqFixos, setBloqFixos] = useState([]);
+  const [bloqNovo, setBloqNovo] = useState({ cd_cliente: '', nm_cliente: '', motivo: '' });
+  const [bloqMsg, setBloqMsg] = useState('');
+  const carregarBloqueados = async () => {
+    try {
+      const resp = await fetch(`${TotvsURL}remessa-boletos/bloqueados`);
+      const json = await resp.json();
+      if (!resp.ok || json.success === false) throw new Error(json.message || `HTTP ${resp.status}`);
+      setBloqueados(json.data?.bloqueados || []);
+      setBloqFixos(json.data?.fixos || []);
+    } catch (e) {
+      setBloqMsg(`Erro ao carregar bloqueados: ${e.message}`);
+    }
+  };
+  useEffect(() => {
+    carregarBloqueados();
+  }, []);
+  const bloquear = async () => {
+    const cd = parseInt(bloqNovo.cd_cliente, 10);
+    if (!cd) {
+      setBloqMsg('Informe o código do cliente.');
+      return;
+    }
+    setBloqMsg('');
+    try {
+      const resp = await fetch(`${TotvsURL}remessa-boletos/bloqueados`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cd_cliente: cd, nm_cliente: bloqNovo.nm_cliente, motivo: bloqNovo.motivo, usuario: user?.email || user?.name || null }),
+      });
+      const json = await resp.json();
+      if (!resp.ok || json.success === false) throw new Error(json.message || `HTTP ${resp.status}`);
+      setBloqNovo({ cd_cliente: '', nm_cliente: '', motivo: '' });
+      setBloqMsg(`Cliente ${cd} bloqueado. Ele some da lista na próxima busca.`);
+      await carregarBloqueados();
+    } catch (e) {
+      setBloqMsg(`Erro ao bloquear: ${e.message}`);
+    }
+  };
+  const desbloquear = async (cd) => {
+    if (!window.confirm(`Liberar o cliente ${cd} para boleto de novo?`)) return;
+    try {
+      const resp = await fetch(`${TotvsURL}remessa-boletos/bloqueados/${cd}`, { method: 'DELETE' });
+      const json = await resp.json();
+      if (!resp.ok || json.success === false) throw new Error(json.message || `HTTP ${resp.status}`);
+      await carregarBloqueados();
+    } catch (e) {
+      setBloqMsg(`Erro ao desbloquear: ${e.message}`);
+    }
+  };
   const [tabelaAusente, setTabelaAusente] = useState(false);
   const [gerando, setGerando] = useState(false);
   const [progresso, setProgresso] = useState('');
@@ -631,6 +686,88 @@ export default function RemessaBoletos() {
               )}
             </div>
           )}
+
+          {/* Clientes bloqueados para boleto (trava) */}
+          <div className="bg-white rounded-lg shadow-sm border border-red-200 mb-3">
+            <button type="button" onClick={() => setBloqAberto((v) => !v)} className="w-full flex items-center justify-between px-3 py-2 text-left">
+              <span className="flex items-center gap-2 text-xs font-bold text-[#000638]">
+                <Prohibit size={16} weight="bold" className="text-red-600" />
+                Clientes bloqueados para boleto
+                <span className="ml-1 rounded-full bg-gray-200 text-gray-700 px-2 py-0.5 text-[10px]">
+                  {bloqueados.length} na trava · {bloqFixos.length} fixos
+                </span>
+              </span>
+              {bloqAberto ? <CaretUp size={14} /> : <CaretDown size={14} />}
+            </button>
+            {bloqAberto && (
+              <div className="px-3 pb-3 border-t border-gray-100">
+                <p className="text-[11px] text-gray-500 mt-2">
+                  Cliente travado <b>não aparece</b> na lista de faturas e a emissão é <b>recusada</b> mesmo que alguém tente. Os "fixos" são nomes gravados no
+                  código pelo Yago (sócios, empresas do grupo AXB/AXF, internos).
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 mt-2 items-end">
+                  <div>
+                    <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Cód. cliente</label>
+                    <input type="text" value={bloqNovo.cd_cliente} onChange={(e) => setBloqNovo({ ...bloqNovo, cd_cliente: e.target.value.replace(/\D/g, '') })} className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full text-xs" placeholder="29045" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Nome (opcional)</label>
+                    <input type="text" value={bloqNovo.nm_cliente} onChange={(e) => setBloqNovo({ ...bloqNovo, nm_cliente: e.target.value })} className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full text-xs" placeholder="KPL SOLUCOES LTDA" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Motivo (opcional)</label>
+                    <input type="text" value={bloqNovo.motivo} onChange={(e) => setBloqNovo({ ...bloqNovo, motivo: e.target.value })} className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full text-xs" placeholder="acordo / cobrança direta" />
+                  </div>
+                  <button onClick={bloquear} className="flex items-center justify-center gap-1.5 bg-red-600 text-white text-xs font-semibold rounded-lg px-3 py-2 hover:bg-red-700 transition-colors">
+                    <Prohibit size={14} weight="bold" /> Bloquear
+                  </button>
+                </div>
+                {bloqMsg && <div className="mt-2 text-[11px] text-[#000638]">{bloqMsg}</div>}
+                <div className="overflow-x-auto mt-2">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50 text-gray-600">
+                      <tr>
+                        <th className="px-2 py-1 text-left">Cód.</th>
+                        <th className="px-2 py-1 text-left">Cliente</th>
+                        <th className="px-2 py-1 text-left">Motivo</th>
+                        <th className="px-2 py-1 text-left">Por / em</th>
+                        <th className="px-2 py-1 text-left"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bloqueados.map((b) => (
+                        <tr key={b.cd_cliente} className="border-b border-gray-100">
+                          <td className="px-2 py-1">{b.cd_cliente}</td>
+                          <td className="px-2 py-1">{b.nm_cliente || '—'}</td>
+                          <td className="px-2 py-1">{b.motivo || '—'}</td>
+                          <td className="px-2 py-1 text-gray-500">
+                            {b.criado_por || '—'} · {b.created_at ? new Date(b.created_at).toLocaleDateString('pt-BR') : ''}
+                          </td>
+                          <td className="px-2 py-1 text-right">
+                            <button onClick={() => desbloquear(b.cd_cliente)} title="Liberar para boleto" className="text-gray-400 hover:text-red-600">
+                              <Trash size={14} weight="bold" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                      {bloqueados.length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="px-2 py-3 text-center text-gray-400">
+                            Nenhum cliente na trava configurável.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {bloqFixos.length > 0 && (
+                  <p className="text-[10px] text-gray-400 mt-2">
+                    Fixos no código: {bloqFixos.join(' · ')} · grupos AXB/AXF
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-3">
             <div className="bg-white rounded-lg border border-gray-200 p-3">
