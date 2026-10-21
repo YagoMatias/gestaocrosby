@@ -262,6 +262,7 @@ export const mesCongelado = (m) =>
 // em syncs futuros. Casa por código do item de despesa e, por segurança, pelo nome.
 export const DESPESAS_EXCLUIDAS = [
   { desde: 'set', codigos: [6031], nomes: ['PROPAGANDA E ANUNCIOS'] }, // set–dez
+  { desde: 'set', codigos: [], nomes: ['SITE E E-MAIL', 'SITES E E-MAIL'] }, // set–dez (pedido 21/10)
 ];
 const normCat = (s) =>
   String(s || '')
