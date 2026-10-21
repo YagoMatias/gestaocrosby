@@ -346,7 +346,7 @@ const deepClone = (o) => JSON.parse(JSON.stringify(o));
 // dos meses gravados com uma regra anterior
 // v4: retira PROPAGANDA E ANUNCIOS (6031) a partir de set — força re-sync dos
 // meses ao vivo; os congelados (jan–ago) não re-sincronizam.
-export const CONSULTA_VERSAO = 'emissao-normais-v4';
+export const CONSULTA_VERSAO = 'emissao-normais-v5'; // v5: pagos só com dt_liq e vl_pago>0
 
 // classificação por faixa de código (mesma régua da DRE gerencial)
 const categoriaPorFaixa = (codigo) => {
@@ -616,6 +616,16 @@ export function DespesasGeraisProvider({ children }) {
 
         // regras da DRE: ignora centro de custo 999 (rateio interno)
         let itens = dadosArray.filter((it) => Number(it.cd_ccusto) !== 999);
+        // set+ (TOTVS ao vivo): título PAGO só entra com data de liquidação E
+        // valor pago > 0 (pedido do Yago em 21/10/2026). Em aberto entra normal.
+        if (!mesCongelado(m)) {
+          itens = itens.filter((it) => {
+            const vlPago = parseFloat(it.vl_pago) || 0;
+            const pago =
+              (ESTAGIO_MAP[it.tp_estagio] || it.tp_estagio) === 'Liquidado' || !!it.dt_liq || vlPago > 0;
+            return !pago || (!!it.dt_liq && vlPago > 0);
+          });
+        }
         // despesas retiradas por regra fixa (ex.: PROPAGANDA E ANUNCIOS a partir de set)
         itens = itens.filter((it) => !despesaExcluida(m, it));
         // classifica: só despesas do grupo "DESPESAS GERAIS" (exceções + faixa 6000-6999)
