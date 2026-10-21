@@ -23,6 +23,7 @@ import {
   CONSULTA_VERSAO,
   MES_SEQ,
   ANO,
+  mesCongelado,
 } from './store';
 import { CardBox, StatusBadge, EditableText, ActionBtn } from './comum';
 
@@ -137,19 +138,20 @@ export default function DreAnalitica() {
   const mo = months[activeMonth];
   const fonte = fontes[activeMonth] || {};
   const carregando = carregandoMes === activeMonth;
+  const congelado = mesCongelado(activeMonth);
   const [somenteGerais, setSomenteGerais] = useState(
     fonte.somenteGerais !== false,
   );
 
   // primeira visita ao mês, mês vazio ou regra de consulta desatualizada
-  // → busca os títulos reais no TOTVS
+  // → busca os títulos reais no TOTVS. Mês CONGELADO (jan–ago): carrega só na
+  // primeira vez (quando vazio) e nunca re-sincroniza, pra não alterar o histórico.
   useEffect(() => {
-    const desatualizado =
-      fonte.origem !== 'totvs' ||
-      mo.cnt === 0 ||
-      fonte.consulta !== CONSULTA_VERSAO;
-    if (desatualizado && !carregandoMes)
-      carregarMesTotvs(activeMonth, { somenteGerais });
+    const congelado = mesCongelado(activeMonth);
+    const precisa = congelado
+      ? !mo || mo.cnt === 0
+      : fonte.origem !== 'totvs' || mo.cnt === 0 || fonte.consulta !== CONSULTA_VERSAO;
+    if (precisa && !carregandoMes) carregarMesTotvs(activeMonth, { somenteGerais });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeMonth]);
 
@@ -799,6 +801,11 @@ export default function DreAnalitica() {
             clique em sincronizar para puxar os pagamentos reais do TOTVS
           </span>
         )}
+        {congelado && (
+          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase text-blue-700 bg-blue-50 border border-blue-200 rounded-full px-2 py-0.5" title="Mês de importação manual — não sincroniza com o TOTVS">
+            🔒 mês congelado
+          </span>
+        )}
         <label className="flex items-center gap-1.5 text-[11px] text-gray-600 cursor-pointer ml-2">
           <input
             type="checkbox"
@@ -814,15 +821,16 @@ export default function DreAnalitica() {
           )}
           <button
             onClick={() => carregarMesTotvs(activeMonth, { somenteGerais })}
-            disabled={carregando}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#000638] text-white hover:bg-[#000638]/90 disabled:opacity-60 transition"
+            disabled={carregando || congelado}
+            title={congelado ? 'Mês congelado (importação manual) — o Sincronizar TOTVS fica desabilitado pra não alterar o histórico' : 'Puxa os títulos reais do TOTVS para este mês'}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#000638] text-white hover:bg-[#000638]/90 disabled:opacity-60 disabled:cursor-not-allowed transition"
           >
             <ArrowsClockwise
               size={13}
               weight="bold"
               className={carregando ? 'animate-spin' : ''}
             />
-            {carregando ? 'Consultando TOTVS…' : 'Sincronizar TOTVS'}
+            {congelado ? '🔒 Mês congelado' : carregando ? 'Consultando TOTVS…' : 'Sincronizar TOTVS'}
           </button>
           <input
             ref={obsFileRef}

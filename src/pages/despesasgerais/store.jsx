@@ -123,6 +123,12 @@ const MES_NUM = {
 // ordem dos meses (p/ achar o mês anterior)
 export const MES_SEQ = Object.keys(MES_NUM);
 
+// Meses CONGELADOS: jan–ago são importação manual (histórico). De setembro em
+// diante é HeadCoach ao vivo. Congelado = não sincroniza/altera com o TOTVS.
+export const MES_CORTE_HEADCOACH = 'set';
+export const mesCongelado = (m) =>
+  MES_SEQ.indexOf(m) > -1 && MES_SEQ.indexOf(m) < MES_SEQ.indexOf(MES_CORTE_HEADCOACH);
+
 export const ANO = 2026;
 
 export const STATUS_LIST = [
