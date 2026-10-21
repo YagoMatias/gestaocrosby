@@ -26,6 +26,14 @@ import {
   mesCongelado,
 } from './store';
 import { CardBox, StatusBadge, EditableText, ActionBtn } from './comum';
+import { parseBonificacoes } from './bonificacoesPlanilha';
+
+// despesas manuais das bonificações (não existem no TOTVS). Se o financeiro já
+// criou a despesa no mês com outro nome parecido, a importação usa a existente.
+const BONIF = {
+  geral: { nome: 'BONIFICACOES GERAIS', rotulo: 'bonificação geral', casa: (c) => /BONIFICA/.test(c) && !/MARKETING|MKT/.test(c) },
+  marketing: { nome: 'BONIFICACOES MARKETING', rotulo: 'bonificação marketing', casa: (c) => /BONIFICA/.test(c) && /MARKETING|MKT/.test(c) },
+};
 
 const VERDE = '#12a150';
 const VERMELHO = '#dc2626';
@@ -137,6 +145,7 @@ export default function DreAnalitica() {
     addRow,
     addCategory,
     deleteCategory,
+    importarBonificacoes,
     flagKeyFor,
     toggleFlag,
     flags,
@@ -207,6 +216,46 @@ export default function DreAnalitica() {
     } finally {
       setImportandoHist(false);
       if (histFileRef.current) histFileRef.current.value = '';
+    }
+  };
+
+  // importador geral (menu "Importar"): observações · bonificação geral ·
+  // bonificação marketing · histórico HTML
+  const [menuImportar, setMenuImportar] = useState(false);
+  const bonifFileRef = useRef(null);
+  const [bonifTipo, setBonifTipo] = useState('geral');
+  const [importandoBonif, setImportandoBonif] = useState(false);
+  const importarBonifPlanilha = async (file, tipo) => {
+    if (!file) return;
+    setImportandoBonif(true);
+    setMsgImportObs(null);
+    try {
+      if (bloqueado) throw new Error(travado ? 'Mês travado — destrave para importar.' : 'Mês congelado (histórico) — não aceita importação.');
+      const r = parseBonificacoes(await file.arrayBuffer());
+      if (!r.prontas.length) {
+        throw new Error(
+          `Nenhuma linha válida na planilha${r.headers.length ? ` (colunas lidas: ${r.headers.filter(Boolean).join(', ')})` : ''}. Precisa de uma coluna de fornecedor/nome e uma de valor.`,
+        );
+      }
+      const cfg = BONIF[tipo];
+      const existente = mo.summary.map((s) => s.cat).find(cfg.casa);
+      const cat = existente || cfg.nome;
+      const res = importarBonificacoes(activeMonth, cat, r.prontas, tipo);
+      const ignoradas = r.linhas.length - r.prontas.length;
+      setMsgImportObs({
+        tipo: 'ok',
+        texto:
+          `${cfg.rotulo[0].toUpperCase() + cfg.rotulo.slice(1)} importada em ${mo.label}: ${res.gravadas} lançamentos (${fmtBRL(r.total)}) na despesa "${res.cat}"` +
+          (res.removidas ? ` — substituiu ${res.removidas} importados antes` : '') +
+          (ignoradas ? ` · ${ignoradas} linha${ignoradas > 1 ? 's' : ''} ignorada${ignoradas > 1 ? 's' : ''} (sem nome ou valor)` : '') +
+          '.',
+      });
+      setExpanded((prev) => new Set(prev).add(res.cat));
+    } catch (e) {
+      setMsgImportObs({ tipo: 'erro', texto: e.message });
+    } finally {
+      setImportandoBonif(false);
+      if (bonifFileRef.current) bonifFileRef.current.value = '';
     }
   };
 
@@ -940,19 +989,13 @@ export default function DreAnalitica() {
             className="hidden"
             onChange={(e) => importarObsPlanilha(e.target.files?.[0])}
           />
-          <button
-            onClick={() => obsFileRef.current?.click()}
-            disabled={importandoObs}
-            title="Importar planilha de observações — preenche a coluna Observação dos lançamentos deste mês"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-[#000638] text-[#000638] bg-white hover:bg-[#000638]/5 disabled:opacity-60 transition"
-          >
-            {importandoObs ? (
-              <Spinner size={13} className="animate-spin" />
-            ) : (
-              <UploadSimple size={13} weight="bold" />
-            )}
-            {importandoObs ? 'Importando…' : 'Importar observações'}
-          </button>
+          <input
+            ref={bonifFileRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            className="hidden"
+            onChange={(e) => importarBonifPlanilha(e.target.files?.[0], bonifTipo)}
+          />
           <input
             ref={histFileRef}
             type="file"
@@ -960,19 +1003,84 @@ export default function DreAnalitica() {
             className="hidden"
             onChange={(e) => importarHistoricoHtml(e.target.files?.[0])}
           />
-          <button
-            onClick={() => histFileRef.current?.click()}
-            disabled={importandoHist}
-            title="Importar o histórico de observações jan–ago a partir do HTML da análise antiga"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-[#000638] text-[#000638] bg-white hover:bg-[#000638]/5 disabled:opacity-60 transition"
-          >
-            {importandoHist ? (
-              <Spinner size={13} className="animate-spin" />
-            ) : (
-              <UploadSimple size={13} weight="bold" />
+          {/* importador geral: um botão, várias planilhas */}
+          <div className="relative">
+            <button
+              onClick={() => setMenuImportar((v) => !v)}
+              disabled={importandoObs || importandoBonif || importandoHist}
+              title="Importar planilhas para este mês: observações, bonificações (geral / marketing) ou o histórico (HTML)"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-[#000638] text-[#000638] bg-white hover:bg-[#000638]/5 disabled:opacity-60 transition"
+            >
+              {importandoObs || importandoBonif || importandoHist ? (
+                <Spinner size={13} className="animate-spin" />
+              ) : (
+                <UploadSimple size={13} weight="bold" />
+              )}
+              {importandoObs
+                ? 'Importando observações…'
+                : importandoBonif
+                  ? 'Importando bonificação…'
+                  : importandoHist
+                    ? 'Importando histórico…'
+                    : 'Importar'}
+              <CaretDown size={11} weight="bold" />
+            </button>
+            {menuImportar && (
+              <>
+                <div className="fixed inset-0 z-20" onClick={() => setMenuImportar(false)} />
+                <div className="absolute right-0 mt-1 z-30 w-72 bg-white border border-[#000638]/15 rounded-xl shadow-lg py-1 text-xs">
+                  {[
+                    {
+                      k: 'obs',
+                      titulo: 'Importar observação',
+                      desc: 'planilha mensal do Contas a Pagar — preenche a coluna Observação',
+                      acao: () => obsFileRef.current?.click(),
+                    },
+                    {
+                      k: 'bgeral',
+                      titulo: 'Importar bonificação geral',
+                      desc: `cada linha vira um lançamento da despesa ${BONIF.geral.nome}`,
+                      acao: () => {
+                        setBonifTipo('geral');
+                        bonifFileRef.current?.click();
+                      },
+                      bloq: bloqueado,
+                    },
+                    {
+                      k: 'bmkt',
+                      titulo: 'Importar bonificação marketing',
+                      desc: `cada linha vira um lançamento da despesa ${BONIF.marketing.nome}`,
+                      acao: () => {
+                        setBonifTipo('marketing');
+                        bonifFileRef.current?.click();
+                      },
+                      bloq: bloqueado,
+                    },
+                    {
+                      k: 'hist',
+                      titulo: 'Importar histórico (HTML)',
+                      desc: 'jan–ago da análise antiga (valores, lançamentos e observações)',
+                      acao: () => histFileRef.current?.click(),
+                    },
+                  ].map((it) => (
+                    <button
+                      key={it.k}
+                      disabled={it.bloq}
+                      onClick={() => {
+                        setMenuImportar(false);
+                        it.acao();
+                      }}
+                      title={it.bloq ? 'Mês bloqueado (congelado/travado) — não aceita importação' : undefined}
+                      className="w-full text-left px-3 py-2 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <div className="font-semibold text-[#000638]">{it.titulo}</div>
+                      <div className="text-[10px] text-gray-500">{it.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              </>
             )}
-            {importandoHist ? 'Importando…' : 'Importar histórico (HTML)'}
-          </button>
+          </div>
         </div>
       </div>
 

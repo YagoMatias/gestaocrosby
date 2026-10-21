@@ -677,6 +677,16 @@ export function DespesasGeraisProvider({ children }) {
                 '',
             });
           });
+          // despesas MANUAIS do mês (criadas na tela ou importadas, ex.
+          // bonificações) não existem no TOTVS: sobrevivem à sincronização
+          // completa. Uma categoria é manual quando nenhuma linha veio do TOTVS.
+          if (!catAlvo) {
+            const atuais = (st.months[m] && st.months[m].details) || {};
+            Object.entries(atuais).forEach(([cat, rows]) => {
+              if (details[cat] || !rows.length) return;
+              if (rows.every((r) => !r.id || String(r.id).startsWith('bonif|'))) details[cat] = rows;
+            });
+          }
           // ordena lançamentos por valor desc dentro de cada categoria
           // (só a recarregada, no modo por despesa — as outras mantêm a ordem)
           (catAlvo ? [details[catAlvo]].filter(Boolean) : Object.values(details)).forEach((rows) =>
@@ -991,6 +1001,40 @@ export function DespesasGeraisProvider({ children }) {
     [mutateMonth],
   );
 
+  // Importa bonificações (planilha) como lançamentos da despesa `cat` do mês.
+  // Substitui o que já tinha sido importado nessa despesa (id "bonif|…") e
+  // preserva linhas digitadas à mão. Respeita mês travado (mutateMonth).
+  const importarBonificacoes = useCallback(
+    (m, cat, linhas, tipo = 'geral') => {
+      const catUp = String(cat || '').trim().toUpperCase();
+      if (!catUp) return { gravadas: 0 };
+      const hoje = new Date().toLocaleDateString('pt-BR');
+      const stamp = Date.now();
+      let gravadas = 0;
+      let removidas = 0;
+      mutateMonth(m, (mo) => {
+        const manuais = (mo.details[catUp] || []).filter((r) => !(r.id && String(r.id).startsWith('bonif|')));
+        removidas = (mo.details[catUp] || []).length - manuais.length;
+        const novas = linhas.map((l, i) => ({
+          id: `bonif|${tipo}|${stamp}|${i}`,
+          emp: l.emp || '1',
+          forn: l.forn || 'BONIFICAÇÃO',
+          dupl: l.dupl || '—',
+          emis: l.emis || l.venc || hoje,
+          venc: l.venc || hoje,
+          liq: l.venc || hoje,
+          val: Math.round((Number(l.val) || 0) * 100) / 100,
+          estag: 'Liquidado',
+          obs: l.obs || '',
+        }));
+        gravadas = novas.length;
+        mo.details[catUp] = [...manuais, ...novas].sort((a, b) => b.val - a.val);
+      });
+      return { gravadas, removidas, cat: catUp };
+    },
+    [mutateMonth],
+  );
+
   const deleteCategory = useCallback(
     (m, cat) => {
       mutateMonth(m, (mo, st) => {
@@ -1220,6 +1264,7 @@ export function DespesasGeraisProvider({ children }) {
     addRow,
     addCategory,
     deleteCategory,
+    importarBonificacoes,
     flagKeyFor,
     toggleFlag,
     addManualFlag,
