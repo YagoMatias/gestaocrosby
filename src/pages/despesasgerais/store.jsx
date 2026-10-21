@@ -550,8 +550,10 @@ export function DespesasGeraisProvider({ children }) {
   );
 
   // ── TOTVS: busca o que foi PAGO (liquidado) no mês ──
+  // apenasCat: sincroniza SÓ essa despesa (categoria) — as outras do mês ficam
+  // como estão (pedido do financeiro em 21/10/2026).
   const carregarMesTotvs = useCallback(
-    async (m, { somenteGerais = true } = {}) => {
+    async (m, { somenteGerais = true, apenasCat = null } = {}) => {
       if (carregandoRef.current) return;
       carregandoRef.current = true;
       setCarregandoMes(m);
@@ -596,8 +598,17 @@ export function DespesasGeraisProvider({ children }) {
           );
         }
 
+        const catAlvo = apenasCat ? String(apenasCat).trim().toUpperCase() : null;
+        if (catAlvo) {
+          itens = itens.filter(
+            (it) => (it.ds_despesaitem || 'SEM CLASSIFICAÇÃO').trim().toUpperCase() === catAlvo,
+          );
+        }
+
         setState((st) => {
-          const details = {};
+          // só uma despesa: parte das categorias que já estão no mês
+          const details = catAlvo ? { ...((st.months[m] && st.months[m].details) || {}) } : {};
+          if (catAlvo) delete details[catAlvo];
           itens.forEach((it) => {
             const cat = (it.ds_despesaitem || 'SEM CLASSIFICAÇÃO')
               .trim()
@@ -629,7 +640,8 @@ export function DespesasGeraisProvider({ children }) {
             });
           });
           // ordena lançamentos por valor desc dentro de cada categoria
-          Object.values(details).forEach((rows) =>
+          // (só a recarregada, no modo por despesa — as outras mantêm a ordem)
+          (catAlvo ? [details[catAlvo]].filter(Boolean) : Object.values(details)).forEach((rows) =>
             rows.sort((a, b) => b.val - a.val),
           );
           const summary = Object.entries(details)
@@ -643,13 +655,15 @@ export function DespesasGeraisProvider({ children }) {
             .sort((a, b) => b.total - a.total);
           const total =
             Math.round(summary.reduce((s, x) => s + x.total, 0) * 100) / 100;
-          const cnt = itens.length;
+          const cnt = Object.values(details).reduce((s, rows) => s + rows.length, 0);
 
           // desvincula flags indexados da planilha deste mês (dados trocaram):
           // a linha vive no snapshot e não aponta mais para um índice vivo
+          // (no modo por despesa, só os flags dessa categoria)
           const flags = { ...st.flags };
           Object.keys(flags).forEach((k) => {
             const parts = k.split('||');
+            if (catAlvo && parts[1] !== catAlvo) return;
             if (parts[0] === m && /^\d+$/.test(parts[2] || '')) {
               flags[`${m}||${parts[1]}||snap:${parts[2]}`] = flags[k];
               delete flags[k];
@@ -671,12 +685,18 @@ export function DespesasGeraisProvider({ children }) {
             },
             fontes: {
               ...st.fontes,
-              [m]: {
-                origem: 'totvs',
-                atualizadoEm: new Date().toISOString(),
-                somenteGerais,
-                consulta: CONSULTA_VERSAO,
-              },
+              [m]: catAlvo
+                ? {
+                    // mês continua com a origem que tinha; registra só a despesa recarregada
+                    ...(st.fontes[m] || { origem: 'totvs', somenteGerais, consulta: CONSULTA_VERSAO }),
+                    ultimaDespesa: { cat: catAlvo, atualizadoEm: new Date().toISOString() },
+                  }
+                : {
+                    origem: 'totvs',
+                    atualizadoEm: new Date().toISOString(),
+                    somenteGerais,
+                    consulta: CONSULTA_VERSAO,
+                  },
             },
           };
         });

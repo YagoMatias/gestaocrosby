@@ -439,6 +439,18 @@ export default function DreAnalitica() {
                 )}
               </div>
               <button
+                onClick={() => carregarMesTotvs(activeMonth, { somenteGerais, apenasCat: cat })}
+                disabled={carregando || bloqueado}
+                className="ml-auto inline-flex items-center gap-1 text-[10px] text-[#000638] hover:text-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                title={
+                  bloqueado
+                    ? 'Mês bloqueado — destrave para sincronizar'
+                    : 'Puxa do TOTVS só os lançamentos desta despesa (as outras não mudam)'
+                }
+              >
+                <ArrowsClockwise size={11} className={carregando ? 'animate-spin' : ''} /> sincronizar despesa
+              </button>
+              <button
                 onClick={() => {
                   if (
                     window.confirm(
@@ -447,7 +459,7 @@ export default function DreAnalitica() {
                   )
                     deleteCategory(activeMonth, cat);
                 }}
-                className="ml-auto inline-flex items-center gap-1 text-[10px] text-red-500 hover:text-red-700"
+                className="ml-3 inline-flex items-center gap-1 text-[10px] text-red-500 hover:text-red-700"
                 title="Excluir esta despesa (categoria) inteira"
               >
                 <Trash size={11} /> excluir despesa
@@ -844,6 +856,37 @@ export default function DreAnalitica() {
             />
             {travado ? '🔒 Mês travado' : congelado ? '🔒 Mês congelado' : carregando ? 'Consultando TOTVS…' : 'Sincronizar TOTVS'}
           </button>
+          {/* sincroniza SÓ uma despesa (categoria); as outras do mês ficam como estão */}
+          <select
+            value=""
+            disabled={carregando || bloqueado}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (!v) return;
+              let cat = v;
+              if (v === '__outra__') {
+                cat = window.prompt(
+                  'Nome da despesa (categoria) exatamente como no TOTVS — ex.: SERVICOS PRESTADOS POR TERCEIROS',
+                );
+                if (!cat || !cat.trim()) return;
+              }
+              carregarMesTotvs(activeMonth, { somenteGerais, apenasCat: cat.trim().toUpperCase() });
+            }}
+            title={
+              bloqueado
+                ? 'Mês bloqueado — destrave para sincronizar'
+                : 'Puxa do TOTVS só os lançamentos de UMA despesa; as outras despesas do mês não mudam'
+            }
+            className="text-xs font-semibold border border-[#000638] text-[#000638] bg-white rounded-lg px-2 py-1.5 max-w-[200px] disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            <option value="">🔄 só uma despesa…</option>
+            {mo.summary.map((s) => (
+              <option key={s.cat} value={s.cat}>
+                {s.cat}
+              </option>
+            ))}
+            <option value="__outra__">+ outra despesa (digitar o nome)</option>
+          </select>
           <button
             onClick={() => {
               const msg = travado
