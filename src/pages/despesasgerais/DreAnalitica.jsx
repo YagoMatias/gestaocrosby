@@ -127,6 +127,10 @@ export default function DreAnalitica() {
     importarMesesHtml,
     travarMes,
     mesTravado,
+    catAnalisada,
+    toggleAnalisada,
+    ultimaSyncDespesa,
+    limparUltimaSyncDespesa,
     setForecast,
     updateRow,
     deleteRow,
@@ -691,6 +695,28 @@ export default function DreAnalitica() {
   // linhas da tabela principal
   const bodyRows = [];
   const groupsDone = new Set();
+  // marcação "analisada" por despesa (pedido do financeiro em 21/10/2026)
+  const nAnalisadas = visible.filter((s) => catAnalisada(activeMonth, s.cat)).length;
+  const analisadaBtn = (cat) => {
+    const ok = catAnalisada(activeMonth, cat);
+    return (
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          toggleAnalisada(activeMonth, cat);
+        }}
+        title={ok ? 'Despesa já analisada — clique para desmarcar' : 'Marcar esta despesa como analisada'}
+        className={`ml-2 inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase transition ${
+          ok
+            ? 'bg-green-600 text-white border-green-600'
+            : 'bg-white text-gray-400 border-gray-200 hover:border-green-400 hover:text-green-600'
+        }`}
+      >
+        {ok ? '✔ analisada' : 'analisar'}
+      </button>
+    );
+  };
+  const rowCls = (cat) => (catAnalisada(activeMonth, cat) ? 'bg-green-50/60' : '');
   visible.forEach((s) => {
     const gp = catToGroup.get(s.cat);
     const pct = mo.total > 0 ? ((s.total / mo.total) * 100).toFixed(1) : '0.0';
@@ -719,13 +745,14 @@ export default function DreAnalitica() {
           <tr
             key={gm.cat}
             onClick={() => toggleExpand(gm.cat)}
-            className={`cursor-pointer border-b border-gray-100 hover:bg-blue-50/40 ${
+            className={`cursor-pointer border-b border-gray-100 hover:bg-blue-50/40 ${rowCls(gm.cat)} ${
               idx === 0 ? 'border-t-2 border-t-violet-200' : ''
             } ${idx === n - 1 ? 'border-b-2 border-b-violet-200' : ''}`}
           >
             <td className="px-3 py-2 w-7">{arrow(gm.cat)}</td>
             <td className="px-2 py-2 font-medium text-[#000638]">
               {gm.cat}
+              {analisadaBtn(gm.cat)}
               {idx === 0 && (
                 <span
                   className="ml-2 text-[9px] font-bold uppercase text-violet-600 bg-violet-50 border border-violet-200 rounded-full px-1.5 py-0.5"
@@ -772,10 +799,13 @@ export default function DreAnalitica() {
       <tr
         key={s.cat}
         onClick={() => toggleExpand(s.cat)}
-        className="cursor-pointer border-b border-gray-100 hover:bg-blue-50/40"
+        className={`cursor-pointer border-b border-gray-100 hover:bg-blue-50/40 ${rowCls(s.cat)}`}
       >
         <td className="px-3 py-2 w-7">{arrow(s.cat)}</td>
-        <td className="px-2 py-2 font-medium text-[#000638]">{s.cat}</td>
+        <td className="px-2 py-2 font-medium text-[#000638]">
+          {s.cat}
+          {analisadaBtn(s.cat)}
+        </td>
         <td className="px-2 py-2 text-right">{fmtBRL(s.total)}</td>
         <td
           className="px-2 py-2 text-right"
@@ -946,6 +976,35 @@ export default function DreAnalitica() {
         </div>
       </div>
 
+      {ultimaSyncDespesa && ultimaSyncDespesa.m === activeMonth && (
+        <div className="rounded-xl px-4 py-2.5 text-xs border bg-emerald-50 text-emerald-800 border-emerald-200 flex flex-wrap items-center gap-2">
+          <ArrowsClockwise size={13} weight="bold" />
+          <span>
+            <b>{ultimaSyncDespesa.cat}</b> sincronizada com o TOTVS às{' '}
+            {new Date(ultimaSyncDespesa.em).toLocaleTimeString('pt-BR')}:{' '}
+            {ultimaSyncDespesa.depois.n} lançamento{ultimaSyncDespesa.depois.n === 1 ? '' : 's'} ·{' '}
+            {fmtBRL(ultimaSyncDespesa.depois.total)}
+            {ultimaSyncDespesa.antes.n === ultimaSyncDespesa.depois.n &&
+            Math.abs(ultimaSyncDespesa.antes.total - ultimaSyncDespesa.depois.total) < 0.01 ? (
+              <> — <b>nada mudou</b> (a DRE já estava igual ao TOTVS).</>
+            ) : (
+              <>
+                {' '}
+                — antes: {ultimaSyncDespesa.antes.n} · {fmtBRL(ultimaSyncDespesa.antes.total)}.
+                As outras despesas do mês não foram alteradas.
+              </>
+            )}
+          </span>
+          <button
+            onClick={limparUltimaSyncDespesa}
+            className="ml-auto text-emerald-500 hover:text-emerald-800"
+            title="Fechar"
+          >
+            <X size={12} weight="bold" />
+          </button>
+        </div>
+      )}
+
       {msgImportObs && (
         <div
           className={`rounded-xl px-4 py-2.5 text-xs font-semibold border ${
@@ -1015,7 +1074,21 @@ export default function DreAnalitica() {
 
       <CardBox
         title={`DRE Analítica — ${mo.label}`}
-        subtitle="clique na categoria para ver os lançamentos · clique no forecast para editar"
+        subtitle="clique na categoria para ver os lançamentos · clique no forecast para editar · marque “analisar” em cada despesa conferida"
+        actions={
+          visible.length > 0 && (
+            <span
+              className={`text-[11px] font-semibold rounded-full px-2.5 py-1 border ${
+                nAnalisadas === visible.length
+                  ? 'bg-green-600 text-white border-green-600'
+                  : 'bg-green-50 text-green-700 border-green-200'
+              }`}
+              title="Despesas marcadas como analisadas neste mês"
+            >
+              ✔ {nAnalisadas} de {visible.length} analisadas
+            </span>
+          )
+        }
       >
         <div className="overflow-x-auto" style={{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }}>
           <table className="w-full text-xs">

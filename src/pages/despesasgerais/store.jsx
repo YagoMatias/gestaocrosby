@@ -398,6 +398,7 @@ function loadInitial() {
     fontes: {}, // m -> { origem: 'planilha'|'totvs', atualizadoEm }
     obsEdits: {}, // rowId -> observação digitada pelo usuário
     travas: {}, // m -> { travado: true, em } — mês travado após análise (sem sync, sem edição)
+    analisadas: {}, // m -> { cat: { em } } — despesas já conferidas pelo financeiro
   };
   MONTH_KEYS.forEach((m) => {
     if (!base.months[m]) base.months[m] = mesVazio(m);
@@ -421,6 +422,7 @@ function loadInitial() {
         });
       if (saved.obsEdits) base.obsEdits = saved.obsEdits;
       if (saved.travas) base.travas = saved.travas;
+      if (saved.analisadas) base.analisadas = saved.analisadas;
     }
   } catch (e) {
     console.warn('DespesasGerais: falha ao ler estado salvo', e);
@@ -454,6 +456,10 @@ export function DespesasGeraisProvider({ children }) {
   const [erroMes, setErroMes] = useState(null); // { m, msg }
   const persistTimer = useRef(null);
   const carregandoRef = useRef(false);
+  const stateRef = useRef(state); // leitura síncrona do estado dentro de callbacks
+  stateRef.current = state;
+  // resultado da última sincronização POR DESPESA (feedback na tela)
+  const [ultimaSyncDespesa, setUltimaSyncDespesa] = useState(null); // { m, cat, antes, depois, em }
 
   // persistência com debounce
   useEffect(() => {
@@ -472,6 +478,23 @@ export function DespesasGeraisProvider({ children }) {
   const travas = state.travas || {};
   // mês travado pelo usuário (botão "Travar mês"): sem sync e sem alteração
   const mesTravado = useCallback((m) => !!(travas[m] && travas[m].travado), [travas]);
+
+  // despesa marcada como "analisada" no mês (controle de conferência do financeiro)
+  const analisadas = state.analisadas || {};
+  const catAnalisada = useCallback(
+    (m, cat) => !!(analisadas[m] && analisadas[m][cat]),
+    [analisadas],
+  );
+  const toggleAnalisada = useCallback((m, cat) => {
+    setState((st) => {
+      const todas = { ...(st.analisadas || {}) };
+      const doMes = { ...(todas[m] || {}) };
+      if (doMes[cat]) delete doMes[cat];
+      else doMes[cat] = { em: new Date().toISOString() };
+      todas[m] = doMes;
+      return { ...st, analisadas: todas };
+    });
+  }, []);
 
   // meses que têm dados (para tabelas/gráficos não mostrarem meses vazios)
   const mesesAtivos = useMemo(
@@ -603,6 +626,20 @@ export function DespesasGeraisProvider({ children }) {
           itens = itens.filter(
             (it) => (it.ds_despesaitem || 'SEM CLASSIFICAÇÃO').trim().toUpperCase() === catAlvo,
           );
+          // feedback: como estava × como ficou (a tela mostra mesmo quando nada muda)
+          const soma = (rows) =>
+            Math.round(rows.reduce((s, r) => s + (parseFloat(r.val) || 0), 0) * 100) / 100;
+          const antesRows = (stateRef.current.months[m] && stateRef.current.months[m].details[catAlvo]) || [];
+          const depoisVals = itens.map((it) => ({
+            val: parseFloat(it.vl_pago) > 0 ? parseFloat(it.vl_pago) : parseFloat(it.vl_duplicata) || 0,
+          }));
+          setUltimaSyncDespesa({
+            m,
+            cat: catAlvo,
+            antes: { n: antesRows.length, total: soma(antesRows) },
+            depois: { n: depoisVals.length, total: soma(depoisVals) },
+            em: new Date().toISOString(),
+          });
         }
 
         setState((st) => {
@@ -1126,6 +1163,7 @@ export function DespesasGeraisProvider({ children }) {
           fontes: parsed.fontes || st.fontes,
           obsEdits: parsed.obsEdits || {},
           travas: parsed.travas || st.travas || {},
+          analisadas: parsed.analisadas || st.analisadas || {},
         }));
         onDone && onDone(null);
       } catch (e) {
@@ -1157,6 +1195,11 @@ export function DespesasGeraisProvider({ children }) {
     travas,
     travarMes,
     mesTravado,
+    analisadas,
+    catAnalisada,
+    toggleAnalisada,
+    ultimaSyncDespesa,
+    limparUltimaSyncDespesa: () => setUltimaSyncDespesa(null),
     hcRows: baseData.hcRows,
     activeMonth,
     setActiveMonth,
