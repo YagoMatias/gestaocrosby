@@ -397,6 +397,7 @@ function loadInitial() {
     flags: deepClone(baseData.flags),
     fontes: {}, // m -> { origem: 'planilha'|'totvs', atualizadoEm }
     obsEdits: {}, // rowId -> observação digitada pelo usuário
+    travas: {}, // m -> { travado: true, em } — mês travado após análise (sem sync, sem edição)
   };
   MONTH_KEYS.forEach((m) => {
     if (!base.months[m]) base.months[m] = mesVazio(m);
@@ -419,6 +420,7 @@ function loadInitial() {
           base.fontes[m] = v;
         });
       if (saved.obsEdits) base.obsEdits = saved.obsEdits;
+      if (saved.travas) base.travas = saved.travas;
     }
   } catch (e) {
     console.warn('DespesasGerais: falha ao ler estado salvo', e);
@@ -467,6 +469,9 @@ export function DespesasGeraisProvider({ children }) {
   }, [state]);
 
   const { months, forecasts, flags, fontes, obsEdits } = state;
+  const travas = state.travas || {};
+  // mês travado pelo usuário (botão "Travar mês"): sem sync e sem alteração
+  const mesTravado = useCallback((m) => !!(travas[m] && travas[m].travado), [travas]);
 
   // meses que têm dados (para tabelas/gráficos não mostrarem meses vazios)
   const mesesAtivos = useMemo(
@@ -695,52 +700,79 @@ export function DespesasGeraisProvider({ children }) {
   // Substitui, para jan–ago, os meses, os forecasts e as flags existentes.
   const importarMesesHtml = useCallback((html) => {
     const r = parseHistoricoHtml(html);
-    const mks = Object.keys(r.meses);
-    if (!mks.length) throw new Error('Não achei os dados dos meses no HTML (estado salvo ou const <MES>_SUMMARY/_DETAILS).');
-    setState((st) => {
-      const months = { ...st.months };
-      const fontes = { ...st.fontes };
-      const atualizadoEm = new Date().toISOString();
-      for (const mk of mks) {
-        months[mk] = { ...mesVazio(mk), ...r.meses[mk] };
-        fontes[mk] = { origem: 'html', atualizadoEm, somenteGerais: true, consulta: CONSULTA_VERSAO };
-      }
-      // forecasts dos meses importados: troca pelos do arquivo
-      const forecasts = { ...st.forecasts };
-      const prefixos = new Set(mks.map((mk) => MES_PREFIX[mk]));
-      Object.keys(forecasts).forEach((k) => {
-        const p = (k.match(/^[A-Z]{3}_/) || [''])[0];
-        if (prefixos.has(p)) delete forecasts[k];
+    const todos = Object.keys(r.meses);
+    if (!todos.length) throw new Error('Não achei os dados dos meses no HTML (estado salvo ou const <MES>_SUMMARY/_DETAILS).');
+    // meses travados pelo usuário não são alterados pela importação
+    const pulados = todos.filter((mk) => travas[mk] && travas[mk].travado);
+    const mks = todos.filter((mk) => !pulados.includes(mk));
+    const prefixos = new Set(mks.map((mk) => MES_PREFIX[mk]));
+    const mesesSet = new Set(mks);
+    const fcImport = Object.fromEntries(
+      Object.entries(r.forecasts).filter(([k]) => prefixos.has((k.match(/^[A-Z]{3}_/) || [''])[0])),
+    );
+    const flImport = Object.fromEntries(
+      Object.entries(r.flags).filter(([k, f]) => mesesSet.has(f && f.manual ? f.mes : k.split('||')[0])),
+    );
+    if (mks.length) {
+      setState((st) => {
+        const months = { ...st.months };
+        const fontes = { ...st.fontes };
+        const atualizadoEm = new Date().toISOString();
+        for (const mk of mks) {
+          months[mk] = { ...mesVazio(mk), ...r.meses[mk] };
+          fontes[mk] = { origem: 'html', atualizadoEm, somenteGerais: true, consulta: CONSULTA_VERSAO };
+        }
+        // forecasts dos meses importados: troca pelos do arquivo
+        const forecasts = { ...st.forecasts };
+        Object.keys(forecasts).forEach((k) => {
+          const p = (k.match(/^[A-Z]{3}_/) || [''])[0];
+          if (prefixos.has(p)) delete forecasts[k];
+        });
+        Object.assign(forecasts, fcImport);
+        // flags (correção/corte, inclusive manuais) dos meses importados: troca pelas do arquivo
+        const flags = { ...st.flags };
+        Object.keys(flags).forEach((k) => {
+          const f = flags[k];
+          const m = f && f.manual ? f.mes : k.split('||')[0];
+          if (mesesSet.has(m)) delete flags[k];
+        });
+        Object.assign(flags, flImport);
+        return { ...st, months, fontes, forecasts, flags };
       });
-      Object.assign(forecasts, r.forecasts);
-      // flags (correção/corte, inclusive manuais) dos meses importados: troca pelas do arquivo
-      const flags = { ...st.flags };
-      const mesesSet = new Set(mks);
-      Object.keys(flags).forEach((k) => {
-        const f = flags[k];
-        const m = f && f.manual ? f.mes : k.split('||')[0];
-        if (mesesSet.has(m)) delete flags[k];
-      });
-      Object.assign(flags, r.flags);
-      return { ...st, months, fontes, forecasts, flags };
-    });
+    }
     return {
       origem: r.origem,
       meses: mks,
+      pulados,
       totalLancamentos: mks.reduce((a, m) => a + (r.meses[m].cnt || 0), 0),
-      forecasts: Object.keys(r.forecasts).length,
-      flags: Object.keys(r.flags).length,
-      manuais: r.manuais,
+      forecasts: Object.keys(fcImport).length,
+      flags: Object.keys(flImport).length,
+      manuais: Object.values(flImport).filter((f) => f && f.manual).length,
     };
-  }, []);
+  }, [travas]);
 
   // ── mutações locais ──
   const setForecast = useCallback((key, value) => {
     setState((st) => {
+      // forecast de mês travado não muda (prefixo da chave → mês)
+      const pref = (String(key).match(/^[A-Z]{3}_/) || [''])[0];
+      const mesDaChave = Object.keys(MES_PREFIX).find((mk) => MES_PREFIX[mk] === pref);
+      if (mesDaChave && st.travas && st.travas[mesDaChave] && st.travas[mesDaChave].travado) return st;
       const forecasts = { ...st.forecasts };
       if (value === '' || value === null || isNaN(value)) delete forecasts[key];
       else forecasts[key] = Math.round(parseFloat(value) * 100) / 100;
       return { ...st, forecasts };
+    });
+  }, []);
+
+  // Trava/destrava um mês (botão "Travar mês"). Travado: Sincronizar TOTVS
+  // desabilitado, sem recarga automática e sem alteração de valores/forecast.
+  const travarMes = useCallback((m, travado) => {
+    setState((st) => {
+      const travas = { ...(st.travas || {}) };
+      if (travado) travas[m] = { travado: true, em: new Date().toISOString() };
+      else delete travas[m];
+      return { ...st, travas };
     });
   }, []);
 
@@ -769,6 +801,8 @@ export function DespesasGeraisProvider({ children }) {
 
   const mutateMonth = useCallback((m, fn) => {
     setState((st) => {
+      // mês travado: nenhuma alteração de lançamentos/valores passa
+      if (st.travas && st.travas[m] && st.travas[m].travado) return st;
       const months = { ...st.months, [m]: deepClone(st.months[m]) };
       const extra = fn(months[m], st) || {};
       recalcMonth(months[m]);
@@ -1071,6 +1105,7 @@ export function DespesasGeraisProvider({ children }) {
           flags: parsed.flags || {},
           fontes: parsed.fontes || st.fontes,
           obsEdits: parsed.obsEdits || {},
+          travas: parsed.travas || st.travas || {},
         }));
         onDone && onDone(null);
       } catch (e) {
@@ -1099,6 +1134,9 @@ export function DespesasGeraisProvider({ children }) {
     forecasts,
     flags,
     fontes,
+    travas,
+    travarMes,
+    mesTravado,
     hcRows: baseData.hcRows,
     activeMonth,
     setActiveMonth,

@@ -125,6 +125,8 @@ export default function DreAnalitica() {
     forecastPadraoFor,
     mergeRealizedG,
     importarMesesHtml,
+    travarMes,
+    mesTravado,
     setForecast,
     updateRow,
     deleteRow,
@@ -139,7 +141,9 @@ export default function DreAnalitica() {
   const mo = months[activeMonth];
   const fonte = fontes[activeMonth] || {};
   const carregando = carregandoMes === activeMonth;
-  const congelado = mesCongelado(activeMonth);
+  const congelado = mesCongelado(activeMonth); // regra: jan–ago (importação manual)
+  const travado = mesTravado(activeMonth); // botão "Travar mês" (após análise)
+  const bloqueado = congelado || travado; // sem Sincronizar e sem recarga automática
   const [somenteGerais, setSomenteGerais] = useState(
     fonte.somenteGerais !== false,
   );
@@ -148,8 +152,8 @@ export default function DreAnalitica() {
   // → busca os títulos reais no TOTVS. Mês CONGELADO (jan–ago): carrega só na
   // primeira vez (quando vazio) e nunca re-sincroniza, pra não alterar o histórico.
   useEffect(() => {
-    const congelado = mesCongelado(activeMonth);
-    const precisa = congelado
+    const bloq = mesCongelado(activeMonth) || mesTravado(activeMonth);
+    const precisa = bloq
       ? !mo || mo.cnt === 0
       : fonte.origem !== 'totvs' || mo.cnt === 0 || fonte.consulta !== CONSULTA_VERSAO;
     if (precisa && !carregandoMes) carregarMesTotvs(activeMonth, { somenteGerais });
@@ -164,8 +168,8 @@ export default function DreAnalitica() {
     if (!pm || carregandoMes) return;
     const pmo = months[pm];
     const pf = fontes[pm] || {};
-    const precisa = mesCongelado(pm)
-      ? !pmo || pmo.cnt === 0 // congelado: só carrega se vazio; não re-sincroniza
+    const precisa = mesCongelado(pm) || mesTravado(pm)
+      ? !pmo || pmo.cnt === 0 // congelado/travado: só carrega se vazio; não re-sincroniza
       : !pmo || pmo.cnt === 0 || pf.origem !== 'totvs' || pf.consulta !== CONSULTA_VERSAO;
     if (precisa) carregarMesTotvs(pm, { somenteGerais });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -191,7 +195,8 @@ export default function DreAnalitica() {
         texto:
           `Histórico importado (${r.origem === 'saved' ? 'estado salvo do arquivo' : 'base do arquivo'}): ` +
           `${r.meses.length} meses (${r.meses.join(', ')}), ${r.totalLancamentos} lançamentos, ` +
-          `${r.forecasts} forecasts e ${r.flags} flags (${r.manuais} lançamentos manuais) — espelho do arquivo, congelado. Abra cada mês para ver.`,
+          `${r.forecasts} forecasts e ${r.flags} flags (${r.manuais} lançamentos manuais) — espelho do arquivo, congelado. Abra cada mês para ver.` +
+          (r.pulados && r.pulados.length ? ` Meses travados não alterados: ${r.pulados.join(', ')}.` : ''),
       });
     } catch (e) {
       setMsgImportObs({ tipo: 'erro', texto: e.message });
@@ -802,6 +807,11 @@ export default function DreAnalitica() {
             🔒 mês congelado
           </span>
         )}
+        {travado && (
+          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase text-red-700 bg-red-50 border border-red-200 rounded-full px-2 py-0.5" title="Mês travado após a análise — sem Sincronizar TOTVS e sem alteração de valores/forecast. Clique em Destravar para editar.">
+            🔒 mês travado
+          </span>
+        )}
         <label className="flex items-center gap-1.5 text-[11px] text-gray-600 cursor-pointer ml-2">
           <input
             type="checkbox"
@@ -817,8 +827,14 @@ export default function DreAnalitica() {
           )}
           <button
             onClick={() => carregarMesTotvs(activeMonth, { somenteGerais })}
-            disabled={carregando || congelado}
-            title={congelado ? 'Mês congelado (importação manual) — o Sincronizar TOTVS fica desabilitado pra não alterar o histórico' : 'Puxa os títulos reais do TOTVS para este mês'}
+            disabled={carregando || bloqueado}
+            title={
+              travado
+                ? 'Mês travado após a análise — destrave para sincronizar'
+                : congelado
+                  ? 'Mês congelado (importação manual) — o Sincronizar TOTVS fica desabilitado pra não alterar o histórico'
+                  : 'Puxa os títulos reais do TOTVS para este mês'
+            }
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#000638] text-white hover:bg-[#000638]/90 disabled:opacity-60 disabled:cursor-not-allowed transition"
           >
             <ArrowsClockwise
@@ -826,7 +842,23 @@ export default function DreAnalitica() {
               weight="bold"
               className={carregando ? 'animate-spin' : ''}
             />
-            {congelado ? '🔒 Mês congelado' : carregando ? 'Consultando TOTVS…' : 'Sincronizar TOTVS'}
+            {travado ? '🔒 Mês travado' : congelado ? '🔒 Mês congelado' : carregando ? 'Consultando TOTVS…' : 'Sincronizar TOTVS'}
+          </button>
+          <button
+            onClick={() => {
+              const msg = travado
+                ? `Destravar ${mo.label}? O mês volta a aceitar alterações e sincronização.`
+                : `Travar ${mo.label}? Depois da trava, o mês não sincroniza com o TOTVS e não aceita alteração de lançamentos, valores ou forecast (dá pra destravar depois).`;
+              if (window.confirm(msg)) travarMes(activeMonth, !travado);
+            }}
+            title={travado ? 'Destravar este mês (volta a permitir alterações e sincronização)' : 'Travar este mês após a análise (sem sincronizar, sem alterar valores)'}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${
+              travado
+                ? 'border-red-300 text-red-700 bg-red-50 hover:bg-red-100'
+                : 'border-[#000638] text-[#000638] bg-white hover:bg-[#000638]/5'
+            }`}
+          >
+            {travado ? '🔓 Destravar mês' : '🔒 Travar mês'}
           </button>
           <input
             ref={obsFileRef}
