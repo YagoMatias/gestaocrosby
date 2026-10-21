@@ -229,6 +229,11 @@ const AVAILABLE_PAGES = [
     name: 'Remessa Boletos — Retorno Boleto',
     category: 'Financeiro — Contas a Receber',
   },
+  {
+    path: '/contas-receber-hoje',
+    name: 'Hoje (Contas a Receber)',
+    category: 'Financeiro — Contas a Receber',
+  },
 
   // ─── Financeiro (demais) ────────────────────────────────────
   {

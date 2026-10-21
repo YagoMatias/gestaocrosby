@@ -60,6 +60,7 @@ import {
   WifiHigh,
   Gear,
   Scales,
+  Sun,
 } from '@phosphor-icons/react';
 
 // Componentes de ícones modernos
@@ -329,6 +330,13 @@ const financeiro = [
         href: '/batida-carteira',
         icon: Wallet,
         color: 'text-emerald-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
+        name: 'Hoje (Contas a Receber)',
+        href: '/contas-receber-hoje',
+        icon: Sun,
+        color: 'text-amber-500',
         roles: ['owner', 'admin', 'manager', 'user'],
       },
       {

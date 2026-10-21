@@ -99,6 +99,7 @@ const ClientesTotvs = lazy(() => import('./pages/ClientesTotvs'));
 const SolicitacaoBaixa = lazy(() => import('./pages/SolicitacaoBaixa'));
 const RemessaBoletos = lazy(() => import('./pages/RemessaBoletos'));
 const RetornoBoleto = lazy(() => import('./pages/RetornoBoleto'));
+const ContasReceberHoje = lazy(() => import('./pages/ContasReceberHoje'));
 const MinhasSolicitacoesBaixa = lazy(
   () => import('./pages/MinhasSolicitacoesBaixa'),
 );
@@ -313,6 +314,7 @@ const protectedRoutes = [
   { path: '/solicitacao-baixa', component: SolicitacaoBaixa },
   { path: '/remessa-boletos', component: RemessaBoletos },
   { path: '/retorno-boleto', component: RetornoBoleto },
+  { path: '/contas-receber-hoje', component: ContasReceberHoje },
   { path: '/minhas-solicitacoes-baixa', component: MinhasSolicitacoesBaixa },
   {
     path: '/faturas-clientes-antecipacao',
