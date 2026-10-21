@@ -11,6 +11,7 @@ import useApiClient from '../../hooks/useApiClient';
 import { getCategoriaPorCodigo } from '../../config/categoriasDespesas';
 import baseData from './dadosDespesasGerais.json';
 import { supabase } from '../../lib/supabase';
+import { parseHistoricoHtml } from './historicoHtml';
 
 // Observações importadas (planilha) ficam no Supabase em
 // observacoes_despesas_totvs. Buscamos as do período e casamos com os
@@ -660,21 +661,49 @@ export function DespesasGeraisProvider({ children }) {
   // Importa o histórico (jan–ago) do HTML "Despesas Gerais 2026": carrega os
   // valores + lançamentos + observações nesses meses (espelho do arquivo),
   // marcando origem 'html'. Meses congelados não re-sincronizam com o TOTVS.
+  // Prefere o window.__SAVED_STATE__ (estado vivo do tool antigo: meses com os
+  // lançamentos manuais e edições, forecasts e flags — inclusive flags manuais);
+  // cai nas constantes <MES>_SUMMARY/_DETAILS só se não houver estado salvo.
+  // Substitui, para jan–ago, os meses, os forecasts e as flags existentes.
   const importarMesesHtml = useCallback((html) => {
-    const meses = parseHtmlMeses(html);
-    const mks = Object.keys(meses);
-    if (!mks.length) throw new Error('Não achei os dados dos meses no HTML (const <MES>_SUMMARY/_DETAILS).');
+    const r = parseHistoricoHtml(html);
+    const mks = Object.keys(r.meses);
+    if (!mks.length) throw new Error('Não achei os dados dos meses no HTML (estado salvo ou const <MES>_SUMMARY/_DETAILS).');
     setState((st) => {
       const months = { ...st.months };
       const fontes = { ...st.fontes };
       const atualizadoEm = new Date().toISOString();
       for (const mk of mks) {
-        months[mk] = { ...mesVazio(mk), ...meses[mk] };
+        months[mk] = { ...mesVazio(mk), ...r.meses[mk] };
         fontes[mk] = { origem: 'html', atualizadoEm, somenteGerais: true, consulta: CONSULTA_VERSAO };
       }
-      return { ...st, months, fontes };
+      // forecasts dos meses importados: troca pelos do arquivo
+      const forecasts = { ...st.forecasts };
+      const prefixos = new Set(mks.map((mk) => MES_PREFIX[mk]));
+      Object.keys(forecasts).forEach((k) => {
+        const p = (k.match(/^[A-Z]{3}_/) || [''])[0];
+        if (prefixos.has(p)) delete forecasts[k];
+      });
+      Object.assign(forecasts, r.forecasts);
+      // flags (correção/corte, inclusive manuais) dos meses importados: troca pelas do arquivo
+      const flags = { ...st.flags };
+      const mesesSet = new Set(mks);
+      Object.keys(flags).forEach((k) => {
+        const f = flags[k];
+        const m = f && f.manual ? f.mes : k.split('||')[0];
+        if (mesesSet.has(m)) delete flags[k];
+      });
+      Object.assign(flags, r.flags);
+      return { ...st, months, fontes, forecasts, flags };
     });
-    return { meses: mks, totalLancamentos: mks.reduce((a, m) => a + (meses[m].cnt || 0), 0) };
+    return {
+      origem: r.origem,
+      meses: mks,
+      totalLancamentos: mks.reduce((a, m) => a + (r.meses[m].cnt || 0), 0),
+      forecasts: Object.keys(r.forecasts).length,
+      flags: Object.keys(r.flags).length,
+      manuais: r.manuais,
+    };
   }, []);
 
   // ── mutações locais ──

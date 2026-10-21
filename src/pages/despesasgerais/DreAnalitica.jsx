@@ -188,7 +188,10 @@ export default function DreAnalitica() {
       const r = importarMesesHtml(html);
       setMsgImportObs({
         tipo: 'ok',
-        texto: `Histórico importado: ${r.meses.length} meses (${r.meses.join(', ')}), ${r.totalLancamentos} lançamentos — espelho do arquivo, congelado. Abra cada mês para ver.`,
+        texto:
+          `Histórico importado (${r.origem === 'saved' ? 'estado salvo do arquivo' : 'base do arquivo'}): ` +
+          `${r.meses.length} meses (${r.meses.join(', ')}), ${r.totalLancamentos} lançamentos, ` +
+          `${r.forecasts} forecasts e ${r.flags} flags (${r.manuais} lançamentos manuais) — espelho do arquivo, congelado. Abra cada mês para ver.`,
       });
     } catch (e) {
       setMsgImportObs({ tipo: 'erro', texto: e.message });
