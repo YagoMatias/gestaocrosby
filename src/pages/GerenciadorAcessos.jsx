@@ -294,6 +294,11 @@ const AVAILABLE_PAGES = [
     name: 'Contas Sintéticas',
     category: 'DRE',
   },
+  {
+    path: '/despesas-gerais/auditoria',
+    name: 'Auditoria',
+    category: 'DRE',
+  },
 
   // ─── Comercial ───────────────────────────────────────
   {

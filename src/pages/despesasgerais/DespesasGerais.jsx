@@ -13,6 +13,7 @@ import {
   DownloadSimple,
   UploadSimple,
   ArrowCounterClockwise,
+  Scales,
 } from '@phosphor-icons/react';
 import {
   Chart as ChartJS,
@@ -40,6 +41,7 @@ import AnaliseHorizontal from './AnaliseHorizontal';
 import AnaliseVertical from './AnaliseVertical';
 import PaginaFlags from './PaginaFlags';
 import HeadcoachContas from './HeadcoachContas';
+import Auditoria from './Auditoria';
 
 ChartJS.register(
   CategoryScale,
@@ -104,6 +106,13 @@ const PAGINAS = {
     subtitulo: 'Análise Janeiro · Conta Sintética / Analítica',
     icon: ClipboardText,
     comp: HeadcoachContas,
+  },
+  auditoria: {
+    titulo: 'Auditoria',
+    subtitulo:
+      'Confronto da DRE com o Dryland — Serviços Prestados por Terceiros × Contratos PJ (o Dryland é a fonte da verdade)',
+    icon: Scales,
+    comp: Auditoria,
   },
 };
 

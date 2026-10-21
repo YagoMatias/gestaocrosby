@@ -462,6 +462,13 @@ const financeiro = [
         color: 'text-purple-600',
         roles: ['owner', 'admin', 'manager', 'user'],
       },
+      {
+        name: 'Auditoria',
+        href: '/despesas-gerais/auditoria',
+        icon: Scales,
+        color: 'text-emerald-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
     ],
   },
 ];
