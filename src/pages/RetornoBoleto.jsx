@@ -18,6 +18,8 @@ import {
   Prohibit,
   CaretDown,
   CaretUp,
+  ArrowUp,
+  ArrowDown,
 } from '@phosphor-icons/react';
 import { TotvsURL } from '../config/constants';
 import PageTitle from '../components/ui/PageTitle';
@@ -80,6 +82,9 @@ export default function RetornoBoleto() {
   const [baixaErro, setBaixaErro] = useState('');
   const [baixaCarregando, setBaixaCarregando] = useState(false);
   const [selecionados, setSelecionados] = useState(() => new Set());
+  // na conferência: quais títulos entram na baixa (todos marcados por padrão)
+  const [confSelecionados, setConfSelecionados] = useState(() => new Set());
+  const [confOrdem, setConfOrdem] = useState({ campo: 'cliente', dir: 'asc' });
 
   // "1234", "1234/2", "5-1234-2" (empresa-fatura-parcela), separados por
   // linha, vírgula, ponto e vírgula ou espaço
@@ -132,7 +137,9 @@ export default function RetornoBoleto() {
     }
     setBaixaCarregando(true);
     try {
-      setBaixaConferencia(await chamarBaixa({ ...c, confirmar: false }));
+      const r = await chamarBaixa({ ...c, confirmar: false });
+      setBaixaConferencia(r);
+      setConfSelecionados(new Set((r.itens || []).map((i) => i.id)));
     } catch (e) {
       setBaixaErro(`Erro na conferência: ${e.message}`);
     } finally {
@@ -140,24 +147,67 @@ export default function RetornoBoleto() {
     }
   };
 
+  // itens da conferência ordenados + resumo do que está marcado
+  const confItens = useMemo(() => {
+    const itens = [...(baixaConferencia?.itens || [])];
+    const { campo, dir } = confOrdem;
+    const sinal = dir === 'asc' ? 1 : -1;
+    itens.sort((a, b) => {
+      let r = 0;
+      if (campo === 'valor') r = Number(a.vl_fatura || 0) - Number(b.vl_fatura || 0);
+      else if (campo === 'vencimento') r = String(a.dt_vencimento || '').localeCompare(String(b.dt_vencimento || ''));
+      else if (campo === 'fatura') r = Number(a.nr_fatura) - Number(b.nr_fatura) || Number(a.nr_parcela) - Number(b.nr_parcela);
+      else r = String(a.nm_cliente || '').localeCompare(String(b.nm_cliente || ''), 'pt-BR', { sensitivity: 'base' });
+      if (r === 0 && campo !== 'cliente') {
+        r = String(a.nm_cliente || '').localeCompare(String(b.nm_cliente || ''), 'pt-BR', { sensitivity: 'base' });
+      }
+      return r * sinal;
+    });
+    return itens;
+  }, [baixaConferencia, confOrdem]);
+
+  const confResumo = useMemo(() => {
+    const marcados = (baixaConferencia?.itens || []).filter((i) => confSelecionados.has(i.id));
+    return {
+      qtd: marcados.length,
+      valor: marcados.reduce((a, i) => a + Number(i.vl_fatura || 0), 0),
+      clientes: new Set(marcados.map((i) => i.cd_cliente)).size,
+    };
+  }, [baixaConferencia, confSelecionados]);
+
+  const ordenarConf = (campo) =>
+    setConfOrdem((o) => ({
+      campo,
+      dir: o.campo === campo && o.dir === 'asc' ? 'desc' : 'asc',
+    }));
+
+  const alternarConf = (id) =>
+    setConfSelecionados((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+
   const confirmarBaixa = async () => {
-    if (!baixaConferencia?.qtd) return;
+    if (!confResumo.qtd) return;
     const ok = window.confirm(
-      `Cancelar ${baixaConferencia.qtd} boleto(s) na Pagar.me (${fmtBRL(baixaConferencia.valor)})?\n` +
+      `Cancelar ${confResumo.qtd} boleto(s) na Pagar.me (${fmtBRL(confResumo.valor)})?\n` +
         'Os clientes não conseguirão mais pagar esses boletos. Os títulos no TOTVS continuam em aberto.',
     );
     if (!ok) return;
     setBaixaErro('');
     setBaixaCarregando(true);
     try {
-      // cancela exatamente o que foi conferido (ids), mesmo que a lista tenha mudado
+      // cancela só os títulos marcados na conferência (ids), mesmo que a lista tenha mudado
       const r = await chamarBaixa({
-        ids: baixaConferencia.itens.map((i) => i.id),
+        ids: baixaConferencia.itens.filter((i) => confSelecionados.has(i.id)).map((i) => i.id),
         confirmar: true,
         motivo: baixaMotivo,
       });
       setBaixaResultado(r);
       setBaixaConferencia(null);
+      setConfSelecionados(new Set());
       setSelecionados(new Set());
       setAviso(
         `${r.qtd} boleto(s) baixado(s) na Pagar.me (${fmtBRL(r.valor)})` +
@@ -388,8 +438,9 @@ export default function RetornoBoleto() {
               Cancela na Pagar.me os boletos <b>pendentes</b> (em aberto ou vencidos) dos
               clientes ou faturas informados — o cliente não consegue mais pagar o boleto.
               O título no TOTVS <b>não</b> muda. Marque os boletos na tabela abaixo ou cole
-              uma lista; depois clique em <b>Conferir</b> e, se estiver certo, em{' '}
-              <b>Confirmar baixa</b>.
+              uma lista; clique em <b>Conferir</b>, desmarque o que não quiser baixar
+              (dá pra ordenar por cliente, fatura, vencimento ou valor) e, se estiver
+              certo, <b>Confirmar baixa</b>.
             </p>
             <div className="grid grid-cols-1 lg:grid-cols-6 gap-2 mt-2 items-start">
               <div>
@@ -448,7 +499,7 @@ export default function RetornoBoleto() {
                 </button>
                 <button
                   onClick={confirmarBaixa}
-                  disabled={baixaCarregando || !baixaConferencia?.qtd}
+                  disabled={baixaCarregando || !confResumo.qtd}
                   className="flex items-center justify-center gap-1.5 bg-red-600 text-white text-xs font-semibold rounded-lg px-3 py-2 hover:bg-red-700 transition-colors disabled:opacity-40"
                 >
                   {baixaCarregando && baixaConferencia ? (
@@ -456,7 +507,7 @@ export default function RetornoBoleto() {
                   ) : (
                     <Prohibit size={14} weight="bold" />
                   )}
-                  Confirmar baixa
+                  Confirmar baixa{confResumo.qtd ? ` (${confResumo.qtd})` : ''}
                 </button>
               </div>
             </div>
@@ -467,9 +518,15 @@ export default function RetornoBoleto() {
             )}
             {baixaConferencia && (
               <div className="mt-2 border border-gray-200 rounded-lg p-2">
-                <div className="text-xs font-semibold text-[#000638]">
-                  {baixaConferencia.qtd} boleto(s) pendente(s) de {baixaConferencia.clientes} cliente(s),{' '}
-                  {fmtBRL(baixaConferencia.valor)} — serão cancelados na Pagar.me ao confirmar.
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-xs font-semibold text-[#000638]">
+                    {baixaConferencia.qtd} boleto(s) pendente(s) encontrado(s) de{' '}
+                    {baixaConferencia.clientes} cliente(s), {fmtBRL(baixaConferencia.valor)}.
+                  </div>
+                  <div className="text-xs font-bold text-red-700">
+                    Marcados para baixa: {confResumo.qtd} boleto(s) de {confResumo.clientes}{' '}
+                    cliente(s), {fmtBRL(confResumo.valor)}
+                  </div>
                 </div>
                 {(baixaConferencia.naoEncontrados?.clientes?.length > 0 ||
                   baixaConferencia.naoEncontrados?.faturas?.length > 0) && (
@@ -482,29 +539,80 @@ export default function RetornoBoleto() {
                   </div>
                 )}
                 {baixaConferencia.qtd > 0 && (
-                  <div className="overflow-x-auto max-h-60 overflow-y-auto mt-2">
-                    <table className="w-full text-[11px]">
-                      <thead className="bg-gray-100 text-gray-700">
+                  <div className="overflow-x-auto max-h-[70vh] overflow-y-auto mt-2 border border-gray-100 rounded">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-100 text-gray-700 sticky top-0">
                         <tr>
-                          <th className="px-2 py-1 text-left">Empresa</th>
-                          <th className="px-2 py-1 text-left">Cliente</th>
-                          <th className="px-2 py-1 text-left">Fatura</th>
-                          <th className="px-2 py-1 text-left">Vencimento</th>
-                          <th className="px-2 py-1 text-right">Valor</th>
+                          <th className="px-2 py-1.5 text-center w-8">
+                            <input
+                              type="checkbox"
+                              aria-label="Marcar todos"
+                              checked={
+                                confItens.length > 0 && confItens.every((i) => confSelecionados.has(i.id))
+                              }
+                              onChange={(e) =>
+                                setConfSelecionados(
+                                  e.target.checked ? new Set(confItens.map((i) => i.id)) : new Set(),
+                                )
+                              }
+                            />
+                          </th>
+                          <th className="px-2 py-1.5 text-left">Empresa</th>
+                          {[
+                            ['cliente', 'Cliente', 'text-left'],
+                            ['fatura', 'Fatura', 'text-left'],
+                            ['vencimento', 'Vencimento', 'text-left'],
+                            ['valor', 'Valor', 'text-right'],
+                          ].map(([campo, rotulo, al]) => (
+                            <th
+                              key={campo}
+                              className={`px-2 py-1.5 ${al} cursor-pointer select-none hover:text-[#fe0000]`}
+                              onClick={() => ordenarConf(campo)}
+                              title="Clique para ordenar"
+                            >
+                              <span className="inline-flex items-center gap-0.5">
+                                {rotulo}
+                                {confOrdem.campo === campo &&
+                                  (confOrdem.dir === 'asc' ? (
+                                    <ArrowUp size={11} weight="bold" />
+                                  ) : (
+                                    <ArrowDown size={11} weight="bold" />
+                                  ))}
+                              </span>
+                            </th>
+                          ))}
                         </tr>
                       </thead>
                       <tbody>
-                        {baixaConferencia.itens.map((i) => (
-                          <tr key={i.id} className="border-b border-gray-100">
-                            <td className="px-2 py-1">{i.cd_empresa}</td>
-                            <td className="px-2 py-1">
-                              {i.cd_cliente} - {i.nm_cliente || '—'}
+                        {confItens.map((i) => (
+                          <tr
+                            key={i.id}
+                            onClick={() => alternarConf(i.id)}
+                            className={`border-b border-gray-100 cursor-pointer ${
+                              confSelecionados.has(i.id) ? 'bg-red-50' : 'opacity-60'
+                            }`}
+                          >
+                            <td className="px-2 py-1.5 text-center">
+                              <input
+                                type="checkbox"
+                                aria-label="Baixar este título"
+                                checked={confSelecionados.has(i.id)}
+                                onChange={() => alternarConf(i.id)}
+                                onClick={(e) => e.stopPropagation()}
+                              />
                             </td>
-                            <td className="px-2 py-1">
+                            <td className="px-2 py-1.5">{i.cd_empresa}</td>
+                            <td className="px-2 py-1.5">
+                              <span className="text-gray-500">{i.cd_cliente} - </span>
+                              <span className="font-semibold text-[#000638]">{i.nm_cliente || '—'}</span>
+                            </td>
+                            <td className="px-2 py-1.5 whitespace-nowrap">
                               {i.nr_fatura}/{i.nr_parcela}
                             </td>
-                            <td className="px-2 py-1">{fmtData(i.dt_vencimento)}</td>
-                            <td className="px-2 py-1 text-right">{fmtBRL(i.vl_fatura)}</td>
+                            <td className="px-2 py-1.5 whitespace-nowrap">{fmtData(i.dt_vencimento)}</td>
+                            <td className="px-2 py-1.5 text-right font-semibold whitespace-nowrap">
+                              {fmtBRL(i.vl_fatura)}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
