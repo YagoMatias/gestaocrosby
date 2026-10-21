@@ -600,7 +600,15 @@ const DevolucoesMercadoria = () => {
                             );
                           })()}
                         </td>
-                        <td className="px-2 py-1.5"><Badge status={d.status} /></td>
+                        <td className="px-2 py-1.5">
+                          {d.status === 'em_devolucao' && !d.transacao_code ? (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full ring-1 text-[10px] font-semibold bg-indigo-50 text-indigo-700 ring-indigo-200" title="Peças recebidas no HeadCoach — dar entrada no FISFP082 (aba Transações)">
+                              Recebido · FISFP082
+                            </span>
+                          ) : (
+                            <Badge status={d.status} />
+                          )}
+                        </td>
                         <td className="px-2 py-1.5 whitespace-nowrap">
                           <span className="inline-flex gap-1">
                             <button onClick={() => setDetalhe(d)} className="px-1.5 py-0.5 rounded text-[11px] font-semibold text-[#000638] hover:bg-gray-100">abrir</button>
