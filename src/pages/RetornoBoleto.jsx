@@ -20,7 +20,10 @@ import {
   CaretUp,
   ArrowUp,
   ArrowDown,
+  FileXls,
 } from '@phosphor-icons/react';
+import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
 import { TotvsURL } from '../config/constants';
 import PageTitle from '../components/ui/PageTitle';
 import FiltroEmpresa from '../components/FiltroEmpresa';
@@ -296,6 +299,49 @@ export default function RetornoBoleto() {
     } catch {
       /* clipboard indisponível */
     }
+  };
+
+  // Excel com exatamente o que está na tela (período, status, busca e filtros)
+  const baixarExcel = () => {
+    const linhas = visiveis.map((b) => ({
+      Empresa: b.cd_empresa,
+      'Cód. cliente': b.cd_cliente,
+      Cliente: b.nm_cliente || '',
+      'CPF/CNPJ': b.nr_documento || '',
+      Fatura: b.nr_fatura,
+      Parcela: b.nr_parcela,
+      'Emissão boleto': fmtData(b.created_at),
+      Vencimento: fmtData(b.dt_vencimento),
+      Valor: Number(b.vl_fatura || 0),
+      Status: (SITUACOES[b.situacao] || { label: b.status }).label,
+      'Pago em': b.dt_pagamento ? fmtData(b.dt_pagamento) : '',
+      'Valor pago': b.vl_pago != null ? Number(b.vl_pago) : '',
+      'Baixa TOTVS': b.situacao === 'pago' ? (BAIXAS[b.baixa_status]?.label || b.baixa_status || '') : '',
+      'Erro da baixa': b.baixa_erro || '',
+      'Portador TOTVS': b.cd_portador_totvs ?? '',
+      'Nome portador': b.nm_portador_totvs || '',
+      'Carteira Simples OK': b.carteira_ok ? 'Sim' : 'Não',
+      'Nosso número': b.nosso_numero || '',
+      'Linha digitável': b.linha_digitavel || '',
+      'Link do boleto': b.boleto_url || '',
+      'Pedido Pagar.me': b.order_id || '',
+      'Cobrança Pagar.me': b.charge_id || '',
+      'Cancelado em': b.cancelado_em ? fmtData(b.cancelado_em) : '',
+      'Cancelado por': b.cancelado_por || '',
+      'Motivo cancelamento': b.cancel_motivo || '',
+      'Erro emissão': b.erro_descricao || b.erro || '',
+      Remessa: b.remessa_id || '',
+      'Criado por': b.criado_por || '',
+    }));
+    const ws = XLSX.utils.json_to_sheet(linhas);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Retorno Boleto');
+    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const sufixo = situacao === 'todos' ? '' : `-${situacao}`;
+    saveAs(
+      new Blob([buf], { type: 'application/octet-stream' }),
+      `retorno-boleto-${modo}-${dataInicio}_${dataFim}${sufixo}.xlsx`,
+    );
   };
 
   const contagem = useMemo(() => {
@@ -671,6 +717,14 @@ export default function RetornoBoleto() {
             placeholder="Filtrar por cliente, CPF/CNPJ ou nº da fatura"
             className="border border-gray-300 rounded-lg px-2 py-1.5 w-full sm:w-80 text-xs"
           />
+          <button
+            onClick={baixarExcel}
+            disabled={visiveis.length === 0}
+            title="Exporta para Excel exatamente os boletos da consulta filtrada na tela"
+            className="flex items-center gap-1.5 bg-white text-[#000638] border border-[#000638]/30 text-xs font-semibold rounded-lg px-3 py-2 hover:bg-gray-50 transition-colors disabled:opacity-50"
+          >
+            <FileXls size={14} weight="bold" /> Baixar Excel ({visiveis.length})
+          </button>
           <button
             onClick={sincronizar}
             disabled={sincronizando || tabelaAusente}
