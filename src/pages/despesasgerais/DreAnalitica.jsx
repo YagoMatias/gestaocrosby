@@ -124,6 +124,7 @@ export default function DreAnalitica() {
     fcTotalFor,
     forecastPadraoFor,
     mergeRealizedG,
+    importarMesesHtml,
     setForecast,
     updateRow,
     deleteRow,
@@ -163,7 +164,9 @@ export default function DreAnalitica() {
     if (!pm || carregandoMes) return;
     const pmo = months[pm];
     const pf = fontes[pm] || {};
-    const precisa = !pmo || pmo.cnt === 0 || pf.origem !== 'totvs' || pf.consulta !== CONSULTA_VERSAO;
+    const precisa = mesCongelado(pm)
+      ? !pmo || pmo.cnt === 0 // congelado: só carrega se vazio; não re-sincroniza
+      : !pmo || pmo.cnt === 0 || pf.origem !== 'totvs' || pf.consulta !== CONSULTA_VERSAO;
     if (precisa) carregarMesTotvs(pm, { somenteGerais });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeMonth, carregandoMes]);
@@ -180,23 +183,13 @@ export default function DreAnalitica() {
     setImportandoHist(true);
     setMsgImportObs(null);
     try {
-      const fd = new FormData();
-      fd.append('arquivo', file);
-      fd.append('ano', String(ANO));
-      const headers = await authHeaders();
-      const resp = await fetch(`${API_BASE_URL}/api/dre-observacoes/importar-historico-html`, {
-        method: 'POST',
-        headers,
-        body: fd,
-      });
-      const j = await resp.json();
-      if (!resp.ok || j.success === false)
-        throw new Error(j.message || `HTTP ${resp.status}`);
+      const html = await file.text();
+      // carrega jan–ago (valores + lançamentos + observações) direto do HTML
+      const r = importarMesesHtml(html);
       setMsgImportObs({
         tipo: 'ok',
-        texto: `Histórico importado: ${j.data.gravadas} observações (jan–ago). Abra cada mês para ver.`,
+        texto: `Histórico importado: ${r.meses.length} meses (${r.meses.join(', ')}), ${r.totalLancamentos} lançamentos — espelho do arquivo, congelado. Abra cada mês para ver.`,
       });
-      await carregarMesTotvs(activeMonth, { somenteGerais });
     } catch (e) {
       setMsgImportObs({ tipo: 'erro', texto: e.message });
     } finally {

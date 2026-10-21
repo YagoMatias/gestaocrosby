@@ -42,6 +42,133 @@ async function fetchObsSupabase(dtInicio, dtFim) {
   }
 }
 
+// ─── Parser do HTML histórico (ferramenta "Despesas Gerais 2026") ────────────
+// Extrai o literal de `const NOME = ...;` balanceando chaves (respeita strings).
+function extrairConstHtml(html, nome) {
+  const i = html.indexOf(`const ${nome}`);
+  if (i < 0) return null;
+  const eq = html.indexOf('=', i);
+  if (eq < 0) return null;
+  let j = eq + 1;
+  let depth = 0;
+  let started = false;
+  let emStr = false;
+  let asp = '';
+  for (; j < html.length; j++) {
+    const c = html[j];
+    if (emStr) {
+      if (c === '\\') {
+        j++;
+        continue;
+      }
+      if (c === asp) emStr = false;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      emStr = true;
+      asp = c;
+      continue;
+    }
+    if (c === '{' || c === '[') {
+      depth++;
+      started = true;
+    } else if (c === '}' || c === ']') {
+      depth--;
+      if (started && depth === 0) {
+        j++;
+        break;
+      }
+    }
+  }
+  return html.slice(eq + 1, j).trim();
+}
+// Normaliza literal JS → JSON (sem eval): põe aspas nas chaves sem aspas e
+// remove vírgulas finais, respeitando strings.
+function normalizarLiteralJs(str) {
+  let out = '';
+  let emStr = false;
+  let asp = '';
+  for (let i = 0; i < str.length; i++) {
+    const c = str[i];
+    if (emStr) {
+      out += c;
+      if (c === '\\') {
+        out += str[++i] ?? '';
+        continue;
+      }
+      if (c === asp) emStr = false;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      emStr = true;
+      asp = c;
+      out += '"';
+      continue;
+    }
+    if (/[A-Za-z_$]/.test(c)) {
+      let j = i;
+      while (j < str.length && /[A-Za-z0-9_$]/.test(str[j])) j++;
+      let k = j;
+      while (k < str.length && /\s/.test(str[k])) k++;
+      if (str[k] === ':') {
+        out += `"${str.slice(i, j)}"`;
+        i = j - 1;
+        continue;
+      }
+    }
+    out += c;
+  }
+  return out.replace(/,(\s*[}\]])/g, '$1');
+}
+function lerConstHtml(html, nome) {
+  const bruto = extrairConstHtml(html, nome);
+  if (!bruto) return null;
+  try {
+    return JSON.parse(normalizarLiteralJs(bruto));
+  } catch {
+    return null;
+  }
+}
+// Siglas dos meses congelados no HTML (jan–ago).
+const HTML_MESES = { JAN: 'jan', FEV: 'fev', MAR: 'mar', ABR: 'abr', MAI: 'mai', JUN: 'jun', JUL: 'jul', AGO: 'ago' };
+
+// Constrói os objetos de mês (igual ao shape do store) a partir do HTML.
+export function parseHtmlMeses(html) {
+  const out = {};
+  for (const [sigla, mk] of Object.entries(HTML_MESES)) {
+    const summaryRaw = lerConstHtml(html, `${sigla}_SUMMARY`);
+    const detailsRaw = lerConstHtml(html, `${sigla}_DETAILS`);
+    if (!summaryRaw && !detailsRaw) continue;
+    const details = {};
+    let cnt = 0;
+    if (detailsRaw && typeof detailsRaw === 'object') {
+      for (const cat of Object.keys(detailsRaw)) {
+        const linhas = Array.isArray(detailsRaw[cat]) ? detailsRaw[cat] : [];
+        details[cat] = linhas.map((l, idx) => ({
+          id: `${l.emp ?? ''}|${String(l.dupl ?? '').replace(/\D/g, '')}|${idx}`,
+          emp: String(l.emp ?? ''),
+          forn: l.forn || '',
+          dupl: String(l.dupl ?? ''),
+          emis: l.emis || '',
+          venc: l.venc || '',
+          liq: l.liq || '',
+          val: Math.round((Number(l.val) || 0) * 100) / 100,
+          estag: l.estag || '',
+          obs: l.obs || '',
+        }));
+        cnt += details[cat].length;
+      }
+    }
+    const summary = Array.isArray(summaryRaw)
+      ? summaryRaw.map((s) => ({ cat: s.cat, total: Math.round((Number(s.total) || 0) * 100) / 100 }))
+      : Object.entries(details).map(([cat, rows]) => ({ cat, total: Math.round(rows.reduce((a, r) => a + (Number(r.val) || 0), 0) * 100) / 100 }));
+    summary.sort((a, b) => b.total - a.total);
+    const total = Math.round(summary.reduce((a, x) => a + x.total, 0) * 100) / 100;
+    out[mk] = { summary, details, total, cnt };
+  }
+  return out;
+}
+
 // ─── Constantes ──────────────────────────────────────────────────────────────
 export const MONTH_KEYS = [
   'jan',
@@ -530,6 +657,26 @@ export function DespesasGeraisProvider({ children }) {
     [apiClient],
   );
 
+  // Importa o histórico (jan–ago) do HTML "Despesas Gerais 2026": carrega os
+  // valores + lançamentos + observações nesses meses (espelho do arquivo),
+  // marcando origem 'html'. Meses congelados não re-sincronizam com o TOTVS.
+  const importarMesesHtml = useCallback((html) => {
+    const meses = parseHtmlMeses(html);
+    const mks = Object.keys(meses);
+    if (!mks.length) throw new Error('Não achei os dados dos meses no HTML (const <MES>_SUMMARY/_DETAILS).');
+    setState((st) => {
+      const months = { ...st.months };
+      const fontes = { ...st.fontes };
+      const atualizadoEm = new Date().toISOString();
+      for (const mk of mks) {
+        months[mk] = { ...mesVazio(mk), ...meses[mk] };
+        fontes[mk] = { origem: 'html', atualizadoEm, somenteGerais: true, consulta: CONSULTA_VERSAO };
+      }
+      return { ...st, months, fontes };
+    });
+    return { meses: mks, totalLancamentos: mks.reduce((a, m) => a + (meses[m].cnt || 0), 0) };
+  }, []);
+
   // ── mutações locais ──
   const setForecast = useCallback((key, value) => {
     setState((st) => {
@@ -845,6 +992,7 @@ export function DespesasGeraisProvider({ children }) {
     forecastPadraoFor,
     realizadoCatMes,
     mergeRealizedG,
+    importarMesesHtml,
     setForecast,
     updateRow,
     deleteRow,
