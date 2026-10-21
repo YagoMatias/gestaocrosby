@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
-import { User, SignOut, Gear, List } from '@phosphor-icons/react';
+import { User, SignOut, Gear, List, ArrowsClockwise } from '@phosphor-icons/react';
 import NotificationBell from './NotificationBell';
 
 const Header = ({ sidebarOpen = false, onToggleSidebar }) => {
@@ -138,6 +138,18 @@ const Header = ({ sidebarOpen = false, onToggleSidebar }) => {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Atualizar a página (F5). No app desktop (.exe) não há barra de
+              menu nem F5, então este botão é o jeito de recarregar. */}
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            title="Atualizar a página (F5)"
+            aria-label="Atualizar a página"
+            className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-[#000638] transition-colors"
+          >
+            <ArrowsClockwise size={22} weight="bold" />
+          </button>
+
           {/* Sino de Notificações */}
           <NotificationBell />
 
