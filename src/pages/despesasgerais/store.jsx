@@ -257,6 +257,30 @@ export const MES_CORTE_HEADCOACH = 'set';
 export const mesCongelado = (m) =>
   MES_SEQ.indexOf(m) > -1 && MES_SEQ.indexOf(m) < MES_SEQ.indexOf(MES_CORTE_HEADCOACH);
 
+// Despesas RETIRADAS da DRE Analítica a partir de um mês (regra fixa, pedido do
+// financeiro em 21/10/2026): não entram ao sincronizar com o TOTVS e não voltam
+// em syncs futuros. Casa por código do item de despesa e, por segurança, pelo nome.
+export const DESPESAS_EXCLUIDAS = [
+  { desde: 'set', codigos: [6031], nomes: ['PROPAGANDA E ANUNCIOS'] }, // set–dez
+];
+const normCat = (s) =>
+  String(s || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .trim()
+    .toUpperCase();
+export const despesaExcluida = (m, it) => {
+  const im = MES_SEQ.indexOf(m);
+  if (im < 0) return false;
+  const cod = Number(it.cd_despesaitem) || 0;
+  const nome = normCat(it.ds_despesaitem);
+  return DESPESAS_EXCLUIDAS.some(
+    (r) =>
+      im >= MES_SEQ.indexOf(r.desde) &&
+      (r.codigos.includes(cod) || r.nomes.map(normCat).includes(nome)),
+  );
+};
+
 export const ANO = 2026;
 
 export const STATUS_LIST = [
@@ -316,7 +340,9 @@ const deepClone = (o) => JSON.parse(JSON.stringify(o));
 
 // identifica a regra de consulta vigente; mudar isso força re-sincronização
 // dos meses gravados com uma regra anterior
-export const CONSULTA_VERSAO = 'emissao-normais-v3';
+// v4: retira PROPAGANDA E ANUNCIOS (6031) a partir de set — força re-sync dos
+// meses ao vivo; os congelados (jan–ago) não re-sincronizam.
+export const CONSULTA_VERSAO = 'emissao-normais-v4';
 
 // classificação por faixa de código (mesma régua da DRE gerencial)
 const categoriaPorFaixa = (codigo) => {
@@ -556,6 +582,8 @@ export function DespesasGeraisProvider({ children }) {
 
         // regras da DRE: ignora centro de custo 999 (rateio interno)
         let itens = dadosArray.filter((it) => Number(it.cd_ccusto) !== 999);
+        // despesas retiradas por regra fixa (ex.: PROPAGANDA E ANUNCIOS a partir de set)
+        itens = itens.filter((it) => !despesaExcluida(m, it));
         // classifica: só despesas do grupo "DESPESAS GERAIS" (exceções + faixa 6000-6999)
         if (somenteGerais) {
           itens = itens.filter(
