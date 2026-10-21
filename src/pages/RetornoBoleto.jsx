@@ -52,6 +52,13 @@ const SITUACOES = {
   falhou: { label: 'Não emitido', cls: 'bg-amber-100 text-amber-800' },
 };
 
+// Conta Pagar.me em que o boleto foi emitido — cor diferente por conta
+const CONTAS = {
+  crosby: { label: 'Crosby', nome: 'Crosby (FERREIRA)', cls: 'bg-sky-100 text-sky-800 border-sky-300', row: 'border-l-4 border-l-sky-400' },
+  fabio: { label: 'FA MODA', nome: 'FA MODA (Fábio)', cls: 'bg-violet-100 text-violet-800 border-violet-300', row: 'border-l-4 border-l-violet-500' },
+};
+const contaDe = (id) => CONTAS[id] || { label: id || '—', nome: id || '—', cls: 'bg-gray-100 text-gray-700 border-gray-300', row: '' };
+
 const BAIXAS = {
   processada: { label: 'Baixada no TOTVS', cls: 'text-green-700' },
   processando: { label: 'Baixando...', cls: 'text-blue-700' },
@@ -72,6 +79,8 @@ export default function RetornoBoleto() {
   const [aviso, setAviso] = useState('');
   const [tabelaAusente, setTabelaAusente] = useState(false);
   const [boletos, setBoletos] = useState([]);
+  const [filtroConta, setFiltroConta] = useState('todas'); // todas | crosby | fabio
+  const [contasPagarme, setContasPagarme] = useState(null); // { emissao, contas:[{id,nome,configurada}] }
   const [copiado, setCopiado] = useState(null);
 
   // ── baixa em massa na Pagar.me ──
@@ -249,6 +258,7 @@ export default function RetornoBoleto() {
       }
       setBoletos(json.data?.items || []);
       setTabelaAusente(Boolean(json.data?.tabelaAusente));
+      if (json.data?.contasPagarme) setContasPagarme(json.data.contasPagarme);
     } catch (e) {
       setErro(`Erro ao carregar boletos: ${e.message}`);
     } finally {
@@ -304,6 +314,7 @@ export default function RetornoBoleto() {
   // Excel com exatamente o que está na tela (período, status, busca e filtros)
   const baixarExcel = () => {
     const linhas = visiveis.map((b) => ({
+      'Conta Pagar.me': contaDe(b.conta).nome,
       Empresa: b.cd_empresa,
       'Cód. cliente': b.cd_cliente,
       Cliente: b.nm_cliente || '',
@@ -359,12 +370,13 @@ export default function RetornoBoleto() {
     return boletos.filter(
       (b) =>
         (situacao === 'todos' || b.situacao === situacao) &&
+        (filtroConta === 'todas' || (b.conta || 'crosby') === filtroConta) &&
         (!q ||
           [b.nm_cliente, b.nr_documento, b.cd_cliente, b.nr_fatura, b.nosso_numero]
             .filter(Boolean)
             .some((v) => String(v).toLowerCase().includes(q))),
     );
-  }, [boletos, situacao, busca]);
+  }, [boletos, situacao, busca, filtroConta]);
 
   return (
     <div className="w-full max-w-[1600px] mx-auto px-4 py-4">
@@ -603,6 +615,7 @@ export default function RetornoBoleto() {
                               }
                             />
                           </th>
+                          <th className="px-2 py-1.5 text-left">Conta</th>
                           <th className="px-2 py-1.5 text-left">Empresa</th>
                           {[
                             ['cliente', 'Cliente', 'text-left'],
@@ -646,6 +659,11 @@ export default function RetornoBoleto() {
                                 onChange={() => alternarConf(i.id)}
                                 onClick={(e) => e.stopPropagation()}
                               />
+                            </td>
+                            <td className="px-2 py-1.5">
+                              <span className={`inline-block text-[10px] font-bold rounded border px-1.5 py-0.5 ${contaDe(i.conta).cls}`}>
+                                {contaDe(i.conta).label}
+                              </span>
                             </td>
                             <td className="px-2 py-1.5">{i.cd_empresa}</td>
                             <td className="px-2 py-1.5">
@@ -717,6 +735,25 @@ export default function RetornoBoleto() {
             placeholder="Filtrar por cliente, CPF/CNPJ ou nº da fatura"
             className="border border-gray-300 rounded-lg px-2 py-1.5 w-full sm:w-80 text-xs"
           />
+          <select
+            value={filtroConta}
+            onChange={(e) => setFiltroConta(e.target.value)}
+            title="Conta Pagar.me em que o boleto foi emitido"
+            className={`border rounded-lg px-2 py-1.5 text-xs ${filtroConta === 'todas' ? 'border-gray-300' : contaDe(filtroConta).cls}`}
+          >
+            <option value="todas">Conta: todas</option>
+            <option value="crosby">Crosby (FERREIRA)</option>
+            <option value="fabio">FA MODA (Fábio)</option>
+          </select>
+          {contasPagarme && (
+            <span
+              className={`text-[11px] font-semibold rounded px-2 py-1 border ${contaDe(contasPagarme.emissao).cls}`}
+              title={contasPagarme.contas.map((c) => `${c.nome}: ${c.configurada ? 'conectada' : 'sem chave'}`).join(' · ')}
+            >
+              Emissão nova sai pela {contaDe(contasPagarme.emissao).label}
+              {contasPagarme.contas.some((c) => !c.configurada) ? ` · ${contasPagarme.contas.filter((c) => !c.configurada).map((c) => c.label || c.nome).join(', ')} sem chave` : ''}
+            </span>
+          )}
           <button
             onClick={baixarExcel}
             disabled={visiveis.length === 0}
@@ -768,6 +805,7 @@ export default function RetornoBoleto() {
                     }}
                   />
                 </th>
+                <th className="px-2 py-2 text-left">Conta</th>
                 <th className="px-2 py-2 text-left">Empresa</th>
                 <th className="px-2 py-2 text-left">Cliente</th>
                 <th className="px-2 py-2 text-left">Fatura</th>
@@ -784,7 +822,7 @@ export default function RetornoBoleto() {
             <tbody>
               {visiveis.length === 0 && (
                 <tr>
-                  <td colSpan={12} className="px-2 py-16 text-center text-gray-500">
+                  <td colSpan={13} className="px-2 py-16 text-center text-gray-500">
                     {loading
                       ? 'Carregando...'
                       : boletos.length === 0
@@ -799,7 +837,7 @@ export default function RetornoBoleto() {
                 return (
                   <tr
                     key={b.id}
-                    className={`border-b border-gray-100 hover:bg-gray-50 ${
+                    className={`border-b border-gray-100 hover:bg-gray-50 ${contaDe(b.conta).row} ${
                       selecionados.has(b.id) ? 'bg-red-50' : ''
                     }`}
                   >
@@ -812,6 +850,14 @@ export default function RetornoBoleto() {
                           onChange={() => alternarSelecao(b.id)}
                         />
                       )}
+                    </td>
+                    <td className="px-2 py-1.5 whitespace-nowrap">
+                      <span
+                        className={`inline-block text-[10px] font-bold rounded border px-1.5 py-0.5 ${contaDe(b.conta).cls}`}
+                        title={`Boleto emitido na conta ${contaDe(b.conta).nome}`}
+                      >
+                        {contaDe(b.conta).label}
+                      </span>
                     </td>
                     <td className="px-2 py-1.5 whitespace-nowrap">{b.cd_empresa}</td>
                     <td className="px-2 py-1.5">

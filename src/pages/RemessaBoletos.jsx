@@ -256,9 +256,17 @@ function ModalCliente({ cliente, onClose, onSalvo }) {
   );
 }
 
+// Conta Pagar.me do boleto já emitido — mesma cor da tela Retorno Boleto
+const CONTAS_PM = {
+  crosby: { label: 'Crosby', nome: 'Crosby (FERREIRA)', cls: 'bg-sky-100 text-sky-800 border-sky-300' },
+  fabio: { label: 'FA MODA', nome: 'FA MODA (Fábio)', cls: 'bg-violet-100 text-violet-800 border-violet-300' },
+};
+const contaPm = (id) => CONTAS_PM[id] || { label: id || 'PAGARME', nome: id || 'Pagar.me', cls: 'bg-green-100 text-green-800 border-green-300' };
+
 export default function RemessaBoletos() {
   const { user } = useAuth();
   const [portadoresRemessa, setPortadoresRemessa] = useState([1020, 1098]);
+  const [contasPagarme, setContasPagarme] = useState(null); // { emissao, contas }
   const [tabelaAusente, setTabelaAusente] = useState(false);
   const [gerando, setGerando] = useState(false);
   const [progresso, setProgresso] = useState('');
@@ -332,6 +340,7 @@ export default function RemessaBoletos() {
       setSelecionadas(new Set());
       setTabelaAusente(Boolean(json.data?.tabelaAusente));
       if (json.data?.portadoresRemessa) setPortadoresRemessa(json.data.portadoresRemessa);
+      if (json.data?.contasPagarme) setContasPagarme(json.data.contasPagarme);
     } catch (e) {
       setErro(`Erro ao buscar faturas: ${e.message}`);
       setFaturas(null);
@@ -435,6 +444,7 @@ export default function RemessaBoletos() {
         Valor: Number(f.vl_fatura || 0),
         Portador: f.pagarme ? 'PAGARME' : f.cd_portador ?? '',
         'Nome portador': f.pagarme ? 'Pagar.me (boleto emitido)' : f.nm_portador || '',
+        'Conta Pagar.me': f.pagarme ? contaPm(f.pagarme.conta).nome : '',
         'Portador TOTVS': f.cd_portador ?? '',
         Carteira: fmtCarteira(f.tp_cobranca),
         'Boleto no banco': f.boleto_registrado ? 'Sim' : 'Não',
@@ -753,6 +763,14 @@ export default function RemessaBoletos() {
               </select>
               <span className="text-[11px] text-gray-500 flex-1">
                 {paraEnviar.length} selecionada(s) · {fmtBRL(valorEnviar)}
+                {contasPagarme && (
+                  <span
+                    className={`ml-2 inline-block font-semibold rounded border px-1.5 py-0.5 ${contaPm(contasPagarme.emissao).cls}`}
+                    title={contasPagarme.contas.map((c) => `${c.nome}: ${c.configurada ? 'conectada' : 'sem chave'}`).join(' · ')}
+                  >
+                    emissão pela {contaPm(contasPagarme.emissao).label}
+                  </span>
+                )}
               </span>
               <button
                 onClick={baixarExcel}
@@ -863,10 +881,10 @@ export default function RemessaBoletos() {
                         <td className="px-2 py-1.5 whitespace-nowrap">
                           {f.pagarme ? (
                             <span
-                              className="inline-block bg-green-100 text-green-800 font-semibold rounded px-1.5 py-0.5"
-                              title={`Boleto Pagar.me emitido. No TOTVS o portador segue ${f.cd_portador} - ${f.nm_portador || ''}`}
+                              className={`inline-block font-semibold rounded border px-1.5 py-0.5 ${contaPm(f.pagarme.conta).cls}`}
+                              title={`Boleto emitido na Pagar.me ${contaPm(f.pagarme.conta).nome}. No TOTVS o portador segue ${f.cd_portador} - ${f.nm_portador || ''}`}
                             >
-                              PAGARME
+                              PAGARME · {contaPm(f.pagarme.conta).label}
                             </span>
                           ) : (
                             <>
