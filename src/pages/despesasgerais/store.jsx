@@ -263,6 +263,9 @@ export const mesCongelado = (m) =>
 export const DESPESAS_EXCLUIDAS = [
   { desde: 'set', codigos: [6031], nomes: ['PROPAGANDA E ANUNCIOS'] }, // set–dez
   { desde: 'set', codigos: [], nomes: ['SITE E E-MAIL', 'SITES E E-MAIL'] }, // set–dez (pedido 21/10)
+  { desde: 'set', codigos: [], nomes: ['BONIFICACOES, BRINDES E DONATIVOS'] }, // set–dez (pedido 21/10)
+  { desde: 'set', codigos: [], nomes: ['TAXA DE ENTREGA (CLIENTE)'] }, // set–dez (pedido 21/10)
+  { desde: 'set', codigos: [], nomes: ['FRETES E CARRETAS (FILIAIS)'] }, // set–dez (pedido 21/10)
 ];
 const normCat = (s) =>
   String(s || '')
