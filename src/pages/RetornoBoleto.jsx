@@ -89,6 +89,10 @@ export default function RetornoBoleto() {
   const [boletos, setBoletos] = useState([]);
   const [filtroConta, setFiltroConta] = useState('todas'); // todas | crosby | fabio
   const [ordem, setOrdem] = useState({ campo: 'vencimento', dir: 'asc' });
+  // Cancelado/não emitido que já foi substituído por um boleto novo da mesma
+  // fatura (ex.: cancelou na Crosby e reemitiu na FA MODA) fica escondido por
+  // padrão — senão a fatura aparece "duplicada" (João, 21/10/2026).
+  const [verSubstituidos, setVerSubstituidos] = useState(false);
   const ordenarPor = (campo) =>
     setOrdem((o) => ({ campo, dir: o.campo === campo && o.dir === 'asc' ? 'desc' : 'asc' }));
   const [contasPagarme, setContasPagarme] = useState(null); // { emissao, contas:[{id,nome,configurada}] }
@@ -432,10 +436,17 @@ export default function RetornoBoleto() {
     return c;
   }, [boletos]);
 
+  const chaveFat = (b) => `${b.cd_empresa}-${b.nr_fatura}-${b.nr_parcela}`;
+  const substituidos = useMemo(() => {
+    const vivas = new Set(boletos.filter((b) => !PODE_REEMITIR(b)).map(chaveFat));
+    return new Set(boletos.filter((b) => PODE_REEMITIR(b) && vivas.has(chaveFat(b))).map((b) => b.id));
+  }, [boletos]);
+
   const visiveis = useMemo(() => {
     const q = busca.trim().toLowerCase();
     const lista = boletos.filter(
       (b) =>
+        (verSubstituidos || !substituidos.has(b.id)) &&
         (situacao === 'todos' || b.situacao === situacao) &&
         // cancelado não está em conta nenhuma: só aparece em "todas"
         (filtroConta === 'todas' || (b.situacao !== 'cancelado' && (b.conta || 'crosby') === filtroConta)) &&
@@ -468,7 +479,7 @@ export default function RetornoBoleto() {
       });
     }
     return lista;
-  }, [boletos, situacao, busca, filtroConta, ordem]);
+  }, [boletos, situacao, busca, filtroConta, ordem, verSubstituidos, substituidos]);
 
   return (
     <div className="w-full max-w-[1600px] mx-auto px-4 py-4">
@@ -850,6 +861,13 @@ export default function RetornoBoleto() {
             <option value="crosby">Crosby (FERREIRA)</option>
             <option value="fabio">FA MODA (Fábio)</option>
           </select>
+          <label
+            className="flex items-center gap-1 text-[11px] text-gray-600 cursor-pointer"
+            title="Cancelados / não emitidos de faturas que já têm um boleto novo (ex.: cancelou na Crosby e reemitiu na FA MODA)"
+          >
+            <input type="checkbox" checked={verSubstituidos} onChange={(e) => setVerSubstituidos(e.target.checked)} />
+            Mostrar cancelados substituídos{substituidos.size ? ` (${substituidos.size})` : ''}
+          </label>
           {contasPagarme && (
             <span
               className={`text-[11px] font-semibold rounded px-2 py-1 border ${contaDe(contasPagarme.emissao).cls}`}
