@@ -389,6 +389,8 @@ export default function RetornoBoleto() {
       'Emissão boleto': fmtData(b.created_at),
       Vencimento: fmtData(b.dt_vencimento),
       Valor: Number(b.vl_fatura || 0),
+      'Acréscimo no boleto': Number(b.vl_acrescimo || 0),
+      'Valor do boleto': Number(b.vl_fatura || 0) + Number(b.vl_acrescimo || 0),
       Status: (SITUACOES[b.situacao] || { label: b.status }).label,
       'Pago em': b.dt_pagamento ? fmtData(b.dt_pagamento) : '',
       'Valor pago': b.vl_pago != null ? Number(b.vl_pago) : '',
@@ -995,8 +997,12 @@ export default function RetornoBoleto() {
                     </td>
                     <td className="px-2 py-1.5 whitespace-nowrap">{fmtData(b.created_at)}</td>
                     <td className="px-2 py-1.5 whitespace-nowrap">{fmtData(b.dt_vencimento)}</td>
-                    <td className="px-2 py-1.5 text-right font-semibold whitespace-nowrap">
+                    <td
+                      className="px-2 py-1.5 text-right font-semibold whitespace-nowrap"
+                      title={Number(b.vl_acrescimo) > 0 ? `Fatura ${fmtBRL(b.vl_fatura)} + acréscimo ${fmtBRL(b.vl_acrescimo)} = boleto ${fmtBRL(Number(b.vl_fatura || 0) + Number(b.vl_acrescimo || 0))}` : 'Valor da fatura (boleto emitido sem acréscimo)'}
+                    >
                       {fmtBRL(b.vl_fatura)}
+                      {Number(b.vl_acrescimo) > 0 && <span className="ml-1 text-[10px] text-violet-700 font-normal">+{fmtBRL(b.vl_acrescimo)}</span>}
                     </td>
                     <td className="px-2 py-1.5 whitespace-nowrap">
                       <span
