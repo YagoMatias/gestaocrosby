@@ -6,7 +6,7 @@
 // "Gerar remessa" emite o boleto na Pagar.me das faturas elegíveis (portador
 // em carteira, cadastro completo, sem boleto Pagar.me): a partir daí a fatura
 // aparece aqui com o portador PAGARME e, no TOTVS, com a carteira Simples.
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import {
   Barcode,
   MagnifyingGlass,
@@ -19,6 +19,8 @@ import {
   PaperPlaneTilt,
   FileXls,
   ArrowCounterClockwise,
+  CaretDown,
+  CaretUp,
 } from '@phosphor-icons/react';
 import { TotvsURL } from '../config/constants';
 import PageTitle from '../components/ui/PageTitle';
@@ -265,7 +267,25 @@ export default function RemessaBoletos() {
   const [dataInicio, setDataInicio] = useState(isoHoje());
   const [dataFim, setDataFim] = useState(isoMais(30));
   const [busca, setBusca] = useState('');
-  const [filtroPortador, setFiltroPortador] = useState('todos');
+  // Portadores marcados no filtro (vazio = todos). 'PAGARME' = boleto já emitido.
+  const [portadoresFiltro, setPortadoresFiltro] = useState(() => new Set());
+  const [portadoresAberto, setPortadoresAberto] = useState(false);
+  const portadoresRef = useRef(null);
+  useEffect(() => {
+    if (!portadoresAberto) return undefined;
+    const fechar = (e) => {
+      if (portadoresRef.current && !portadoresRef.current.contains(e.target)) setPortadoresAberto(false);
+    };
+    document.addEventListener('mousedown', fechar);
+    return () => document.removeEventListener('mousedown', fechar);
+  }, [portadoresAberto]);
+  const alternarPortador = (valor) =>
+    setPortadoresFiltro((prev) => {
+      const n = new Set(prev);
+      if (n.has(valor)) n.delete(valor);
+      else n.add(valor);
+      return n;
+    });
   // todos | enviado (boleto Pagar.me vivo) | pendente (última tentativa falhou) | nao_enviado
   const [filtroEnvio, setFiltroEnvio] = useState('todos');
   const [selecionadas, setSelecionadas] = useState(() => new Set());
@@ -341,16 +361,16 @@ export default function RemessaBoletos() {
       if (filtroEnvio === 'enviado' && !f.pagarme) return false;
       if (filtroEnvio === 'pendente' && !(f.ultimo_erro && !f.pagarme)) return false;
       if (filtroEnvio === 'nao_enviado' && (f.pagarme || f.ultimo_erro)) return false;
-      if (filtroPortador === 'PAGARME' && !f.pagarme) return false;
-      if (filtroPortador !== 'todos' && filtroPortador !== 'PAGARME') {
-        if (f.pagarme || String(f.cd_portador) !== filtroPortador) return false;
+      if (portadoresFiltro.size > 0) {
+        const chave = f.pagarme ? 'PAGARME' : String(f.cd_portador);
+        if (!portadoresFiltro.has(chave)) return false;
       }
       if (!q) return true;
       return [f.cliente?.nome, f.cliente?.fantasia, f.cliente?.documento, f.cd_cliente, f.nr_fatura, f.cd_portador, f.nm_portador]
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q));
     });
-  }, [faturas, busca, filtroPortador, filtroEnvio]);
+  }, [faturas, busca, portadoresFiltro, filtroEnvio]);
 
   // Entram na remessa: portador "em carteira", cadastro completo e sem boleto Pagar.me
   const elegiveis = useMemo(
@@ -659,19 +679,67 @@ export default function RemessaBoletos() {
                 placeholder="Filtrar por cliente, CPF/CNPJ ou nº da fatura"
                 className="border border-gray-300 rounded-lg px-2 py-1.5 w-full sm:w-72 text-xs"
               />
-              <select
-                value={filtroPortador}
-                onChange={(e) => setFiltroPortador(e.target.value)}
-                title="Filtrar por portador"
-                className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs sm:w-64"
-              >
-                <option value="todos">Todos os portadores</option>
-                {portadores.map((p) => (
-                  <option key={p.valor} value={p.valor}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
+              <div className="relative" ref={portadoresRef}>
+                <button
+                  type="button"
+                  onClick={() => setPortadoresAberto((v) => !v)}
+                  title="Marque os portadores que entram na lista"
+                  className={`flex items-center justify-between gap-2 border rounded-lg px-2 py-1.5 text-xs sm:w-64 bg-white ${
+                    portadoresFiltro.size ? 'border-[#000638] text-[#000638] font-semibold' : 'border-gray-300'
+                  }`}
+                >
+                  <span className="truncate">
+                    {portadoresFiltro.size === 0
+                      ? 'Portadores: todos'
+                      : `Portadores: ${portadoresFiltro.size} marcado(s)`}
+                  </span>
+                  {portadoresAberto ? <CaretUp size={12} /> : <CaretDown size={12} />}
+                </button>
+                {portadoresAberto && (
+                  <div className="absolute z-20 mt-1 w-80 max-h-72 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg p-2 text-xs">
+                    <div className="flex items-center justify-between mb-1 pb-1 border-b border-gray-100">
+                      <button
+                        type="button"
+                        onClick={() => setPortadoresFiltro(new Set(portadores.map((p) => p.valor)))}
+                        className="text-[#000638] font-semibold hover:underline"
+                      >
+                        Marcar todos
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPortadoresFiltro(new Set())}
+                        className="text-gray-500 hover:underline"
+                      >
+                        Limpar (todos)
+                      </button>
+                    </div>
+                    {portadores.length === 0 && (
+                      <div className="text-gray-400 py-2">Busque as faturas para ver os portadores.</div>
+                    )}
+                    {portadores.map((p) => {
+                      const entra = p.valor !== 'PAGARME' && portadoresRemessa.includes(Number(p.valor));
+                      return (
+                        <label
+                          key={p.valor}
+                          className="flex items-center gap-2 py-1 px-1 rounded hover:bg-gray-50 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={portadoresFiltro.has(p.valor)}
+                            onChange={() => alternarPortador(p.valor)}
+                          />
+                          <span className="flex-1 truncate">{p.label}</span>
+                          {entra && (
+                            <span className="text-[10px] text-green-700 font-semibold whitespace-nowrap">
+                              entra na remessa
+                            </span>
+                          )}
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
               <select
                 value={filtroEnvio}
                 onChange={(e) => setFiltroEnvio(e.target.value)}
