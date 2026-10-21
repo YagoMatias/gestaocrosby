@@ -78,6 +78,7 @@ export default function ContasReceberHoje() {
   const [erro, setErro] = useState('');
   const [aberto, setAberto] = useState({}); // demandas expandidas
   const [verRecebidos, setVerRecebidos] = useState(false);
+  const [verRecebiveis, setVerRecebiveis] = useState(null); // 'hoje' | 'amanha' | null
   const [copiado, setCopiado] = useState(false);
 
   const carregar = async (refresh = false) => {
@@ -111,7 +112,15 @@ export default function ContasReceberHoje() {
   const pm = dados?.pagarme;
   const meta = dados?.meta;
   const vt = dados?.vencidoTotal;
+  const rb = dados?.recebiveis;
   const demandas = dados?.demandas || [];
+  const METODO = { boleto: 'boleto', credit_card: 'cartão', debit_card: 'débito', pix: 'Pix' };
+  const resumoMetodos = (bl) =>
+    bl && bl.porMetodo
+      ? Object.entries(bl.porMetodo)
+          .map(([m, v]) => `${METODO[m] || m} ${fmtBRL(v.liquido)}`)
+          .join(' · ')
+      : '';
   const urgentes = demandas.filter((d) => d.urgente).length;
 
   const faturasCancelar = useMemo(() => {
@@ -217,6 +226,91 @@ export default function ContasReceberHoje() {
             />
           </div>
 
+          {/* Recebíveis Pagar.me: dinheiro que caiu / vai cair na conta (data de crédito, não de pagamento) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mb-3">
+            <Kpi
+              label={`Recebido em conta hoje (Pagar.me${rb ? `, ${fmtData(rb.hoje.dia)}` : ''})`}
+              value={rb ? fmtBRL(rb.hoje.liquido) : '—'}
+              color="text-green-700"
+              sub={rb ? `${rb.hoje.n} recebível(is) · boletos ${fmtBRL(rb.hoje.boletos.liquido)} (${rb.hoje.boletos.n})${rb.hoje.n ? ` · ${resumoMetodos(rb.hoje)}` : ''} · líquido de tarifa` : 'sem dado da Pagar.me'}
+              onClick={rb ? () => setVerRecebiveis((v) => (v === 'hoje' ? null : 'hoje')) : undefined}
+              active={verRecebiveis === 'hoje'}
+            />
+            <Kpi
+              label={`Boleto a receber ${rb ? fmtData(rb.amanha.dia) : 'amanhã'} (Pagar.me)`}
+              value={rb ? fmtBRL(rb.amanha.liquido) : '—'}
+              color="text-blue-700"
+              sub={rb ? `${rb.amanha.n} recebível(is) · boletos ${fmtBRL(rb.amanha.boletos.liquido)} (${rb.amanha.boletos.n})${rb.amanha.n ? ` · ${resumoMetodos(rb.amanha)}` : ''} · ${rb.amanha.creditado ? 'já creditado' : 'agendado pela Pagar.me'}` : 'sem dado da Pagar.me'}
+              onClick={rb ? () => setVerRecebiveis((v) => (v === 'amanha' ? null : 'amanha')) : undefined}
+              active={verRecebiveis === 'amanha'}
+            />
+            <div className="bg-white rounded-lg border border-gray-200 p-3">
+              <div className="text-[11px] text-gray-500">Próximos créditos (Pagar.me)</div>
+              {rb && rb.proximos.length > 0 ? (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {rb.proximos.slice(0, 8).map((d) => (
+                    <span key={d.dia} className="text-[11px] rounded border border-blue-200 bg-blue-50 text-blue-800 px-1.5 py-0.5">
+                      {fmtData(d.dia).slice(0, 5)}: <b>{fmtBRL(d.liquido)}</b> ({d.n})
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-sm text-gray-400 mt-1">nenhum crédito agendado</div>
+              )}
+              <div className="text-[10px] text-gray-400 mt-1">
+                Contas: {rb ? rb.contas.map((c) => `${c.nome}${c.configurada ? '' : ' (sem chave)'}`).join(' · ') : '—'}
+              </div>
+            </div>
+          </div>
+
+          {verRecebiveis && rb && (
+            <div className="bg-white rounded-lg border border-gray-200 mb-3 overflow-x-auto">
+              <div className="px-3 py-2 text-xs font-bold text-[#000638] border-b border-gray-100">
+                {verRecebiveis === 'hoje' ? 'Caiu na conta hoje' : `Cai na conta em ${fmtData(rb.amanha.dia)}`} — por recebível (Pagar.me)
+              </div>
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50 text-gray-600">
+                  <tr>
+                    <th className="px-2 py-1.5 text-left">Conta</th>
+                    <th className="px-2 py-1.5 text-left">Forma</th>
+                    <th className="px-2 py-1.5 text-left">Cliente</th>
+                    <th className="px-2 py-1.5 text-left">Fatura</th>
+                    <th className="px-2 py-1.5 text-left">Pago em</th>
+                    <th className="px-2 py-1.5 text-right">Pago</th>
+                    <th className="px-2 py-1.5 text-right">Tarifa</th>
+                    <th className="px-2 py-1.5 text-right">Líquido</th>
+                    <th className="px-2 py-1.5 text-left">Baixa TOTVS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(verRecebiveis === 'hoje' ? rb.hoje : rb.amanha).itens.map((i, ix) => (
+                    <tr key={ix} className="border-b border-gray-100">
+                      <td className="px-2 py-1 whitespace-nowrap">{i.conta === 'fabio' ? 'FA MODA' : 'Crosby'}</td>
+                      <td className="px-2 py-1">{METODO[i.metodo] || i.metodo}</td>
+                      <td className="px-2 py-1">
+                        {i.cd_cliente ? <span className="text-gray-500">{i.cd_cliente} - </span> : null}
+                        {i.nome || '—'}
+                      </td>
+                      <td className="px-2 py-1 whitespace-nowrap">{i.nr_fatura ? `${i.nr_fatura}/${i.nr_parcela}` : '—'}</td>
+                      <td className="px-2 py-1 whitespace-nowrap">{i.pago_em ? new Date(i.pago_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                      <td className="px-2 py-1 text-right">{fmtBRL(i.bruto)}</td>
+                      <td className="px-2 py-1 text-right text-gray-500">{fmtBRL(i.tarifa)}</td>
+                      <td className="px-2 py-1 text-right font-semibold">{fmtBRL(i.liquido)}</td>
+                      <td className="px-2 py-1">{i.baixa || '—'}</td>
+                    </tr>
+                  ))}
+                  {!(verRecebiveis === 'hoje' ? rb.hoje : rb.amanha).itens.length && (
+                    <tr>
+                      <td colSpan={9} className="px-2 py-4 text-center text-gray-400">
+                        Nenhum recebível nesse dia.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+
           {verRecebidos && (
             <div className="bg-white rounded-lg border border-gray-200 mb-3 overflow-x-auto">
               <div className="px-3 py-2 text-xs font-bold text-[#000638] border-b border-gray-100">Recebido hoje no TOTVS — maiores títulos</div>
@@ -264,6 +358,7 @@ export default function ContasReceberHoje() {
             <Coluna titulo="Entrou" cor="text-green-700">
               <Linha label="Baixas no TOTVS hoje" valor={fmtBRL(entrouHoje)} sub={rec ? `${rec.hoje.n} título(s) de ${rec.hoje.clientes} cliente(s)` : ''} />
               <Linha label="Boletos Pagar.me pagos hoje" valor={fmtBRL(pm?.pagosHoje?.valor)} sub={pm ? `${pm.pagosHoje.n} boleto(s)` : ''} />
+              <Linha label="Caiu na conta hoje (Pagar.me)" valor={rb ? fmtBRL(rb.hoje.liquido) : '—'} sub={rb ? `${rb.hoje.n} recebível(is), líquido de tarifa` : ''} />
               <Linha label="Semana (desde segunda)" valor={fmtBRL(rec?.semana?.valor)} sub={rec ? `${rec.semana.n} título(s)` : ''} />
               <Linha label="Mês" valor={fmtBRL(rec?.mes?.valor)} sub={rec ? `${rec.mes.n} título(s) · ${rec.mes.clientes} cliente(s)` : ''} />
               {(dados.pagarmePagosHojeItens || []).length > 0 && (
@@ -282,6 +377,7 @@ export default function ContasReceberHoje() {
             </Coluna>
 
             <Coluna titulo="Vai entrar" cor="text-blue-700">
+              <Linha label={`Cai na conta ${rb ? fmtData(rb.amanha.dia).slice(0, 5) : 'amanhã'} (Pagar.me)`} valor={rb ? fmtBRL(rb.amanha.liquido) : '—'} sub={rb ? `${rb.amanha.n} recebível(is) já pagos pelos clientes` : ''} />
               <Linha label="Vence hoje" valor={fmtBRL(dados.venceHoje?.valor)} sub={dados.venceHoje ? `${dados.venceHoje.n} título(s)` : ''} />
               <Linha label="Próximos 7 dias" valor={fmtBRL(dados.proximos7?.valor)} sub={dados.proximos7 ? `${dados.proximos7.n} título(s)` : ''} />
               <Linha

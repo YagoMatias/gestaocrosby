@@ -60,7 +60,12 @@ const CONTAS = {
 const contaDe = (id) => CONTAS[id] || { label: id || '—', nome: id || '—', cls: 'bg-gray-100 text-gray-700 border-gray-300', row: '' };
 // Boleto cancelado (baixado no banco / na Pagar.me) não está em conta nenhuma — regra do João, 21/10/2026
 const SEM_CONTA = { label: '—', nome: 'Cancelado (sem conta)', cls: 'bg-gray-100 text-gray-500 border-gray-200', row: '' };
-const contaDoBoleto = (b) => (b.situacao === 'cancelado' || b.status === 'canceled' ? SEM_CONTA : contaDe(b.conta));
+const contaDoBoleto = (b) =>
+  b.situacao === 'cancelado' || b.situacao === 'falhou' || b.status === 'canceled' || b.status === 'failed' ? SEM_CONTA : contaDe(b.conta);
+// quem pode ser marcado: pendente (p/ baixar na Pagar.me) ou cancelado/não emitido (p/ reemitir)
+const PODE_BAIXAR = (b) => b.situacao === 'aberto' || b.situacao === 'vencido';
+const PODE_REEMITIR = (b) => b.situacao === 'cancelado' || b.situacao === 'falhou';
+const LOTE_REMESSA = 25;
 
 const BAIXAS = {
   processada: { label: 'Baixada no TOTVS', cls: 'text-green-700' },
@@ -100,6 +105,9 @@ export default function RetornoBoleto() {
   const [baixaErro, setBaixaErro] = useState('');
   const [baixaCarregando, setBaixaCarregando] = useState(false);
   const [selecionados, setSelecionados] = useState(() => new Set());
+  const [reemitindo, setReemitindo] = useState(false);
+  const [reemitProgresso, setReemitProgresso] = useState('');
+  const [reemitResultado, setReemitResultado] = useState(null);
   // na conferência: quais títulos entram na baixa (todos marcados por padrão)
   const [confSelecionados, setConfSelecionados] = useState(() => new Set());
   const [confOrdem, setConfOrdem] = useState({ campo: 'cliente', dir: 'asc' });
@@ -139,9 +147,60 @@ export default function RetornoBoleto() {
     return json.data || {};
   };
 
+  const selPendentes = useMemo(() => boletos.filter((b) => selecionados.has(b.id) && PODE_BAIXAR(b)), [boletos, selecionados]);
+  const selReemitir = useMemo(() => boletos.filter((b) => selecionados.has(b.id) && PODE_REEMITIR(b)), [boletos, selecionados]);
+
   const criterio = () => {
-    if (selecionados.size) return { ids: [...selecionados] };
+    if (selPendentes.length) return { ids: selPendentes.map((b) => b.id) };
     return listaParseada;
+  };
+
+  // Reemite (na conta de emissão atual, ex.: FA MODA) as faturas dos boletos cancelados / não emitidos marcados.
+  const reemitir = async () => {
+    const lista = selReemitir;
+    if (!lista.length) return;
+    const contaNome = contasPagarme ? contaDe(contasPagarme.emissao).nome : 'conta de emissão';
+    const valor = lista.reduce((t, b) => t + Number(b.vl_fatura || 0), 0);
+    if (
+      !window.confirm(
+        `Reemitir ${lista.length} boleto(s) na Pagar.me ${contaNome}?\n\nValor: ${fmtBRL(valor)}\n` +
+          'Cada fatura é relida no TOTVS: só emite se ainda estiver em aberto, a vencer e no portador da remessa. Os boletos são emitidos de verdade.',
+      )
+    )
+      return;
+    setReemitindo(true);
+    setReemitResultado(null);
+    setErro('');
+    const remessaId = `R${Date.now()}`;
+    const todos = [];
+    try {
+      for (let i = 0; i < lista.length; i += LOTE_REMESSA) {
+        const lote = lista.slice(i, i + LOTE_REMESSA);
+        setReemitProgresso(`${Math.min(i + lote.length, lista.length)}/${lista.length}`);
+        const resp = await fetch(`${TotvsURL}remessa-boletos/gerar`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            remessaId,
+            usuario: user?.email || user?.name || null,
+            faturas: lote.map((b) => ({ cd_empresa: b.cd_empresa, cd_cliente: b.cd_cliente, nr_fatura: b.nr_fatura, nr_parcela: b.nr_parcela })),
+          }),
+        });
+        const json = await resp.json();
+        if (!resp.ok || json.success === false) throw new Error(json.message || `HTTP ${resp.status}`);
+        todos.push(...(json.data?.resultados || []));
+      }
+    } catch (e) {
+      setErro(`Reemissão interrompida: ${e.message}`);
+    } finally {
+      const ok = todos.filter((r) => r.ok).length;
+      setReemitResultado({ emitidos: ok, falhas: todos.filter((r) => !r.ok) });
+      setAviso(`${ok} boleto(s) reemitido(s) na Pagar.me ${contaNome}${todos.length - ok ? `, ${todos.length - ok} não emitido(s) (veja os motivos)` : ''}.`);
+      setSelecionados(new Set());
+      setReemitindo(false);
+      setReemitProgresso('');
+      await carregar();
+    }
   };
 
   const conferirBaixa = async () => {
@@ -496,6 +555,18 @@ export default function RetornoBoleto() {
             <CheckCircle size={14} weight="fill" /> {aviso}
           </div>
         )}
+        {reemitResultado?.falhas?.length > 0 && (
+          <div className="mt-2 text-xs text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">
+            <div className="font-semibold mb-1">Não reemitidos ({reemitResultado.falhas.length}):</div>
+            <ul className="list-disc pl-5">
+              {reemitResultado.falhas.map((f) => (
+                <li key={f.chave}>
+                  {f.chave}: {f.descricao || f.motivo}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {tabelaAusente && (
           <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-700">
             <Warning size={14} weight="fill" /> A tabela pagarme_boletos ainda não existe no Supabase
@@ -514,9 +585,9 @@ export default function RetornoBoleto() {
           <span className="flex items-center gap-2 text-xs font-bold text-[#000638]">
             <Prohibit size={16} weight="bold" className="text-red-600" />
             Baixa em massa na Pagar.me
-            {selecionados.size > 0 && (
+            {selPendentes.length > 0 && (
               <span className="ml-1 rounded-full bg-red-600 text-white px-2 py-0.5 text-[10px]">
-                {selecionados.size} selecionado(s) na tabela
+                {selPendentes.length} pendente(s) marcado(s) na tabela
               </span>
             )}
           </span>
@@ -538,7 +609,7 @@ export default function RetornoBoleto() {
                 <select
                   value={baixaTipo}
                   onChange={(e) => setBaixaTipo(e.target.value)}
-                  disabled={selecionados.size > 0}
+                  disabled={selPendentes.length > 0}
                   className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full text-xs"
                 >
                   <option value="clientes">Códigos de cliente</option>
@@ -552,12 +623,12 @@ export default function RetornoBoleto() {
               </div>
               <div className="lg:col-span-2">
                 <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
-                  Lista {selecionados.size > 0 && '(ignorada: usando os marcados na tabela)'}
+                  Lista {selPendentes.length > 0 && '(ignorada: usando os pendentes marcados na tabela)'}
                 </label>
                 <textarea
                   value={baixaLista}
                   onChange={(e) => setBaixaLista(e.target.value)}
-                  disabled={selecionados.size > 0}
+                  disabled={selPendentes.length > 0}
                   rows={4}
                   placeholder={baixaTipo === 'clientes' ? '12345\n67890' : '123456\n123457/2'}
                   className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full text-xs font-mono disabled:bg-gray-50"
@@ -787,6 +858,17 @@ export default function RetornoBoleto() {
             </span>
           )}
           <button
+            onClick={reemitir}
+            disabled={reemitindo || selReemitir.length === 0}
+            title="Reemite na Pagar.me (conta de emissão atual) as faturas dos boletos cancelados / não emitidos marcados na tabela"
+            className="flex items-center gap-1.5 bg-violet-700 text-white text-xs font-semibold rounded-lg px-3 py-2 hover:bg-violet-800 transition-colors disabled:opacity-50"
+          >
+            {reemitindo ? <Spinner size={14} className="animate-spin" /> : <ArrowsClockwise size={14} weight="bold" />}
+            {reemitindo
+              ? `Reemitindo ${reemitProgresso}...`
+              : `Reemitir na ${contasPagarme ? contaDe(contasPagarme.emissao).label : 'Pagar.me'} (${selReemitir.length})`}
+          </button>
+          <button
             onClick={baixarExcel}
             disabled={visiveis.length === 0}
             title="Exporta para Excel exatamente os boletos da consulta filtrada na tela"
@@ -817,15 +899,11 @@ export default function RetornoBoleto() {
                     type="checkbox"
                     aria-label="Marcar todos os pendentes visíveis"
                     checked={
-                      visiveis.some((b) => b.situacao === 'aberto' || b.situacao === 'vencido') &&
-                      visiveis
-                        .filter((b) => b.situacao === 'aberto' || b.situacao === 'vencido')
-                        .every((b) => selecionados.has(b.id))
+                      visiveis.some((b) => PODE_BAIXAR(b) || PODE_REEMITIR(b)) &&
+                      visiveis.filter((b) => PODE_BAIXAR(b) || PODE_REEMITIR(b)).every((b) => selecionados.has(b.id))
                     }
                     onChange={(e) => {
-                      const pend = visiveis.filter(
-                        (b) => b.situacao === 'aberto' || b.situacao === 'vencido',
-                      );
+                      const pend = visiveis.filter((b) => PODE_BAIXAR(b) || PODE_REEMITIR(b));
                       setSelecionados((prev) => {
                         const n = new Set(prev);
                         for (const b of pend) {
@@ -889,10 +967,11 @@ export default function RetornoBoleto() {
                     }`}
                   >
                     <td className="px-2 py-1.5 text-center">
-                      {(b.situacao === 'aberto' || b.situacao === 'vencido') && (
+                      {(PODE_BAIXAR(b) || PODE_REEMITIR(b)) && (
                         <input
                           type="checkbox"
-                          aria-label="Marcar para baixa na Pagar.me"
+                          aria-label={PODE_BAIXAR(b) ? 'Marcar para baixa na Pagar.me' : 'Marcar para reemitir'}
+                          title={PODE_BAIXAR(b) ? 'Pendente: marque para baixar (cancelar) na Pagar.me' : 'Cancelado / não emitido: marque para reemitir'}
                           checked={selecionados.has(b.id)}
                           onChange={() => alternarSelecao(b.id)}
                         />
