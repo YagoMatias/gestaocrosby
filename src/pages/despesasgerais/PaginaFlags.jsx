@@ -158,9 +158,12 @@ export default function PaginaFlags({ tipo }) {
                       ) : (
                         <>
                           {r.cat || '—'}
-                          {!r.existe && (
-                            <span className="ml-1 text-[9px] text-red-500">
-                              (lançamento excluído)
+                          {(!r.existe || r.excluido) && (
+                            <span
+                              className="ml-1 text-[9px] text-red-500"
+                              title="O lançamento foi excluído na DRE Analítica; esta linha continua aqui com os dados salvos"
+                            >
+                              (lançamento excluído da DRE)
                             </span>
                           )}
                         </>

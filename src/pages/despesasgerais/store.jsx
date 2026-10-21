@@ -795,10 +795,58 @@ export function DespesasGeraisProvider({ children }) {
     [mutateMonth],
   );
 
+  // Ao excluir um lançamento (ou a despesa inteira) na DRE Analítica, as flags
+  // de correção/corte daquela linha NÃO somem: viram flags "snap:" (snapshot
+  // completo do lançamento, marcadas excluido) e continuam nas páginas de
+  // Correções DRE / Corte de custo. Flags por índice das linhas seguintes são
+  // re-indexadas para continuarem apontando para a linha certa.
+  const snapDeLinha = (row, atual) => ({
+    ...(atual || {}),
+    emp: row.emp ?? atual?.emp ?? '',
+    forn: row.forn ?? atual?.forn ?? '',
+    dupl: row.dupl ?? atual?.dupl ?? '',
+    emis: row.emis ?? atual?.emis ?? '',
+    venc: row.venc ?? atual?.venc ?? '',
+    liq: row.liq ?? atual?.liq ?? '',
+    val: row.val ?? atual?.val ?? 0,
+    estag: row.estag ?? atual?.estag ?? '',
+    obs: row.obs ?? atual?.obs ?? '',
+  });
+  const desvincularFlagsDaLinha = (flagsIn, m, cat, i, row) => {
+    const flags = { ...flagsIn };
+    const chaves = [`${m}||${cat}||${i}`];
+    if (row && row.id) chaves.push(`${m}||${cat}||id:${row.id}`);
+    const excluidoEm = new Date().toISOString();
+    chaves.forEach((k) => {
+      if (!flags[k]) return;
+      const f = flags[k];
+      const nova = `${m}||${cat}||snap:${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+      flags[nova] = { ...f, snap: snapDeLinha(row || {}, f.snap), excluido: true, excluidoEm };
+      delete flags[k];
+    });
+    // re-indexa flags por índice das linhas que vêm depois da excluída
+    Object.keys(flags)
+      .filter((k) => {
+        const p = k.split('||');
+        return p[0] === m && p[1] === cat && /^\d+$/.test(p[2] || '') && parseInt(p[2], 10) > i;
+      })
+      .sort((a, b) => parseInt(a.split('||')[2], 10) - parseInt(b.split('||')[2], 10))
+      .forEach((k) => {
+        const p = k.split('||');
+        flags[`${m}||${cat}||${parseInt(p[2], 10) - 1}`] = flags[k];
+        delete flags[k];
+      });
+    return flags;
+  };
+
   const deleteRow = useCallback(
     (m, cat, i) => {
-      mutateMonth(m, (mo) => {
-        if (mo.details[cat]) mo.details[cat].splice(i, 1);
+      mutateMonth(m, (mo, st) => {
+        if (!mo.details[cat]) return;
+        const row = mo.details[cat][i];
+        const flags = desvincularFlagsDaLinha(st.flags, m, cat, i, row);
+        mo.details[cat].splice(i, 1);
+        return { flags };
       });
     },
     [mutateMonth],
@@ -853,8 +901,16 @@ export function DespesasGeraisProvider({ children }) {
 
   const deleteCategory = useCallback(
     (m, cat) => {
-      mutateMonth(m, (mo) => {
+      mutateMonth(m, (mo, st) => {
+        const rows = mo.details[cat] || [];
+        // converte as flags de TODAS as linhas da despesa em snapshots (do último
+        // índice para o primeiro, para a re-indexação não interferir)
+        let flags = st.flags;
+        for (let i = rows.length - 1; i >= 0; i--) {
+          flags = desvincularFlagsDaLinha(flags, m, cat, i, rows[i]);
+        }
         delete mo.details[cat];
+        return { flags };
       });
     },
     [mutateMonth],
@@ -885,14 +941,19 @@ export function DespesasGeraisProvider({ children }) {
             tipo,
             nota: '',
             status: FLAG_STATUS[0],
+            // snapshot completo: se o lançamento for excluído da DRE, a flag
+            // continua com todos os dados nas páginas de correção/corte
             snap: d
               ? {
                   forn: d.forn,
                   dupl: d.dupl,
+                  emis: d.emis,
                   venc: d.venc,
+                  liq: d.liq,
                   val: d.val,
                   emp: d.emp,
                   estag: d.estag,
+                  obs: d.obs,
                 }
               : null,
           };
@@ -974,6 +1035,7 @@ export function DespesasGeraisProvider({ children }) {
         cat,
         d: live || (f && f.snap) || {},
         existe: !!live || (ref && ref.startsWith('snap:')),
+        excluido: !!(f && f.excluido), // lançamento foi excluído na DRE; flag segue pelo snapshot
         manual: false,
       };
     },
