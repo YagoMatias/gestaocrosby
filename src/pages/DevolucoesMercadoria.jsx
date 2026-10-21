@@ -33,6 +33,7 @@ import {
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
 import { useAuth } from '../components/AuthContext';
+import { getSetoresDoUsuario } from '../services/setoresService';
 import DevolucaoRFID from './DevolucaoRFID';
 
 const fmtBRL = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -53,6 +54,13 @@ const STATUS = {
   concluida: { label: 'Concluída', cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200', icon: CheckCircle },
   cancelada: { label: 'Cancelada', cls: 'bg-gray-100 text-gray-500 ring-gray-200', icon: Prohibit },
 };
+// Localização da mercadoria na devolução (ciclo do toggle)
+const LOCAL_INFO = {
+  em_transito: { label: 'EM TRÂNSITO', cls: 'bg-amber-50 text-amber-700 ring-amber-200', prox: 'matriz' },
+  matriz: { label: 'MATRIZ', cls: 'bg-blue-50 text-blue-700 ring-blue-200', prox: 'local' },
+  local: { label: 'LOCAL', cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200', prox: 'em_transito' },
+};
+
 const TRX_STATUS = { 1: 'Em andamento', 2: 'Encerrada', 3: 'Processo externo', 4: 'ATENDIDA', 6: 'CANCELADA' };
 // Situação exibida: FISFP082 (nota do cliente, sem transação no TOTVS) usa
 // 1 = aguardando entrada no FISFP082, 4 = já lançada.
@@ -103,6 +111,46 @@ const DevolucoesMercadoria = () => {
   const [filtroTipo, setFiltroTipo] = useState('');
   const [busca, setBusca] = useState('');
   const [detalhe, setDetalhe] = useState(null);
+  // Localização da mercadoria (toggle EM TRÂNSITO → MATRIZ → LOCAL).
+  // Só owner/admin, setor DP ou financeiro alteram.
+  const [podeMexerLocal, setPodeMexerLocal] = useState(false);
+  useEffect(() => {
+    const role = user?.role;
+    if (['owner', 'admin', 'user'].includes(role)) {
+      setPodeMexerLocal(true);
+      return;
+    }
+    if (!user?.id) {
+      setPodeMexerLocal(false);
+      return;
+    }
+    getSetoresDoUsuario(user.id).then(({ data }) => {
+      setPodeMexerLocal(
+        (data || []).some((n) => {
+          const u = String(n).toUpperCase();
+          return u.startsWith('DP') || u.includes('FINANCEIRO');
+        }),
+      );
+    });
+  }, [user?.id, user?.role]);
+
+  const mudarLocal = async (d) => {
+    const atual = d.local || 'em_transito';
+    const prox = LOCAL_INFO[atual].prox;
+    setItems((l) => l.map((x) => (x.id === d.id ? { ...x, local: prox } : x)));
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/devolucoes/${d.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ local: prox, por: userNome }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.success) throw new Error(j?.message || 'Falha ao salvar o local');
+    } catch (e) {
+      setItems((l) => l.map((x) => (x.id === d.id ? { ...x, local: atual } : x)));
+      showToast('erro', e.message.includes('local') ? 'Rode a migration devolucoes_mercadoria_local.sql no Supabase.' : e.message);
+    }
+  };
   const [fotoAberta, setFotoAberta] = useState(null);
   const [selecionada, setSelecionada] = useState(null); // solicitação levada para o RFID
   const [sincronizando, setSincronizando] = useState(false);
@@ -486,17 +534,18 @@ const DevolucoesMercadoria = () => {
                       <th className="px-2 py-2 text-right">Peças</th>
                       <th className="px-2 py-2 text-center">Fotos</th>
                       <th className="px-2 py-2 text-left">Chamado</th>
+                      <th className="px-2 py-2 text-left">Local</th>
                       <th className="px-2 py-2 text-left">Situação</th>
                       <th className="px-2 py-2" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {loading && items.length === 0 && (
-                      <tr><td colSpan={10} className="py-10 text-center text-gray-400"><Spinner size={20} className="animate-spin mx-auto" /></td></tr>
+                      <tr><td colSpan={11} className="py-10 text-center text-gray-400"><Spinner size={20} className="animate-spin mx-auto" /></td></tr>
                     )}
                     {!loading && items.length === 0 && (
                       <tr>
-                        <td colSpan={10} className="py-10 text-center text-gray-400">
+                        <td colSpan={11} className="py-10 text-center text-gray-400">
                           <Package size={26} className="mx-auto mb-1.5 text-gray-300" />
                           Nenhuma solicitação. Envie o link público aos clientes.
                         </td>
@@ -532,6 +581,24 @@ const DevolucoesMercadoria = () => {
                           ) : d.tipo === 'defeito' && d.status !== 'cancelada' ? (
                             <button onClick={() => reabrirChamado(d)} className="text-[10px] font-semibold text-rose-700 hover:underline">abrir chamado</button>
                           ) : '—'}
+                        </td>
+                        <td className="px-2 py-1.5">
+                          {(() => {
+                            const info = LOCAL_INFO[d.local || 'em_transito'];
+                            return podeMexerLocal ? (
+                              <button
+                                onClick={() => mudarLocal(d)}
+                                className={`inline-flex items-center px-2 py-0.5 rounded-full ring-1 text-[10px] font-bold hover:brightness-95 transition ${info.cls}`}
+                                title="Clique para alternar: Em trânsito → Matriz → Local"
+                              >
+                                {info.label}
+                              </button>
+                            ) : (
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full ring-1 text-[10px] font-bold ${info.cls}`} title="Localização da mercadoria">
+                                {info.label}
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td className="px-2 py-1.5"><Badge status={d.status} /></td>
                         <td className="px-2 py-1.5 whitespace-nowrap">
