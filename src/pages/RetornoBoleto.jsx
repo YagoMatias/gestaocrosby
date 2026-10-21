@@ -58,6 +58,9 @@ const CONTAS = {
   fabio: { label: 'FA MODA', nome: 'FA MODA (Fábio)', cls: 'bg-violet-100 text-violet-800 border-violet-300', row: 'border-l-4 border-l-violet-500' },
 };
 const contaDe = (id) => CONTAS[id] || { label: id || '—', nome: id || '—', cls: 'bg-gray-100 text-gray-700 border-gray-300', row: '' };
+// Boleto cancelado (baixado no banco / na Pagar.me) não está em conta nenhuma — regra do João, 21/10/2026
+const SEM_CONTA = { label: '—', nome: 'Cancelado (sem conta)', cls: 'bg-gray-100 text-gray-500 border-gray-200', row: '' };
+const contaDoBoleto = (b) => (b.situacao === 'cancelado' || b.status === 'canceled' ? SEM_CONTA : contaDe(b.conta));
 
 const BAIXAS = {
   processada: { label: 'Baixada no TOTVS', cls: 'text-green-700' },
@@ -80,6 +83,9 @@ export default function RetornoBoleto() {
   const [tabelaAusente, setTabelaAusente] = useState(false);
   const [boletos, setBoletos] = useState([]);
   const [filtroConta, setFiltroConta] = useState('todas'); // todas | crosby | fabio
+  const [ordem, setOrdem] = useState({ campo: 'vencimento', dir: 'asc' });
+  const ordenarPor = (campo) =>
+    setOrdem((o) => ({ campo, dir: o.campo === campo && o.dir === 'asc' ? 'desc' : 'asc' }));
   const [contasPagarme, setContasPagarme] = useState(null); // { emissao, contas:[{id,nome,configurada}] }
   const [copiado, setCopiado] = useState(null);
 
@@ -314,7 +320,7 @@ export default function RetornoBoleto() {
   // Excel com exatamente o que está na tela (período, status, busca e filtros)
   const baixarExcel = () => {
     const linhas = visiveis.map((b) => ({
-      'Conta Pagar.me': contaDe(b.conta).nome,
+      'Conta Pagar.me': contaDoBoleto(b).nome,
       Empresa: b.cd_empresa,
       'Cód. cliente': b.cd_cliente,
       Cliente: b.nm_cliente || '',
@@ -367,16 +373,41 @@ export default function RetornoBoleto() {
 
   const visiveis = useMemo(() => {
     const q = busca.trim().toLowerCase();
-    return boletos.filter(
+    const lista = boletos.filter(
       (b) =>
         (situacao === 'todos' || b.situacao === situacao) &&
-        (filtroConta === 'todas' || (b.conta || 'crosby') === filtroConta) &&
+        // cancelado não está em conta nenhuma: só aparece em "todas"
+        (filtroConta === 'todas' || (b.situacao !== 'cancelado' && (b.conta || 'crosby') === filtroConta)) &&
         (!q ||
           [b.nm_cliente, b.nr_documento, b.cd_cliente, b.nr_fatura, b.nosso_numero]
             .filter(Boolean)
             .some((v) => String(v).toLowerCase().includes(q))),
     );
-  }, [boletos, situacao, busca, filtroConta]);
+    const num = (v) => (v == null || v === '' ? -Infinity : Number(v));
+    const txt = (v) => String(v || '');
+    const chave = {
+      cliente: (b) => txt(b.nm_cliente).toLowerCase(),
+      fatura: (b) => num(b.nr_fatura) * 1000 + num(b.nr_parcela),
+      emissao: (b) => txt(b.created_at),
+      vencimento: (b) => txt(b.dt_vencimento),
+      valor: (b) => num(b.vl_fatura),
+      status: (b) => (SITUACOES[b.situacao]?.label || txt(b.status)).toLowerCase(),
+      pago_em: (b) => txt(b.dt_pagamento),
+      valor_pago: (b) => num(b.vl_pago),
+      empresa: (b) => num(b.cd_empresa),
+      conta: (b) => contaDoBoleto(b).label,
+    }[ordem.campo];
+    if (chave) {
+      const sinal = ordem.dir === 'asc' ? 1 : -1;
+      lista.sort((a, b) => {
+        const x = chave(a);
+        const y = chave(b);
+        const r = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'pt-BR');
+        return (r || num(a.id) - num(b.id)) * sinal;
+      });
+    }
+    return lista;
+  }, [boletos, situacao, busca, filtroConta, ordem]);
 
   return (
     <div className="w-full max-w-[1600px] mx-auto px-4 py-4">
@@ -393,6 +424,7 @@ export default function RetornoBoleto() {
             <FiltroEmpresa
               empresasSelecionadas={empresasSelecionadas}
               onSelectEmpresas={setEmpresasSelecionadas}
+              presets={[{ nome: 'Crosby', codigos: [1, 99, 100, 101] }]}
             />
           </div>
           <div>
@@ -805,16 +837,31 @@ export default function RetornoBoleto() {
                     }}
                   />
                 </th>
-                <th className="px-2 py-2 text-left">Conta</th>
-                <th className="px-2 py-2 text-left">Empresa</th>
-                <th className="px-2 py-2 text-left">Cliente</th>
-                <th className="px-2 py-2 text-left">Fatura</th>
-                <th className="px-2 py-2 text-left">Emissão boleto</th>
-                <th className="px-2 py-2 text-left">Vencimento</th>
-                <th className="px-2 py-2 text-right">Valor</th>
-                <th className="px-2 py-2 text-left">Status</th>
-                <th className="px-2 py-2 text-left">Pago em</th>
-                <th className="px-2 py-2 text-right">Valor pago</th>
+                {[
+                  ['conta', 'Conta', 'text-left'],
+                  ['empresa', 'Empresa', 'text-left'],
+                  ['cliente', 'Cliente', 'text-left'],
+                  ['fatura', 'Fatura', 'text-left'],
+                  ['emissao', 'Emissão boleto', 'text-left'],
+                  ['vencimento', 'Vencimento', 'text-left'],
+                  ['valor', 'Valor', 'text-right'],
+                  ['status', 'Status', 'text-left'],
+                  ['pago_em', 'Pago em', 'text-left'],
+                  ['valor_pago', 'Valor pago', 'text-right'],
+                ].map(([campo, rotulo, al]) => (
+                  <th
+                    key={campo}
+                    className={`px-2 py-2 ${al} cursor-pointer select-none hover:text-amber-300 whitespace-nowrap`}
+                    onClick={() => ordenarPor(campo)}
+                    title="Clique para ordenar (clique de novo para inverter)"
+                  >
+                    <span className="inline-flex items-center gap-0.5">
+                      {rotulo}
+                      {ordem.campo === campo &&
+                        (ordem.dir === 'asc' ? <ArrowUp size={11} weight="bold" /> : <ArrowDown size={11} weight="bold" />)}
+                    </span>
+                  </th>
+                ))}
                 <th className="px-2 py-2 text-left">Baixa TOTVS</th>
                 <th className="px-2 py-2 text-left">Boleto</th>
               </tr>
@@ -837,7 +884,7 @@ export default function RetornoBoleto() {
                 return (
                   <tr
                     key={b.id}
-                    className={`border-b border-gray-100 hover:bg-gray-50 ${contaDe(b.conta).row} ${
+                    className={`border-b border-gray-100 hover:bg-gray-50 ${contaDoBoleto(b).row} ${
                       selecionados.has(b.id) ? 'bg-red-50' : ''
                     }`}
                   >
@@ -853,10 +900,10 @@ export default function RetornoBoleto() {
                     </td>
                     <td className="px-2 py-1.5 whitespace-nowrap">
                       <span
-                        className={`inline-block text-[10px] font-bold rounded border px-1.5 py-0.5 ${contaDe(b.conta).cls}`}
-                        title={`Boleto emitido na conta ${contaDe(b.conta).nome}`}
+                        className={`inline-block text-[10px] font-bold rounded border px-1.5 py-0.5 ${contaDoBoleto(b).cls}`}
+                        title={b.situacao === 'cancelado' ? 'Boleto cancelado: não está em nenhuma conta' : `Boleto emitido na conta ${contaDoBoleto(b).nome}`}
                       >
-                        {contaDe(b.conta).label}
+                        {contaDoBoleto(b).label}
                       </span>
                     </td>
                     <td className="px-2 py-1.5 whitespace-nowrap">{b.cd_empresa}</td>

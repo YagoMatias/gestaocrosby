@@ -8,6 +8,7 @@ const FiltroEmpresa = ({
   apenasEmpresa101 = false,
   restrictCodes = null, // se passado, mostra só essas empresas (por cd_empresa)
   autoSelectAll = false, // pré-seleciona todas as visíveis uma vez (usado com restrictCodes)
+  presets = [], // atalhos extras: [{ nome: 'Crosby', codigos: [1, 99, 100, 101], cor?: 'bg-... hover:bg-...' }]
 }) => {
   const autoSelecionadoRef = useRef(false);
   const { user } = useAuth();
@@ -277,6 +278,21 @@ const FiltroEmpresa = ({
             >
               Franquias
             </button>
+            {presets.map((p) => (
+              <button
+                key={p.nome}
+                type="button"
+                title={`Seleciona as empresas ${(p.codigos || []).join(', ')}`}
+                onClick={() => {
+                  if (!onSelectEmpresas) return;
+                  const alvo = new Set((p.codigos || []).map((c) => String(c)));
+                  onSelectEmpresas(todasEmpresas.filter((emp) => alvo.has(String(emp.cd_empresa))));
+                }}
+                className={`text-xs px-2 py-1 text-white rounded transition-colors ${p.cor || 'bg-[#fe0000] hover:bg-red-700'}`}
+              >
+                {p.nome}
+              </button>
+            ))}
             <button
               type="button"
               onClick={() => {
