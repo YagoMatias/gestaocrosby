@@ -11,6 +11,9 @@ import {
   CloudArrowDown,
   UploadSimple,
   Spinner,
+  Check,
+  LockSimple,
+  LockSimpleOpen,
 } from '@phosphor-icons/react';
 import { API_BASE_URL } from '../../config/constants';
 import { authHeaders } from '../../utils/apiAuth';
@@ -137,6 +140,8 @@ export default function DreAnalitica() {
     mesTravado,
     catAnalisada,
     toggleAnalisada,
+    catTravada,
+    toggleTravaDespesa,
     ultimaSyncDespesa,
     limparUltimaSyncDespesa,
     setForecast,
@@ -491,14 +496,21 @@ export default function DreAnalitica() {
                   </span>
                 )}
               </div>
+              {catTravada(activeMonth, cat) && (
+                <span className="ml-auto inline-flex items-center gap-1 text-[10px] font-bold uppercase text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">
+                  <LockSimple size={10} weight="bold" /> despesa travada
+                </span>
+              )}
               <button
                 onClick={() => carregarMesTotvs(activeMonth, { somenteGerais, apenasCat: cat })}
-                disabled={carregando || bloqueado}
-                className="ml-auto inline-flex items-center gap-1 text-[10px] text-[#000638] hover:text-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                disabled={carregando || bloqueado || catTravada(activeMonth, cat)}
+                className={`${catTravada(activeMonth, cat) ? 'ml-3' : 'ml-auto'} inline-flex items-center gap-1 text-[10px] text-[#000638] hover:text-blue-700 disabled:opacity-40 disabled:cursor-not-allowed`}
                 title={
-                  bloqueado
-                    ? 'Mês bloqueado — destrave para sincronizar'
-                    : 'Puxa do TOTVS só os lançamentos desta despesa (as outras não mudam)'
+                  catTravada(activeMonth, cat)
+                    ? 'Despesa travada — destrave (cadeado) para sincronizar'
+                    : bloqueado
+                      ? 'Mês bloqueado — destrave para sincronizar'
+                      : 'Puxa do TOTVS só os lançamentos desta despesa (as outras não mudam)'
                 }
               >
                 <ArrowsClockwise size={11} className={carregando ? 'animate-spin' : ''} /> sincronizar despesa
@@ -512,7 +524,8 @@ export default function DreAnalitica() {
                   )
                     deleteCategory(activeMonth, cat);
                 }}
-                className="ml-3 inline-flex items-center gap-1 text-[10px] text-red-500 hover:text-red-700"
+                disabled={catTravada(activeMonth, cat)}
+                className="ml-3 inline-flex items-center gap-1 text-[10px] text-red-500 hover:text-red-700 disabled:opacity-40 disabled:cursor-not-allowed"
                 title="Excluir esta despesa (categoria) inteira"
               >
                 <Trash size={11} /> excluir despesa
@@ -748,24 +761,46 @@ export default function DreAnalitica() {
   const nAnalisadas = visible.filter((s) => catAnalisada(activeMonth, s.cat)).length;
   const analisadaBtn = (cat) => {
     const ok = catAnalisada(activeMonth, cat);
+    const trav = catTravada(activeMonth, cat);
     return (
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          toggleAnalisada(activeMonth, cat);
-        }}
-        title={ok ? 'Despesa já analisada — clique para desmarcar' : 'Marcar esta despesa como analisada'}
-        className={`ml-2 inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase transition ${
-          ok
-            ? 'bg-green-600 text-white border-green-600'
-            : 'bg-white text-gray-400 border-gray-200 hover:border-green-400 hover:text-green-600'
-        }`}
-      >
-        {ok ? '✔ analisada' : 'analisar'}
-      </button>
+      <span className="ml-2 inline-flex items-center gap-1 align-middle">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleAnalisada(activeMonth, cat);
+          }}
+          title={ok ? 'Despesa analisada — clique para desmarcar' : 'Marcar esta despesa como analisada'}
+          className={`inline-flex items-center justify-center w-5 h-5 rounded-full border transition ${
+            ok
+              ? 'bg-green-600 text-white border-green-600'
+              : 'bg-white text-gray-300 border-gray-200 hover:border-green-400 hover:text-green-600'
+          }`}
+        >
+          <Check size={11} weight="bold" />
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleTravaDespesa(activeMonth, cat);
+          }}
+          title={
+            trav
+              ? 'Despesa travada — não muda com Sincronizar TOTVS nem aceita edição. Clique para destravar.'
+              : 'Travar esta despesa (sem sincronizar com o TOTVS e sem editar/excluir lançamentos até destravar)'
+          }
+          className={`inline-flex items-center justify-center w-5 h-5 rounded-full border transition ${
+            trav
+              ? 'bg-amber-500 text-white border-amber-500'
+              : 'bg-white text-gray-300 border-gray-200 hover:border-amber-400 hover:text-amber-600'
+          }`}
+        >
+          {trav ? <LockSimple size={11} weight="bold" /> : <LockSimpleOpen size={11} weight="bold" />}
+        </button>
+      </span>
     );
   };
-  const rowCls = (cat) => (catAnalisada(activeMonth, cat) ? 'bg-green-50/60' : '');
+  const rowCls = (cat) =>
+    catTravada(activeMonth, cat) ? 'bg-amber-50/60' : catAnalisada(activeMonth, cat) ? 'bg-green-50/60' : '';
   visible.forEach((s) => {
     const gp = catToGroup.get(s.cat);
     const pct = mo.total > 0 ? ((s.total / mo.total) * 100).toFixed(1) : '0.0';
@@ -960,7 +995,8 @@ export default function DreAnalitica() {
           >
             <option value="">🔄 só uma despesa…</option>
             {mo.summary.map((s) => (
-              <option key={s.cat} value={s.cat}>
+              <option key={s.cat} value={s.cat} disabled={catTravada(activeMonth, s.cat)}>
+                {catTravada(activeMonth, s.cat) ? '🔒 ' : ''}
                 {s.cat}
               </option>
             ))}
@@ -1182,7 +1218,7 @@ export default function DreAnalitica() {
 
       <CardBox
         title={`DRE Analítica — ${mo.label}`}
-        subtitle="clique na categoria para ver os lançamentos · clique no forecast para editar · marque “analisar” em cada despesa conferida"
+        subtitle="clique na categoria para ver os lançamentos · clique no forecast para editar · ✔ marca a despesa como analisada · 🔒 trava a despesa"
         actions={
           visible.length > 0 && (
             <span

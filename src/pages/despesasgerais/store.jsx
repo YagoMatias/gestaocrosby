@@ -403,6 +403,7 @@ function loadInitial() {
     obsEdits: {}, // rowId -> observação digitada pelo usuário
     travas: {}, // m -> { travado: true, em } — mês travado após análise (sem sync, sem edição)
     analisadas: {}, // m -> { cat: { em } } — despesas já conferidas pelo financeiro
+    travasDespesa: {}, // m -> { cat: { em } } — despesa travada (sem sync, sem edição)
   };
   MONTH_KEYS.forEach((m) => {
     if (!base.months[m]) base.months[m] = mesVazio(m);
@@ -427,6 +428,7 @@ function loadInitial() {
       if (saved.obsEdits) base.obsEdits = saved.obsEdits;
       if (saved.travas) base.travas = saved.travas;
       if (saved.analisadas) base.analisadas = saved.analisadas;
+      if (saved.travasDespesa) base.travasDespesa = saved.travasDespesa;
     }
   } catch (e) {
     console.warn('DespesasGerais: falha ao ler estado salvo', e);
@@ -499,6 +501,28 @@ export function DespesasGeraisProvider({ children }) {
       return { ...st, analisadas: todas };
     });
   }, []);
+
+  // despesa TRAVADA no mês (cadeado): não muda com Sincronizar TOTVS (completo
+  // ou por despesa), nem aceita editar/excluir/adicionar lançamento, nem
+  // importação de bonificação, até destravar.
+  const travasDespesa = state.travasDespesa || {};
+  const catTravada = useCallback(
+    (m, cat) => !!(travasDespesa[m] && travasDespesa[m][cat]),
+    [travasDespesa],
+  );
+  const toggleTravaDespesa = useCallback((m, cat) => {
+    setState((st) => {
+      const todas = { ...(st.travasDespesa || {}) };
+      const doMes = { ...(todas[m] || {}) };
+      if (doMes[cat]) delete doMes[cat];
+      else doMes[cat] = { em: new Date().toISOString() };
+      todas[m] = doMes;
+      return { ...st, travasDespesa: todas };
+    });
+  }, []);
+  // lê a trava dentro de setState/mutateMonth (estado mais recente)
+  const despesaTravadaEm = (st, m, cat) =>
+    !!(st.travasDespesa && st.travasDespesa[m] && st.travasDespesa[m][cat]);
 
   // meses que têm dados (para tabelas/gráficos não mostrarem meses vazios)
   const mesesAtivos = useMemo(
@@ -690,6 +714,14 @@ export function DespesasGeraisProvider({ children }) {
                 '',
             });
           });
+          // despesas TRAVADAS (cadeado) não mudam na sincronização: voltam
+          // exatamente como estavam (ou continuam ausentes, se não existiam)
+          const travadasMes = (st.travasDespesa && st.travasDespesa[m]) || {};
+          Object.keys(travadasMes).forEach((cat) => {
+            const antes = st.months[m] && st.months[m].details[cat];
+            if (antes) details[cat] = antes;
+            else delete details[cat];
+          });
           // despesas MANUAIS do mês (criadas na tela ou importadas, ex.
           // bonificações) não existem no TOTVS: sobrevivem à sincronização
           // completa. Uma categoria é manual quando nenhuma linha veio do TOTVS.
@@ -702,9 +734,10 @@ export function DespesasGeraisProvider({ children }) {
           }
           // ordena lançamentos por valor desc dentro de cada categoria
           // (só a recarregada, no modo por despesa — as outras mantêm a ordem)
-          (catAlvo ? [details[catAlvo]].filter(Boolean) : Object.values(details)).forEach((rows) =>
-            rows.sort((a, b) => b.val - a.val),
-          );
+          (catAlvo ? [details[catAlvo]].filter(Boolean) : Object.values(details)).forEach((rows) => {
+            if (Object.values(travadasMes).length && Object.keys(details).some((c) => travadasMes[c] && details[c] === rows)) return;
+            rows.sort((a, b) => b.val - a.val);
+          });
           const summary = Object.entries(details)
             .map(([cat, rows]) => ({
               cat,
@@ -725,6 +758,7 @@ export function DespesasGeraisProvider({ children }) {
           Object.keys(flags).forEach((k) => {
             const parts = k.split('||');
             if (catAlvo && parts[1] !== catAlvo) return;
+            if (travadasMes[parts[1]]) return; // linhas da despesa travada não mudaram
             if (parts[0] === m && /^\d+$/.test(parts[2] || '')) {
               flags[`${m}||${parts[1]}||snap:${parts[2]}`] = flags[k];
               delete flags[k];
@@ -894,6 +928,7 @@ export function DespesasGeraisProvider({ children }) {
   const updateRow = useCallback(
     (m, cat, i, field, value) => {
       mutateMonth(m, (mo, st) => {
+        if (despesaTravadaEm(st, m, cat)) return;
         const d = mo.details[cat] && mo.details[cat][i];
         if (!d) return;
         if (field === 'val') {
@@ -957,6 +992,7 @@ export function DespesasGeraisProvider({ children }) {
   const deleteRow = useCallback(
     (m, cat, i) => {
       mutateMonth(m, (mo, st) => {
+        if (despesaTravadaEm(st, m, cat)) return;
         if (!mo.details[cat]) return;
         const row = mo.details[cat][i];
         const flags = desvincularFlagsDaLinha(st.flags, m, cat, i, row);
@@ -970,7 +1006,8 @@ export function DespesasGeraisProvider({ children }) {
   const addRow = useCallback(
     (m, cat) => {
       const hoje = new Date().toLocaleDateString('pt-BR');
-      mutateMonth(m, (mo) => {
+      mutateMonth(m, (mo, st) => {
+        if (despesaTravadaEm(st, m, cat)) return;
         if (!mo.details[cat]) mo.details[cat] = [];
         mo.details[cat].push({
           emp: '1',
@@ -1025,7 +1062,8 @@ export function DespesasGeraisProvider({ children }) {
       const stamp = Date.now();
       let gravadas = 0;
       let removidas = 0;
-      mutateMonth(m, (mo) => {
+      mutateMonth(m, (mo, st) => {
+        if (despesaTravadaEm(st, m, catUp)) return;
         const manuais = (mo.details[catUp] || []).filter((r) => !(r.id && String(r.id).startsWith('bonif|')));
         removidas = (mo.details[catUp] || []).length - manuais.length;
         const novas = linhas.map((l, i) => ({
@@ -1051,6 +1089,7 @@ export function DespesasGeraisProvider({ children }) {
   const deleteCategory = useCallback(
     (m, cat) => {
       mutateMonth(m, (mo, st) => {
+        if (despesaTravadaEm(st, m, cat)) return;
         const rows = mo.details[cat] || [];
         // converte as flags de TODAS as linhas da despesa em snapshots (do último
         // índice para o primeiro, para a re-indexação não interferir)
@@ -1222,6 +1261,7 @@ export function DespesasGeraisProvider({ children }) {
           obsEdits: parsed.obsEdits || {},
           travas: parsed.travas || st.travas || {},
           analisadas: parsed.analisadas || st.analisadas || {},
+          travasDespesa: parsed.travasDespesa || st.travasDespesa || {},
         }));
         onDone && onDone(null);
       } catch (e) {
@@ -1256,6 +1296,9 @@ export function DespesasGeraisProvider({ children }) {
     analisadas,
     catAnalisada,
     toggleAnalisada,
+    travasDespesa,
+    catTravada,
+    toggleTravaDespesa,
     ultimaSyncDespesa,
     limparUltimaSyncDespesa: () => setUltimaSyncDespesa(null),
     hcRows: baseData.hcRows,
