@@ -1681,11 +1681,14 @@ const SolicitacaoBaixa = () => {
                   onClick={confirmarProcessamento}
                   disabled={
                     !formaPagamentoProcessamento ||
-                    ((formaPagamentoProcessamento === 'cartao_credito' ||
-                      formaPagamentoProcessamento === 'cartao_debito') &&
+                    // crédito: dados digitados; débito (PAGARME DEBITO): só data real + operadora
+                    (formaPagamentoProcessamento === 'cartao_credito' &&
                       (!dadosCartaoProcessamento.bandeira ||
+                        !dadosCartaoProcessamento.operadora ||
                         !dadosCartaoProcessamento.autorizacao ||
-                        !dadosCartaoProcessamento.nsu))
+                        !dadosCartaoProcessamento.nsu)) ||
+                    (formaPagamentoProcessamento === 'cartao_debito' &&
+                      (!dataPagamentoReal || !(dadosCartaoProcessamento.operadora || '').trim()))
                   }
                   className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white bg-[#000638] rounded-lg hover:bg-[#fe0000] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
