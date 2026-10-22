@@ -18,6 +18,7 @@ import {
   Wallet,
   Spinner,
   X,
+  FileXls,
 } from '@phosphor-icons/react';
 import {
   Chart as ChartJS,
@@ -30,6 +31,8 @@ import {
 } from 'chart.js';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
 import { Bar } from 'react-chartjs-2';
+import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
 
 ChartJS.register(
   CategoryScale,
@@ -522,6 +525,41 @@ const MetasInadimplencia = () => {
     return [...lista].sort((a, b) => valorOrdenacao(b) - valorOrdenacao(a));
   }, [mesDetalhe, abaModal]);
 
+  // Excel com exatamente os títulos da aba aberta no detalhamento mensal
+  // (pedido do João, Recuperação de Créditos, 22/10/2026)
+  const baixarExcelModal = () => {
+    if (!mesDetalhe || !titulosModal.length) return;
+    const linhas = titulosModal.map((t) => {
+      const sit = situacaoTitulo(t);
+      return {
+        Cliente: nomeCliente(t),
+        'Nome fantasia': fantasiaCliente(t) || '',
+        'Cód. cliente': t.cd_cliente,
+        Canal: t.canal || '',
+        Fatura: t.nr_fatura,
+        Parcela: t.nr_parcela || '',
+        Empresa: t.cd_empresa,
+        Carteira: carteiraLabel(t),
+        Portador: t.nm_portador || '',
+        'Cód. portador': t.cd_portador ?? '',
+        Vencimento: formatDateBR(t.dt_vencimento),
+        Valor: parseFloat(t.vl_fatura) || 0,
+        'Pago em': t.dt_liq ? formatDateBR(t.dt_liq) : '',
+        'Valor pago': parseFloat(t.vl_pago) || 0,
+        'Tipo de baixa': t.tp_baixa ?? '',
+        Situação: sit.label,
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(linhas);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, abaModal === 'PAGOS' ? 'Pagos no mês' : 'Vencendo no mês');
+    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    saveAs(
+      new Blob([buf], { type: 'application/octet-stream' }),
+      `metas-inadimplencia-${mesDetalhe.key}-${abaModal === 'PAGOS' ? 'pagos' : 'vencendo'}${canalFiltro !== 'TODOS' ? `-${canalFiltro}` : ''}.xlsx`,
+    );
+  };
+
   const abrirDetalheMes = (key) => {
     setMesSelecionado(key);
     setAbaModal('VENCIMENTOS');
@@ -996,13 +1034,23 @@ const MetasInadimplencia = () => {
                   {formatCurrency(mesDetalhe.valorPago)}
                 </span>
               </div>
-              <button
-                onClick={() => setMesSelecionado(null)}
-                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"
-                aria-label="Fechar"
-              >
-                <X size={20} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={baixarExcelModal}
+                  disabled={titulosModal.length === 0}
+                  title="Exporta para Excel os títulos da aba aberta (com o filtro de canal aplicado)"
+                  className="flex items-center gap-1.5 bg-white text-[#000638] border border-[#000638]/30 text-xs font-semibold rounded-lg px-3 py-1.5 hover:bg-gray-50 transition-colors disabled:opacity-50"
+                >
+                  <FileXls size={14} weight="bold" /> Baixar Excel ({titulosModal.length})
+                </button>
+                <button
+                  onClick={() => setMesSelecionado(null)}
+                  className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"
+                  aria-label="Fechar"
+                >
+                  <X size={20} />
+                </button>
+              </div>
             </div>
 
             {/* Abas */}

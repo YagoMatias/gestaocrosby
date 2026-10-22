@@ -81,12 +81,14 @@ export default function ContasReceberHoje() {
   const [verRecebiveis, setVerRecebiveis] = useState(null); // 'hoje' | 'amanha' | null
   const [copiado, setCopiado] = useState(false);
 
+  // O servidor devolve o último snapshot na hora; a carga pesada roda uma vez
+  // por dia (job) ou quando se clica em Atualizar (em segundo plano). Enquanto
+  // `gerando`, a tela consulta de novo a cada 15 s até vir o snapshot novo.
   const carregar = async (refresh = false) => {
     setLoading(true);
     setErro('');
     try {
-      // a primeira carga do dia consulta TOTVS + lista de devedores: até ~3 min
-      const j = await apiJson(`/api/contas-receber/hoje${refresh ? '?refresh=1' : ''}`, { timeoutMs: 5 * 60 * 1000 });
+      const j = await apiJson(`/api/contas-receber/hoje${refresh ? '?refresh=1' : ''}`, { timeoutMs: 60 * 1000 });
       setDados(j?.data || j);
     } catch (e) {
       setErro(`Não consegui carregar: ${e.message}`);
@@ -100,10 +102,9 @@ export default function ContasReceberHoje() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // vencido total ainda carregando no servidor: tenta de novo em 20 s
   useEffect(() => {
-    if (!dados || dados.vencidoTotal || loading) return undefined;
-    const t = setTimeout(() => carregar(true), 20000);
+    if (!dados?.gerando || loading) return undefined;
+    const t = setTimeout(() => carregar(false), 15000);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dados]);
@@ -145,8 +146,8 @@ export default function ContasReceberHoje() {
       <PageTitle
         title="Hoje"
         subtitle={
-          dados
-            ? `${fmtData(dados.dia)} · o que entrou, o que vai entrar e o que precisa de você · dados de ${fmtHora(dados.geradoEm)}${dados.cached ? ' (cache)' : ''}`
+          dados?.geradoEm
+            ? `${fmtData(dados.dia)} · o que entrou, o que vai entrar e o que precisa de você · carga de ${fmtData(dados.snapshotDia || dados.dia)} ${fmtHora(dados.geradoEm)}${dados.gerando ? ' · gerando carga nova...' : ''}`
             : 'O que entrou, o que vai entrar e o que precisa de você'
         }
         icon={Sun}
@@ -160,7 +161,7 @@ export default function ContasReceberHoje() {
           className="flex items-center gap-1.5 bg-[#000638] text-white text-xs font-semibold rounded-lg px-3 py-2 hover:bg-[#fe0000] transition-colors disabled:opacity-60"
         >
           {loading ? <Spinner size={14} className="animate-spin" /> : <ArrowsClockwise size={14} weight="bold" />}
-          {loading ? 'Carregando...' : 'Atualizar'}
+          {loading ? 'Carregando...' : dados?.gerando ? 'Gerando carga nova...' : 'Atualizar (gera carga nova)'}
         </button>
         {urgentes > 0 && (
           <span className="text-xs font-bold text-red-700 bg-red-50 border border-red-200 rounded-lg px-2 py-1">
@@ -174,14 +175,20 @@ export default function ContasReceberHoje() {
         )}
       </div>
 
-      {loading && !dados && (
+      {(loading && !dados) || (dados?.gerando && !dados?.geradoEm) ? (
         <div className="bg-white rounded-lg border border-gray-200 p-10 text-center text-sm text-gray-500">
           <Spinner size={22} className="animate-spin inline-block mb-2" />
-          <div>Consultando TOTVS, Pagar.me e as pendências do HeadCoach... a primeira carga do dia pode levar mais de um minuto.</div>
+          <div>Gerando a carga do dia (TOTVS, Pagar.me e pendências do HeadCoach)... leva de 1 a 2 minutos. A tela atualiza sozinha.</div>
+        </div>
+      ) : null}
+
+      {dados?.desatualizado && dados?.geradoEm && (
+        <div className="mb-3 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          Esta carga é de {fmtData(dados.snapshotDia)}. {dados.gerando ? 'A carga de hoje está sendo gerada e a tela atualiza sozinha.' : 'Clique em Atualizar para gerar a carga de hoje.'}
         </div>
       )}
 
-      {dados && (
+      {dados?.geradoEm && (
         <>
           {dados.avisos?.length > 0 && (
             <div className="mb-3 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
