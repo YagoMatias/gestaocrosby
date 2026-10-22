@@ -88,9 +88,10 @@ const SolicitacaoBaixa = () => {
       label: 'Cartão de Débito (PAGARME DEBITO)',
       paidType: 2,
       cardAuto: true,
-      // Cadastro no TOTVS (seq 63, portador 9901): operadora PAGARME, bandeira VAZIA
+      // TOTVS: cartão seq 63 (portador 9901 "PAGARME DEBITO"), operatorName PAGARME.
+      // Combinação ainda em acerto — os dois campos ficam editáveis.
       operadora: 'PAGARME',
-      bandeira: '',
+      bandeira: 'PAGARME DEBITO',
     },
     { id: 'credev', label: 'CREDEV', paidType: 5 },
     // Pix pago dentro do app BlueCard, pela conta Pagar.me da Crosby. O dinheiro
@@ -495,8 +496,8 @@ const SolicitacaoBaixa = () => {
                 card: {
                   nsu: nsuDaData(dataBaixa),
                   autorizacao: autorizacaoDaData(dataBaixa),
-                  bandeira: formaSelecionada.bandeira,
-                  operadora: formaSelecionada.operadora,
+                  bandeira: dadosCartaoProcessamento.bandeira ?? formaSelecionada.bandeira,
+                  operadora: (dadosCartaoProcessamento.operadora || formaSelecionada.operadora),
                   parcelas: 1,
                 },
               }
@@ -523,7 +524,7 @@ const SolicitacaoBaixa = () => {
             formaPagamentoProcessamento === 'cartao_credito'
               ? dadosCartaoProcessamento
               : formaSelecionada?.cardAuto
-                ? { bandeira: formaSelecionada.bandeira, operadora: formaSelecionada.operadora, parcelas: 1 }
+                ? { bandeira: dadosCartaoProcessamento.bandeira ?? formaSelecionada.bandeira, operadora: (dadosCartaoProcessamento.operadora || formaSelecionada.operadora), parcelas: 1 }
                 : undefined,
         }),
       });
@@ -1393,7 +1394,7 @@ const SolicitacaoBaixa = () => {
                     if (e.target.value === 'cartao_debito') {
                       setDadosCartaoProcessamento((prev) => ({
                         ...prev,
-                        bandeira: '',
+                        bandeira: 'PAGARME DEBITO',
                         operadora: 'PAGARME',
                       }));
                     }
@@ -1592,7 +1593,23 @@ const SolicitacaoBaixa = () => {
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-0.5">Operadora</label>
-                      <div className="w-full border border-gray-200 bg-gray-50 rounded-lg px-3 py-1.5 text-sm text-gray-700">PAGARME <span className="text-gray-400">(fixo · cartão PAGARME DEBITO, portador 9901)</span></div>
+                      <input
+                        type="text"
+                        value={dadosCartaoProcessamento.operadora || ''}
+                        onChange={(e) => setDadosCartaoProcessamento((prev) => ({ ...prev, operadora: e.target.value }))}
+                        placeholder="PAGARME"
+                        className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#000638]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-0.5">Bandeira</label>
+                      <input
+                        type="text"
+                        value={dadosCartaoProcessamento.bandeira ?? ''}
+                        onChange={(e) => setDadosCartaoProcessamento((prev) => ({ ...prev, bandeira: e.target.value }))}
+                        placeholder="PAGARME DEBITO"
+                        className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#000638]"
+                      />
                     </div>
                   </div>
                 </div>
