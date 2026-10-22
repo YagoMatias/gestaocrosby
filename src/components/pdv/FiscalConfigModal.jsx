@@ -29,6 +29,10 @@ export default function FiscalConfigModal({ empresa, empresaNome, onClose, onSav
     csc_token_prod: '',
     aliq_icms: '',
     info_complementar: '',
+    espelhar_totvs: true,
+    operacao_doc_interno: 511,
+    terminal_totvs: 1,
+    cliente_balcao_totvs: '',
   });
   const [tokensSet, setTokensSet] = useState({ hom: false, prod: false });
   const [msg, setMsg] = useState(null);
@@ -57,6 +61,10 @@ export default function FiscalConfigModal({ empresa, empresaNome, onClose, onSav
             csc_token_prod: '',
             aliq_icms: c.aliq_icms ?? '',
             info_complementar: c.info_complementar || '',
+            espelhar_totvs: c.espelhar_totvs !== false,
+            operacao_doc_interno: c.operacao_doc_interno ?? 511,
+            terminal_totvs: c.terminal_totvs ?? 1,
+            cliente_balcao_totvs: c.cliente_balcao_totvs ?? '',
           });
           setTokensSet({ hom: !!c.csc_token_hom_set, prod: !!c.csc_token_prod_set });
         }
@@ -230,6 +238,34 @@ export default function FiscalConfigModal({ empresa, empresaNome, onClose, onSav
             <p className="text-[11px] text-gray-500 -mt-2">
               O CSC é obrigatório para o QR Code da NFC-e. Cadastre no portal da SEFAZ da UF (o TOTVS usa o id 1). O token só é sobrescrito quando preenchido.
             </p>
+
+            {/* Espelho da venda HEADCOACH no TOTVS (documento interno) */}
+            <div className="rounded-xl ring-1 ring-gray-200 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-[#000638]">Espelho no TOTVS — documento interno</p>
+                <label className="inline-flex items-center gap-1.5 text-xs text-gray-700 select-none cursor-pointer">
+                  <input type="checkbox" checked={!!form.espelhar_totvs} onChange={(e) => upd('espelhar_totvs', e.target.checked)} className="w-4 h-4 p-0 mb-0" />
+                  ligado
+                </label>
+              </div>
+              <p className="text-[11px] text-gray-500">
+                Toda venda HEADCOACH é duplicada no TOTVS numa operação sem nota (modelo 35) e recebida pela API com as formas de pagamento — o contas a receber fica lançado para a conciliação. Exige o <b>caixa aberto</b> no terminal informado.
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className={lbl}>Operação (doc. interno)</label>
+                  <input type="number" value={form.operacao_doc_interno} onChange={(e) => upd('operacao_doc_interno', e.target.value)} placeholder="511" className={inputCls} />
+                </div>
+                <div>
+                  <label className={lbl}>Terminal (caixa)</label>
+                  <input type="number" value={form.terminal_totvs} onChange={(e) => upd('terminal_totvs', e.target.value)} placeholder="1" className={inputCls} />
+                </div>
+                <div>
+                  <label className={lbl}>Cliente balcão (NFC-e sem CPF)</label>
+                  <input type="number" value={form.cliente_balcao_totvs} onChange={(e) => upd('cliente_balcao_totvs', e.target.value)} placeholder="código da pessoa" className={inputCls} />
+                </div>
+              </div>
+            </div>
 
             <div>
               <label className={lbl}>Informação complementar (infCpl)</label>

@@ -2,7 +2,7 @@
 // Ações: imprimir cupom/DANFE, baixar XML, tentar emitir de novo (rejeitada),
 // consultar na SEFAZ, cancelar a nota (com justificativa) e nova venda.
 import React, { useState } from 'react';
-import { CheckCircle, XCircle, Warning, Printer, DownloadSimple, ArrowsClockwise, Prohibit, Spinner } from '@phosphor-icons/react';
+import { CheckCircle, XCircle, Warning, Printer, DownloadSimple, ArrowsClockwise, Prohibit, Spinner, Database } from '@phosphor-icons/react';
 import { API_BASE_URL } from '../../config/constants';
 import { imprimirDocumento } from '../../utils/documentoFiscalHtml';
 import { fetchSefaz } from '../../utils/fetchSefaz';
@@ -10,11 +10,21 @@ import { fetchSefaz } from '../../utils/fetchSefaz';
 const fmtBRL = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const fmtChave = (k) => String(k || '').replace(/(\d{4})(?=\d)/g, '$1 ');
 
-export default function ResultadoFiscalModal({ resultado, onNovaVenda, onFechar, onReemitir, onAtualizar, showToast }) {
+export default function ResultadoFiscalModal({ resultado, onNovaVenda, onFechar, onReemitir, onAtualizar, onEspelhar, showToast }) {
   const { venda, nota, emitente, erro } = resultado;
   const [busy, setBusy] = useState(false);
   const [cancelando, setCancelando] = useState(false);
   const [just, setJust] = useState('');
+  const [espelhando, setEspelhando] = useState(false);
+  const espelhar = async () => {
+    if (!onEspelhar) return;
+    setEspelhando(true);
+    try {
+      await onEspelhar();
+    } finally {
+      setEspelhando(false);
+    }
+  };
 
   const autorizada = nota?.status === 'autorizada';
   const cancelada = nota?.status === 'cancelada';
@@ -114,6 +124,37 @@ export default function ResultadoFiscalModal({ resultado, onNovaVenda, onFechar,
           </div>
         )}
         {!nota && erro && <p className="mt-3 text-xs text-rose-700 bg-rose-50 rounded-xl p-2.5 ring-1 ring-rose-200 text-left">{erro}</p>}
+
+        {/* Espelho no TOTVS: documento interno + recebimento (contas a receber) */}
+        {venda && venda.tipo_venda !== 'troca' && (
+          <div className={`mt-3 text-left text-xs rounded-xl ring-1 p-3 ${venda.totvs_status === 4 ? 'bg-emerald-50 ring-emerald-200' : venda.totvs_erro ? 'bg-rose-50 ring-rose-200' : 'bg-gray-50 ring-gray-200'}`}>
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-bold text-[#000638] inline-flex items-center gap-1">
+                <Database size={13} weight="bold" /> TOTVS · documento interno
+              </span>
+              {venda.totvs_status === 4 ? (
+                <span className="text-emerald-700 font-semibold">recebida ✓</span>
+              ) : venda.totvs_transacao_code ? (
+                <span className="text-amber-700 font-semibold">em andamento</span>
+              ) : (
+                <span className="text-gray-500">não espelhada</span>
+              )}
+            </div>
+            {venda.totvs_transacao_code && (
+              <p className="mt-1 text-gray-600">
+                Transação <b className="font-mono text-[#000638]">{venda.totvs_transacao_code}</b>
+                {venda.totvs_doc_interno_seq ? <> · fatura <b className="font-mono">{venda.totvs_doc_interno_seq}</b></> : null}
+                {venda.totvs_status === 4 ? ' · contas a receber lançado' : ' · recebimento pendente'}
+              </p>
+            )}
+            {venda.totvs_erro && venda.totvs_status !== 4 && <p className="mt-1 text-rose-700">{venda.totvs_erro}</p>}
+            {venda.totvs_status !== 4 && (
+              <button onClick={espelhar} disabled={espelhando || !onEspelhar} className="mt-2 h-8 px-2.5 rounded-lg text-[11px] font-semibold text-white bg-[#000638] hover:bg-[#000638]/90 disabled:opacity-40 inline-flex items-center gap-1">
+                {espelhando ? <Spinner size={12} className="animate-spin" /> : <ArrowsClockwise size={12} />} {venda.totvs_transacao_code ? 'Receber no TOTVS de novo' : 'Espelhar no TOTVS'}
+              </button>
+            )}
+          </div>
+        )}
 
         {autorizada && nota.qrDataUrl && Number(nota.modelo) === 65 && <img src={nota.qrDataUrl} alt="QR Code NFC-e" className="mx-auto mt-3 w-28 h-28" />}
 

@@ -108,6 +108,7 @@ export default function VendasDoDiaModal({ empresa, onClose, onAbrirResultado, s
                 <th className="px-2 py-1.5 text-left">Vendedor</th>
                 <th className="px-2 py-1.5 text-right">Total</th>
                 <th className="px-2 py-1.5 text-left">Nota</th>
+                <th className="px-2 py-1.5 text-left">TOTVS</th>
                 <th className="px-2 py-1.5 text-left">Status</th>
                 <th className="px-2 py-1.5" />
               </tr>
@@ -122,7 +123,7 @@ export default function VendasDoDiaModal({ empresa, onClose, onAbrirResultado, s
               )}
               {!loading && lista.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="py-8 text-center text-gray-400">
+                  <td colSpan={10} className="py-8 text-center text-gray-400">
                     Nenhuma venda nesta data.
                   </td>
                 </tr>
@@ -136,6 +137,18 @@ export default function VendasDoDiaModal({ empresa, onClose, onAbrirResultado, s
                   <td className="px-2 py-1.5 truncate max-w-[120px]">{v.vendedor_nome || v.vendedor_code}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtBRL(v.total)}</td>
                   <td className="px-2 py-1.5 font-mono">{v.nota ? `${v.nota.serie}/${v.nota.numero}` : '—'}</td>
+                  <td className="px-2 py-1.5 whitespace-nowrap" title={v.totvs_erro || (v.totvs_doc_interno_seq ? `fatura ${v.totvs_doc_interno_seq}` : '')}>
+                    {v.totvs_transacao_code ? (
+                      <span className={`font-mono ${v.totvs_status === 4 ? 'text-emerald-700' : 'text-amber-700'}`}>
+                        {v.totvs_transacao_code}
+                        {v.totvs_status === 4 ? ' ✓' : ' …'}
+                      </span>
+                    ) : v.tipo_venda === 'troca' ? (
+                      '—'
+                    ) : (
+                      <span className={v.totvs_erro ? 'text-rose-600' : 'text-gray-400'}>{v.totvs_erro ? 'erro' : '—'}</span>
+                    )}
+                  </td>
                   <td className="px-2 py-1.5">
                     <span className={`inline-flex px-1.5 py-0.5 rounded-full ring-1 text-[10px] font-semibold ${STATUS[v.status] || STATUS.registrada}`} title={v.nota ? `${v.nota.cstat || ''} ${v.nota.xmotivo || ''}` : ''}>
                       {v.status}

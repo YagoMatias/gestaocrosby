@@ -1186,6 +1186,9 @@ const PDVCrosby = () => {
             }
           : { venda, nota: null, emitente: null, erro: em.message };
         setResultado(res);
+        // Espelho no TOTVS (documento interno): independe da nota ter saído —
+        // a venda aconteceu; a nota pode ser reemitida depois.
+        if (tipoVenda !== 'troca') espelharNoTotvs(venda.id);
         if (res.nota?.status === 'autorizada') {
           beep(true);
           if (tipoVenda !== 'troca') {
@@ -1224,7 +1227,31 @@ const PDVCrosby = () => {
       showToast,
       emitirNota,
       gerarCashback,
+      espelharNoTotvs,
     ],
+  );
+
+  // Espelha a venda HEADCOACH no TOTVS como documento interno + recebimento
+  // (ATENDIDA). Atualiza a venda do resultado com os campos totvs_*.
+  const espelharNoTotvs = useCallback(
+    async (vendaId, { avisar = true } = {}) => {
+      try {
+        const r = await fetch(`${API_BASE_URL}/api/pdv-crosby/vendas/${vendaId}/espelhar-totvs`, { method: 'POST' });
+        const j = await r.json();
+        const venda = j?.data?.venda || j?.details?.venda || null;
+        if (venda) setResultado((prev) => (prev ? { ...prev, venda: { ...prev.venda, ...venda } } : prev));
+        if (!r.ok || !j.success) {
+          if (avisar) showToast('erro', `TOTVS: ${j?.message || 'falha ao espelhar a venda'}`);
+          return false;
+        }
+        if (avisar && !j.data?.espelho?.ignorado) showToast('ok', j.message || 'Venda recebida no TOTVS');
+        return true;
+      } catch (e) {
+        if (avisar) showToast('erro', `TOTVS: ${e.message}`);
+        return false;
+      }
+    },
+    [showToast],
   );
 
   // Reemite (após rejeição) e recarrega o resultado
@@ -2240,6 +2267,7 @@ const PDVCrosby = () => {
             onFechar={() => setResultado(null)}
             onReemitir={reemitir}
             onAtualizar={recarregarResultado}
+            onEspelhar={() => resultado?.venda?.id && espelharNoTotvs(resultado.venda.id)}
             showToast={showToast}
           />
         )}
