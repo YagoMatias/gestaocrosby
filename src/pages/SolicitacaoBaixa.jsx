@@ -447,13 +447,10 @@ const SolicitacaoBaixa = () => {
       return;
     }
 
-    if (
-      formaPagamentoProcessamento === 'cartao_debito' &&
-      (!dataPagamentoReal || !(dadosCartaoProcessamento.operadora || '').trim())
-    ) {
+    if (formaPagamentoProcessamento === 'cartao_debito' && !dataPagamentoReal) {
       setNotification({
         type: 'error',
-        message: 'PAGARME DEBITO: informe a Data real do pagamento e a Operadora.',
+        message: 'PAGARME DEBITO: informe a Data real do pagamento.',
       });
       setTimeout(() => setNotification(null), 3000);
       return;
@@ -499,7 +496,7 @@ const SolicitacaoBaixa = () => {
                   nsu: nsuDaData(dataBaixa),
                   autorizacao: autorizacaoDaData(dataBaixa),
                   bandeira: formaSelecionada.bandeira,
-                  operadora: (dadosCartaoProcessamento.operadora || formaSelecionada.operadora).trim(),
+                  operadora: formaSelecionada.operadora,
                   parcelas: 1,
                 },
               }
@@ -524,7 +521,7 @@ const SolicitacaoBaixa = () => {
             formaPagamentoProcessamento === 'cartao_credito'
               ? dadosCartaoProcessamento
               : formaSelecionada?.cardAuto
-                ? { bandeira: formaSelecionada.bandeira, operadora: (dadosCartaoProcessamento.operadora || formaSelecionada.operadora).trim(), parcelas: 1 }
+                ? { bandeira: formaSelecionada.bandeira, operadora: formaSelecionada.operadora, parcelas: 1 }
                 : undefined,
         }),
       });
@@ -1592,19 +1589,8 @@ const SolicitacaoBaixa = () => {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-0.5">Operadora *</label>
-                      <input
-                        type="text"
-                        value={dadosCartaoProcessamento.operadora || ''}
-                        onChange={(e) =>
-                          setDadosCartaoProcessamento((prev) => ({
-                            ...prev,
-                            operadora: e.target.value,
-                          }))
-                        }
-                        placeholder="PAGARME"
-                        className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#000638]"
-                      />
+                      <label className="block text-xs font-semibold text-gray-700 mb-0.5">Operadora</label>
+                      <div className="w-full border border-gray-200 bg-gray-50 rounded-lg px-3 py-1.5 text-sm text-gray-700">PAGARME <span className="text-gray-400">(fixo · cartão PAGARME DEBITO, portador 9901)</span></div>
                     </div>
                   </div>
                 </div>
@@ -1688,8 +1674,7 @@ const SolicitacaoBaixa = () => {
                         !dadosCartaoProcessamento.operadora ||
                         !dadosCartaoProcessamento.autorizacao ||
                         !dadosCartaoProcessamento.nsu)) ||
-                    (formaPagamentoProcessamento === 'cartao_debito' &&
-                      (!dataPagamentoReal || !(dadosCartaoProcessamento.operadora || '').trim()))
+                    (formaPagamentoProcessamento === 'cartao_debito' && !dataPagamentoReal)
                   }
                   className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white bg-[#000638] rounded-lg hover:bg-[#fe0000] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
