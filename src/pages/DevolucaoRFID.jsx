@@ -44,6 +44,7 @@ import {
   Receipt,
   Gear,
   DownloadSimple,
+  FileArrowUp,
   Copy,
   ClockCounterClockwise,
   UserPlus,
@@ -305,6 +306,8 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
   const [globalDiscount, setGlobalDiscount] = useState('');
   const [manualCode, setManualCode] = useState('');
   const [manualBusy, setManualBusy] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
+  const txtInputRef = useRef(null);
   const [toast, setToast] = useState(null);
   const [posting, setPosting] = useState(false);
 
@@ -586,7 +589,7 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
 
   // ─── Produtos: regra de preço do ORÇAMENTO ───────────────────────────────
   // Tabela do cliente quando houver; sem tabela, VENDA ATACADO (código 4).
-  const mergeProduto = useCallback((data, { epc = null, manual = 0 }) => {
+  const mergeProduto = useCallback((data, { epc = null, manual = 0, silent = false }) => {
     const { product, prices, tablePrice } = data;
     const padrao = (prices || []).find(
       (p) => p.promotionalPrice > 0 || p.price > 0,
@@ -626,7 +629,7 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
         },
       ];
     });
-    beep(true);
+    if (!silent) beep(true);
   }, []);
 
   const consultarProduto = useCallback(
@@ -681,6 +684,64 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
       setManualBusy(false);
     }
   }, [manualCode, manualBusy, consultarProduto, mergeProduto, showToast]);
+
+  // Importa um .txt com os códigos (um por linha; repetido = +1 peça)
+  const importarCodigosTxt = useCallback(
+    async (file) => {
+      if (!file) return;
+      if (!branchRef.current) {
+        beep(false);
+        showToast('erro', 'Selecione a empresa antes de importar os códigos');
+        return;
+      }
+      setImportBusy(true);
+      try {
+        const texto = await file.text();
+        const codigos = texto
+          .split(/[\s,;]+/)
+          .map((c) => c.trim())
+          .filter(Boolean);
+        if (!codigos.length) {
+          showToast('erro', 'O arquivo não tem códigos.');
+          return;
+        }
+        // repetições viram quantidade
+        const contagem = new Map();
+        for (const c of codigos) contagem.set(c, (contagem.get(c) || 0) + 1);
+        let okQtd = 0;
+        const naoAchou = [];
+        for (const [code, qtd] of contagem) {
+          try {
+            const res = await consultarProduto(code);
+            if (res?.ok) {
+              mergeProduto(res.data, { manual: qtd, silent: true });
+              okQtd += qtd;
+            } else {
+              naoAchou.push(code);
+            }
+          } catch {
+            naoAchou.push(code);
+          }
+        }
+        if (okQtd > 0) beep(true);
+        else beep(false);
+        if (naoAchou.length) {
+          showToast(
+            'erro',
+            `${okQtd} de ${codigos.length} peça(s) adicionada(s). Não encontrados (${naoAchou.length}): ${naoAchou.slice(0, 12).join(', ')}${naoAchou.length > 12 ? '…' : ''}`,
+          );
+        } else {
+          showToast('ok', `${okQtd} peça(s) adicionadas do arquivo.`);
+        }
+      } catch (e) {
+        showToast('erro', `Falha ao ler o arquivo: ${e.message}`);
+      } finally {
+        setImportBusy(false);
+        if (txtInputRef.current) txtInputRef.current.value = '';
+      }
+    },
+    [consultarProduto, mergeProduto, showToast],
+  );
 
   // Polling do portal
   useEffect(() => {
@@ -2068,6 +2129,24 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
                   <Spinner size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 animate-spin" />
                 )}
               </form>
+
+              <input
+                ref={txtInputRef}
+                type="file"
+                accept=".txt,text/plain"
+                className="hidden"
+                onChange={(e) => importarCodigosTxt(e.target.files?.[0])}
+              />
+              <button
+                type="button"
+                onClick={() => txtInputRef.current?.click()}
+                disabled={importBusy}
+                title="Importar um .txt com os códigos dos produtos (um por linha; código repetido soma 1 peça)"
+                className="w-full h-8 inline-flex items-center justify-center gap-1.5 rounded-lg text-[11px] font-semibold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50 disabled:opacity-50"
+              >
+                {importBusy ? <Spinner size={13} className="animate-spin" /> : <FileArrowUp size={13} weight="bold" />}
+                {importBusy ? 'Importando…' : 'Importar .txt de códigos'}
+              </button>
 
               <div className="flex items-center gap-1.5">
                 <Percent size={14} className="text-gray-400 shrink-0" />
