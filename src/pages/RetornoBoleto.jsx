@@ -67,6 +67,18 @@ const PODE_BAIXAR = (b) => b.situacao === 'aberto' || b.situacao === 'vencido';
 const PODE_REEMITIR = (b) => b.situacao === 'cancelado' || b.situacao === 'falhou';
 const LOTE_REMESSA = 25;
 
+// Situação do título no TOTVS (conferida a cada "Atualizar retorno" / job)
+const TOTVS_SIT = {
+  aberto: { label: 'Aberto no TOTVS', cls: 'text-gray-400' },
+  pago: { label: 'PAGO no TOTVS', cls: 'bg-red-100 text-red-800 border border-red-300' },
+  renegociado: { label: 'RENEGOCIADO no TOTVS', cls: 'bg-red-100 text-red-800 border border-red-300' },
+  cancelado: { label: 'CANCELADO no TOTVS', cls: 'bg-red-100 text-red-800 border border-red-300' },
+  devolvido: { label: 'DEVOLVIDO no TOTVS', cls: 'bg-red-100 text-red-800 border border-red-300' },
+  quebrado: { label: 'QUEBRADO no TOTVS', cls: 'bg-red-100 text-red-800 border border-red-300' },
+  nao_encontrado: { label: 'não achei no TOTVS', cls: 'bg-amber-100 text-amber-800' },
+};
+const FECHADO_TOTVS = (b) => b.situacao !== 'pago' && b.situacao !== 'cancelado' && b.situacao !== 'falhou' && b.totvs_situacao && b.totvs_situacao !== 'aberto' && b.totvs_situacao !== 'nao_encontrado';
+
 const BAIXAS = {
   processada: { label: 'Baixada no TOTVS', cls: 'text-green-700' },
   processando: { label: 'Baixando...', cls: 'text-blue-700' },
@@ -93,6 +105,7 @@ export default function RetornoBoleto() {
   // fatura (ex.: cancelou na Crosby e reemitiu na FA MODA) fica escondido por
   // padrão — senão a fatura aparece "duplicada" (João, 21/10/2026).
   const [verSubstituidos, setVerSubstituidos] = useState(false);
+  const [soFechadosTotvs, setSoFechadosTotvs] = useState(false);
   const ordenarPor = (campo) =>
     setOrdem((o) => ({ campo, dir: o.campo === campo && o.dir === 'asc' ? 'desc' : 'asc' }));
   const [contasPagarme, setContasPagarme] = useState(null); // { emissao, contas:[{id,nome,configurada}] }
@@ -358,6 +371,7 @@ export default function RetornoBoleto() {
       setAviso(
         `${r.consultados || 0} boleto(s) consultado(s) na Pagar.me: ${r.pagos || 0} pago(s), ` +
           `${r.cancelados || 0} cancelado(s), ${r.baixados || 0} baixa(s) no TOTVS` +
+          (r.totvsFechados ? `, ${r.totvsFechados} pendente(s) com título já fechado no TOTVS (baixar na Pagar.me)` : '') +
           (r.errosBaixa ? `, ${r.errosBaixa} erro(s) de baixa` : '') +
           (r.errosConsulta ? `, ${r.errosConsulta} sem resposta da Pagar.me` : '') +
           '.',
@@ -399,6 +413,7 @@ export default function RetornoBoleto() {
       'Pago em': b.dt_pagamento ? fmtData(b.dt_pagamento) : '',
       'Valor pago': b.vl_pago != null ? Number(b.vl_pago) : '',
       'Baixa TOTVS': b.situacao === 'pago' ? (BAIXAS[b.baixa_status]?.label || b.baixa_status || '') : '',
+      'Título no TOTVS': b.totvs_situacao ? `${b.totvs_situacao}${b.totvs_baixa_em ? ` (${fmtData(b.totvs_baixa_em)})` : ''}` : '',
       'Erro da baixa': b.baixa_erro || '',
       'Portador TOTVS': b.cd_portador_totvs ?? '',
       'Nome portador': b.nm_portador_totvs || '',
@@ -447,6 +462,7 @@ export default function RetornoBoleto() {
     const lista = boletos.filter(
       (b) =>
         (verSubstituidos || !substituidos.has(b.id)) &&
+        (!soFechadosTotvs || FECHADO_TOTVS(b)) &&
         (situacao === 'todos' || b.situacao === situacao) &&
         // cancelado não está em conta nenhuma: só aparece em "todas"
         (filtroConta === 'todas' || (b.situacao !== 'cancelado' && (b.conta || 'crosby') === filtroConta)) &&
@@ -479,7 +495,7 @@ export default function RetornoBoleto() {
       });
     }
     return lista;
-  }, [boletos, situacao, busca, filtroConta, ordem, verSubstituidos, substituidos]);
+  }, [boletos, situacao, busca, filtroConta, ordem, verSubstituidos, substituidos, soFechadosTotvs]);
 
   return (
     <div className="w-full max-w-[1600px] mx-auto px-4 py-4">
@@ -861,6 +877,32 @@ export default function RetornoBoleto() {
             <option value="crosby">Crosby (FERREIRA)</option>
             <option value="fabio">FA MODA (Fábio)</option>
           </select>
+          {(() => {
+            const n = boletos.filter(FECHADO_TOTVS).length;
+            return (
+              <label
+                className={`flex items-center gap-1 text-[11px] cursor-pointer ${n ? 'text-red-700 font-semibold' : 'text-gray-600'}`}
+                title="Boleto pendente cujo título já está pago, renegociado ou cancelado no TOTVS — precisa ser baixado na Pagar.me"
+              >
+                <input type="checkbox" checked={soFechadosTotvs} onChange={(e) => setSoFechadosTotvs(e.target.checked)} />
+                Só título fechado no TOTVS{n ? ` (${n})` : ''}
+                {n > 0 && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setSelecionados(new Set(boletos.filter(FECHADO_TOTVS).map((b) => b.id)));
+                      setBaixaAberta(true);
+                    }}
+                    className="ml-1 underline decoration-dotted"
+                    title="Marca todos esses na tabela para a baixa em massa"
+                  >
+                    marcar p/ baixar
+                  </button>
+                )}
+              </label>
+            );
+          })()}
           <label
             className="flex items-center gap-1 text-[11px] text-gray-600 cursor-pointer"
             title="Cancelados / não emitidos de faturas que já têm um boleto novo (ex.: cancelou na Crosby e reemitiu na FA MODA)"
@@ -1029,6 +1071,14 @@ export default function RetornoBoleto() {
                       >
                         {sit.label}
                       </span>
+                      {b.totvs_situacao && b.situacao !== 'pago' && b.situacao !== 'cancelado' && b.situacao !== 'falhou' && b.totvs_situacao !== 'aberto' && (
+                        <span
+                          className={`ml-1 inline-block text-[10px] font-bold rounded px-1 py-0.5 ${(TOTVS_SIT[b.totvs_situacao] || TOTVS_SIT.nao_encontrado).cls}`}
+                          title={`Conferido no TOTVS em ${b.totvs_conferido_em ? new Date(b.totvs_conferido_em).toLocaleString('pt-BR') : '—'}${b.totvs_baixa_em ? ` · baixa em ${fmtData(b.totvs_baixa_em)}` : ''}`}
+                        >
+                          {(TOTVS_SIT[b.totvs_situacao] || TOTVS_SIT.nao_encontrado).label}
+                        </span>
+                      )}
                       {b.situacao !== 'falhou' && !b.carteira_ok && (
                         <span
                           className="ml-1 text-amber-600"

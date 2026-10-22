@@ -122,6 +122,11 @@ const TABBED_PAGES = {
     group: 'Contas a Receber',
     dot: 'bg-green-500',
   },
+  '/contas-receber-hoje': {
+    label: 'Hoje (Receber)',
+    group: 'Contas a Receber',
+    dot: 'bg-amber-500',
+  },
 
   // ---- Financeiro › demais ----
   '/conciliacao-stone': {
