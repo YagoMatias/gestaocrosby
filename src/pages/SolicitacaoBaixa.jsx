@@ -61,6 +61,7 @@ const SolicitacaoBaixa = () => {
     bandeira: '',
     autorizacao: '',
     nsu: '',
+    operadora: '',
   });
 
   const FORMAS_PAGAMENTO = [
@@ -83,7 +84,25 @@ const SolicitacaoBaixa = () => {
     // Pix pago dentro do app BlueCard, pela conta Pagar.me da Crosby. O dinheiro
     // cai na conta da Pagar.me, não num banco do TOTVS — por isso sem `bank`.
     { id: 'pix_pagarme', label: 'Pix Pagar.me (BlueCard)', paidType: 4 },
+    // Regra do João (Contas a Receber, 22/10/2026): tudo que é recebido pela
+    // Pagar.me (Pix do BlueCard, boleto Stone) baixa no TOTVS como CARTÃO DE
+    // DÉBITO, operadora PAGARME DEBITO, NSU e autorização = data do pagamento
+    // de cada título. Sem digitação: os dados vão automáticos.
+    {
+      id: 'pagarme_debito',
+      label: 'Pagar.me → Cartão Débito (PAGARME DEBITO)',
+      paidType: 2,
+      cardAuto: true,
+      operadora: 'PAGARME DEBITO',
+      bandeira: 'PAGARME',
+    },
   ];
+  // NSU/autorização = data do pagamento (NSU só aceita números no TOTVS)
+  const nsuDaData = (d) => String(d || '').slice(0, 10).replace(/\D/g, '');
+  const autorizacaoDaData = (d) => {
+    const [a, m, dia] = String(d || '').slice(0, 10).split('-');
+    return dia ? `${dia}/${m}/${a}` : '';
+  };
 
   const FORMAS_PAGAMENTO_LABELS = {
     confianca: 'Confiança',
@@ -94,6 +113,7 @@ const SolicitacaoBaixa = () => {
     cartao_debito: 'Cartão de Déb.',
     credev: 'CREDEV',
     pix_pagarme: 'Pix Pagar.me',
+    pagarme_debito: 'Pagar.me (Cartão Déb.)',
   };
 
   // Carregar solicitações
@@ -406,12 +426,13 @@ const SolicitacaoBaixa = () => {
       (formaPagamentoProcessamento === 'cartao_credito' ||
         formaPagamentoProcessamento === 'cartao_debito') &&
       (!dadosCartaoProcessamento.bandeira ||
+        !dadosCartaoProcessamento.operadora ||
         !dadosCartaoProcessamento.autorizacao ||
         !dadosCartaoProcessamento.nsu)
     ) {
       setNotification({
         type: 'error',
-        message: 'Preencha todos os dados do cartão.',
+        message: 'Preencha todos os dados do cartão (bandeira, operadora, autorização e NSU).',
       });
       setTimeout(() => setNotification(null), 3000);
       return;
@@ -449,6 +470,17 @@ const SolicitacaoBaixa = () => {
         installmentCode: s.nr_parcela || 1,
         paidValue: parseFloat(s.vl_fatura) || 0,
         settlementDate: s.dt_pagamento || null,
+        ...(formaSelecionada?.cardAuto
+          ? {
+              card: {
+                nsu: nsuDaData(s.dt_pagamento || new Date().toISOString()),
+                autorizacao: autorizacaoDaData(s.dt_pagamento || new Date().toISOString()),
+                bandeira: dadosCartaoProcessamento.bandeira || formaSelecionada.bandeira,
+                operadora: formaSelecionada.operadora,
+                parcelas: 1,
+              },
+            }
+          : {}),
       }));
 
       const response = await fetch(`${TotvsURL}invoices-settle`, {
@@ -468,7 +500,9 @@ const SolicitacaoBaixa = () => {
             formaPagamentoProcessamento === 'cartao_credito' ||
             formaPagamentoProcessamento === 'cartao_debito'
               ? dadosCartaoProcessamento
-              : undefined,
+              : formaSelecionada?.cardAuto
+                ? { bandeira: dadosCartaoProcessamento.bandeira || formaSelecionada.bandeira, operadora: formaSelecionada.operadora, parcelas: 1 }
+                : undefined,
         }),
       });
 
@@ -1450,6 +1484,23 @@ const SolicitacaoBaixa = () => {
                       className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#000638]"
                     />
                   </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-0.5">
+                      Operadora *
+                    </label>
+                    <input
+                      type="text"
+                      value={dadosCartaoProcessamento.operadora || ''}
+                      onChange={(e) =>
+                        setDadosCartaoProcessamento((prev) => ({
+                          ...prev,
+                          operadora: e.target.value,
+                        }))
+                      }
+                      placeholder="Ex: PAGARME DEBITO, REDE, STONE..."
+                      className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#000638]"
+                    />
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block text-xs font-semibold text-gray-600 mb-0.5">
@@ -1489,6 +1540,30 @@ const SolicitacaoBaixa = () => {
                 </div>
               )}
 
+              {/* Pagar.me → Cartão Débito automático */}
+              {formaPagamentoProcessamento === 'pagarme_debito' && (
+                <div className="bg-violet-50 border border-violet-200 rounded-lg p-4 space-y-2">
+                  <p className="text-sm font-bold text-violet-800">Cartão de Débito · PAGARME DEBITO</p>
+                  <p className="text-xs text-violet-700">
+                    Cada título vai pro TOTVS como <b>cartão de débito</b>, operadora <b>PAGARME DEBITO</b>, com <b>NSU</b> e <b>autorização</b> iguais à
+                    data do pagamento da solicitação (ex.: NSU 20261021, autorização 21/10/2026), 1 parcela, na data do pagamento.
+                  </p>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-0.5">Bandeira</label>
+                    <input
+                      type="text"
+                      value={dadosCartaoProcessamento.bandeira || 'PAGARME'}
+                      onChange={(e) =>
+                        setDadosCartaoProcessamento((prev) => ({
+                          ...prev,
+                          bandeira: e.target.value,
+                        }))
+                      }
+                      className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#000638]"
+                    />
+                  </div>
+                </div>
+              )}
               {/* CREDEV */}
               {formaPagamentoProcessamento === 'credev' && (
                 <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 text-center">
