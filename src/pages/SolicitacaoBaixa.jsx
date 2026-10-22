@@ -510,6 +510,8 @@ const SolicitacaoBaixa = () => {
         body: JSON.stringify({
           items,
           paidType: formaSelecionada?.paidType || 4,
+          // cartão PAGARME débito liquida na empresa 1 (onde o cartão está cadastrado)
+          ...(formaSelecionada?.cardAuto ? { cardSettlementBranch: 1 } : {}),
           bank: formaSelecionada?.bank
             ? {
                 bankNumber: formaSelecionada.bank.bankNumber,
