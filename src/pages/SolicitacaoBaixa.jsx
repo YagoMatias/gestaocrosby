@@ -88,13 +88,18 @@ const SolicitacaoBaixa = () => {
     // Pagar.me (Pix do BlueCard, boleto Stone) baixa no TOTVS como CARTÃO DE
     // DÉBITO, operadora PAGARME DEBITO, NSU e autorização = data do pagamento
     // de cada título. Sem digitação: os dados vão automáticos.
+    // Cadastro no TOTVS (FCRFP, cartões): tipo 5 (débito), seq. 63, descrição
+    // "PAGARME DEBITO", operadora "PAGARME", bandeira vazia, 1 parcela, portador
+    // 9901. O TOTVS acha o cartão por bandeira / operadora / parcelas — tem que
+    // ser exatamente isso (teste de 22/10/2026: "PAGARME / PAGARME DEBITO / 1
+    // not found").
     {
       id: 'pagarme_debito',
       label: 'Pagar.me → Cartão Débito (PAGARME DEBITO)',
       paidType: 2,
       cardAuto: true,
-      operadora: 'PAGARME DEBITO',
-      bandeira: 'PAGARME',
+      operadora: 'PAGARME',
+      bandeira: '',
     },
   ];
   // NSU/autorização = data do pagamento (NSU só aceita números no TOTVS)
@@ -1545,14 +1550,16 @@ const SolicitacaoBaixa = () => {
                 <div className="bg-violet-50 border border-violet-200 rounded-lg p-4 space-y-2">
                   <p className="text-sm font-bold text-violet-800">Cartão de Débito · PAGARME DEBITO</p>
                   <p className="text-xs text-violet-700">
-                    Cada título vai pro TOTVS como <b>cartão de débito</b>, operadora <b>PAGARME DEBITO</b>, com <b>NSU</b> e <b>autorização</b> iguais à
-                    data do pagamento da solicitação (ex.: NSU 20261021, autorização 21/10/2026), 1 parcela, na data do pagamento.
+                    Cada título vai pro TOTVS como <b>cartão de débito</b>, cartão cadastrado "PAGARME DEBITO" (operadora <b>PAGARME</b>, bandeira
+                    vazia, 1 parcela, portador 9901), com <b>NSU</b> e <b>autorização</b> iguais à data do pagamento da solicitação (ex.: NSU
+                    20261021, autorização 21/10/2026), na data do pagamento.
                   </p>
                   <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-0.5">Bandeira</label>
+                    <label className="block text-xs font-semibold text-gray-600 mb-0.5">Bandeira (deixe vazia — é assim no cadastro do TOTVS)</label>
                     <input
                       type="text"
-                      value={dadosCartaoProcessamento.bandeira || 'PAGARME'}
+                      value={dadosCartaoProcessamento.bandeira || ''}
+                      placeholder="(vazia)"
                       onChange={(e) =>
                         setDadosCartaoProcessamento((prev) => ({
                           ...prev,
