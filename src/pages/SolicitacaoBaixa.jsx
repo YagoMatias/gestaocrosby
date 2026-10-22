@@ -88,8 +88,9 @@ const SolicitacaoBaixa = () => {
       label: 'Cartão de Débito (PAGARME DEBITO)',
       paidType: 2,
       cardAuto: true,
-      operadora: 'PAGARME DEBITO',
-      bandeira: 'PAGARME DEBITO',
+      // Cadastro no TOTVS (seq 63, portador 9901): operadora PAGARME, bandeira VAZIA
+      operadora: 'PAGARME',
+      bandeira: '',
     },
     { id: 'credev', label: 'CREDEV', paidType: 5 },
     // Pix pago dentro do app BlueCard, pela conta Pagar.me da Crosby. O dinheiro
@@ -1393,8 +1394,8 @@ const SolicitacaoBaixa = () => {
                     if (e.target.value === 'cartao_debito') {
                       setDadosCartaoProcessamento((prev) => ({
                         ...prev,
-                        bandeira: 'PAGARME DEBITO',
-                        operadora: 'PAGARME DEBITO',
+                        bandeira: '',
+                        operadora: 'PAGARME',
                       }));
                     }
                     setBancoSelecionado(null);
@@ -1574,10 +1575,10 @@ const SolicitacaoBaixa = () => {
                 <div className="bg-violet-50 border border-violet-200 rounded-lg p-4 space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-bold text-violet-800">Cartão de Débito · PAGARME DEBITO</p>
-                    <span className="text-[11px] font-bold rounded px-2 py-0.5 bg-violet-700 text-white">bandeira PAGARME DEBITO · 1x</span>
+                    <span className="text-[11px] font-bold rounded px-2 py-0.5 bg-violet-700 text-white">operadora PAGARME · sem bandeira · 1x</span>
                   </div>
                   <p className="text-xs text-violet-700">
-                    Cada título marcado vai pro TOTVS como <b>cartão de débito PAGARME DEBITO</b>, na <b>data real</b> abaixo. <b>NSU</b> e{' '}
+                    Cada título marcado vai pro TOTVS como <b>cartão de débito</b> (operadora PAGARME, sem bandeira, cartão "PAGARME DEBITO" do cadastro), na <b>data real</b> abaixo. <b>NSU</b> e{' '}
                     <b>autorização</b> são sempre essa data (ex.: 21102026 e 21102026).
                   </p>
                   <div className="grid grid-cols-2 gap-2">
@@ -1601,7 +1602,7 @@ const SolicitacaoBaixa = () => {
                             operadora: e.target.value,
                           }))
                         }
-                        placeholder="PAGARME DEBITO"
+                        placeholder="PAGARME"
                         className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#000638]"
                       />
                     </div>
