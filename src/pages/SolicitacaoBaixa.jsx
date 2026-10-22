@@ -81,7 +81,16 @@ const SolicitacaoBaixa = () => {
     },
     { id: 'adiantamento', label: 'Adiantamento (PIX TOTVS)', paidType: 3 },
     { id: 'cartao_credito', label: 'Cartão de Crédito', paidType: 1 },
-    { id: 'cartao_debito', label: 'Cartão de Débito', paidType: 2 },
+    // João (22/10/2026): escolher "Cartão de Débito" já vem tudo preenchido como
+    // PAGARME DEBITO — só a data real é informada (NSU/autorização = ddmmaaaa).
+    {
+      id: 'cartao_debito',
+      label: 'Cartão de Débito (PAGARME DEBITO)',
+      paidType: 2,
+      cardAuto: true,
+      operadora: 'PAGARME DEBITO',
+      bandeira: 'PAGARME DEBITO',
+    },
     { id: 'credev', label: 'CREDEV', paidType: 5 },
     // Pix pago dentro do app BlueCard, pela conta Pagar.me da Crosby. O dinheiro
     // cai na conta da Pagar.me, não num banco do TOTVS — por isso sem `bank`.
@@ -95,23 +104,14 @@ const SolicitacaoBaixa = () => {
     // 9901. O TOTVS acha o cartão por bandeira / operadora / parcelas — tem que
     // ser exatamente isso (teste de 22/10/2026: "PAGARME / PAGARME DEBITO / 1
     // not found").
-    // João (22/10/2026): no TOTVS a "bandeira" desse cartão é PAGARME DEBITO e a
-    // operadora PAGARME. Os dois ficam editáveis na tela para acertar sem deploy.
-    {
-      id: 'pagarme_debito',
-      label: 'Pagar.me → Cartão Débito (PAGARME DEBITO)',
-      paidType: 2,
-      cardAuto: true,
-      operadora: 'PAGARME',
-      bandeira: 'PAGARME DEBITO',
-    },
   ];
   // NSU/autorização = data do pagamento (NSU só aceita números no TOTVS)
-  const nsuDaData = (d) => String(d || '').slice(0, 10).replace(/\D/g, '');
-  const autorizacaoDaData = (d) => {
+  const ddmmaaaa = (d) => {
     const [a, m, dia] = String(d || '').slice(0, 10).split('-');
-    return dia ? `${dia}/${m}/${a}` : '';
+    return dia ? `${dia}${m}${a}` : '';
   };
+  const nsuDaData = ddmmaaaa;
+  const autorizacaoDaData = ddmmaaaa;
 
   const FORMAS_PAGAMENTO_LABELS = {
     confianca: 'Confiança',
@@ -119,10 +119,9 @@ const SolicitacaoBaixa = () => {
     conta_corrente: 'Conta Corrente',
     adiantamento: 'Adiantamento (PIX)',
     cartao_credito: 'Cartão de Créd.',
-    cartao_debito: 'Cartão de Déb.',
+    cartao_debito: 'Cartão Déb. (PAGARME)',
     credev: 'CREDEV',
     pix_pagarme: 'Pix Pagar.me',
-    pagarme_debito: 'Pagar.me (Cartão Déb.)',
   };
 
   // Carregar solicitações
@@ -433,8 +432,7 @@ const SolicitacaoBaixa = () => {
     }
 
     if (
-      (formaPagamentoProcessamento === 'cartao_credito' ||
-        formaPagamentoProcessamento === 'cartao_debito') &&
+      formaPagamentoProcessamento === 'cartao_credito' &&
       (!dadosCartaoProcessamento.bandeira ||
         !dadosCartaoProcessamento.operadora ||
         !dadosCartaoProcessamento.autorizacao ||
@@ -449,7 +447,7 @@ const SolicitacaoBaixa = () => {
     }
 
     if (
-      formaPagamentoProcessamento === 'pagarme_debito' &&
+      formaPagamentoProcessamento === 'cartao_debito' &&
       (!dataPagamentoReal || !(dadosCartaoProcessamento.operadora || '').trim())
     ) {
       setNotification({
@@ -522,8 +520,7 @@ const SolicitacaoBaixa = () => {
               }
             : undefined,
           dadosCartao:
-            formaPagamentoProcessamento === 'cartao_credito' ||
-            formaPagamentoProcessamento === 'cartao_debito'
+            formaPagamentoProcessamento === 'cartao_credito'
               ? dadosCartaoProcessamento
               : formaSelecionada?.cardAuto
                 ? { bandeira: formaSelecionada.bandeira, operadora: (dadosCartaoProcessamento.operadora || formaSelecionada.operadora).trim(), parcelas: 1 }
@@ -1393,11 +1390,11 @@ const SolicitacaoBaixa = () => {
                   onChange={(e) => {
                     setFormaPagamentoProcessamento(e.target.value);
                     // Pagar.me débito: já abre com o cartão cadastrado no TOTVS (editável)
-                    if (e.target.value === 'pagarme_debito') {
+                    if (e.target.value === 'cartao_debito') {
                       setDadosCartaoProcessamento((prev) => ({
                         ...prev,
                         bandeira: 'PAGARME DEBITO',
-                        operadora: 'PAGARME',
+                        operadora: 'PAGARME DEBITO',
                       }));
                     }
                     setBancoSelecionado(null);
@@ -1491,8 +1488,7 @@ const SolicitacaoBaixa = () => {
               )}
 
               {/* Cartão → Dados do cartão */}
-              {(formaPagamentoProcessamento === 'cartao_credito' ||
-                formaPagamentoProcessamento === 'cartao_debito') && (
+              {formaPagamentoProcessamento === 'cartao_credito' && (
                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 space-y-3">
                   <p className="text-xs font-bold text-yellow-800">
                     Dados do{' '}
@@ -1574,7 +1570,7 @@ const SolicitacaoBaixa = () => {
               )}
 
               {/* Pagar.me → Cartão Débito (PAGARME DEBITO) */}
-              {formaPagamentoProcessamento === 'pagarme_debito' && (
+              {formaPagamentoProcessamento === 'cartao_debito' && (
                 <div className="bg-violet-50 border border-violet-200 rounded-lg p-4 space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-bold text-violet-800">Cartão de Débito · PAGARME DEBITO</p>
@@ -1582,7 +1578,7 @@ const SolicitacaoBaixa = () => {
                   </div>
                   <p className="text-xs text-violet-700">
                     Cada título marcado vai pro TOTVS como <b>cartão de débito PAGARME DEBITO</b>, na <b>data real</b> abaixo. <b>NSU</b> e{' '}
-                    <b>autorização</b> são sempre essa data (ex.: NSU 20261021, autorização 21/10/2026).
+                    <b>autorização</b> são sempre essa data (ex.: 21102026 e 21102026).
                   </p>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
@@ -1605,7 +1601,7 @@ const SolicitacaoBaixa = () => {
                             operadora: e.target.value,
                           }))
                         }
-                        placeholder="PAGARME"
+                        placeholder="PAGARME DEBITO"
                         className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#000638]"
                       />
                     </div>
@@ -1613,7 +1609,7 @@ const SolicitacaoBaixa = () => {
                 </div>
               )}
               {/* Pagamento real (data da baixa) — demais formas */}
-              {formaPagamentoProcessamento !== 'pagarme_debito' && (
+              {formaPagamentoProcessamento !== 'cartao_debito' && (
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
                   <label className="block text-xs font-semibold text-gray-700 mb-0.5">
                     Pagamento real (data da baixa no TOTVS)
