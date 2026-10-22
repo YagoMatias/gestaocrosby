@@ -33,8 +33,8 @@ const PAGE_COMPONENTS = {
   '/retorno-boleto': lazy(() => import('../../pages/RetornoBoleto')),
 
   // ---- Financeiro › demais ----
+  '/conciliacao': lazy(() => import('../../pages/Conciliacao')),
   '/conciliacao-stone': lazy(() => import('../../pages/ConciliacaoStone')),
-  '/extrato-stone': lazy(() => import('../../pages/ExtratoStone')),
   '/fluxo-caixa-ext': lazy(() => import('../../pages/FluxoCaixaExt')),
   '/dre': lazy(() => import('../../pages/DRE')),
 

@@ -237,18 +237,18 @@ const AVAILABLE_PAGES = [
 
   // ─── Financeiro (demais) ────────────────────────────────────
   {
-    path: '/conciliacao-stone',
-    name: 'Conciliação (Stone)',
+    path: '/conciliacao',
+    name: 'Conciliação (contas bancárias)',
     category: 'Financeiro',
   },
   {
-    path: '/extrato-stone',
-    name: 'Extrato Stone (OFX → CNAB 240)',
+    path: '/conciliacao-stone',
+    name: 'Conciliação Stone',
     category: 'Financeiro',
   },
   {
     path: '/fluxo-caixa-ext',
-    name: 'Fluxo de Caixa Ext (extratos bancários)',
+    name: 'Extrato Bancário (extratos PDF)',
     category: 'Financeiro',
   },
   {

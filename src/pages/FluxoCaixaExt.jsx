@@ -413,7 +413,7 @@ const FluxoCaixaExt = () => {
   return (
     <div className="min-h-screen bg-gray-50 px-3 py-4 md:p-6 pb-24 md:pb-6">
       <PageTitle
-        title="Fluxo de Caixa Ext"
+        title="Extrato Bancário"
         subtitle="Extratos dos bancos do grupo (Stone, Sicredi, Caixa, Mêntore): tudo que foi recebido por forma de pagamento, tudo que foi pago por fornecedor e o que foi transferido entre as contas"
         icon={Wallet}
       />

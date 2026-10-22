@@ -129,19 +129,19 @@ const TABBED_PAGES = {
   },
 
   // ---- Financeiro › demais ----
-  '/conciliacao-stone': {
+  '/conciliacao': {
     label: 'Conciliação',
-    group: 'Financeiro',
+    group: 'Conciliação',
     dot: 'bg-blue-500',
   },
-  '/extrato-stone': {
-    label: 'Extrato Stone',
-    group: 'Financeiro',
+  '/conciliacao-stone': {
+    label: 'Conciliação Stone',
+    group: 'Conciliação',
     dot: 'bg-blue-500',
   },
   '/fluxo-caixa-ext': {
-    label: 'Fluxo de Caixa Ext',
-    group: 'Financeiro',
+    label: 'Extrato Bancário',
+    group: 'Conciliação',
     dot: 'bg-blue-500',
   },
   '/dre': {

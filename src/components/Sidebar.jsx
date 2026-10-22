@@ -220,24 +220,33 @@ const financeiro = [
   },
   {
     name: 'Conciliação',
-    href: '/conciliacao-stone',
-    icon: CreditCard,
-    color: 'text-blue-600',
-    roles: ['owner', 'admin', 'manager', 'user'],
-  },
-  {
-    name: 'Extrato Stone',
-    href: '/extrato-stone',
+    href: '#',
     icon: Bank,
     color: 'text-blue-600',
     roles: ['owner', 'admin', 'manager', 'user'],
-  },
-  {
-    name: 'Fluxo de Caixa Ext',
-    href: '/fluxo-caixa-ext',
-    icon: Wallet,
-    color: 'text-blue-600',
-    roles: ['owner', 'admin', 'manager', 'user'],
+    children: [
+      {
+        name: 'Conciliação',
+        href: '/conciliacao',
+        icon: CheckCircle,
+        color: 'text-blue-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
+        name: 'Conciliação Stone',
+        href: '/conciliacao-stone',
+        icon: CreditCard,
+        color: 'text-blue-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
+        name: 'Extrato Bancário',
+        href: '/fluxo-caixa-ext',
+        icon: Wallet,
+        color: 'text-blue-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+    ],
   },
   {
     name: 'Fiscal',

@@ -185,7 +185,7 @@ const MinhasSolicitacoes = lazy(() => import('./pages/MinhasSolicitacoes'));
 const DuplicataVendas = lazy(() => import('./pages/DuplicataVendas'));
 const PagamentosFabricas = lazy(() => import('./pages/PagamentosFabricas'));
 const ConciliacaoStone = lazy(() => import('./pages/ConciliacaoStone'));
-const ExtratoStone = lazy(() => import('./pages/ExtratoStone'));
+const Conciliacao = lazy(() => import('./pages/Conciliacao'));
 const FluxoCaixaExt = lazy(() => import('./pages/FluxoCaixaExt'));
 const CrosbyBot = lazy(() => import('./pages/CrosbyBot'));
 // RH — Banco de Talentos (vagas + inscrições) + LP pública
@@ -245,8 +245,8 @@ const protectedRoutes = [
   { path: '/contas-a-pagar', component: ContasAPagar },
   { path: '/dash-contas-a-pagar', component: DashContasAPagar },
   { path: '/pagamentos-fabricas', component: PagamentosFabricas },
+  { path: '/conciliacao', component: Conciliacao },
   { path: '/conciliacao-stone', component: ConciliacaoStone },
-  { path: '/extrato-stone', component: ExtratoStone },
   { path: '/fluxo-caixa-ext', component: FluxoCaixaExt },
   { path: '/emprestimos', component: Emprestimos },
   { path: '/despesa-filial', component: DespesaFilial },
