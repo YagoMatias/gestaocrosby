@@ -63,6 +63,8 @@ const SolicitacaoBaixa = () => {
     nsu: '',
     operadora: '',
   });
+  // "Pagamento real" do TOTVS: data da baixa. Vazio = data de pagamento de cada solicitação.
+  const [dataPagamentoReal, setDataPagamentoReal] = useState('');
 
   const FORMAS_PAGAMENTO = [
     {
@@ -93,13 +95,15 @@ const SolicitacaoBaixa = () => {
     // 9901. O TOTVS acha o cartão por bandeira / operadora / parcelas — tem que
     // ser exatamente isso (teste de 22/10/2026: "PAGARME / PAGARME DEBITO / 1
     // not found").
+    // João (22/10/2026): no TOTVS a "bandeira" desse cartão é PAGARME DEBITO e a
+    // operadora PAGARME. Os dois ficam editáveis na tela para acertar sem deploy.
     {
       id: 'pagarme_debito',
       label: 'Pagar.me → Cartão Débito (PAGARME DEBITO)',
       paidType: 2,
       cardAuto: true,
       operadora: 'PAGARME',
-      bandeira: '',
+      bandeira: 'PAGARME DEBITO',
     },
   ];
   // NSU/autorização = data do pagamento (NSU só aceita números no TOTVS)
@@ -412,7 +416,8 @@ const SolicitacaoBaixa = () => {
     // Abrir modal de seleção de forma de pagamento
     setFormaPagamentoProcessamento('');
     setBancoSelecionado(null);
-    setDadosCartaoProcessamento({ bandeira: '', autorizacao: '', nsu: '' });
+    setDadosCartaoProcessamento({ bandeira: '', autorizacao: '', nsu: '', operadora: '' });
+    setDataPagamentoReal('');
     setModalPagamentoAberto(true);
   };
 
@@ -468,25 +473,28 @@ const SolicitacaoBaixa = () => {
     let errorCount = 0;
 
     try {
-      const items = pendentes.map((s) => ({
-        branchCode: s.cd_empresa,
-        customerCode: s.cd_cliente,
-        receivableCode: s.nr_fat,
-        installmentCode: s.nr_parcela || 1,
-        paidValue: parseFloat(s.vl_fatura) || 0,
-        settlementDate: s.dt_pagamento || null,
-        ...(formaSelecionada?.cardAuto
-          ? {
-              card: {
-                nsu: nsuDaData(s.dt_pagamento || new Date().toISOString()),
-                autorizacao: autorizacaoDaData(s.dt_pagamento || new Date().toISOString()),
-                bandeira: dadosCartaoProcessamento.bandeira || formaSelecionada.bandeira,
-                operadora: formaSelecionada.operadora,
-                parcelas: 1,
-              },
-            }
-          : {}),
-      }));
+      const items = pendentes.map((s) => {
+        const dataBaixa = dataPagamentoReal || s.dt_pagamento || new Date().toISOString().slice(0, 10);
+        return {
+          branchCode: s.cd_empresa,
+          customerCode: s.cd_cliente,
+          receivableCode: s.nr_fat,
+          installmentCode: s.nr_parcela || 1,
+          paidValue: parseFloat(s.vl_fatura) || 0,
+          settlementDate: dataBaixa,
+          ...(formaSelecionada?.cardAuto
+            ? {
+                card: {
+                  nsu: nsuDaData(dataBaixa),
+                  autorizacao: autorizacaoDaData(dataBaixa),
+                  bandeira: dadosCartaoProcessamento.bandeira ?? formaSelecionada.bandeira,
+                  operadora: dadosCartaoProcessamento.operadora || formaSelecionada.operadora,
+                  parcelas: 1,
+                },
+              }
+            : {}),
+        };
+      });
 
       const response = await fetch(`${TotvsURL}invoices-settle`, {
         method: 'POST',
@@ -506,7 +514,7 @@ const SolicitacaoBaixa = () => {
             formaPagamentoProcessamento === 'cartao_debito'
               ? dadosCartaoProcessamento
               : formaSelecionada?.cardAuto
-                ? { bandeira: dadosCartaoProcessamento.bandeira || formaSelecionada.bandeira, operadora: formaSelecionada.operadora, parcelas: 1 }
+                ? { bandeira: dadosCartaoProcessamento.bandeira ?? formaSelecionada.bandeira, operadora: dadosCartaoProcessamento.operadora || formaSelecionada.operadora, parcelas: 1 }
                 : undefined,
         }),
       });
@@ -1372,6 +1380,14 @@ const SolicitacaoBaixa = () => {
                   value={formaPagamentoProcessamento}
                   onChange={(e) => {
                     setFormaPagamentoProcessamento(e.target.value);
+                    // Pagar.me débito: já abre com o cartão cadastrado no TOTVS (editável)
+                    if (e.target.value === 'pagarme_debito') {
+                      setDadosCartaoProcessamento((prev) => ({
+                        ...prev,
+                        bandeira: 'PAGARME DEBITO',
+                        operadora: 'PAGARME',
+                      }));
+                    }
                     setBancoSelecionado(null);
                     setDadosCartaoProcessamento({
                       bandeira: '',
@@ -1550,27 +1566,60 @@ const SolicitacaoBaixa = () => {
                 <div className="bg-violet-50 border border-violet-200 rounded-lg p-4 space-y-2">
                   <p className="text-sm font-bold text-violet-800">Cartão de Débito · PAGARME DEBITO</p>
                   <p className="text-xs text-violet-700">
-                    Cada título vai pro TOTVS como <b>cartão de débito</b>, cartão cadastrado "PAGARME DEBITO" (operadora <b>PAGARME</b>, bandeira
-                    vazia, 1 parcela, portador 9901), com <b>NSU</b> e <b>autorização</b> iguais à data do pagamento da solicitação (ex.: NSU
-                    20261021, autorização 21/10/2026), na data do pagamento.
+                    Cada título vai pro TOTVS como <b>cartão de débito</b>, com <b>NSU</b> (ex.: 20261021) e <b>autorização</b> (ex.: 21/10/2026)
+                    iguais à data da baixa, 1 parcela. O TOTVS localiza o cartão por bandeira / operadora / parcelas — se recusar, ajuste os dois campos
+                    abaixo conforme o cadastro do cartão no TOTVS.
                   </p>
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-600 mb-0.5">Bandeira (deixe vazia — é assim no cadastro do TOTVS)</label>
-                    <input
-                      type="text"
-                      value={dadosCartaoProcessamento.bandeira || ''}
-                      placeholder="(vazia)"
-                      onChange={(e) =>
-                        setDadosCartaoProcessamento((prev) => ({
-                          ...prev,
-                          bandeira: e.target.value,
-                        }))
-                      }
-                      className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#000638]"
-                    />
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-0.5">Bandeira</label>
+                      <input
+                        type="text"
+                        value={dadosCartaoProcessamento.bandeira ?? ''}
+                        onChange={(e) =>
+                          setDadosCartaoProcessamento((prev) => ({
+                            ...prev,
+                            bandeira: e.target.value,
+                          }))
+                        }
+                        placeholder="PAGARME DEBITO"
+                        className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#000638]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-600 mb-0.5">Operadora</label>
+                      <input
+                        type="text"
+                        value={dadosCartaoProcessamento.operadora || ''}
+                        onChange={(e) =>
+                          setDadosCartaoProcessamento((prev) => ({
+                            ...prev,
+                            operadora: e.target.value,
+                          }))
+                        }
+                        placeholder="PAGARME"
+                        className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#000638]"
+                      />
+                    </div>
                   </div>
                 </div>
               )}
+              {/* Pagamento real (data da baixa) — vale para qualquer forma */}
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                <label className="block text-xs font-semibold text-gray-700 mb-0.5">
+                  Pagamento real (data da baixa no TOTVS)
+                </label>
+                <input
+                  type="date"
+                  value={dataPagamentoReal}
+                  onChange={(e) => setDataPagamentoReal(e.target.value)}
+                  className="border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#000638]"
+                />
+                <p className="text-[11px] text-gray-500 mt-1">
+                  Vazio = usa a data de pagamento de cada solicitação (é o normal). Preencha só para forçar uma data única para todas as marcadas.
+                  No cartão Pagar.me, NSU e autorização seguem essa mesma data.
+                </p>
+              </div>
               {/* CREDEV */}
               {formaPagamentoProcessamento === 'credev' && (
                 <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 text-center">
