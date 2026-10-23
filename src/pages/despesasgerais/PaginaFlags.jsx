@@ -37,7 +37,7 @@ export default function PaginaFlags({ tipo }) {
   } = useDespesasGerais();
 
   const [busca, setBusca] = useState('');
-  const [statusFil, setStatusFil] = useState('');
+  const [statusSel, setStatusSel] = useState([]); // status selecionados (vazio = todos)
   const [mesFil, setMesFil] = useState('');
   const [sort, setSort] = useState({ col: null, dir: 'desc' });
 
@@ -58,7 +58,7 @@ export default function PaginaFlags({ tipo }) {
   const filtradas = useMemo(() => {
     const q = busca.trim().toLowerCase();
     return linhas.filter(({ r, f }) => {
-      if (statusFil && (f.status || FLAG_STATUS[0]) !== statusFil) return false;
+      if (statusSel.length && !statusSel.includes(f.status || FLAG_STATUS[0])) return false;
       if (mesFil && r.m !== mesFil) return false;
       if (q) {
         const alvo = `${r.cat || ''} ${r.d.forn || ''} ${r.d.dupl || ''} ${f.nota || ''}`.toLowerCase();
@@ -66,7 +66,7 @@ export default function PaginaFlags({ tipo }) {
       }
       return true;
     });
-  }, [linhas, busca, statusFil, mesFil]);
+  }, [linhas, busca, statusSel, mesFil]);
 
   // ordena conforme o cabeçalho (padrão: mês asc, depois valor desc)
   const ordenadas = useMemo(() => {
@@ -128,7 +128,9 @@ export default function PaginaFlags({ tipo }) {
 
   const ehCorrecao = tipo === 'correcao';
   const Icone = ehCorrecao ? Flag : Scissors;
-  const temFiltro = busca || statusFil || mesFil;
+  const temFiltro = busca || statusSel.length || mesFil;
+  const toggleStatus = (st) =>
+    setStatusSel((p) => (p.includes(st) ? p.filter((x) => x !== st) : [...p, st]));
 
   // ciclo: desc → asc → padrão
   const clickSort = (col) =>
@@ -203,18 +205,24 @@ export default function PaginaFlags({ tipo }) {
               className="text-[11px] border border-gray-200 rounded-lg pl-7 pr-2 py-1.5 bg-white w-64"
             />
           </div>
-          <select
-            value={statusFil}
-            onChange={(e) => setStatusFil(e.target.value)}
-            className="text-[11px] border border-gray-200 rounded-lg px-2 py-1.5 bg-white"
-          >
-            <option value="">Todos os status</option>
-            {FLAG_STATUS.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] text-gray-400 uppercase mr-0.5">Status:</span>
+            {FLAG_STATUS.map((st) => {
+              const on = statusSel.includes(st);
+              return (
+                <button
+                  key={st}
+                  onClick={() => toggleStatus(st)}
+                  title={on ? 'Clique para tirar do filtro' : 'Clique para filtrar por este status'}
+                  className={`text-[10px] font-semibold border rounded-full px-2 py-0.5 transition ${
+                    on ? flagStatusClasses(st) + ' ring-1 ring-offset-1 ring-[#000638]/30' : 'bg-white text-gray-400 border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  {st}
+                </button>
+              );
+            })}
+          </div>
           <select
             value={mesFil}
             onChange={(e) => setMesFil(e.target.value)}
@@ -231,7 +239,7 @@ export default function PaginaFlags({ tipo }) {
             <button
               onClick={() => {
                 setBusca('');
-                setStatusFil('');
+                setStatusSel([]);
                 setMesFil('');
               }}
               className="text-[11px] text-gray-500 hover:text-gray-700 underline"
@@ -286,7 +294,7 @@ export default function PaginaFlags({ tipo }) {
                   <tr
                     key={k}
                     className={`border-b border-gray-100 hover:bg-blue-50/40 ${
-                      man ? 'bg-amber-50/40' : i % 2 === 1 ? 'bg-gray-50' : 'bg-white'
+                      i % 2 === 1 ? 'bg-gray-50' : 'bg-white'
                     }`}
                   >
                     <td className="px-3 py-1.5">
