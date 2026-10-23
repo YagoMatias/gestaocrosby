@@ -84,7 +84,11 @@ const BAIXAS = {
   processando: { label: 'Baixando...', cls: 'text-blue-700' },
   erro: { label: 'Erro na baixa', cls: 'text-red-600' },
   pendente: { label: 'Aguardando baixa', cls: 'text-amber-600' },
+  // 23/10/2026: boleto pago vira Solicitação de Baixa (cartão PAGARME, data do crédito)
+  solicitada: { label: 'Recebido · a baixar (Solicitações de Baixa)', cls: 'text-amber-700' },
+  aguardando_credito: { label: 'Pago · aguardando crédito Pagar.me', cls: 'text-gray-600' },
 };
+const A_BAIXAR = new Set(['solicitada', 'pendente']);
 
 export default function RetornoBoleto() {
   const [empresasSelecionadas, setEmpresasSelecionadas] = useState([]);
@@ -837,6 +841,36 @@ export default function RetornoBoleto() {
           </div>
         )}
       </div>
+
+      {/* João (23/10/2026): recebidos que ainda precisam de baixa (vão pela aba Solicitações de Baixa) */}
+      {(() => {
+        const pagos = boletos.filter((b) => b.situacao === 'pago');
+        const aBaixar = pagos.filter((b) => A_BAIXAR.has(b.baixa_status));
+        const aguardando = pagos.filter((b) => b.baixa_status === 'aguardando_credito');
+        const soma = (l) => l.reduce((a, b) => a + Number(b.vl_fatura || 0), 0);
+        if (!aBaixar.length && !aguardando.length) return null;
+        return (
+          <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 flex flex-wrap items-center gap-x-6 gap-y-1 text-amber-900">
+            <div>
+              <div className="text-[11px] font-semibold">Boletos recebidos a baixar (cartão débito PAGARME, na data do recebimento)</div>
+              <div className="text-lg font-bold">
+                {aBaixar.length} <span className="text-xs font-semibold opacity-80">{fmtBRL(soma(aBaixar))}</span>
+              </div>
+            </div>
+            {aguardando.length > 0 && (
+              <div>
+                <div className="text-[11px] font-semibold">Pagos, aguardando crédito na Pagar.me</div>
+                <div className="text-lg font-bold">
+                  {aguardando.length} <span className="text-xs font-semibold opacity-80">{fmtBRL(soma(aguardando))}</span>
+                </div>
+              </div>
+            )}
+            <a href="/solicitacao-baixa" className="ml-auto text-[11px] font-bold underline decoration-dotted">
+              abrir Solicitações de Baixa →
+            </a>
+          </div>
+        );
+      })()}
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
         {['aberto', 'vencido', 'pago', 'cancelado'].map((k) => (

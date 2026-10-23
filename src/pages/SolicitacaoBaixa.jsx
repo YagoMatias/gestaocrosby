@@ -33,6 +33,8 @@ const SolicitacaoBaixa = () => {
   const [loading, setLoading] = useState(false);
   const [notification, setNotification] = useState(null);
   const [filtroStatus, setFiltroStatus] = useState('pendente');
+  // João (23/10/2026): caixas por origem (Pix BlueCard / boleto Pagar.me recebido)
+  const [filtroOrigem, setFiltroOrigem] = useState('');
   const [filtroPortador, setFiltroPortador] = useState('TODOS');
   const [selectedItems, setSelectedItems] = useState(new Set());
   const [processingBaixa, setProcessingBaixa] = useState(false);
@@ -190,10 +192,19 @@ const SolicitacaoBaixa = () => {
           s.nm_portador === filtroPortador,
       );
     }
+    if (filtroOrigem) lista = lista.filter((x) => x.origem === filtroOrigem);
     return lista;
-  }, [solicitacoes, filtroStatus, filtroPortador]);
+  }, [solicitacoes, filtroStatus, filtroPortador, filtroOrigem]);
 
   // Totais por status
+  const pendentesPorOrigem = useMemo(() => {
+    const soma = (lista) => lista.reduce((a, x) => a + (parseFloat(x.vl_fatura) || 0), 0);
+    const pend = solicitacoes.filter((x) => x.status === 'pendente');
+    const pix = pend.filter((x) => x.origem === 'bluecard_pagarme');
+    const boleto = pend.filter((x) => x.origem === 'pagarme_boleto');
+    return { pix: { n: pix.length, valor: soma(pix) }, boleto: { n: boleto.length, valor: soma(boleto) } };
+  }, [solicitacoes]);
+
   const totais = useMemo(() => {
     return {
       pendente: solicitacoes.filter((s) => s.status === 'pendente').length,
@@ -460,14 +471,6 @@ const SolicitacaoBaixa = () => {
       return;
     }
 
-    if (formaPagamentoProcessamento === 'cartao_debito' && !dataPagamentoReal) {
-      setNotification({
-        type: 'error',
-        message: 'PAGARME DEBITO: informe a Data real do pagamento.',
-      });
-      setTimeout(() => setNotification(null), 3000);
-      return;
-    }
 
     const selecionadas = solicitacoesFiltradas.filter((s) =>
       selectedItems.has(s.id),
@@ -663,6 +666,37 @@ const SolicitacaoBaixa = () => {
         icon={Receipt}
         iconColor="text-indigo-600"
       />
+
+      {/* Pendentes por origem — Pix (BlueCard) × boleto Pagar.me recebido (João, 23/10/2026) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+        {[
+          { key: 'bluecard_pagarme', label: 'Pix a baixar (BlueCard / Pagar.me)', hint: 'Pix pagos no app — baixar como cartão débito PAGARME na data do pagamento', dados: pendentesPorOrigem.pix, cor: 'border-sky-300 bg-sky-50 text-sky-900', dot: 'bg-sky-500' },
+          { key: 'pagarme_boleto', label: 'Boleto recebido a baixar (Pagar.me)', hint: 'Boletos pagos que já creditaram — baixar como cartão débito PAGARME na data do recebimento', dados: pendentesPorOrigem.boleto, cor: 'border-amber-300 bg-amber-50 text-amber-900', dot: 'bg-amber-500' },
+        ].map((c) => (
+          <button
+            key={c.key}
+            type="button"
+            title={c.hint}
+            onClick={() => {
+              const ativo = filtroOrigem === c.key;
+              setFiltroOrigem(ativo ? '' : c.key);
+              setFiltroStatus('pendente');
+              setSelectedItems(new Set());
+            }}
+            className={`text-left rounded-lg border p-3 transition-all ${c.cor} ${filtroOrigem === c.key ? 'ring-2 ring-[#000638]' : 'hover:shadow'}`}
+          >
+            <div className="flex items-center gap-2 text-[11px] font-semibold">
+              <span className={`inline-block w-2 h-2 rounded-full ${c.dot}`} />
+              {c.label}
+              {filtroOrigem === c.key && <span className="ml-auto text-[10px] font-bold">filtrando · clique p/ limpar</span>}
+            </div>
+            <div className="text-lg font-bold">
+              {c.dados.n}{' '}
+              <span className="text-xs font-semibold opacity-80">{formatarMoeda(c.dados.valor)}</span>
+            </div>
+          </button>
+        ))}
+      </div>
 
       {/* Cards de resumo */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
@@ -1621,7 +1655,9 @@ const SolicitacaoBaixa = () => {
                     <b>autorização</b> são sempre essa data (ex.: 21102026 e 21102026).
                   </p>
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-0.5">Data real do pagamento *</label>
+                    <label className="block text-xs font-semibold text-gray-700 mb-0.5">
+                      Data única (opcional) — vazio = cada baixa na data do seu pagamento/recebimento
+                    </label>
                     <input
                       type="date"
                       value={dataPagamentoReal}
@@ -1680,11 +1716,37 @@ const SolicitacaoBaixa = () => {
                     <span className="font-semibold">{selectedItems.size}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Valor total:</span>
+                    <span className="text-gray-500">Valor total a baixar:</span>
                     <span className="font-bold text-red-600">
                       {formatarMoeda(valorTotalSelecionado)}
                     </span>
                   </div>
+                  {(() => {
+                    const sel = solicitacoesFiltradas.filter((x) => selectedItems.has(x.id) && x.status === 'pendente');
+                    const porData = {};
+                    for (const x of sel) {
+                      const d = dataPagamentoReal || x.dt_pagamento || 'sem data';
+                      porData[d] = porData[d] || { n: 0, valor: 0 };
+                      porData[d].n++;
+                      porData[d].valor += parseFloat(x.vl_fatura) || 0;
+                    }
+                    const datas = Object.keys(porData).sort();
+                    return (
+                      <div className="pt-1 border-t border-gray-200 space-y-0.5">
+                        <div className="text-[10px] text-gray-500">
+                          {dataPagamentoReal ? `Todas na data única ${dataPagamentoReal.split('-').reverse().join('/')}:` : 'Cada baixa na data do seu pagamento/recebimento:'}
+                        </div>
+                        {datas.map((d) => (
+                          <div key={d} className="flex justify-between text-[11px]">
+                            <span className="text-gray-600">{d === 'sem data' ? 'sem data (vai hoje)' : d.split('-').reverse().join('/')}</span>
+                            <span className="font-semibold">
+                              {porData[d].n} · {formatarMoeda(porData[d].valor)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -1714,7 +1776,7 @@ const SolicitacaoBaixa = () => {
                         !dadosCartaoProcessamento.operadora ||
                         !dadosCartaoProcessamento.autorizacao ||
                         !dadosCartaoProcessamento.nsu)) ||
-                    (formaPagamentoProcessamento === 'cartao_debito' && !dataPagamentoReal)
+                    false
                   }
                   className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white bg-[#000638] rounded-lg hover:bg-[#fe0000] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
