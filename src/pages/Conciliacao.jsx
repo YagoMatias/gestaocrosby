@@ -1,9 +1,28 @@
 // Página: Financeiro → Conciliação → Conciliação
 // Cadastro das contas bancárias do grupo (planilha CONTAS BANCARIAS, 10/2026),
-// agrupadas por empresa. Por enquanto só a lista; o batimento virá depois.
-import React, { useMemo, useState } from 'react';
+// agrupadas por empresa, ligado aos extratos importados na tela Extrato
+// Bancário (/api/fluxo-caixa-ext). Filtra um período, mostra em cada conta
+// o resumo do extrato e, ao clicar na conta, abre o extrato linha a linha.
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import PageTitle from '../components/ui/PageTitle';
-import { Bank, MagnifyingGlass } from '@phosphor-icons/react';
+import { API_BASE_URL } from '../config/constants';
+import {
+  Bank,
+  MagnifyingGlass,
+  CalendarBlank,
+  ArrowsClockwise,
+  ArrowDown,
+  ArrowUp,
+  ArrowsLeftRight,
+  X,
+  Export,
+  Warning,
+  Info,
+} from '@phosphor-icons/react';
+import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
+
+const API = `${API_BASE_URL}/api/fluxo-caixa-ext`;
 
 // CTA = código da conta no TOTVS · CODIGO = código do banco (FEBRABAN)
 const CONTAS = [
@@ -67,10 +86,180 @@ const CONTAS = [
 ];
 
 const EMPRESAS = [...new Set(CONTAS.map((c) => c.empresa))];
+const MESES = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
 
+// ─── helpers ───────────────────────────────────────────────────
+const fmt = (v) =>
+  v != null && !Number.isNaN(Number(v))
+    ? Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+    : '—';
+const fmtData = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '—');
+const fmtDoc = (d) => {
+  const s = String(d || '').replace(/\D/g, '');
+  if (s.length === 14) return s.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+  if (s.length === 11) return s.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
+  return d || '';
+};
+const pad2 = (n) => String(n).padStart(2, '0');
+const iso = (y, m, d) => `${y}-${pad2(m)}-${pad2(d)}`;
+const ultimoDia = (y, m) => new Date(y, m, 0).getDate();
+
+// "36733-8" → "367338" · conta "000578136635" + dv "7" → "5781366357"
+const chaveConta = (conta, dv) => {
+  const num = String(conta ?? '').replace(/\D/g, '').replace(/^0+/, '');
+  const d = String(dv ?? '').replace(/\D/g, '');
+  return num ? num + d : null;
+};
+const chavePlanilha = (c) => {
+  if (!c.conta || c.conta === '-') return null;
+  const [num, dv = ''] = String(c.conta).split('-');
+  return chaveConta(num, dv);
+};
+// banco da planilha × banco importado: código FEBRABAN quando os dois têm; senão nome
+const bancoBate = (c, fc) => {
+  const cod = String(c.codigo ?? '').replace(/\D/g, '');
+  const fcod = String(fc.banco_codigo ?? '').replace(/\D/g, '');
+  if (cod && fcod) return Number(cod) === Number(fcod);
+  const nome = String(c.banco).toUpperCase();
+  return nome.includes(String(fc.banco).toUpperCase());
+};
+
+const BANCOS = {
+  STONE: { label: 'Stone', cor: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
+  SICREDI: { label: 'Sicredi', cor: 'bg-lime-100 text-lime-800 border-lime-300' },
+  CAIXA: { label: 'Caixa', cor: 'bg-blue-100 text-blue-800 border-blue-300' },
+  MENTORE: { label: 'Mêntore', cor: 'bg-purple-100 text-purple-800 border-purple-300' },
+};
+const bancoCfg = (b) => BANCOS[b] || { label: b || '—', cor: 'bg-gray-100 text-gray-700 border-gray-300' };
+const TIPOS = {
+  ENTRADA: { label: 'Entrada', cor: 'bg-green-100 text-green-800 border-green-300', Icon: ArrowDown },
+  SAIDA: { label: 'Saída', cor: 'bg-red-100 text-red-700 border-red-300', Icon: ArrowUp },
+  TRANSFERENCIA: { label: 'Transf.', cor: 'bg-amber-100 text-amber-800 border-amber-300', Icon: ArrowsLeftRight },
+};
+
+const Badge = ({ cfg, children, title }) => (
+  <span title={title} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border whitespace-nowrap ${cfg.cor}`}>
+    {children}
+  </span>
+);
+const Kpi = ({ label, value, sub, tone = 'text-gray-900' }) => (
+  <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3">
+    <p className="text-[10px] text-gray-500 uppercase tracking-wide">{label}</p>
+    <p className={`text-base md:text-lg font-bold mt-0.5 ${tone}`}>{value}</p>
+    {sub && <p className="text-[10px] text-gray-400 mt-0.5">{sub}</p>}
+  </div>
+);
+const Th = ({ children, right, className = '' }) => (
+  <th className={`px-3 py-2 text-xs font-semibold text-gray-600 whitespace-nowrap ${right ? 'text-right' : 'text-left'} ${className}`}>{children}</th>
+);
+
+// ─── página ────────────────────────────────────────────────────
 const Conciliacao = () => {
+  const hoje = new Date();
+  const [ano] = useState(hoje.getFullYear());
+  const [mes, setMes] = useState(MESES[hoje.getMonth()]); // chip ativo (ou 'ANO' / null quando datas manuais)
+  const [de, setDe] = useState(iso(hoje.getFullYear(), hoje.getMonth() + 1, 1));
+  const [ate, setAte] = useState(iso(hoje.getFullYear(), hoje.getMonth() + 1, ultimoDia(hoje.getFullYear(), hoje.getMonth() + 1)));
+
   const [busca, setBusca] = useState('');
   const [empresaFiltro, setEmpresaFiltro] = useState('todas');
+
+  const [fluxoContas, setFluxoContas] = useState([]);
+  const [dados, setDados] = useState(null);
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState(null);
+  const [migrationPendente, setMigrationPendente] = useState(false);
+  const [contaAberta, setContaAberta] = useState(null); // { planilha, fluxo }
+
+  // chips ANO / meses → ajustam as duas datas
+  const escolherMes = (m) => {
+    setMes(m);
+    if (m === 'ANO') {
+      setDe(iso(ano, 1, 1));
+      setAte(iso(ano, 12, 31));
+      return;
+    }
+    const n = MESES.indexOf(m) + 1;
+    setDe(iso(ano, n, 1));
+    setAte(iso(ano, n, ultimoDia(ano, n)));
+  };
+
+  // contas importadas na tela Extrato Bancário
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch(`${API}/contas`);
+        const j = await r.json();
+        if (j?.success) setFluxoContas(j.data || []);
+        else if (r.status === 503) setMigrationPendente(true);
+      } catch (e) {
+        console.error('contas do extrato:', e);
+      }
+    })();
+  }, []);
+
+  // lançamentos do período (todas as contas)
+  const carregar = useCallback(async () => {
+    if (!de || !ate) return;
+    if (de > ate) {
+      setErro('A data inicial não pode ser maior que a final.');
+      return;
+    }
+    setCarregando(true);
+    setErro(null);
+    try {
+      const r = await fetch(`${API}/painel?${new URLSearchParams({ de, ate })}`);
+      const j = await r.json();
+      if (!j?.success) {
+        if (r.status === 503 || j?.error === 'MIGRATION_PENDING') {
+          setMigrationPendente(true);
+          setDados(null);
+          return;
+        }
+        throw new Error(j?.message || 'Falha ao buscar os extratos.');
+      }
+      setMigrationPendente(false);
+      setDados(j.data);
+    } catch (e) {
+      setErro(e.message);
+      setDados(null);
+    } finally {
+      setCarregando(false);
+    }
+  }, [de, ate]);
+
+  useEffect(() => {
+    const t = setTimeout(carregar, 250);
+    return () => clearTimeout(t);
+  }, [carregar]);
+
+  // planilha × contas importadas
+  const ligacoes = useMemo(() => {
+    const map = new Map(); // cta → fluxo conta
+    for (const c of CONTAS) {
+      const k = chavePlanilha(c);
+      if (!k) continue;
+      const fc = fluxoContas.find((f) => chaveConta(f.conta, f.conta_dv) === k && bancoBate(c, f));
+      if (fc) map.set(c.cta, fc);
+    }
+    return map;
+  }, [fluxoContas]);
+
+  const fluxoSemPlanilha = useMemo(() => {
+    const ligados = new Set([...ligacoes.values()].map((f) => f.id));
+    return fluxoContas.filter((f) => !ligados.has(f.id));
+  }, [fluxoContas, ligacoes]);
+
+  // resumo e lançamentos por conta importada (no período)
+  const porContaId = useMemo(() => {
+    const m = new Map();
+    for (const a of dados?.porConta || []) m.set(a.contaId, { ...a, lancamentos: [] });
+    for (const l of dados?.lancamentos || []) {
+      if (!m.has(l.conta_id)) m.set(l.conta_id, { contaId: l.conta_id, entradas: 0, saidas: 0, transfEntradas: 0, transfSaidas: 0, qtd: 0, lancamentos: [] });
+      m.get(l.conta_id).lancamentos.push(l);
+    }
+    return m;
+  }, [dados]);
 
   const contas = useMemo(() => {
     const q = busca.trim().toLowerCase();
@@ -86,60 +275,156 @@ const Conciliacao = () => {
     [contas],
   );
 
-  const th = 'px-3 py-2 text-left text-xs font-semibold text-gray-600 whitespace-nowrap';
+  const totais = useMemo(() => {
+    let entradas = 0;
+    let saidas = 0;
+    let qtd = 0;
+    let comExtrato = 0;
+    for (const c of CONTAS) {
+      const fc = ligacoes.get(c.cta);
+      const r = fc ? porContaId.get(fc.id) : null;
+      if (!r || !r.qtd) continue;
+      comExtrato += 1;
+      entradas += r.entradas + r.transfEntradas;
+      saidas += r.saidas + r.transfSaidas;
+      qtd += r.qtd;
+    }
+    return { entradas, saidas, qtd, comExtrato };
+  }, [ligacoes, porContaId]);
+
   const td = 'px-3 py-2 text-xs whitespace-nowrap';
+  const chip = (ativo) =>
+    `px-2.5 py-1.5 text-[0.7rem] font-medium rounded-md transition-colors ${ativo ? 'bg-[#000638] text-white' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'}`;
 
   return (
     <div className="min-h-screen bg-gray-50 px-3 py-4 md:p-6 pb-24 md:pb-6">
-      <PageTitle title="Conciliação" subtitle="Contas bancárias do grupo cadastradas para conciliação" icon={Bank} />
+      <PageTitle title="Conciliação" subtitle="Contas bancárias do grupo e o extrato importado de cada uma no período" icon={Bank} />
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 md:p-4 mb-4 flex flex-col gap-2.5 md:flex-row md:items-end md:gap-3">
-        <div className="flex-1 min-w-0">
-          <label className="block text-xs font-medium text-gray-500 mb-1">Empresa</label>
-          <select
-            value={empresaFiltro}
-            onChange={(e) => setEmpresaFiltro(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-          >
-            <option value="todas">Todas as empresas ({CONTAS.length} contas)</option>
-            {EMPRESAS.map((e) => (
-              <option key={e} value={e}>
-                {e}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="md:w-72">
-          <label className="block text-xs font-medium text-gray-500 mb-1">Buscar</label>
-          <div className="relative">
-            <MagnifyingGlass size={14} className="absolute left-2.5 top-2.5 text-gray-400" />
-            <input
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-              placeholder="CTA, CNPJ, banco, agência, conta…"
-              className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
+      {/* Filtros */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 md:p-4 mb-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+          <div className="grid grid-cols-2 gap-2 md:flex md:gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1 flex items-center gap-1">
+                <CalendarBlank size={13} /> Data inicial
+              </label>
+              <input
+                type="date"
+                value={de}
+                onChange={(e) => {
+                  setDe(e.target.value);
+                  setMes(null);
+                }}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1 flex items-center gap-1">
+                <CalendarBlank size={13} /> Data final
+              </label>
+              <input
+                type="date"
+                value={ate}
+                onChange={(e) => {
+                  setAte(e.target.value);
+                  setMes(null);
+                }}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+          <div className="flex-1">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Período ({ano})</label>
+            <div className="flex flex-wrap gap-1">
+              <button onClick={() => escolherMes('ANO')} className={`${chip(mes === 'ANO')} px-4`}>
+                ANO
+              </button>
+              {MESES.map((m) => (
+                <button key={m} onClick={() => escolherMes(m)} className={chip(mes === m)}>
+                  {m}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 md:flex md:gap-3">
+            <div className="md:w-56">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Empresa</label>
+              <select
+                value={empresaFiltro}
+                onChange={(e) => setEmpresaFiltro(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
+              >
+                <option value="todas">Todas ({CONTAS.length})</option>
+                {EMPRESAS.map((e) => (
+                  <option key={e} value={e}>
+                    {e}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="md:w-56">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Buscar</label>
+              <div className="relative">
+                <MagnifyingGlass size={14} className="absolute left-2.5 top-2.5 text-gray-400" />
+                <input
+                  value={busca}
+                  onChange={(e) => setBusca(e.target.value)}
+                  placeholder="CTA, CNPJ, banco, conta…"
+                  className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
+      {migrationPendente && (
+        <div className="flex items-start gap-2 px-4 py-3 mb-4 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+          <Warning size={18} className="shrink-0 mt-0.5" />
+          <span>As tabelas do Extrato Bancário ainda não existem no banco. Rode a migration do fluxo de caixa para ligar os extratos.</span>
+        </div>
+      )}
+      {erro && (
+        <div className="flex items-start gap-2 px-4 py-3 mb-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          <Warning size={18} className="shrink-0 mt-0.5" />
+          <span className="flex-1">{erro}</span>
+          <button onClick={() => setErro(null)} className="text-red-400 hover:text-red-600">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
+      {/* KPIs do período */}
+      <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3 mb-4">
+        <Kpi label="Período" value={`${fmtData(de)} a ${fmtData(ate)}`} sub={carregando ? 'carregando…' : `${totais.qtd} lançamentos`} />
+        <Kpi label="Contas com extrato" value={`${totais.comExtrato} de ${CONTAS.length}`} sub={`${ligacoes.size} ligadas ao Extrato Bancário`} />
+        <Kpi label="Entradas" value={fmt(totais.entradas)} sub="inclui transferências recebidas" tone="text-green-700" />
+        <Kpi label="Saídas" value={fmt(totais.saidas)} sub="inclui transferências enviadas" tone="text-red-600" />
+      </div>
+
+      {/* Tabela de contas */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
-                <th className={th}>CTA</th>
-                <th className={th}>CNPJ</th>
-                <th className={th}>Banco</th>
-                <th className={`${th} text-right`}>Código</th>
-                <th className={`${th} text-right`}>Agência</th>
-                <th className={`${th} text-right`}>Conta</th>
+                <Th>CTA</Th>
+                <Th>CNPJ</Th>
+                <Th>Banco</Th>
+                <Th right>Código</Th>
+                <Th right>Agência</Th>
+                <Th right>Conta</Th>
+                <Th right>Lançamentos</Th>
+                <Th right>Entradas</Th>
+                <Th right>Saídas</Th>
+                <Th right>Saldo final</Th>
+                <Th>Extrato</Th>
               </tr>
             </thead>
             <tbody>
               {grupos.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-10 text-gray-400">
+                  <td colSpan={11} className="text-center py-10 text-gray-400">
                     Nenhuma conta encontrada.
                   </td>
                 </tr>
@@ -147,28 +432,303 @@ const Conciliacao = () => {
                 grupos.map((g) => (
                   <React.Fragment key={g.empresa}>
                     <tr className="bg-blue-50 border-b border-blue-100">
-                      <td colSpan={6} className="px-3 py-2 text-xs font-bold text-blue-900 uppercase tracking-wide">
+                      <td colSpan={11} className="px-3 py-2 text-xs font-bold text-blue-900 uppercase tracking-wide">
                         {g.empresa} <span className="font-normal text-blue-700">· {g.contas.length} conta(s)</span>
                       </td>
                     </tr>
-                    {g.contas.map((c) => (
-                      <tr key={`${g.empresa}-${c.cta}`} className="border-b border-gray-100 hover:bg-gray-50">
-                        <td className={`${td} font-mono font-medium text-gray-800`}>{c.cta}</td>
-                        <td className={`${td} font-mono text-gray-600`}>{c.cnpj}</td>
-                        <td className={`${td} text-gray-800`}>{c.banco}</td>
-                        <td className={`${td} text-right font-mono text-gray-600`}>{c.codigo}</td>
-                        <td className={`${td} text-right font-mono text-gray-600`}>{c.ag}</td>
-                        <td className={`${td} text-right font-mono text-gray-800`}>{c.conta}</td>
-                      </tr>
-                    ))}
+                    {g.contas.map((c) => {
+                      const fc = ligacoes.get(c.cta);
+                      const r = fc ? porContaId.get(fc.id) : null;
+                      const temExtrato = !!(r && r.qtd);
+                      const abrir = () => temExtrato && setContaAberta({ planilha: c, fluxo: fc, resumo: r });
+                      return (
+                        <tr
+                          key={`${g.empresa}-${c.cta}`}
+                          onClick={abrir}
+                          className={`border-b border-gray-100 ${temExtrato ? 'cursor-pointer hover:bg-emerald-50' : 'hover:bg-gray-50'}`}
+                          title={temExtrato ? 'Clique para abrir o extrato' : fc ? 'Sem lançamentos no período' : 'Conta sem extrato importado'}
+                        >
+                          <td className={`${td} font-mono font-medium text-gray-800`}>{c.cta}</td>
+                          <td className={`${td} font-mono text-gray-600`}>{c.cnpj}</td>
+                          <td className={`${td} text-gray-800`}>{c.banco}</td>
+                          <td className={`${td} text-right font-mono text-gray-600`}>{c.codigo}</td>
+                          <td className={`${td} text-right font-mono text-gray-600`}>{c.ag}</td>
+                          <td className={`${td} text-right font-mono text-gray-800`}>{c.conta}</td>
+                          <td className={`${td} text-right ${temExtrato ? 'text-gray-800' : 'text-gray-300'}`}>{temExtrato ? r.qtd : '—'}</td>
+                          <td className={`${td} text-right font-semibold ${temExtrato ? 'text-green-700' : 'text-gray-300'}`}>{temExtrato ? fmt(r.entradas + r.transfEntradas) : '—'}</td>
+                          <td className={`${td} text-right font-semibold ${temExtrato ? 'text-red-600' : 'text-gray-300'}`}>{temExtrato ? fmt(r.saidas + r.transfSaidas) : '—'}</td>
+                          <td className={`${td} text-right ${temExtrato ? 'text-gray-800' : 'text-gray-300'}`}>{temExtrato && r.saldoFinal != null ? fmt(r.saldoFinal) : '—'}</td>
+                          <td className={td}>
+                            {temExtrato ? (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  abrir();
+                                }}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-blue-600 text-white hover:bg-blue-700 text-[11px] font-medium"
+                              >
+                                <Bank size={12} /> Ver extrato
+                              </button>
+                            ) : fc ? (
+                              <span className="text-[11px] text-gray-400">sem lançamentos no período</span>
+                            ) : (
+                              <span className="text-[11px] text-gray-300">não importado</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </React.Fragment>
                 ))
               )}
             </tbody>
           </table>
         </div>
-        <div className="px-4 py-3 border-t border-gray-200 bg-gray-50 text-xs text-gray-500">
-          {contas.length} conta(s) · {grupos.length} empresa(s)
+        <div className="px-4 py-3 border-t border-gray-200 bg-gray-50 text-xs text-gray-500 flex flex-wrap gap-x-4 gap-y-1">
+          <span>
+            {contas.length} conta(s) · {grupos.length} empresa(s)
+          </span>
+          {fluxoSemPlanilha.length > 0 && (
+            <span className="flex items-center gap-1 text-amber-700" title={fluxoSemPlanilha.map((f) => `${f.apelido} · ${f.titular_nome || ''}`).join('\n')}>
+              <Info size={13} /> {fluxoSemPlanilha.length} conta(s) com extrato importado não estão na planilha: {fluxoSemPlanilha.map((f) => f.apelido).join(', ')}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {contaAberta && <ModalExtrato aberta={contaAberta} de={de} ate={ate} onClose={() => setContaAberta(null)} />}
+    </div>
+  );
+};
+
+// ─── modal: extrato da conta, linha a linha ────────────────────
+const ModalExtrato = ({ aberta, de, ate, onClose }) => {
+  const { planilha: c, fluxo: fc, resumo: r } = aberta;
+  const [tipo, setTipo] = useState('TODOS');
+  const [busca, setBusca] = useState('');
+
+  useEffect(() => {
+    const h = (e) => e.key === 'Escape' && onClose();
+    document.addEventListener('keydown', h);
+    return () => document.removeEventListener('keydown', h);
+  }, [onClose]);
+
+  const lancamentos = useMemo(() => {
+    const q = busca.trim().toLowerCase();
+    return (r.lancamentos || []).filter((l) => {
+      if (tipo !== 'TODOS' && l.tipo !== tipo) return false;
+      if (q && !`${l.descricao} ${l.memo} ${l.nomeExibicao || ''} ${l.contraparte_nome || ''} ${l.documento || ''} ${l.forma} ${Math.abs(l.valor)}`.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [r, tipo, busca]);
+
+  const tot = useMemo(
+    () => ({
+      c: lancamentos.filter((l) => l.valor > 0).reduce((s, l) => s + l.valor, 0),
+      d: lancamentos.filter((l) => l.valor < 0).reduce((s, l) => s - l.valor, 0),
+    }),
+    [lancamentos],
+  );
+
+  const exportar = () => {
+    const rows = lancamentos.map((l) => ({
+      Data: l.data,
+      Hora: l.hora || '',
+      Tipo: TIPOS[l.tipo]?.label || l.tipo,
+      Forma: l.forma,
+      Histórico: l.descricao,
+      'Contraparte / fornecedor': l.transferencia?.outraConta ? `${l.transferencia.sentido === 'SAIDA' ? '→' : '←'} ${l.transferencia.outraConta.apelido}` : l.nomeExibicao || '',
+      'CNPJ/CPF': l.contraparte_doc || '',
+      Banco: l.contraparte_banco || '',
+      Documento: l.documento || '',
+      Entrada: l.valor > 0 ? l.valor : '',
+      Saída: l.valor < 0 ? -l.valor : '',
+      'Saldo após': l.saldo_apos ?? '',
+      Memo: l.memo || '',
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Extrato');
+    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    saveAs(new Blob([buf]), `extrato_${c.banco.replace(/\s+/g, '_')}_${c.conta}_${de}_${ate}.xlsx`);
+  };
+
+  const bcfg = bancoCfg(fc.banco);
+  const chip = (ativo, cor = 'bg-[#000638] text-white') =>
+    `px-2.5 py-1 text-[11px] font-medium rounded-md border ${ativo ? `${cor} border-transparent` : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'}`;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-stretch md:items-center justify-center md:p-4" onClick={onClose}>
+      <div className="bg-white w-full h-full md:h-[94vh] md:max-w-[96vw] md:rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        {/* cabeçalho */}
+        <div className="px-4 py-3 border-b border-gray-200 flex items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge cfg={bcfg}>{bcfg.label}</Badge>
+              <h3 className="text-sm md:text-base font-bold text-gray-800">
+                {c.banco} · ag {c.ag} · cc {c.conta}
+              </h3>
+              <span className="text-xs text-gray-500">CTA {c.cta}</span>
+            </div>
+            <p className="text-xs text-gray-500 mt-0.5 truncate">
+              {c.empresa} · {c.cnpj}
+              {fc.titular_nome ? ` · titular no extrato: ${fc.titular_nome}` : ''} · {fmtData(de)} a {fmtData(ate)}
+            </p>
+          </div>
+          <button onClick={exportar} className="hidden md:inline-flex items-center gap-1 px-2.5 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700">
+            <Export size={14} /> Excel
+          </button>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1" title="Fechar (Esc)">
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* KPIs */}
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-2 px-4 py-3 bg-gray-50 border-b border-gray-200">
+          <Kpi label="Saldo inicial" value={fmt(r.saldoInicial)} />
+          <Kpi label="Entradas" value={fmt(r.entradas)} sub={`${r.qtd} lançamentos no total`} tone="text-green-700" />
+          <Kpi label="Saídas" value={fmt(r.saidas)} tone="text-red-600" />
+          <Kpi label="Transf. recebidas" value={fmt(r.transfEntradas)} tone="text-amber-700" />
+          <Kpi label="Transf. enviadas" value={fmt(r.transfSaidas)} tone="text-amber-700" />
+          <Kpi label="Saldo final" value={fmt(r.saldoFinal)} sub={r.ultimaData ? `em ${fmtData(r.ultimaData)}` : ''} tone="text-blue-700" />
+        </div>
+
+        {/* filtros do modal */}
+        <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-gray-200">
+          <button onClick={() => setTipo('TODOS')} className={chip(tipo === 'TODOS')}>
+            Todos ({r.lancamentos?.length || 0})
+          </button>
+          {Object.entries(TIPOS).map(([k, t]) => (
+            <button key={k} onClick={() => setTipo(k)} className={chip(tipo === k, t.cor)}>
+              {t.label} ({(r.lancamentos || []).filter((l) => l.tipo === k).length})
+            </button>
+          ))}
+          <div className="relative ml-auto">
+            <MagnifyingGlass size={13} className="absolute left-2 top-2 text-gray-400" />
+            <input
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Buscar histórico, nome, valor…"
+              className="pl-7 pr-2 py-1.5 text-xs border border-gray-300 rounded-lg w-56"
+            />
+          </div>
+        </div>
+
+        {/* tabela */}
+        <div className="flex-1 overflow-auto">
+          <table className="w-full text-sm hidden md:table">
+            <thead className="sticky top-0 bg-gray-50 z-10">
+              <tr className="border-b border-gray-200">
+                <Th>Data</Th>
+                <Th>Tipo</Th>
+                <Th>Forma</Th>
+                <Th>Histórico</Th>
+                <Th>Contraparte / fornecedor</Th>
+                <Th>Banco contraparte</Th>
+                <Th>Documento</Th>
+                <Th right>Entrada</Th>
+                <Th right>Saída</Th>
+                <Th right>Saldo após</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {lancamentos.map((l) => {
+                const tcfg = TIPOS[l.tipo] || TIPOS.SAIDA;
+                return (
+                  <tr key={l.id} className={`border-b border-gray-100 hover:bg-gray-50 text-xs ${l.tipo === 'TRANSFERENCIA' ? 'bg-amber-50/40' : ''}`}>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {fmtData(l.data)} <span className="text-gray-400">{l.hora?.slice(0, 5)}</span>
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <Badge cfg={tcfg}>
+                        <tcfg.Icon size={11} weight="bold" /> {tcfg.label}
+                      </Badge>
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-gray-700">{l.forma}</td>
+                    <td className="px-3 py-2 font-medium text-gray-800 max-w-[260px] truncate" title={l.memo}>
+                      {l.descricao}
+                      {l.bandeira && <span className="ml-1 text-gray-400 font-normal">· {l.bandeira}</span>}
+                      {l.loja && <span className="ml-1 text-gray-400 font-normal">· loja {l.loja}</span>}
+                    </td>
+                    <td className="px-3 py-2 text-gray-700 max-w-[260px]">
+                      {l.transferencia?.outraConta ? (
+                        <span className="text-amber-800 font-medium" title={l.transferencia.outraConta.titular}>
+                          {l.transferencia.sentido === 'SAIDA' ? '→ ' : '← '}
+                          {l.transferencia.outraConta.apelido} ({bancoCfg(l.transferencia.outraConta.banco).label})
+                          <span className="text-gray-400 font-normal"> · {l.nomeExibicao || ''}</span>
+                        </span>
+                      ) : (
+                        <>
+                          <span className="truncate block">{l.nomeExibicao || <span className="text-gray-300">—</span>}</span>
+                          {l.contraparte_doc && <span className="text-gray-400 text-[11px]">{fmtDoc(l.contraparte_doc)}</span>}
+                          {l.contraparteGrupo && (
+                            <span className="ml-1 px-1 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px]" title="CNPJ de uma empresa do grupo">
+                              grupo
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-gray-500 max-w-[180px] truncate" title={l.contraparte_banco || ''}>
+                      {l.contraparte_banco || ''}
+                    </td>
+                    <td className="px-3 py-2 text-gray-400 max-w-[140px] truncate" title={l.documento || ''}>
+                      {l.documento || ''}
+                    </td>
+                    <td className="px-3 py-2 text-right font-semibold text-green-700 whitespace-nowrap">{l.valor > 0 ? fmt(l.valor) : ''}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-red-600 whitespace-nowrap">{l.valor < 0 ? fmt(-l.valor) : ''}</td>
+                    <td className={`px-3 py-2 text-right whitespace-nowrap ${l.saldo_apos < 0 ? 'text-red-600' : 'text-gray-500'}`}>{l.saldo_apos != null ? fmt(l.saldo_apos) : ''}</td>
+                  </tr>
+                );
+              })}
+              {!lancamentos.length && (
+                <tr>
+                  <td colSpan={10} className="px-3 py-8 text-center text-gray-400">
+                    Nenhum lançamento com esses filtros.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+            <tfoot className="sticky bottom-0 bg-gray-50">
+              <tr className="text-xs font-semibold">
+                <td colSpan={7} className="px-3 py-2 text-right text-gray-500">
+                  Total do filtro ({lancamentos.length})
+                </td>
+                <td className="px-3 py-2 text-right text-green-700">{fmt(tot.c)}</td>
+                <td className="px-3 py-2 text-right text-red-600">{fmt(tot.d)}</td>
+                <td />
+              </tr>
+            </tfoot>
+          </table>
+
+          {/* mobile */}
+          <div className="md:hidden divide-y divide-gray-100">
+            {lancamentos.map((l) => {
+              const tcfg = TIPOS[l.tipo] || TIPOS.SAIDA;
+              return (
+                <div key={l.id} className="p-3">
+                  <div className="flex justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-gray-800 truncate">{l.descricao}</p>
+                      <p className="text-[11px] text-gray-500 truncate">
+                        {l.transferencia?.outraConta ? `${l.transferencia.sentido === 'SAIDA' ? '→' : '←'} ${l.transferencia.outraConta.apelido}` : l.nomeExibicao || l.memo}
+                      </p>
+                    </div>
+                    <p className={`text-sm font-bold whitespace-nowrap ${l.valor < 0 ? 'text-red-600' : 'text-green-700'}`}>
+                      {l.valor < 0 ? '−' : '+'}
+                      {fmt(Math.abs(l.valor))}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap justify-between gap-1 mt-1 text-[11px] text-gray-400">
+                    <span>
+                      {fmtData(l.data)} · {l.forma}
+                      {l.saldo_apos != null ? ` · saldo ${fmt(l.saldo_apos)}` : ''}
+                    </span>
+                    <Badge cfg={tcfg}>{tcfg.label}</Badge>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
