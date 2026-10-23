@@ -90,10 +90,11 @@ const SolicitacaoBaixa = () => {
       cardAuto: true,
       // TOTVS: cartão seq 63 (portador 9901 "PAGARME DEBITO"), operatorName PAGARME.
       // Combinação ainda em acerto — os dois campos ficam editáveis.
-      // payment-cards seq 63: operatorName "PAGARME"; bandeira a ser preenchida
-      // no cadastro de cartões (João escolheu "OUTROS" em 23/10/2026).
+      // Fixos = exatamente o cadastro de cartões do TOTVS (payment-cards, débito
+      // seq 63, portador 9901): operadora "PAGARME", SEM bandeira. João (23/10/2026):
+      // só a data real é editável; o resto vai padrão.
       operadora: 'PAGARME',
-      bandeira: 'OUTROS',
+      bandeira: '',
     },
     { id: 'credev', label: 'CREDEV', paidType: 5 },
     // Pix pago dentro do app BlueCard, pela conta Pagar.me da Crosby. O dinheiro
@@ -502,8 +503,8 @@ const SolicitacaoBaixa = () => {
                 card: {
                   nsu: nsuDaData(dataBaixa),
                   autorizacao: autorizacaoDaData(dataBaixa),
-                  bandeira: dadosCartaoProcessamento.bandeira || formaSelecionada.bandeira,
-                  operadora: (dadosCartaoProcessamento.operadora || formaSelecionada.operadora),
+                  bandeira: formaSelecionada.bandeira,
+                  operadora: formaSelecionada.operadora,
                   parcelas: 1,
                 },
               }
@@ -530,7 +531,7 @@ const SolicitacaoBaixa = () => {
             formaPagamentoProcessamento === 'cartao_credito'
               ? dadosCartaoProcessamento
               : formaSelecionada?.cardAuto
-                ? { bandeira: dadosCartaoProcessamento.bandeira || formaSelecionada.bandeira, operadora: (dadosCartaoProcessamento.operadora || formaSelecionada.operadora), parcelas: 1 }
+                ? { bandeira: formaSelecionada.bandeira, operadora: formaSelecionada.operadora, parcelas: 1 }
                 : undefined,
         }),
       });
@@ -1418,7 +1419,7 @@ const SolicitacaoBaixa = () => {
                     if (e.target.value === 'cartao_debito') {
                       setDadosCartaoProcessamento((prev) => ({
                         ...prev,
-                        bandeira: 'OUTROS',
+                        bandeira: '',
                         operadora: 'PAGARME',
                       }));
                     }
@@ -1599,43 +1600,25 @@ const SolicitacaoBaixa = () => {
                 <div className="bg-violet-50 border border-violet-200 rounded-lg p-4 space-y-3">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-bold text-violet-800">Cartão de Débito · PAGARME DEBITO</p>
-                    <span className="text-[11px] font-bold rounded px-2 py-0.5 bg-violet-700 text-white">operadora PAGARME · sem bandeira · 1x</span>
+                    <span className="text-[11px] font-bold rounded px-2 py-0.5 bg-violet-700 text-white">só a data · resto automático</span>
                   </div>
                   <p className="text-xs text-violet-700">
                     Cada título marcado vai pro TOTVS como <b>cartão de débito</b> (operadora PAGARME, sem bandeira, cartão "PAGARME DEBITO" do cadastro), na <b>data real</b> abaixo. <b>NSU</b> e{' '}
                     <b>autorização</b> são sempre essa data (ex.: 21102026 e 21102026).
                   </p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-0.5">Data real do pagamento *</label>
-                      <input
-                        type="date"
-                        value={dataPagamentoReal}
-                        onChange={(e) => setDataPagamentoReal(e.target.value)}
-                        className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#000638]"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-0.5">Operadora</label>
-                      <input
-                        type="text"
-                        value={dadosCartaoProcessamento.operadora || ''}
-                        onChange={(e) => setDadosCartaoProcessamento((prev) => ({ ...prev, operadora: e.target.value }))}
-                        placeholder="PAGARME"
-                        className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#000638]"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-0.5">Bandeira</label>
-                      <input
-                        type="text"
-                        value={dadosCartaoProcessamento.bandeira ?? ''}
-                        onChange={(e) => setDadosCartaoProcessamento((prev) => ({ ...prev, bandeira: e.target.value }))}
-                        placeholder="OUTROS"
-                        className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#000638]"
-                      />
-                    </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-0.5">Data real do pagamento *</label>
+                    <input
+                      type="date"
+                      value={dataPagamentoReal}
+                      onChange={(e) => setDataPagamentoReal(e.target.value)}
+                      className="border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#000638]"
+                    />
                   </div>
+                  <p className="text-[11px] text-violet-700">
+                    Fixos (iguais ao cadastro do cartão no TOTVS): operadora <b>PAGARME</b>, sem bandeira, 1 parcela, portador 9901 ·
+                    NSU e autorização = data real (ddmmaaaa) · liquidação na empresa 1.
+                  </p>
                 </div>
               )}
               {/* Pagamento real (data da baixa) — demais formas */}
