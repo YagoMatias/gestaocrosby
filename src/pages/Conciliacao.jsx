@@ -279,7 +279,7 @@ const Conciliacao = () => {
         empresa: EMPRESA_POR_RAIZ[String(f.titular_cnpj || '').slice(0, 8)] || OUTRAS,
         cta: `EXT-${f.id}`,
         extra: true,
-        cnpj: f.titular_cnpj ? fmtCnpj(f.titular_cnpj) : '—',
+        cnpj: f.titular_cnpj ? fmtDoc(f.titular_cnpj) : '—',
         banco: `${bancoCfg(f.banco).label.toUpperCase()}${f.apelido ? ` · ${f.apelido}` : ''}`,
         codigo: f.banco_codigo && /^\d+$/.test(String(f.banco_codigo)) ? Number(f.banco_codigo) : '-',
         ag: f.agencia ? String(Number(f.agencia) || f.agencia) : '-',
