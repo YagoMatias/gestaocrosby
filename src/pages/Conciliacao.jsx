@@ -38,7 +38,7 @@ const CONTAS = [
   { empresa: 'FERREIRA COMERCIO E CONFECCOES LTDA', cta: 10009, cnpj: '17.177.680/0001-16', banco: 'UNICRED', codigo: 136, ag: '6012', conta: '6850-0' },
   { empresa: 'FERREIRA COMERCIO E CONFECCOES LTDA', cta: 10010, cnpj: '17.177.680/0001-16', banco: 'BRADESCO', codigo: 237, ag: '2821', conta: '249374-8' },
   { empresa: 'FERREIRA COMERCIO E CONFECCOES LTDA', cta: 10011, cnpj: '17.177.680/0002-05', banco: 'SANTANDER JOAO PESSOA', codigo: 33, ag: '1575', conta: '13001128-2' },
-  { empresa: 'FERREIRA COMERCIO E CONFECCOES LTDA', cta: 10012, cnpj: '17.177.680/0009-73', banco: 'STONE TERESINA', codigo: 197, ag: '1', conta: '-' },
+  { empresa: 'FERREIRA COMERCIO E CONFECCOES LTDA', cta: 10012, cnpj: '17.177.680/0009-73', banco: 'STONE TERESINA', codigo: 197, ag: '1', conta: '47185882-9' },
   { empresa: 'FERREIRA COMERCIO E CONFECCOES LTDA', cta: 10018, cnpj: '17.177.680/0010-07', banco: 'STONE BREJINHO', codigo: 197, ag: '1', conta: '71938990-0' },
   { empresa: 'FERREIRA COMERCIO E CONFECCOES LTDA', cta: 60001, cnpj: '17.177.680/0001-16', banco: 'MENTORE', codigo: '-', ag: '1', conta: '47097134-2' },
   { empresa: 'FERREIRA COMERCIO E CONFECCOES LTDA', cta: 1015, cnpj: '17.177.680/0010-07', banco: 'PAGARME', codigo: '-', ag: '-', conta: '-', ligacao: { banco: 'PAGARME', conta: 'CROSBY' } },
@@ -52,7 +52,7 @@ const CONTAS = [
   { empresa: 'FA MODA & VAREJO LTDA', cta: 20010, cnpj: '27.728.810/0001-15', banco: 'SICREDI', codigo: 748, ag: '2207', conta: '32693-3' },
   { empresa: 'FA MODA & VAREJO LTDA', cta: 20011, cnpj: '27.728.810/0001-15', banco: 'BANCO DO NORDESTE 1', codigo: 4, ag: '35', conta: '069922-0' },
   { empresa: 'FA MODA & VAREJO LTDA', cta: 20012, cnpj: '27.728.810/0001-15', banco: 'BANCO DO NORDESTE 2', codigo: 44, ag: '35', conta: '069921-1' },
-  { empresa: 'FA MODA & VAREJO LTDA', cta: 20013, cnpj: '27.728.810/0001-15', banco: 'UNICRED', codigo: 136, ag: '6012', conta: '249374-8' },
+  { empresa: 'FA MODA & VAREJO LTDA', cta: 20013, cnpj: '27.728.810/0001-15', banco: 'UNICRED', codigo: 136, ag: '6012', conta: '7098-0' },
   { empresa: 'FA MODA & VAREJO LTDA', cta: 20014, cnpj: '27.728.810/0001-15', banco: 'BRADESCO', codigo: 237, ag: '2821', conta: '249286-5' },
   { empresa: 'FA MODA & VAREJO LTDA', cta: 20020, cnpj: '27.728.810/0009-72', banco: 'STONE CIDADE JARDIM', codigo: 197, ag: '1', conta: '38055887-4' },
   { empresa: 'FA MODA & VAREJO LTDA', cta: 20021, cnpj: '27.728.810/0006-20', banco: 'STONE CANGUARETAMA', codigo: 197, ag: '1', conta: '44463972-8' },
@@ -86,6 +86,19 @@ const CONTAS = [
 ];
 
 const EMPRESAS = [...new Set(CONTAS.map((c) => c.empresa))];
+const EMPRESA_POR_RAIZ = {
+  17177680: 'FERREIRA COMERCIO E CONFECCOES LTDA',
+  27728810: 'FA MODA & VAREJO LTDA',
+  33592092: 'AZ VESTUARIO LTDA',
+  53661116: 'IRMAOS VAREJO COMERCIAL LTDA',
+  36569459: 'CROSBY RECIFE MALL LTDA',
+  61469380: 'SERVICOS INTEGRADOS',
+  61469224: 'SERVICOS INTEGRADOS',
+  61469160: 'SERVICOS INTEGRADOS',
+  61480564: 'SERVICOS INTEGRADOS',
+  61504881: 'SERVICOS INTEGRADOS',
+};
+const OUTRAS = 'OUTRAS CONTAS IMPORTADAS (fora da planilha)';
 const MESES = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
 
 // ─── helpers ───────────────────────────────────────────────────
@@ -256,10 +269,38 @@ const Conciliacao = () => {
     return map;
   }, [fluxoContas]);
 
-  const fluxoSemPlanilha = useMemo(() => {
+  // contas importadas no Extrato Bancário que não estão na planilha: entram
+  // como linhas extras (empresa deduzida pela raiz do CNPJ do titular)
+  const extras = useMemo(() => {
     const ligados = new Set([...ligacoes.values()].map((f) => f.id));
-    return fluxoContas.filter((f) => !ligados.has(f.id));
+    return fluxoContas
+      .filter((f) => !ligados.has(f.id))
+      .map((f) => ({
+        empresa: EMPRESA_POR_RAIZ[String(f.titular_cnpj || '').slice(0, 8)] || OUTRAS,
+        cta: `EXT-${f.id}`,
+        extra: true,
+        cnpj: f.titular_cnpj ? fmtCnpj(f.titular_cnpj) : '—',
+        banco: `${bancoCfg(f.banco).label.toUpperCase()}${f.apelido ? ` · ${f.apelido}` : ''}`,
+        codigo: f.banco_codigo && /^\d+$/.test(String(f.banco_codigo)) ? Number(f.banco_codigo) : '-',
+        ag: f.agencia ? String(Number(f.agencia) || f.agencia) : '-',
+        conta: `${f.conta}${f.conta_dv ? `-${f.conta_dv}` : ''}`,
+        titular: f.titular_nome || null,
+        _fluxo: f,
+      }));
   }, [fluxoContas, ligacoes]);
+
+  const ligacoesTodas = useMemo(() => {
+    const m = new Map(ligacoes);
+    for (const e of extras) m.set(e.cta, e._fluxo);
+    return m;
+  }, [ligacoes, extras]);
+
+  const todasContas = useMemo(() => [...CONTAS, ...extras], [extras]);
+  const empresasTodas = useMemo(() => {
+    const lista = [...EMPRESAS];
+    for (const e of extras) if (!lista.includes(e.empresa)) lista.push(e.empresa);
+    return lista;
+  }, [extras]);
 
   // resumo e lançamentos por conta importada (no período)
   const porContaId = useMemo(() => {
@@ -274,16 +315,16 @@ const Conciliacao = () => {
 
   const contas = useMemo(() => {
     const q = busca.trim().toLowerCase();
-    return CONTAS.filter((c) => {
+    return todasContas.filter((c) => {
       if (empresaFiltro !== 'todas' && c.empresa !== empresaFiltro) return false;
-      if (q && !`${c.cta} ${c.cnpj} ${c.banco} ${c.codigo} ${c.ag} ${c.conta}`.toLowerCase().includes(q)) return false;
+      if (q && !`${c.cta} ${c.cnpj} ${c.banco} ${c.codigo} ${c.ag} ${c.conta} ${c.titular || ''}`.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [busca, empresaFiltro]);
+  }, [busca, empresaFiltro, todasContas]);
 
   const grupos = useMemo(
-    () => EMPRESAS.map((e) => ({ empresa: e, contas: contas.filter((c) => c.empresa === e) })).filter((g) => g.contas.length),
-    [contas],
+    () => empresasTodas.map((e) => ({ empresa: e, contas: contas.filter((c) => c.empresa === e) })).filter((g) => g.contas.length),
+    [contas, empresasTodas],
   );
 
   const totais = useMemo(() => {
@@ -291,8 +332,8 @@ const Conciliacao = () => {
     let saidas = 0;
     let qtd = 0;
     let comExtrato = 0;
-    for (const c of CONTAS) {
-      const fc = ligacoes.get(c.cta);
+    for (const c of todasContas) {
+      const fc = ligacoesTodas.get(c.cta);
       const r = fc ? porContaId.get(fc.id) : null;
       if (!r || !r.qtd) continue;
       comExtrato += 1;
@@ -301,7 +342,7 @@ const Conciliacao = () => {
       qtd += r.qtd;
     }
     return { entradas, saidas, qtd, comExtrato };
-  }, [ligacoes, porContaId]);
+  }, [ligacoesTodas, porContaId, todasContas]);
 
   const td = 'px-3 py-2 text-xs whitespace-nowrap';
   const chip = (ativo) =>
@@ -365,8 +406,8 @@ const Conciliacao = () => {
                 onChange={(e) => setEmpresaFiltro(e.target.value)}
                 className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
               >
-                <option value="todas">Todas ({CONTAS.length})</option>
-                {EMPRESAS.map((e) => (
+                <option value="todas">Todas ({todasContas.length})</option>
+                {empresasTodas.map((e) => (
                   <option key={e} value={e}>
                     {e}
                   </option>
@@ -408,7 +449,7 @@ const Conciliacao = () => {
       {/* KPIs do período */}
       <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3 mb-4">
         <Kpi label="Período" value={`${fmtData(de)} a ${fmtData(ate)}`} sub={carregando ? 'carregando…' : `${totais.qtd} lançamentos`} />
-        <Kpi label="Contas com extrato" value={`${totais.comExtrato} de ${CONTAS.length}`} sub={`${ligacoes.size} ligadas ao Extrato Bancário`} />
+        <Kpi label="Contas com extrato" value={`${totais.comExtrato} de ${todasContas.length}`} sub={`${ligacoes.size} da planilha + ${extras.length} só no Extrato Bancário`} />
         <Kpi label="Entradas" value={fmt(totais.entradas)} sub="inclui transferências recebidas" tone="text-green-700" />
         <Kpi label="Saídas" value={fmt(totais.saidas)} sub="inclui transferências enviadas" tone="text-red-600" />
       </div>
@@ -443,12 +484,12 @@ const Conciliacao = () => {
                 grupos.map((g) => (
                   <React.Fragment key={g.empresa}>
                     <tr className="bg-blue-50 border-b border-blue-100">
-                      <td colSpan={11} className="px-3 py-2 text-xs font-bold text-blue-900 uppercase tracking-wide">
-                        {g.empresa} <span className="font-normal text-blue-700">· {g.contas.length} conta(s)</span>
+                      <td colSpan={11} className={`px-3 py-2 text-xs font-bold uppercase tracking-wide ${g.empresa === OUTRAS ? 'text-amber-900 bg-amber-50' : 'text-blue-900'}`}>
+                        {g.empresa} <span className="font-normal opacity-70">· {g.contas.length} conta(s)</span>
                       </td>
                     </tr>
                     {g.contas.map((c) => {
-                      const fc = ligacoes.get(c.cta);
+                      const fc = ligacoesTodas.get(c.cta);
                       const r = fc ? porContaId.get(fc.id) : null;
                       const temExtrato = !!(r && r.qtd);
                       const abrir = () => temExtrato && setContaAberta({ planilha: c, fluxo: fc, resumo: r });
@@ -459,9 +500,20 @@ const Conciliacao = () => {
                           className={`border-b border-gray-100 ${temExtrato ? 'cursor-pointer hover:bg-emerald-50' : 'hover:bg-gray-50'}`}
                           title={temExtrato ? 'Clique para abrir o extrato' : fc ? 'Sem lançamentos no período' : 'Conta sem extrato importado'}
                         >
-                          <td className={`${td} font-mono font-medium text-gray-800`}>{c.cta}</td>
+                          <td className={`${td} font-mono font-medium text-gray-800`}>
+                            {c.extra ? (
+                              <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-sans" title="Conta importada no Extrato Bancário que não está na planilha de contas">
+                                sem CTA
+                              </span>
+                            ) : (
+                              c.cta
+                            )}
+                          </td>
                           <td className={`${td} font-mono text-gray-600`}>{c.cnpj}</td>
-                          <td className={`${td} text-gray-800`}>{c.banco}</td>
+                          <td className={`${td} text-gray-800`} title={c.titular || ''}>
+                            {c.banco}
+                            {c.extra && c.titular && <span className="block text-[10px] text-gray-400 font-normal">{c.titular}</span>}
+                          </td>
                           <td className={`${td} text-right font-mono text-gray-600`}>{c.codigo}</td>
                           <td className={`${td} text-right font-mono text-gray-600`}>{c.ag}</td>
                           <td className={`${td} text-right font-mono text-gray-800`}>{c.conta}</td>
@@ -499,9 +551,9 @@ const Conciliacao = () => {
           <span>
             {contas.length} conta(s) · {grupos.length} empresa(s)
           </span>
-          {fluxoSemPlanilha.length > 0 && (
-            <span className="flex items-center gap-1 text-amber-700" title={fluxoSemPlanilha.map((f) => `${f.apelido} · ${f.titular_nome || ''}`).join('\n')}>
-              <Info size={13} /> {fluxoSemPlanilha.length} conta(s) com extrato importado não estão na planilha: {fluxoSemPlanilha.map((f) => f.apelido).join(', ')}
+          {extras.length > 0 && (
+            <span className="flex items-center gap-1 text-amber-700">
+              <Info size={13} /> {extras.length} conta(s) marcadas "sem CTA" vieram só do Extrato Bancário; cadastre o código TOTVS delas na planilha quando houver.
             </span>
           )}
         </div>
