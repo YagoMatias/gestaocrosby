@@ -1,8 +1,14 @@
 // Página: Financeiro → Conciliação → Conciliação
-// Cadastro das contas bancárias do grupo (planilha CONTAS BANCARIAS, 10/2026),
-// agrupadas por empresa, ligado aos extratos importados na tela Extrato
-// Bancário (/api/fluxo-caixa-ext). Filtra um período, mostra em cada conta
-// o resumo do extrato e, ao clicar na conta, abre o extrato linha a linha.
+// Contas bancárias do grupo (planilha CONTAS BANCARIAS, 10/2026) ligadas aos
+// extratos importados na tela Extrato Bancário (/api/fluxo-caixa-ext):
+//   • só aparecem contas com extrato importado (as demais da planilha ficam
+//     ocultas até alguém importar o extrato delas);
+//   • contas importadas que não estão na planilha entram automaticamente,
+//     na empresa deduzida pelo CNPJ/titular, e ganham o CTA ao clicar;
+//   • filtro de período (datas + chips de mês) e de banco (um ou mais);
+//   • clique na conta abre o extrato linha a linha.
+// O CTA (código da conta no TOTVS) fica salvo na própria conta importada
+// (fluxo_caixa_contas.cta_totvs) e vale para todos os meses.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
@@ -18,13 +24,16 @@ import {
   Export,
   Warning,
   Info,
+  PencilSimple,
+  Check,
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 
 const API = `${API_BASE_URL}/api/fluxo-caixa-ext`;
 
-// CTA = código da conta no TOTVS · CODIGO = código do banco (FEBRABAN)
+// Planilha CONTAS BANCARIAS — CTA = código da conta no TOTVS · CODIGO = banco (FEBRABAN).
+// Pagar.me não entra na conciliação bancária.
 const CONTAS = [
   // FERREIRA COMERCIO E CONFECCOES LTDA
   { empresa: 'FERREIRA COMERCIO E CONFECCOES LTDA', cta: 10001, cnpj: '17.177.680/0001-16', banco: 'ITAU', codigo: 341, ag: '6530', conta: '27061-7' },
@@ -41,7 +50,6 @@ const CONTAS = [
   { empresa: 'FERREIRA COMERCIO E CONFECCOES LTDA', cta: 10012, cnpj: '17.177.680/0009-73', banco: 'STONE TERESINA', codigo: 197, ag: '1', conta: '47185882-9' },
   { empresa: 'FERREIRA COMERCIO E CONFECCOES LTDA', cta: 10018, cnpj: '17.177.680/0010-07', banco: 'STONE BREJINHO', codigo: 197, ag: '1', conta: '71938990-0' },
   { empresa: 'FERREIRA COMERCIO E CONFECCOES LTDA', cta: 60001, cnpj: '17.177.680/0001-16', banco: 'MENTORE', codigo: '-', ag: '1', conta: '47097134-2' },
-  { empresa: 'FERREIRA COMERCIO E CONFECCOES LTDA', cta: 1015, cnpj: '17.177.680/0010-07', banco: 'PAGARME', codigo: '-', ag: '-', conta: '-', ligacao: { banco: 'PAGARME', conta: 'CROSBY' } },
   // FA MODA & VAREJO LTDA
   { empresa: 'FA MODA & VAREJO LTDA', cta: 20001, cnpj: '27.728.810/0001-15', banco: 'ITAU', codigo: 341, ag: '6530', conta: '33688-9' },
   { empresa: 'FA MODA & VAREJO LTDA', cta: 20002, cnpj: '27.728.810/0001-15', banco: 'ITAU VINCULADA', codigo: 341, ag: '6530', conta: '56927-3' },
@@ -86,6 +94,7 @@ const CONTAS = [
 ];
 
 const EMPRESAS = [...new Set(CONTAS.map((c) => c.empresa))];
+// empresa pela raiz do CNPJ do titular (contas importadas fora da planilha)
 const EMPRESA_POR_RAIZ = {
   17177680: 'FERREIRA COMERCIO E CONFECCOES LTDA',
   27728810: 'FA MODA & VAREJO LTDA',
@@ -98,8 +107,19 @@ const EMPRESA_POR_RAIZ = {
   61480564: 'SERVICOS INTEGRADOS',
   61504881: 'SERVICOS INTEGRADOS',
 };
-const OUTRAS = 'OUTRAS CONTAS IMPORTADAS (fora da planilha)';
+// e pelo nome do titular, quando o extrato não traz CNPJ
+const EMPRESA_POR_TITULAR = [
+  [/FABIO FERREIRA/i, 'FA MODA & VAREJO LTDA'],
+  [/FLAVIO FERREIRA/i, 'IRMAOS VAREJO COMERCIAL LTDA'],
+  [/IRMAOS CR|AZ VESTUARIO/i, 'AZ VESTUARIO LTDA'],
+  [/IRMAOS VAREJO/i, 'IRMAOS VAREJO COMERCIAL LTDA'],
+  [/SERVICOS INTEGRADOS/i, 'SERVICOS INTEGRADOS'],
+  [/RECIFE MALL/i, 'CROSBY RECIFE MALL LTDA'],
+  [/CROSBY|FERREIRA COMERCIO/i, 'FERREIRA COMERCIO E CONFECCOES LTDA'],
+];
+const OUTRAS = 'OUTRAS CONTAS IMPORTADAS';
 const MESES = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
+const BANCOS_FORA = new Set(['PAGARME']); // adquirente, não entra na conciliação bancária
 
 // ─── helpers ───────────────────────────────────────────────────
 const fmt = (v) =>
@@ -133,9 +153,12 @@ const bancoBate = (c, fc) => {
   const cod = String(c.codigo ?? '').replace(/\D/g, '');
   const fcod = String(fc.banco_codigo ?? '').replace(/\D/g, '');
   if (cod && fcod) return Number(cod) === Number(fcod);
-  const nome = String(c.banco).toUpperCase();
-  return nome.includes(String(fc.banco).toUpperCase());
+  return String(c.banco).toUpperCase().includes(String(fc.banco).toUpperCase());
 };
+const empresaDaConta = (fc) =>
+  EMPRESA_POR_RAIZ[String(fc.titular_cnpj || '').slice(0, 8)] ||
+  EMPRESA_POR_TITULAR.find(([re]) => re.test(String(fc.titular_nome || '')))?.[1] ||
+  OUTRAS;
 
 const BANCOS = {
   STONE: { label: 'Stone', cor: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
@@ -146,7 +169,9 @@ const BANCOS = {
   SANTANDER: { label: 'Santander', cor: 'bg-rose-100 text-rose-800 border-rose-300' },
   UNICRED: { label: 'Unicred', cor: 'bg-teal-100 text-teal-800 border-teal-300' },
   DAYCOVAL: { label: 'Daycoval', cor: 'bg-sky-100 text-sky-800 border-sky-300' },
-  PAGARME: { label: 'Pagar.me', cor: 'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-300' },
+  BRADESCO: { label: 'Bradesco', cor: 'bg-red-100 text-red-900 border-red-300' },
+  ITAU: { label: 'Itaú', cor: 'bg-orange-100 text-orange-800 border-orange-300' },
+  BB: { label: 'Banco do Brasil', cor: 'bg-yellow-100 text-yellow-800 border-yellow-300' },
 };
 const bancoCfg = (b) => BANCOS[b] || { label: b || '—', cor: 'bg-gray-100 text-gray-700 border-gray-300' };
 const TIPOS = {
@@ -175,21 +200,23 @@ const Th = ({ children, right, className = '' }) => (
 const Conciliacao = () => {
   const hoje = new Date();
   const [ano] = useState(hoje.getFullYear());
-  const [mes, setMes] = useState(MESES[hoje.getMonth()]); // chip ativo (ou 'ANO' / null quando datas manuais)
+  const [mes, setMes] = useState(MESES[hoje.getMonth()]);
   const [de, setDe] = useState(iso(hoje.getFullYear(), hoje.getMonth() + 1, 1));
   const [ate, setAte] = useState(iso(hoje.getFullYear(), hoje.getMonth() + 1, ultimoDia(hoje.getFullYear(), hoje.getMonth() + 1)));
 
   const [busca, setBusca] = useState('');
   const [empresaFiltro, setEmpresaFiltro] = useState('todas');
+  const [bancosSel, setBancosSel] = useState([]); // [] = todos
 
   const [fluxoContas, setFluxoContas] = useState([]);
   const [dados, setDados] = useState(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(null);
   const [migrationPendente, setMigrationPendente] = useState(false);
-  const [contaAberta, setContaAberta] = useState(null); // { planilha, fluxo }
+  const [contaAberta, setContaAberta] = useState(null);
+  const [editandoCta, setEditandoCta] = useState(null); // { fluxoId, valor }
+  const [salvandoCta, setSalvandoCta] = useState(false);
 
-  // chips ANO / meses → ajustam as duas datas
   const escolherMes = (m) => {
     setMes(m);
     if (m === 'ANO') {
@@ -202,21 +229,20 @@ const Conciliacao = () => {
     setAte(iso(ano, n, ultimoDia(ano, n)));
   };
 
-  // contas importadas na tela Extrato Bancário
-  useEffect(() => {
-    (async () => {
-      try {
-        const r = await fetch(`${API}/contas`);
-        const j = await r.json();
-        if (j?.success) setFluxoContas(j.data || []);
-        else if (r.status === 503) setMigrationPendente(true);
-      } catch (e) {
-        console.error('contas do extrato:', e);
-      }
-    })();
+  const carregarContas = useCallback(async () => {
+    try {
+      const r = await fetch(`${API}/contas`);
+      const j = await r.json();
+      if (j?.success) setFluxoContas((j.data || []).filter((f) => !BANCOS_FORA.has(f.banco)));
+      else if (r.status === 503) setMigrationPendente(true);
+    } catch (e) {
+      console.error('contas do extrato:', e);
+    }
   }, []);
+  useEffect(() => {
+    carregarContas();
+  }, [carregarContas]);
 
-  // lançamentos do período (todas as contas)
   const carregar = useCallback(async () => {
     if (!de || !ate) return;
     if (de > ate) {
@@ -245,39 +271,29 @@ const Conciliacao = () => {
       setCarregando(false);
     }
   }, [de, ate]);
-
   useEffect(() => {
     const t = setTimeout(carregar, 250);
     return () => clearTimeout(t);
   }, [carregar]);
 
-  // planilha × contas importadas
-  const ligacoes = useMemo(() => {
-    const map = new Map(); // cta → fluxo conta
+  // ── planilha × contas importadas → linhas da tela ──
+  const linhasBase = useMemo(() => {
+    const ligados = new Set();
+    const out = [];
     for (const c of CONTAS) {
-      // ligação explícita (ex.: Pagar.me, que não tem número de conta)
-      if (c.ligacao) {
-        const fc = fluxoContas.find((f) => f.banco === c.ligacao.banco && String(f.conta).toUpperCase() === String(c.ligacao.conta).toUpperCase());
-        if (fc) map.set(c.cta, fc);
-        continue;
-      }
       const k = chavePlanilha(c);
       if (!k) continue;
       const fc = fluxoContas.find((f) => chaveConta(f.conta, f.conta_dv) === k && bancoBate(c, f));
-      if (fc) map.set(c.cta, fc);
+      if (!fc) continue; // sem extrato importado: fica fora da tela
+      ligados.add(fc.id);
+      out.push({ key: `P-${c.cta}`, empresa: c.empresa, ctaPlanilha: c.cta, cnpj: c.cnpj, banco: c.banco, codigo: c.codigo, ag: c.ag, conta: c.conta, fluxo: fc });
     }
-    return map;
-  }, [fluxoContas]);
-
-  // contas importadas no Extrato Bancário que não estão na planilha: entram
-  // como linhas extras (empresa deduzida pela raiz do CNPJ do titular)
-  const extras = useMemo(() => {
-    const ligados = new Set([...ligacoes.values()].map((f) => f.id));
-    return fluxoContas
-      .filter((f) => !ligados.has(f.id))
-      .map((f) => ({
-        empresa: EMPRESA_POR_RAIZ[String(f.titular_cnpj || '').slice(0, 8)] || OUTRAS,
-        cta: `EXT-${f.id}`,
+    for (const f of fluxoContas) {
+      if (ligados.has(f.id)) continue;
+      out.push({
+        key: `E-${f.id}`,
+        empresa: empresaDaConta(f),
+        ctaPlanilha: null,
         extra: true,
         cnpj: f.titular_cnpj ? fmtDoc(f.titular_cnpj) : '—',
         banco: `${bancoCfg(f.banco).label.toUpperCase()}${f.apelido ? ` · ${f.apelido}` : ''}`,
@@ -285,22 +301,18 @@ const Conciliacao = () => {
         ag: f.agencia ? String(Number(f.agencia) || f.agencia) : '-',
         conta: `${f.conta}${f.conta_dv ? `-${f.conta_dv}` : ''}`,
         titular: f.titular_nome || null,
-        _fluxo: f,
-      }));
-  }, [fluxoContas, ligacoes]);
+        fluxo: f,
+      });
+    }
+    return out;
+  }, [fluxoContas]);
 
-  const ligacoesTodas = useMemo(() => {
-    const m = new Map(ligacoes);
-    for (const e of extras) m.set(e.cta, e._fluxo);
-    return m;
-  }, [ligacoes, extras]);
-
-  const todasContas = useMemo(() => [...CONTAS, ...extras], [extras]);
+  const bancosDisponiveis = useMemo(() => [...new Set(linhasBase.map((l) => l.fluxo.banco))].sort(), [linhasBase]);
   const empresasTodas = useMemo(() => {
     const lista = [...EMPRESAS];
-    for (const e of extras) if (!lista.includes(e.empresa)) lista.push(e.empresa);
+    for (const l of linhasBase) if (!lista.includes(l.empresa)) lista.push(l.empresa);
     return lista;
-  }, [extras]);
+  }, [linhasBase]);
 
   // resumo e lançamentos por conta importada (no período)
   const porContaId = useMemo(() => {
@@ -313,18 +325,36 @@ const Conciliacao = () => {
     return m;
   }, [dados]);
 
-  const contas = useMemo(() => {
+  const linhas = useMemo(() => {
     const q = busca.trim().toLowerCase();
-    return todasContas.filter((c) => {
-      if (empresaFiltro !== 'todas' && c.empresa !== empresaFiltro) return false;
-      if (q && !`${c.cta} ${c.cnpj} ${c.banco} ${c.codigo} ${c.ag} ${c.conta} ${c.titular || ''}`.toLowerCase().includes(q)) return false;
-      return true;
-    });
-  }, [busca, empresaFiltro, todasContas]);
+    const sel = new Set(bancosSel);
+    return linhasBase
+      .map((l) => ({ ...l, resumo: porContaId.get(l.fluxo.id) || null, cta: l.fluxo.cta_totvs || l.ctaPlanilha || null }))
+      .filter((l) => {
+        if (empresaFiltro !== 'todas' && l.empresa !== empresaFiltro) return false;
+        if (sel.size && !sel.has(l.fluxo.banco)) return false;
+        if (q && !`${l.cta || ''} ${l.cnpj} ${l.banco} ${l.codigo} ${l.ag} ${l.conta} ${l.titular || ''} ${l.fluxo.apelido || ''}`.toLowerCase().includes(q)) return false;
+        return true;
+      });
+  }, [linhasBase, porContaId, busca, empresaFiltro, bancosSel]);
 
+  // grupos por empresa; dentro do grupo, contas com lançamentos primeiro
   const grupos = useMemo(
-    () => empresasTodas.map((e) => ({ empresa: e, contas: contas.filter((c) => c.empresa === e) })).filter((g) => g.contas.length),
-    [contas, empresasTodas],
+    () =>
+      empresasTodas
+        .map((e) => ({
+          empresa: e,
+          contas: linhas
+            .filter((l) => l.empresa === e)
+            .sort((a, b) => {
+              const ta = a.resumo?.qtd ? 1 : 0;
+              const tb = b.resumo?.qtd ? 1 : 0;
+              if (ta !== tb) return tb - ta;
+              return String(a.banco).localeCompare(String(b.banco)) || String(a.conta).localeCompare(String(b.conta));
+            }),
+        }))
+        .filter((g) => g.contas.length),
+    [linhas, empresasTodas],
   );
 
   const totais = useMemo(() => {
@@ -332,9 +362,8 @@ const Conciliacao = () => {
     let saidas = 0;
     let qtd = 0;
     let comExtrato = 0;
-    for (const c of todasContas) {
-      const fc = ligacoesTodas.get(c.cta);
-      const r = fc ? porContaId.get(fc.id) : null;
+    for (const l of linhas) {
+      const r = l.resumo;
       if (!r || !r.qtd) continue;
       comExtrato += 1;
       entradas += r.entradas + r.transfEntradas;
@@ -342,18 +371,39 @@ const Conciliacao = () => {
       qtd += r.qtd;
     }
     return { entradas, saidas, qtd, comExtrato };
-  }, [ligacoesTodas, porContaId, todasContas]);
+  }, [linhas]);
+
+  // ── CTA editável (salvo na conta importada) ──
+  const salvarCta = async () => {
+    if (!editandoCta) return;
+    setSalvandoCta(true);
+    try {
+      const r = await fetch(`${API}/contas/${editandoCta.fluxoId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cta_totvs: editandoCta.valor.trim() || null }),
+      });
+      const j = await r.json();
+      if (!j?.success) throw new Error(j?.message || 'Falha ao salvar o CTA.');
+      setFluxoContas((prev) => prev.map((f) => (f.id === editandoCta.fluxoId ? { ...f, cta_totvs: j.data?.cta_totvs ?? (editandoCta.valor.trim() || null) } : f)));
+      setEditandoCta(null);
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setSalvandoCta(false);
+    }
+  };
 
   const td = 'px-3 py-2 text-xs whitespace-nowrap';
-  const chip = (ativo) =>
-    `px-2.5 py-1.5 text-[0.7rem] font-medium rounded-md transition-colors ${ativo ? 'bg-[#000638] text-white' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-300'}`;
+  const chip = (ativo, cor = 'bg-[#000638] text-white') =>
+    `px-2.5 py-1.5 text-[0.7rem] font-medium rounded-md transition-colors border ${ativo ? `${cor} border-transparent` : 'bg-white text-gray-600 hover:bg-gray-100 border-gray-300'}`;
 
   return (
     <div className="min-h-screen bg-gray-50 px-3 py-4 md:p-6 pb-24 md:pb-6">
       <PageTitle title="Conciliação" subtitle="Contas bancárias do grupo e o extrato importado de cada uma no período" icon={Bank} />
 
       {/* Filtros */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 md:p-4 mb-4">
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 md:p-4 mb-4 flex flex-col gap-3">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
           <div className="grid grid-cols-2 gap-2 md:flex md:gap-3">
             <div>
@@ -398,6 +448,30 @@ const Conciliacao = () => {
               ))}
             </div>
           </div>
+        </div>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+          <div className="flex-1">
+            <label className="block text-xs font-medium text-gray-500 mb-1">
+              Bancos {bancosSel.length ? `(${bancosSel.length} selecionado${bancosSel.length > 1 ? 's' : ''})` : '(todos)'}
+            </label>
+            <div className="flex flex-wrap gap-1">
+              <button onClick={() => setBancosSel([])} className={chip(!bancosSel.length)}>
+                Todos
+              </button>
+              {bancosDisponiveis.map((b) => {
+                const ativo = bancosSel.includes(b);
+                return (
+                  <button
+                    key={b}
+                    onClick={() => setBancosSel((prev) => (prev.includes(b) ? prev.filter((x) => x !== b) : [...prev, b]))}
+                    className={`px-2.5 py-1.5 text-[0.7rem] font-medium rounded-md border ${ativo ? `${bancoCfg(b).cor} ring-2 ring-offset-1 ring-blue-400` : 'bg-white text-gray-600 hover:bg-gray-100 border-gray-300'}`}
+                  >
+                    {bancoCfg(b).label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-2 md:flex md:gap-3">
             <div className="md:w-56">
               <label className="block text-xs font-medium text-gray-500 mb-1">Empresa</label>
@@ -406,7 +480,7 @@ const Conciliacao = () => {
                 onChange={(e) => setEmpresaFiltro(e.target.value)}
                 className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
               >
-                <option value="todas">Todas ({todasContas.length})</option>
+                <option value="todas">Todas ({linhasBase.length})</option>
                 {empresasTodas.map((e) => (
                   <option key={e} value={e}>
                     {e}
@@ -446,15 +520,15 @@ const Conciliacao = () => {
         </div>
       )}
 
-      {/* KPIs do período */}
+      {/* KPIs */}
       <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3 mb-4">
         <Kpi label="Período" value={`${fmtData(de)} a ${fmtData(ate)}`} sub={carregando ? 'carregando…' : `${totais.qtd} lançamentos`} />
-        <Kpi label="Contas com extrato" value={`${totais.comExtrato} de ${todasContas.length}`} sub={`${ligacoes.size} da planilha + ${extras.length} só no Extrato Bancário`} />
+        <Kpi label="Contas com lançamentos" value={`${totais.comExtrato} de ${linhas.length}`} sub={`${linhasBase.length} contas com extrato importado`} />
         <Kpi label="Entradas" value={fmt(totais.entradas)} sub="inclui transferências recebidas" tone="text-green-700" />
         <Kpi label="Saídas" value={fmt(totais.saidas)} sub="inclui transferências enviadas" tone="text-red-600" />
       </div>
 
-      {/* Tabela de contas */}
+      {/* Tabela */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -477,46 +551,72 @@ const Conciliacao = () => {
               {grupos.length === 0 ? (
                 <tr>
                   <td colSpan={11} className="text-center py-10 text-gray-400">
-                    Nenhuma conta encontrada.
+                    {linhasBase.length ? 'Nenhuma conta com esses filtros.' : 'Nenhuma conta com extrato importado. Importe os extratos na tela Extrato Bancário.'}
                   </td>
                 </tr>
               ) : (
                 grupos.map((g) => (
                   <React.Fragment key={g.empresa}>
-                    <tr className="bg-blue-50 border-b border-blue-100">
-                      <td colSpan={11} className={`px-3 py-2 text-xs font-bold uppercase tracking-wide ${g.empresa === OUTRAS ? 'text-amber-900 bg-amber-50' : 'text-blue-900'}`}>
+                    <tr className={`border-b ${g.empresa === OUTRAS ? 'bg-amber-50 border-amber-100' : 'bg-blue-50 border-blue-100'}`}>
+                      <td colSpan={11} className={`px-3 py-2 text-xs font-bold uppercase tracking-wide ${g.empresa === OUTRAS ? 'text-amber-900' : 'text-blue-900'}`}>
                         {g.empresa} <span className="font-normal opacity-70">· {g.contas.length} conta(s)</span>
                       </td>
                     </tr>
-                    {g.contas.map((c) => {
-                      const fc = ligacoesTodas.get(c.cta);
-                      const r = fc ? porContaId.get(fc.id) : null;
+                    {g.contas.map((l) => {
+                      const r = l.resumo;
                       const temExtrato = !!(r && r.qtd);
-                      const abrir = () => temExtrato && setContaAberta({ planilha: c, fluxo: fc, resumo: r });
+                      const abrir = () => temExtrato && setContaAberta({ linha: l, resumo: r });
+                      const editando = editandoCta?.fluxoId === l.fluxo.id;
                       return (
                         <tr
-                          key={`${g.empresa}-${c.cta}`}
+                          key={l.key}
                           onClick={abrir}
-                          className={`border-b border-gray-100 ${temExtrato ? 'cursor-pointer hover:bg-emerald-50' : 'hover:bg-gray-50'}`}
-                          title={temExtrato ? 'Clique para abrir o extrato' : fc ? 'Sem lançamentos no período' : 'Conta sem extrato importado'}
+                          className={`border-b border-gray-100 ${temExtrato ? 'cursor-pointer hover:bg-emerald-50' : 'text-gray-500 hover:bg-gray-50'}`}
+                          title={temExtrato ? 'Clique para abrir o extrato' : 'Sem lançamentos no período'}
                         >
-                          <td className={`${td} font-mono font-medium text-gray-800`}>
-                            {c.extra ? (
-                              <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-sans" title="Conta importada no Extrato Bancário que não está na planilha de contas">
-                                sem CTA
+                          <td className={`${td} font-mono font-medium text-gray-800`} onClick={(e) => e.stopPropagation()}>
+                            {editando ? (
+                              <span className="inline-flex items-center gap-1">
+                                <input
+                                  autoFocus
+                                  value={editandoCta.valor}
+                                  onChange={(e) => setEditandoCta({ ...editandoCta, valor: e.target.value })}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') salvarCta();
+                                    if (e.key === 'Escape') setEditandoCta(null);
+                                  }}
+                                  placeholder="CTA"
+                                  className="w-20 px-1.5 py-0.5 text-xs border border-blue-400 rounded focus:ring-2 focus:ring-blue-500"
+                                />
+                                <button onClick={salvarCta} disabled={salvandoCta} className="text-green-600 hover:text-green-800" title="Salvar">
+                                  {salvandoCta ? <ArrowsClockwise size={14} className="animate-spin" /> : <Check size={14} weight="bold" />}
+                                </button>
+                                <button onClick={() => setEditandoCta(null)} className="text-gray-400 hover:text-gray-600" title="Cancelar">
+                                  <X size={14} />
+                                </button>
                               </span>
                             ) : (
-                              c.cta
+                              <button
+                                onClick={() => setEditandoCta({ fluxoId: l.fluxo.id, valor: l.cta ? String(l.cta) : '' })}
+                                className={`inline-flex items-center gap-1 rounded px-1 -mx-1 hover:bg-blue-50 ${l.cta ? 'text-gray-800' : 'text-amber-700'}`}
+                                title={l.cta ? 'Clique para alterar o CTA' : 'Clique para informar o CTA (código da conta no TOTVS)'}
+                              >
+                                {l.cta || <span className="px-1.5 py-0.5 rounded bg-amber-100 text-[10px] font-sans">+ CTA</span>}
+                                <PencilSimple size={11} className="opacity-40" />
+                              </button>
                             )}
                           </td>
-                          <td className={`${td} font-mono text-gray-600`}>{c.cnpj}</td>
-                          <td className={`${td} text-gray-800`} title={c.titular || ''}>
-                            {c.banco}
-                            {c.extra && c.titular && <span className="block text-[10px] text-gray-400 font-normal">{c.titular}</span>}
+                          <td className={`${td} font-mono text-gray-600`}>{l.cnpj}</td>
+                          <td className={`${td} text-gray-800`} title={l.titular || l.fluxo.titular_nome || ''}>
+                            <span className="inline-flex items-center gap-1.5">
+                              <Badge cfg={bancoCfg(l.fluxo.banco)}>{bancoCfg(l.fluxo.banco).label}</Badge>
+                              {l.banco}
+                            </span>
+                            {l.extra && l.titular && <span className="block text-[10px] text-gray-400 font-normal">{l.titular}</span>}
                           </td>
-                          <td className={`${td} text-right font-mono text-gray-600`}>{c.codigo}</td>
-                          <td className={`${td} text-right font-mono text-gray-600`}>{c.ag}</td>
-                          <td className={`${td} text-right font-mono text-gray-800`}>{c.conta}</td>
+                          <td className={`${td} text-right font-mono text-gray-600`}>{l.codigo}</td>
+                          <td className={`${td} text-right font-mono text-gray-600`}>{l.ag}</td>
+                          <td className={`${td} text-right font-mono text-gray-800`}>{l.conta}</td>
                           <td className={`${td} text-right ${temExtrato ? 'text-gray-800' : 'text-gray-300'}`}>{temExtrato ? r.qtd : '—'}</td>
                           <td className={`${td} text-right font-semibold ${temExtrato ? 'text-green-700' : 'text-gray-300'}`}>{temExtrato ? fmt(r.entradas + r.transfEntradas) : '—'}</td>
                           <td className={`${td} text-right font-semibold ${temExtrato ? 'text-red-600' : 'text-gray-300'}`}>{temExtrato ? fmt(r.saidas + r.transfSaidas) : '—'}</td>
@@ -532,10 +632,8 @@ const Conciliacao = () => {
                               >
                                 <Bank size={12} /> Ver extrato
                               </button>
-                            ) : fc ? (
-                              <span className="text-[11px] text-gray-400">sem lançamentos no período</span>
                             ) : (
-                              <span className="text-[11px] text-gray-300">não importado</span>
+                              <span className="text-[11px] text-gray-400">sem lançamentos no período</span>
                             )}
                           </td>
                         </tr>
@@ -549,13 +647,11 @@ const Conciliacao = () => {
         </div>
         <div className="px-4 py-3 border-t border-gray-200 bg-gray-50 text-xs text-gray-500 flex flex-wrap gap-x-4 gap-y-1">
           <span>
-            {contas.length} conta(s) · {grupos.length} empresa(s)
+            {linhas.length} conta(s) · {grupos.length} empresa(s)
           </span>
-          {extras.length > 0 && (
-            <span className="flex items-center gap-1 text-amber-700">
-              <Info size={13} /> {extras.length} conta(s) marcadas "sem CTA" vieram só do Extrato Bancário; cadastre o código TOTVS delas na planilha quando houver.
-            </span>
-          )}
+          <span className="flex items-center gap-1 text-gray-400">
+            <Info size={13} /> Só aparecem contas com extrato importado. O CTA é salvo na conta e vale para todos os meses.
+          </span>
         </div>
       </div>
 
@@ -566,7 +662,8 @@ const Conciliacao = () => {
 
 // ─── modal: extrato da conta, linha a linha ────────────────────
 const ModalExtrato = ({ aberta, de, ate, onClose }) => {
-  const { planilha: c, fluxo: fc, resumo: r } = aberta;
+  const { linha: c, resumo: r } = aberta;
+  const fc = c.fluxo;
   const [tipo, setTipo] = useState('TODOS');
   const [busca, setBusca] = useState('');
 
@@ -612,7 +709,7 @@ const ModalExtrato = ({ aberta, de, ate, onClose }) => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Extrato');
     const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-    saveAs(new Blob([buf]), `extrato_${c.banco.replace(/\s+/g, '_')}_${c.conta}_${de}_${ate}.xlsx`);
+    saveAs(new Blob([buf]), `extrato_${String(c.banco).replace(/[^\w]+/g, '_')}_${c.conta}_${de}_${ate}.xlsx`);
   };
 
   const bcfg = bancoCfg(fc.banco);
@@ -622,7 +719,6 @@ const ModalExtrato = ({ aberta, de, ate, onClose }) => {
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-stretch md:items-center justify-center md:p-4" onClick={onClose}>
       <div className="bg-white w-full h-full md:h-[94vh] md:max-w-[96vw] md:rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
-        {/* cabeçalho */}
         <div className="px-4 py-3 border-b border-gray-200 flex items-start gap-3">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
@@ -630,7 +726,7 @@ const ModalExtrato = ({ aberta, de, ate, onClose }) => {
               <h3 className="text-sm md:text-base font-bold text-gray-800">
                 {c.banco} · ag {c.ag} · cc {c.conta}
               </h3>
-              <span className="text-xs text-gray-500">CTA {c.cta}</span>
+              <span className="text-xs text-gray-500">{c.cta ? `CTA ${c.cta}` : 'sem CTA'}</span>
             </div>
             <p className="text-xs text-gray-500 mt-0.5 truncate">
               {c.empresa} · {c.cnpj}
@@ -645,7 +741,6 @@ const ModalExtrato = ({ aberta, de, ate, onClose }) => {
           </button>
         </div>
 
-        {/* KPIs */}
         <div className="grid grid-cols-2 md:grid-cols-6 gap-2 px-4 py-3 bg-gray-50 border-b border-gray-200">
           <Kpi label="Saldo inicial" value={fmt(r.saldoInicial)} />
           <Kpi label="Entradas" value={fmt(r.entradas)} sub={`${r.qtd} lançamentos no total`} tone="text-green-700" />
@@ -655,7 +750,6 @@ const ModalExtrato = ({ aberta, de, ate, onClose }) => {
           <Kpi label="Saldo final" value={fmt(r.saldoFinal)} sub={r.ultimaData ? `em ${fmtData(r.ultimaData)}` : ''} tone="text-blue-700" />
         </div>
 
-        {/* filtros do modal */}
         <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-gray-200">
           <button onClick={() => setTipo('TODOS')} className={chip(tipo === 'TODOS')}>
             Todos ({r.lancamentos?.length || 0})
@@ -676,7 +770,6 @@ const ModalExtrato = ({ aberta, de, ate, onClose }) => {
           </div>
         </div>
 
-        {/* tabela */}
         <div className="flex-1 overflow-auto">
           <table className="w-full text-sm hidden md:table">
             <thead className="sticky top-0 bg-gray-50 z-10">
@@ -763,7 +856,6 @@ const ModalExtrato = ({ aberta, de, ate, onClose }) => {
             </tfoot>
           </table>
 
-          {/* mobile */}
           <div className="md:hidden divide-y divide-gray-100">
             {lancamentos.map((l) => {
               const tcfg = TIPOS[l.tipo] || TIPOS.SAIDA;
