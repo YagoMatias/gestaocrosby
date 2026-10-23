@@ -270,11 +270,6 @@ const AVAILABLE_PAGES = [
     category: 'DRE',
   },
   {
-    path: '/despesas-gerais/graficos',
-    name: 'Gráficos',
-    category: 'DRE',
-  },
-  {
     path: '/despesas-gerais/analise-horizontal',
     name: 'Análise Horizontal',
     category: 'DRE',
@@ -292,11 +287,6 @@ const AVAILABLE_PAGES = [
   {
     path: '/despesas-gerais/corte',
     name: 'Corte de Custo',
-    category: 'DRE',
-  },
-  {
-    path: '/despesas-gerais/headcoach',
-    name: 'Contas Sintéticas',
     category: 'DRE',
   },
   {

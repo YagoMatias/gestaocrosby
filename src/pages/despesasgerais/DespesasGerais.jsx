@@ -4,12 +4,10 @@ import PageTitle from '../../components/ui/PageTitle';
 import {
   ChartPieSlice,
   Table,
-  ChartLineUp,
   Rows,
   Columns,
   Flag,
   Scissors,
-  ClipboardText,
   DownloadSimple,
   UploadSimple,
   ArrowCounterClockwise,
@@ -36,11 +34,9 @@ import {
 } from './store';
 import VisaoGeral from './VisaoGeral';
 import DreAnalitica from './DreAnalitica';
-import Graficos from './Graficos';
 import AnaliseHorizontal from './AnaliseHorizontal';
 import AnaliseVertical from './AnaliseVertical';
 import PaginaFlags from './PaginaFlags';
-import HeadcoachContas from './HeadcoachContas';
 import Auditoria from './Auditoria';
 
 ChartJS.register(
@@ -70,12 +66,6 @@ const PAGINAS = {
     icon: Table,
     comp: DreAnalitica,
   },
-  graficos: {
-    titulo: 'Despesas Gerais — Gráficos',
-    subtitulo: 'Top despesas, desvios do orçamento e evolução mensal',
-    icon: ChartLineUp,
-    comp: Graficos,
-  },
   'analise-horizontal': {
     titulo: 'Análise Horizontal',
     subtitulo: 'Como cada despesa variou de Janeiro a Julho',
@@ -100,12 +90,6 @@ const PAGINAS = {
     subtitulo: 'Lançamentos marcados como oportunidade de corte de custo',
     icon: Scissors,
     comp: (props) => <PaginaFlags tipo="corte" {...props} />,
-  },
-  headcoach: {
-    titulo: 'Contas a Pagar — Sintética',
-    subtitulo: 'Análise Janeiro · Conta Sintética / Analítica',
-    icon: ClipboardText,
-    comp: HeadcoachContas,
   },
   auditoria: {
     titulo: 'Auditoria',

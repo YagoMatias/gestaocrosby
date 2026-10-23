@@ -438,13 +438,6 @@ const financeiro = [
         roles: ['owner', 'admin', 'manager', 'user'],
       },
       {
-        name: 'Gráficos',
-        href: '/despesas-gerais/graficos',
-        icon: ChartLineUp,
-        color: 'text-purple-600',
-        roles: ['owner', 'admin', 'manager', 'user'],
-      },
-      {
         name: 'Análise Horizontal',
         href: '/despesas-gerais/analise-horizontal',
         icon: TrendUp,
@@ -470,13 +463,6 @@ const financeiro = [
         href: '/despesas-gerais/corte',
         icon: Target,
         color: 'text-red-600',
-        roles: ['owner', 'admin', 'manager', 'user'],
-      },
-      {
-        name: 'Contas Sintéticas',
-        href: '/despesas-gerais/headcoach',
-        icon: Article,
-        color: 'text-purple-600',
         roles: ['owner', 'admin', 'manager', 'user'],
       },
       {
