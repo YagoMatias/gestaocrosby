@@ -810,21 +810,21 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
   const [busca, setBusca] = useState('');
   const [picker, setPicker] = useState(null); // { lancamento, candidatos, avisos, decisao }
   const [selecao, setSelecao] = useState([]); // candidatos marcados (podem somar a saída)
-  const [buscaCp, setBuscaCp] = useState({ aberta: false, duplicata: '', fornecedor: '', de: '', ate: '', valorMin: '', valorMax: '', carregando: false, resultados: null, avisos: [] });
+  const [buscaCp, setBuscaCp] = useState({ aberta: false, duplicata: '', fornecedor: '', de: '', ate: '', emissaoDe: '', emissaoAte: '', valorMin: '', valorMax: '', carregando: false, resultados: null, avisos: [] });
   const keyCand = (c) => `${c.origem}:${c.id}`;
   const toggleSel = (c) => setSelecao((prev) => (prev.some((x) => keyCand(x) === keyCand(c)) ? prev.filter((x) => keyCand(x) !== keyCand(c)) : [...prev, c]));
   const somaSel = selecao.reduce((s, c) => s + Number(c.restante ?? c.valor ?? 0), 0);
   const abrirPicker = (dados) => {
     setPicker(dados);
     setSelecao([]);
-    setBuscaCp((b) => ({ ...b, aberta: false, resultados: null, avisos: [], fornecedor: dados.lancamento?.nomeExibicao || dados.lancamento?.contraparte_nome || '', valorMin: '', valorMax: '', duplicata: '', de: '', ate: '' }));
+    setBuscaCp((b) => ({ ...b, aberta: false, resultados: null, avisos: [], fornecedor: dados.lancamento?.nomeExibicao || dados.lancamento?.contraparte_nome || '', valorMin: '', valorMax: '', duplicata: '', de: '', ate: '', emissaoDe: '', emissaoAte: '' }));
   };
   const pesquisarCp = async () => {
     if (!picker) return;
     setBuscaCp((b) => ({ ...b, carregando: true, resultados: null, avisos: [] }));
     try {
       const q = new URLSearchParams({ lancamentoId: picker.lancamento.id });
-      for (const k of ['duplicata', 'fornecedor', 'de', 'ate', 'valorMin', 'valorMax']) if (String(buscaCp[k] || '').trim()) q.set(k, String(buscaCp[k]).trim());
+      for (const k of ['duplicata', 'fornecedor', 'de', 'ate', 'emissaoDe', 'emissaoAte', 'valorMin', 'valorMax']) if (String(buscaCp[k] || '').trim()) q.set(k, String(buscaCp[k]).trim());
       const r = await fetch(`${API}/conciliacao/buscar-cp?${q}`);
       const j = await r.json();
       if (!j?.success) throw new Error(j?.message || 'Falha na busca.');
@@ -1240,22 +1240,53 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
                     <div className="border-t border-gray-200">
                       <button onClick={() => setBuscaCp((b) => ({ ...b, aberta: !b.aberta }))} className="w-full flex items-center justify-between px-4 py-2 text-xs font-semibold text-gray-700 bg-gray-50 hover:bg-gray-100">
                         <span className="inline-flex items-center gap-1">
-                          <MagnifyingGlass size={13} /> Procurar no Contas a Pagar (duplicata, fornecedor, vencimento, valor)
+                          <MagnifyingGlass size={13} /> Procurar no Contas a Pagar (duplicata, fornecedor, emissão, vencimento, valor)
                         </span>
                         <span className="text-gray-400">{buscaCp.aberta ? 'ocultar' : 'abrir'}</span>
                       </button>
                       {buscaCp.aberta && (
                         <div className="p-3 space-y-2">
-                          <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
-                            <input value={buscaCp.duplicata} onChange={(e) => setBuscaCp({ ...buscaCp, duplicata: e.target.value })} placeholder="Nº duplicata" className="px-2 py-1.5 text-xs border border-gray-300 rounded-lg" />
-                            <input value={buscaCp.fornecedor} onChange={(e) => setBuscaCp({ ...buscaCp, fornecedor: e.target.value })} placeholder="Fornecedor (nome ou CNPJ)" className="px-2 py-1.5 text-xs border border-gray-300 rounded-lg md:col-span-2" />
-                            <input type="date" value={buscaCp.de} onChange={(e) => setBuscaCp({ ...buscaCp, de: e.target.value })} title="Vencimento de" className="px-2 py-1.5 text-xs border border-gray-300 rounded-lg" />
-                            <input type="date" value={buscaCp.ate} onChange={(e) => setBuscaCp({ ...buscaCp, ate: e.target.value })} title="Vencimento até" className="px-2 py-1.5 text-xs border border-gray-300 rounded-lg" />
-                            <div className="flex gap-1">
-                              <input value={buscaCp.valorMin} onChange={(e) => setBuscaCp({ ...buscaCp, valorMin: e.target.value })} placeholder="Valor de" className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-lg" />
-                              <input value={buscaCp.valorMax} onChange={(e) => setBuscaCp({ ...buscaCp, valorMax: e.target.value })} placeholder="até" className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-lg" />
-                            </div>
-                          </div>
+                          {(() => {
+                            const inp = 'w-full px-2 py-1.5 text-xs border border-gray-300 rounded-lg';
+                            const Lbl = ({ children }) => <label className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-0.5">{children}</label>;
+                            const set = (k) => (e) => setBuscaCp({ ...buscaCp, [k]: e.target.value });
+                            return (
+                              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2">
+                                <div>
+                                  <Lbl>Nº duplicata</Lbl>
+                                  <input value={buscaCp.duplicata} onChange={set('duplicata')} placeholder="ex.: 160605" className={inp} />
+                                </div>
+                                <div className="md:col-span-3 lg:col-span-3">
+                                  <Lbl>Fornecedor</Lbl>
+                                  <input value={buscaCp.fornecedor} onChange={set('fornecedor')} placeholder="nome, CNPJ/CPF ou código no TOTVS" className={inp} />
+                                </div>
+                                <div>
+                                  <Lbl>Emissão de</Lbl>
+                                  <input type="date" value={buscaCp.emissaoDe} onChange={set('emissaoDe')} className={inp} />
+                                </div>
+                                <div>
+                                  <Lbl>Emissão até</Lbl>
+                                  <input type="date" value={buscaCp.emissaoAte} onChange={set('emissaoAte')} className={inp} />
+                                </div>
+                                <div>
+                                  <Lbl>Vencimento de</Lbl>
+                                  <input type="date" value={buscaCp.de} onChange={set('de')} className={inp} />
+                                </div>
+                                <div>
+                                  <Lbl>Vencimento até</Lbl>
+                                  <input type="date" value={buscaCp.ate} onChange={set('ate')} className={inp} />
+                                </div>
+                                <div>
+                                  <Lbl>Valor de</Lbl>
+                                  <input value={buscaCp.valorMin} onChange={set('valorMin')} placeholder="0,00" className={inp} />
+                                </div>
+                                <div>
+                                  <Lbl>Valor até</Lbl>
+                                  <input value={buscaCp.valorMax} onChange={set('valorMax')} placeholder="0,00" className={inp} />
+                                </div>
+                              </div>
+                            );
+                          })()}
                           <div className="flex items-center gap-2">
                             <button onClick={pesquisarCp} disabled={buscaCp.carregando} className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-md bg-[#000638] text-white hover:bg-blue-900 disabled:opacity-50">
                               {buscaCp.carregando ? <ArrowsClockwise size={12} className="animate-spin" /> : <MagnifyingGlass size={12} />} Buscar
