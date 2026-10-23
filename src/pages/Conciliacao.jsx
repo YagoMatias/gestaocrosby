@@ -26,11 +26,34 @@ import {
   Info,
   PencilSimple,
   Check,
+  CheckCircle,
+  Lightning,
+  ArrowCounterClockwise,
+  ChatText,
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 
 const API = `${API_BASE_URL}/api/fluxo-caixa-ext`;
+
+// cabeçalho com o usuário logado (vai para `usuario` nas conciliações)
+const headersUsuario = () => {
+  try {
+    const u = JSON.parse(localStorage.getItem('user') || localStorage.getItem('usuario') || 'null');
+    const nome = u?.name || u?.nome || u?.email || null;
+    return nome ? { 'x-user-name': nome } : {};
+  } catch {
+    return {};
+  }
+};
+const ORIGENS = {
+  TRANSFERENCIA: { label: 'Transferência', cor: 'bg-amber-100 text-amber-800 border-amber-300' },
+  LIBERACAO: { label: 'Liberação de Pagamento', cor: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
+  SOLICITACAO: { label: 'Solicitações Crosby', cor: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
+  TOTVS_CP: { label: 'Contas a Pagar (TOTVS)', cor: 'bg-blue-100 text-blue-800 border-blue-300' },
+  MANUAL: { label: 'Justificado', cor: 'bg-gray-100 text-gray-700 border-gray-300' },
+};
+const origemCfg = (o) => ORIGENS[o] || { label: o || '—', cor: 'bg-gray-100 text-gray-700 border-gray-300' };
 
 // Planilha CONTAS BANCARIAS — CTA = código da conta no TOTVS · CODIGO = banco (FEBRABAN).
 // Pagar.me não entra na conciliação bancária.
@@ -213,9 +236,11 @@ const Conciliacao = () => {
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(null);
   const [migrationPendente, setMigrationPendente] = useState(false);
-  const [contaAberta, setContaAberta] = useState(null);
+  const [contaAberta, setContaAberta] = useState(null); // linha (o resumo é lido ao vivo de porContaId)
   const [editandoCta, setEditandoCta] = useState(null); // { fluxoId, valor }
   const [salvandoCta, setSalvandoCta] = useState(false);
+  const [conciliando, setConciliando] = useState(false);
+  const [aviso, setAviso] = useState(null);
 
   const escolherMes = (m) => {
     setMes(m);
@@ -362,6 +387,9 @@ const Conciliacao = () => {
     let saidas = 0;
     let qtd = 0;
     let comExtrato = 0;
+    let pendencias = 0;
+    let pendEntradas = 0;
+    let pendSaidas = 0;
     for (const l of linhas) {
       const r = l.resumo;
       if (!r || !r.qtd) continue;
@@ -369,9 +397,43 @@ const Conciliacao = () => {
       entradas += r.entradas + r.transfEntradas;
       saidas += r.saidas + r.transfSaidas;
       qtd += r.qtd;
+      pendencias += r.pendencias || 0;
+      pendEntradas += r.pendEntradas || 0;
+      pendSaidas += r.pendSaidas || 0;
     }
-    return { entradas, saidas, qtd, comExtrato };
+    return { entradas, saidas, qtd, comExtrato, pendencias, pendEntradas, pendSaidas };
   }, [linhas]);
+
+  // ── conciliação (chamadas ao backend; depois recarrega o painel) ──
+  const apiConc = async (url, opts = {}) => {
+    const r = await fetch(url, { ...opts, headers: { 'Content-Type': 'application/json', ...headersUsuario(), ...(opts.headers || {}) } });
+    const j = await r.json();
+    if (!j?.success) throw new Error(j?.message || 'Falha na conciliação.');
+    return j;
+  };
+  const conciliarAutomatico = async (contaId) => {
+    setConciliando(true);
+    setErro(null);
+    try {
+      const j = await apiConc(`${API}/conciliacao/automatica`, { method: 'POST', body: JSON.stringify({ contaId: contaId || null, de, ate }) });
+      const r = j.data;
+      setAviso(`${r.conciliadas.length} saída(s) conciliada(s) automaticamente · ${r.ambiguas.length} com mais de um candidato (resolva na linha) · ${r.semCandidato} sem candidato${r.avisos?.length ? ` · ${r.avisos.join('; ')}` : ''}`);
+      await carregar();
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setConciliando(false);
+    }
+  };
+  const salvarConciliacao = async (lancamentoId, origem, referencia, justificativa, pontuacao) => {
+    await apiConc(`${API}/conciliacao`, { method: 'POST', body: JSON.stringify({ lancamentoId, origem, referencia, justificativa, pontuacao }) });
+    await carregar();
+  };
+  const desfazerConciliacao = async (id) => {
+    await apiConc(`${API}/conciliacao/${id}`, { method: 'DELETE' });
+    await carregar();
+  };
+  const buscarCandidatos = async (lancamentoId) => (await apiConc(`${API}/conciliacao/candidatos?lancamentoId=${lancamentoId}`)).data;
 
   // ── CTA editável (salvo na conta importada) ──
   const salvarCta = async () => {
@@ -510,6 +572,15 @@ const Conciliacao = () => {
           <span>As tabelas do Extrato Bancário ainda não existem no banco. Rode a migration do fluxo de caixa para ligar os extratos.</span>
         </div>
       )}
+      {aviso && (
+        <div className="flex items-start gap-2 px-4 py-2.5 mb-4 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-800">
+          <CheckCircle size={16} className="shrink-0 mt-0.5" />
+          <span className="flex-1">{aviso}</span>
+          <button onClick={() => setAviso(null)} className="text-emerald-500 hover:text-emerald-700">
+            <X size={14} />
+          </button>
+        </div>
+      )}
       {erro && (
         <div className="flex items-start gap-2 px-4 py-3 mb-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
           <Warning size={18} className="shrink-0 mt-0.5" />
@@ -523,7 +594,7 @@ const Conciliacao = () => {
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3 mb-4">
         <Kpi label="Período" value={`${fmtData(de)} a ${fmtData(ate)}`} sub={carregando ? 'carregando…' : `${totais.qtd} lançamentos`} />
-        <Kpi label="Contas com lançamentos" value={`${totais.comExtrato} de ${linhas.length}`} sub={`${linhasBase.length} contas com extrato importado`} />
+        <Kpi label="Pendências" value={totais.pendencias} sub={`${totais.pendSaidas} saídas · ${totais.pendEntradas} entradas · ${totais.comExtrato} contas com lançamentos`} tone={totais.pendencias ? 'text-amber-700' : 'text-green-700'} />
         <Kpi label="Entradas" value={fmt(totais.entradas)} sub="inclui transferências recebidas" tone="text-green-700" />
         <Kpi label="Saídas" value={fmt(totais.saidas)} sub="inclui transferências enviadas" tone="text-red-600" />
       </div>
@@ -537,10 +608,11 @@ const Conciliacao = () => {
                 <Th>CTA</Th>
                 <Th>CNPJ</Th>
                 <Th>Banco</Th>
-                <Th right>Código</Th>
                 <Th right>Agência</Th>
                 <Th right>Conta</Th>
-                <Th right>Lançamentos</Th>
+                <Th right>Pendências</Th>
+                <Th right>Saídas pend.</Th>
+                <Th right>Entradas pend.</Th>
                 <Th right>Entradas</Th>
                 <Th right>Saídas</Th>
                 <Th right>Saldo final</Th>
@@ -550,7 +622,7 @@ const Conciliacao = () => {
             <tbody>
               {grupos.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="text-center py-10 text-gray-400">
+                  <td colSpan={12} className="text-center py-10 text-gray-400">
                     {linhasBase.length ? 'Nenhuma conta com esses filtros.' : 'Nenhuma conta com extrato importado. Importe os extratos na tela Extrato Bancário.'}
                   </td>
                 </tr>
@@ -558,14 +630,14 @@ const Conciliacao = () => {
                 grupos.map((g) => (
                   <React.Fragment key={g.empresa}>
                     <tr className={`border-b ${g.empresa === OUTRAS ? 'bg-amber-50 border-amber-100' : 'bg-blue-50 border-blue-100'}`}>
-                      <td colSpan={11} className={`px-3 py-2 text-xs font-bold uppercase tracking-wide ${g.empresa === OUTRAS ? 'text-amber-900' : 'text-blue-900'}`}>
+                      <td colSpan={12} className={`px-3 py-2 text-xs font-bold uppercase tracking-wide ${g.empresa === OUTRAS ? 'text-amber-900' : 'text-blue-900'}`}>
                         {g.empresa} <span className="font-normal opacity-70">· {g.contas.length} conta(s)</span>
                       </td>
                     </tr>
                     {g.contas.map((l) => {
                       const r = l.resumo;
                       const temExtrato = !!(r && r.qtd);
-                      const abrir = () => temExtrato && setContaAberta({ linha: l, resumo: r });
+                      const abrir = () => temExtrato && setContaAberta(l);
                       const editando = editandoCta?.fluxoId === l.fluxo.id;
                       return (
                         <tr
@@ -614,10 +686,13 @@ const Conciliacao = () => {
                             </span>
                             {l.extra && l.titular && <span className="block text-[10px] text-gray-400 font-normal">{l.titular}</span>}
                           </td>
-                          <td className={`${td} text-right font-mono text-gray-600`}>{l.codigo}</td>
                           <td className={`${td} text-right font-mono text-gray-600`}>{l.ag}</td>
                           <td className={`${td} text-right font-mono text-gray-800`}>{l.conta}</td>
-                          <td className={`${td} text-right ${temExtrato ? 'text-gray-800' : 'text-gray-300'}`}>{temExtrato ? r.qtd : '—'}</td>
+                          <td className={`${td} text-right font-bold ${temExtrato ? (r.pendencias ? 'text-amber-700' : 'text-green-700') : 'text-gray-300'}`}>
+                            {temExtrato ? (r.pendencias ? r.pendencias : <span className="inline-flex items-center gap-1"><CheckCircle size={13} weight="fill" /> 0</span>) : '—'}
+                          </td>
+                          <td className={`${td} text-right ${temExtrato && r.pendSaidas ? 'text-red-600' : 'text-gray-300'}`}>{temExtrato ? r.pendSaidas || 0 : '—'}</td>
+                          <td className={`${td} text-right ${temExtrato && r.pendEntradas ? 'text-green-700' : 'text-gray-300'}`}>{temExtrato ? r.pendEntradas || 0 : '—'}</td>
                           <td className={`${td} text-right font-semibold ${temExtrato ? 'text-green-700' : 'text-gray-300'}`}>{temExtrato ? fmt(r.entradas + r.transfEntradas) : '—'}</td>
                           <td className={`${td} text-right font-semibold ${temExtrato ? 'text-red-600' : 'text-gray-300'}`}>{temExtrato ? fmt(r.saidas + r.transfSaidas) : '—'}</td>
                           <td className={`${td} text-right ${temExtrato ? 'text-gray-800' : 'text-gray-300'}`}>{temExtrato && r.saldoFinal != null ? fmt(r.saldoFinal) : '—'}</td>
@@ -652,20 +727,102 @@ const Conciliacao = () => {
           <span className="flex items-center gap-1 text-gray-400">
             <Info size={13} /> Só aparecem contas com extrato importado. O CTA é salvo na conta e vale para todos os meses.
           </span>
+          <button
+            onClick={() => conciliarAutomatico(null)}
+            disabled={conciliando || !totais.pendSaidas}
+            className="ml-auto inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-[#000638] text-white hover:bg-blue-900 disabled:opacity-40 text-[11px] font-medium"
+            title="Procura cada saída pendente de todas as contas em Liberação de Pagamento, Solicitações Crosby e Contas a Pagar; grava só as que batem com segurança"
+          >
+            {conciliando ? <ArrowsClockwise size={12} className="animate-spin" /> : <Lightning size={12} weight="fill" />} Conciliar saídas pendentes (todas as contas)
+          </button>
         </div>
       </div>
 
-      {contaAberta && <ModalExtrato aberta={contaAberta} de={de} ate={ate} onClose={() => setContaAberta(null)} />}
+      {contaAberta && (
+        <ModalExtrato
+          linha={contaAberta}
+          resumo={porContaId.get(contaAberta.fluxo.id)}
+          de={de}
+          ate={ate}
+          onClose={() => setContaAberta(null)}
+          onConciliarConta={() => conciliarAutomatico(contaAberta.fluxo.id)}
+          conciliando={conciliando}
+          salvar={salvarConciliacao}
+          desfazer={desfazerConciliacao}
+          buscar={buscarCandidatos}
+        />
+      )}
     </div>
   );
 };
 
 // ─── modal: extrato da conta, linha a linha ────────────────────
-const ModalExtrato = ({ aberta, de, ate, onClose }) => {
-  const { linha: c, resumo: r } = aberta;
+const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, conciliando, salvar, desfazer, buscar }) => {
   const fc = c.fluxo;
+  const r = resumo || { lancamentos: [], entradas: 0, saidas: 0, transfEntradas: 0, transfSaidas: 0, qtd: 0, pendencias: 0, pendSaidas: 0, pendEntradas: 0 };
   const [tipo, setTipo] = useState('TODOS');
+  const [situacao, setSituacao] = useState('PENDENTES'); // PENDENTES | OK | TODAS
   const [busca, setBusca] = useState('');
+  const [picker, setPicker] = useState(null); // { lancamento, candidatos, avisos, decisao }
+  const [justificando, setJustificando] = useState(null); // { lancamento, texto }
+  const [ocupado, setOcupado] = useState(null); // id do lançamento em processamento
+  const [erroModal, setErroModal] = useState(null);
+
+  const conciliarLinha = async (l) => {
+    setOcupado(l.id);
+    setErroModal(null);
+    try {
+      const d = await buscar(l.id);
+      if (d.decisao?.automatico && d.decisao.escolhido) {
+        const esc = d.decisao.escolhido;
+        await salvar(l.id, esc.origem, { id: esc.id, nome: esc.nome, doc: esc.doc, valor: esc.valor, data: esc.data, empresa: esc.empresa, detalhe: esc.detalhe, motivos: esc.motivos }, [esc.nome, esc.detalhe].filter(Boolean).join(' · '), esc.score);
+      } else {
+        setPicker({ lancamento: l, ...d });
+      }
+    } catch (e) {
+      setErroModal(e.message);
+    } finally {
+      setOcupado(null);
+    }
+  };
+  const escolher = async (cand) => {
+    const l = picker.lancamento;
+    setOcupado(l.id);
+    try {
+      await salvar(l.id, cand.origem, { id: cand.id, nome: cand.nome, doc: cand.doc, valor: cand.valor, data: cand.data, empresa: cand.empresa, detalhe: cand.detalhe, motivos: cand.motivos }, [cand.nome, cand.detalhe].filter(Boolean).join(' · '), cand.score);
+      setPicker(null);
+    } catch (e) {
+      setErroModal(e.message);
+    } finally {
+      setOcupado(null);
+    }
+  };
+  const salvarJustificativa = async () => {
+    const { lancamento: l, texto } = justificando;
+    if (!texto?.trim()) return;
+    setOcupado(l.id);
+    try {
+      await salvar(l.id, 'MANUAL', null, texto.trim(), null);
+      setJustificando(null);
+      setPicker(null);
+    } catch (e) {
+      setErroModal(e.message);
+    } finally {
+      setOcupado(null);
+    }
+  };
+  const desfazerLinha = async (l) => {
+    if (!l.conciliacao?.id) return;
+    if (!window.confirm('Desfazer a conciliação desta linha?')) return;
+    setOcupado(l.id);
+    try {
+      await desfazer(l.conciliacao.id);
+    } catch (e) {
+      setErroModal(e.message);
+    } finally {
+      setOcupado(null);
+    }
+  };
 
   useEffect(() => {
     const h = (e) => e.key === 'Escape' && onClose();
@@ -677,10 +834,14 @@ const ModalExtrato = ({ aberta, de, ate, onClose }) => {
     const q = busca.trim().toLowerCase();
     return (r.lancamentos || []).filter((l) => {
       if (tipo !== 'TODOS' && l.tipo !== tipo) return false;
-      if (q && !`${l.descricao} ${l.memo} ${l.nomeExibicao || ''} ${l.contraparte_nome || ''} ${l.documento || ''} ${l.forma} ${Math.abs(l.valor)}`.toLowerCase().includes(q)) return false;
+      if (situacao === 'PENDENTES' && !l.pendente) return false;
+      if (situacao === 'OK' && l.pendente) return false;
+      if (q && !`${l.descricao} ${l.memo} ${l.nomeExibicao || ''} ${l.contraparte_nome || ''} ${l.documento || ''} ${l.forma} ${Math.abs(l.valor)} ${l.conciliacao?.justificativa || ''}`.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [r, tipo, busca]);
+  }, [r, tipo, situacao, busca]);
+  const qtdPend = (r.lancamentos || []).filter((l) => l.pendente).length;
+  const qtdOk = (r.lancamentos || []).length - qtdPend;
 
   const tot = useMemo(
     () => ({
@@ -718,7 +879,7 @@ const ModalExtrato = ({ aberta, de, ate, onClose }) => {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-stretch md:items-center justify-center md:p-4" onClick={onClose}>
-      <div className="bg-white w-full h-full md:h-[94vh] md:max-w-[96vw] md:rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+      <div className="relative bg-white w-full h-full md:h-[94vh] md:max-w-[96vw] md:rounded-2xl shadow-2xl flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <div className="px-4 py-3 border-b border-gray-200 flex items-start gap-3">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
@@ -749,10 +910,29 @@ const ModalExtrato = ({ aberta, de, ate, onClose }) => {
           <Kpi label="Transf. enviadas" value={fmt(r.transfSaidas)} tone="text-amber-700" />
           <Kpi label="Saldo final" value={fmt(r.saldoFinal)} sub={r.ultimaData ? `em ${fmtData(r.ultimaData)}` : ''} tone="text-blue-700" />
         </div>
+        {erroModal && (
+          <div className="flex items-start gap-2 px-4 py-2 bg-red-50 border-b border-red-200 text-xs text-red-700">
+            <Warning size={14} className="shrink-0 mt-0.5" />
+            <span className="flex-1">{erroModal}</span>
+            <button onClick={() => setErroModal(null)} className="text-red-400">
+              <X size={14} />
+            </button>
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-gray-200">
+          <button onClick={() => setSituacao('PENDENTES')} className={chip(situacao === 'PENDENTES', 'bg-amber-500 text-white')}>
+            Pendentes ({qtdPend})
+          </button>
+          <button onClick={() => setSituacao('OK')} className={chip(situacao === 'OK', 'bg-green-600 text-white')}>
+            OK ({qtdOk})
+          </button>
+          <button onClick={() => setSituacao('TODAS')} className={chip(situacao === 'TODAS')}>
+            Todas ({r.lancamentos?.length || 0})
+          </button>
+          <span className="w-px h-5 bg-gray-200 mx-1" />
           <button onClick={() => setTipo('TODOS')} className={chip(tipo === 'TODOS')}>
-            Todos ({r.lancamentos?.length || 0})
+            Todos tipos
           </button>
           {Object.entries(TIPOS).map(([k, t]) => (
             <button key={k} onClick={() => setTipo(k)} className={chip(tipo === k, t.cor)}>
@@ -768,6 +948,14 @@ const ModalExtrato = ({ aberta, de, ate, onClose }) => {
               className="pl-7 pr-2 py-1.5 text-xs border border-gray-300 rounded-lg w-56"
             />
           </div>
+          <button
+            onClick={onConciliarConta}
+            disabled={conciliando || !r.pendSaidas}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-[#000638] text-white hover:bg-blue-900 disabled:opacity-40 text-[11px] font-medium"
+            title="Procura todas as saídas pendentes desta conta nas três fontes e grava as que batem com segurança"
+          >
+            {conciliando ? <ArrowsClockwise size={12} className="animate-spin" /> : <Lightning size={12} weight="fill" />} Conciliar saídas pendentes ({r.pendSaidas || 0})
+          </button>
         </div>
 
         <div className="flex-1 overflow-auto">
@@ -784,13 +972,14 @@ const ModalExtrato = ({ aberta, de, ate, onClose }) => {
                 <Th right>Entrada</Th>
                 <Th right>Saída</Th>
                 <Th right>Saldo após</Th>
+                <Th>Conciliação</Th>
               </tr>
             </thead>
             <tbody>
               {lancamentos.map((l) => {
                 const tcfg = TIPOS[l.tipo] || TIPOS.SAIDA;
                 return (
-                  <tr key={l.id} className={`border-b border-gray-100 hover:bg-gray-50 text-xs ${l.tipo === 'TRANSFERENCIA' ? 'bg-amber-50/40' : ''}`}>
+                  <tr key={l.id} className={`border-b border-gray-100 hover:bg-gray-50 text-xs ${l.tipo === 'TRANSFERENCIA' ? 'bg-amber-50/40' : ''} ${!l.pendente ? 'opacity-90' : ''}`}>
                     <td className="px-3 py-2 whitespace-nowrap">
                       {fmtData(l.data)} <span className="text-gray-400">{l.hora?.slice(0, 5)}</span>
                     </td>
@@ -833,13 +1022,16 @@ const ModalExtrato = ({ aberta, de, ate, onClose }) => {
                     <td className="px-3 py-2 text-right font-semibold text-green-700 whitespace-nowrap">{l.valor > 0 ? fmt(l.valor) : ''}</td>
                     <td className="px-3 py-2 text-right font-semibold text-red-600 whitespace-nowrap">{l.valor < 0 ? fmt(-l.valor) : ''}</td>
                     <td className={`px-3 py-2 text-right whitespace-nowrap ${l.saldo_apos < 0 ? 'text-red-600' : 'text-gray-500'}`}>{l.saldo_apos != null ? fmt(l.saldo_apos) : ''}</td>
+                    <td className="px-3 py-2 max-w-[300px]">
+                      <CelulaConciliacao l={l} ocupado={ocupado === l.id} onConciliar={() => conciliarLinha(l)} onJustificar={() => setJustificando({ lancamento: l, texto: '' })} onDesfazer={() => desfazerLinha(l)} />
+                    </td>
                   </tr>
                 );
               })}
               {!lancamentos.length && (
                 <tr>
-                  <td colSpan={10} className="px-3 py-8 text-center text-gray-400">
-                    Nenhum lançamento com esses filtros.
+                  <td colSpan={11} className="px-3 py-8 text-center text-gray-400">
+                    {situacao === 'PENDENTES' ? 'Nenhuma pendência com esses filtros — tudo conciliado.' : 'Nenhum lançamento com esses filtros.'}
                   </td>
                 </tr>
               )}
@@ -851,7 +1043,7 @@ const ModalExtrato = ({ aberta, de, ate, onClose }) => {
                 </td>
                 <td className="px-3 py-2 text-right text-green-700">{fmt(tot.c)}</td>
                 <td className="px-3 py-2 text-right text-red-600">{fmt(tot.d)}</td>
-                <td />
+                <td colSpan={2} />
               </tr>
             </tfoot>
           </table>
@@ -880,12 +1072,154 @@ const ModalExtrato = ({ aberta, de, ate, onClose }) => {
                     </span>
                     <Badge cfg={tcfg}>{tcfg.label}</Badge>
                   </div>
+                  <div className="mt-1.5">
+                    <CelulaConciliacao l={l} ocupado={ocupado === l.id} onConciliar={() => conciliarLinha(l)} onJustificar={() => setJustificando({ lancamento: l, texto: '' })} onDesfazer={() => desfazerLinha(l)} />
+                  </div>
                 </div>
               );
             })}
           </div>
         </div>
+
+        {/* escolha de candidato / justificativa */}
+        {(picker || justificando) && (
+          <div className="absolute inset-0 z-20 bg-black/40 flex items-center justify-center p-4" onClick={() => (picker ? setPicker(null) : setJustificando(null))}>
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[80vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+              {picker && !justificando && (
+                <>
+                  <div className="px-4 py-3 border-b border-gray-200">
+                    <h4 className="text-sm font-bold text-gray-800">Conciliar saída de {fmt(Math.abs(picker.lancamento.valor))} em {fmtData(picker.lancamento.data)}</h4>
+                    <p className="text-xs text-gray-500 mt-0.5 truncate">
+                      {picker.lancamento.descricao} · {picker.lancamento.nomeExibicao || picker.lancamento.memo}
+                      {picker.lancamento.contraparte_doc ? ` · ${fmtDoc(picker.lancamento.contraparte_doc)}` : ''}
+                    </p>
+                    {picker.decisao?.motivo && <p className="text-[11px] text-amber-700 mt-1">Não conciliado automaticamente: {picker.decisao.motivo}. Escolha abaixo ou justifique.</p>}
+                    {picker.avisos?.length > 0 && <p className="text-[11px] text-red-600 mt-1">{picker.avisos.join(' · ')}</p>}
+                  </div>
+                  <div className="flex-1 overflow-auto">
+                    {picker.candidatos?.length ? (
+                      <table className="w-full text-xs">
+                        <thead className="bg-gray-50 text-gray-600">
+                          <tr>
+                            <Th>Origem</Th>
+                            <Th>Fornecedor / detalhe</Th>
+                            <Th>Data</Th>
+                            <Th right>Valor</Th>
+                            <Th right>Pontos</Th>
+                            <Th />
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {picker.candidatos.map((cand) => (
+                            <tr key={`${cand.origem}-${cand.id}`} className="border-b border-gray-100 hover:bg-gray-50">
+                              <td className="px-3 py-2 whitespace-nowrap">
+                                <Badge cfg={origemCfg(cand.origem)}>{origemCfg(cand.origem).label}</Badge>
+                              </td>
+                              <td className="px-3 py-2">
+                                <div className="font-medium text-gray-800">{cand.nome || '(sem nome)'}{cand.doc ? <span className="text-gray-400 font-normal"> · {fmtDoc(cand.doc)}</span> : null}</div>
+                                <div className="text-[11px] text-gray-500">{[cand.empresa, cand.detalhe].filter(Boolean).join(' · ')}</div>
+                                <div className="text-[10px] text-emerald-700">{cand.motivos?.join(' · ')}</div>
+                              </td>
+                              <td className="px-3 py-2 whitespace-nowrap">{fmtData(cand.data)}</td>
+                              <td className="px-3 py-2 text-right whitespace-nowrap font-semibold">{fmt(cand.valor)}</td>
+                              <td className="px-3 py-2 text-right whitespace-nowrap">{cand.score}</td>
+                              <td className="px-3 py-2 text-right">
+                                <button disabled={ocupado} onClick={() => escolher(cand)} className="px-2.5 py-1 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50">
+                                  Usar
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <p className="p-6 text-center text-sm text-gray-400">Nenhum pagamento com este valor nas três fontes (±5 dias).</p>
+                    )}
+                  </div>
+                  <div className="px-4 py-3 border-t border-gray-200 flex justify-between gap-2">
+                    <button onClick={() => setJustificando({ lancamento: picker.lancamento, texto: '' })} className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50">
+                      <ChatText size={13} /> Justificar manualmente
+                    </button>
+                    <button onClick={() => setPicker(null)} className="px-3 py-1.5 text-xs rounded-md text-gray-500 hover:bg-gray-100">
+                      Fechar
+                    </button>
+                  </div>
+                </>
+              )}
+              {justificando && (
+                <>
+                  <div className="px-4 py-3 border-b border-gray-200">
+                    <h4 className="text-sm font-bold text-gray-800">
+                      Justificar {justificando.lancamento.valor < 0 ? 'saída' : 'entrada'} de {fmt(Math.abs(justificando.lancamento.valor))} em {fmtData(justificando.lancamento.data)}
+                    </h4>
+                    <p className="text-xs text-gray-500 mt-0.5 truncate">{justificando.lancamento.descricao} · {justificando.lancamento.nomeExibicao || justificando.lancamento.memo}</p>
+                  </div>
+                  <div className="p-4">
+                    <textarea
+                      autoFocus
+                      value={justificando.texto}
+                      onChange={(e) => setJustificando({ ...justificando, texto: e.target.value })}
+                      rows={3}
+                      placeholder="O que foi este lançamento? (ex.: antecipação Stone, boleto cliente X, tarifa, reembolso…)"
+                      className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="px-4 py-3 border-t border-gray-200 flex justify-end gap-2">
+                    <button onClick={() => setJustificando(null)} className="px-3 py-1.5 text-xs rounded-md text-gray-500 hover:bg-gray-100">
+                      Cancelar
+                    </button>
+                    <button disabled={!justificando.texto.trim() || ocupado} onClick={salvarJustificativa} className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50">
+                      <Check size={13} weight="bold" /> Marcar como OK
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
       </div>
+    </div>
+  );
+};
+
+// ─── célula de conciliação (OK / pendente + ações) ─────────────
+const CelulaConciliacao = ({ l, ocupado, onConciliar, onJustificar, onDesfazer }) => {
+  if (ocupado) return <ArrowsClockwise size={14} className="animate-spin text-blue-600" />;
+  const c = l.conciliacao;
+  if (c) {
+    const cfg = origemCfg(c.origem);
+    return (
+      <div className="flex items-start gap-1.5">
+        <CheckCircle size={16} weight="fill" className="text-green-600 shrink-0 mt-0.5" />
+        <div className="min-w-0">
+          <div className="flex items-center gap-1 flex-wrap">
+            <Badge cfg={cfg}>{cfg.label}</Badge>
+            {c.automatico && c.origem !== 'TRANSFERENCIA' && <span className="text-[10px] text-gray-400">auto {c.pontuacao != null ? `· ${c.pontuacao} pts` : ''}</span>}
+          </div>
+          <div className="text-[11px] text-gray-600 truncate max-w-[260px]" title={c.justificativa || ''}>
+            {c.justificativa || c.referencia?.nome || ''}
+          </div>
+          {c.usuario && <div className="text-[10px] text-gray-400">por {c.usuario}</div>}
+        </div>
+        {c.id && (
+          <button onClick={onDesfazer} title="Desfazer conciliação" className="ml-auto text-gray-300 hover:text-red-600 shrink-0">
+            <ArrowCounterClockwise size={13} />
+          </button>
+        )}
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-medium">Pendente</span>
+      {l.valor < 0 ? (
+        <button onClick={onConciliar} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-[#000638] text-white hover:bg-blue-900 text-[11px] font-medium" title="Buscar em Liberação de Pagamento, Solicitações Crosby e Contas a Pagar">
+          <Lightning size={11} weight="fill" /> Conciliar
+        </button>
+      ) : null}
+      <button onClick={onJustificar} className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 text-[11px]" title="Justificar manualmente">
+        <ChatText size={11} /> Justificar
+      </button>
     </div>
   );
 };
