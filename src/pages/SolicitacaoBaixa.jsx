@@ -1083,10 +1083,28 @@ const SolicitacaoBaixa = () => {
                             title="Aberta automaticamente: Pix Pagar.me pago no app BlueCard"
                           />
                         )}
+                        {sol.origem === 'dryland_link' && (
+                          <span
+                            className="inline-block w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0"
+                            title="Pedido pelo link de baixa do Dryland (vendedor mandou o comprovante)"
+                          />
+                        )}
                         {sol.user_nome || '--'}
+                        {Number(sol.nr_fat) === 0 && (
+                          <span
+                            className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800"
+                            title="Título não localizado no TOTVS — conferir pela observação/comprovante e tratar manualmente"
+                          >
+                            a conferir
+                          </span>
+                        )}
                       </div>
                       <div className="text-[10px] text-gray-400">
-                        {sol.origem === 'bluecard_pagarme' ? 'automático · app BlueCard' : sol.user_email}
+                        {sol.origem === 'bluecard_pagarme'
+                          ? 'automático · app BlueCard'
+                          : sol.origem === 'dryland_link'
+                            ? 'automático · link Dryland'
+                            : sol.user_email}
                       </div>
                     </td>
                     <td className="px-3 py-2 text-center text-[10px]">
