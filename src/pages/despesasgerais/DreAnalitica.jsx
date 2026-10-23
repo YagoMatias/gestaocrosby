@@ -4,6 +4,7 @@ import {
   CaretDown,
   CaretUp,
   CaretUpDown,
+  Presentation,
   Plus,
   X,
   Flag,
@@ -308,6 +309,8 @@ export default function DreAnalitica() {
   const [catPayFilter, setCatPayFilter] = useState({}); // 'mes||cat' -> 'pago'|'aberto'
   // ordenação da tabela principal por cabeçalho (clique): col + direção
   const [mainSort, setMainSort] = useState({ col: null, dir: 'desc' });
+  // modo apresentacao (tela limpa para a diretoria)
+  const [apresentacao, setApresentacao] = useState(false);
 
   const toggleExpand = useCallback((cat) => {
     setExpanded((prev) => {
@@ -485,7 +488,7 @@ export default function DreAnalitica() {
         <td colSpan={6} className="p-0 bg-gray-50/70">
           <div className="mx-3 my-2 border border-gray-200 rounded-lg bg-white overflow-hidden">
             {/* toolbar: filtro de fornecedor da despesa */}
-            <div className="flex flex-wrap items-center gap-1.5 px-3 py-2 border-b border-gray-100 bg-gray-50">
+            <div className={`flex flex-wrap items-center gap-1.5 px-3 py-2 border-b border-gray-100 bg-gray-50${apresentacao ? ' hidden' : ''}`}>
               <span className="text-[10px] font-semibold text-gray-500 uppercase">
                 Fornecedor:
               </span>
@@ -653,10 +656,14 @@ export default function DreAnalitica() {
                   <th className="px-2 py-1.5 text-left font-semibold">
                     Observação
                   </th>
-                  <th className="px-2 py-1.5 text-center font-semibold">
-                    Enviar p/
-                  </th>
-                  <th className="px-2 py-1.5 text-center font-semibold"></th>
+                  {!apresentacao && (
+                    <>
+                      <th className="px-2 py-1.5 text-center font-semibold">
+                        Enviar p/
+                      </th>
+                      <th className="px-2 py-1.5 text-center font-semibold"></th>
+                    </>
+                  )}
                 </tr>
               </thead>
               <tbody>
@@ -765,46 +772,50 @@ export default function DreAnalitica() {
                           className="block truncate"
                         />
                       </td>
-                      <td className="px-2 py-1 text-center whitespace-nowrap">
-                        <button
-                          onClick={() =>
-                            toggleFlag('correcao', activeMonth, cat, i, d)
-                          }
-                          title="Enviar para Correções DRE"
-                          className={`p-1 rounded transition ${
-                            fl?.tipo === 'correcao'
-                              ? 'bg-amber-100 text-amber-600'
-                              : 'text-gray-300 hover:text-amber-500'
-                          }`}
-                        >
-                          <Flag size={13} weight={fl?.tipo === 'correcao' ? 'fill' : 'regular'} />
-                        </button>
-                        <button
-                          onClick={() =>
-                            toggleFlag('corte', activeMonth, cat, i, d)
-                          }
-                          title="Enviar para Corte de custo"
-                          className={`p-1 rounded transition ${
-                            fl?.tipo === 'corte'
-                              ? 'bg-red-100 text-red-600'
-                              : 'text-gray-300 hover:text-red-500'
-                          }`}
-                        >
-                          <Scissors size={13} weight={fl?.tipo === 'corte' ? 'fill' : 'regular'} />
-                        </button>
-                      </td>
-                      <td className="px-2 py-1 text-center">
-                        <button
-                          onClick={() => {
-                            if (window.confirm('Excluir este lançamento?'))
-                              deleteRow(activeMonth, cat, i);
-                          }}
-                          className="text-gray-300 hover:text-red-600 transition"
-                          title="Excluir este lançamento"
-                        >
-                          <X size={12} weight="bold" />
-                        </button>
-                      </td>
+                      {!apresentacao && (
+                        <td className="px-2 py-1 text-center whitespace-nowrap">
+                          <button
+                            onClick={() =>
+                              toggleFlag('correcao', activeMonth, cat, i, d)
+                            }
+                            title="Enviar para Correções DRE"
+                            className={`p-1 rounded transition ${
+                              fl?.tipo === 'correcao'
+                                ? 'bg-amber-100 text-amber-600'
+                                : 'text-gray-300 hover:text-amber-500'
+                            }`}
+                          >
+                            <Flag size={13} weight={fl?.tipo === 'correcao' ? 'fill' : 'regular'} />
+                          </button>
+                          <button
+                            onClick={() =>
+                              toggleFlag('corte', activeMonth, cat, i, d)
+                            }
+                            title="Enviar para Corte de custo"
+                            className={`p-1 rounded transition ${
+                              fl?.tipo === 'corte'
+                                ? 'bg-red-100 text-red-600'
+                                : 'text-gray-300 hover:text-red-500'
+                            }`}
+                          >
+                            <Scissors size={13} weight={fl?.tipo === 'corte' ? 'fill' : 'regular'} />
+                          </button>
+                        </td>
+                      )}
+                      {!apresentacao && (
+                        <td className="px-2 py-1 text-center">
+                          <button
+                            onClick={() => {
+                              if (window.confirm('Excluir este lançamento?'))
+                                deleteRow(activeMonth, cat, i);
+                            }}
+                            className="text-gray-300 hover:text-red-600 transition"
+                            title="Excluir este lançamento"
+                          >
+                            <X size={12} weight="bold" />
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -820,16 +831,18 @@ export default function DreAnalitica() {
                   </td>
                   <td colSpan={4}></td>
                 </tr>
-                <tr>
-                  <td colSpan={11} className="px-2 py-1.5">
-                    <button
-                      onClick={() => addRow(activeMonth, cat)}
-                      className="inline-flex items-center gap-1 text-[11px] text-[#000638] font-semibold hover:underline"
-                    >
-                      <Plus size={11} weight="bold" /> Adicionar lançamento
-                    </button>
-                  </td>
-                </tr>
+                {!apresentacao && (
+                  <tr>
+                    <td colSpan={11} className="px-2 py-1.5">
+                      <button
+                        onClick={() => addRow(activeMonth, cat)}
+                        className="inline-flex items-center gap-1 text-[11px] text-[#000638] font-semibold hover:underline"
+                      >
+                        <Plus size={11} weight="bold" /> Adicionar lançamento
+                      </button>
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -844,6 +857,7 @@ export default function DreAnalitica() {
   // marcação "analisada" por despesa (pedido do financeiro em 21/10/2026)
   const nAnalisadas = visible.filter((s) => catAnalisada(activeMonth, s.cat)).length;
   const analisadaBtn = (cat) => {
+    if (apresentacao) return null;
     const ok = catAnalisada(activeMonth, cat);
     const trav = catTravada(activeMonth, cat);
     return (
@@ -888,7 +902,7 @@ export default function DreAnalitica() {
   visibleOrdenado.forEach((s) => {
     const gp = catToGroup.get(s.cat);
     const pct = mo.total > 0 ? ((s.total / mo.total) * 100).toFixed(1) : '0.0';
-    const isOpen = expanded.has(s.cat);
+    const isOpen = apresentacao || expanded.has(s.cat);
 
     const arrow = (cat) => (
       <span className="inline-flex items-center text-gray-400">
@@ -956,7 +970,7 @@ export default function DreAnalitica() {
         );
       });
       gp.members.forEach((gm) => {
-        if (expanded.has(gm.cat)) bodyRows.push(detailBlock(gm.cat));
+        if (apresentacao || expanded.has(gm.cat)) bodyRows.push(detailBlock(gm.cat));
       });
       return;
     }
@@ -1000,8 +1014,20 @@ export default function DreAnalitica() {
 
   return (
     <div className="space-y-4">
+      {apresentacao && (
+        <div className="flex items-center gap-3 bg-[#000638] text-white rounded-xl px-4 py-2.5 shadow-sm">
+          <Presentation size={18} weight="bold" />
+          <span className="text-sm font-bold">Modo apresentação — {mo.label}</span>
+          <button
+            onClick={() => setApresentacao(false)}
+            className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/15 hover:bg-white/25 transition"
+          >
+            <X size={13} weight="bold" /> Sair da apresentação
+          </button>
+        </div>
+      )}
       {/* fonte de dados TOTVS */}
-      <div className="bg-white border border-[#000638]/10 rounded-xl shadow-sm px-4 py-2.5 flex flex-wrap items-center gap-3">
+      <div className={`bg-white border border-[#000638]/10 rounded-xl shadow-sm px-4 py-2.5 flex flex-wrap items-center gap-3${apresentacao ? ' hidden' : ''}`}>
         <CloudArrowDown size={16} className="text-[#000638]" weight="bold" />
         {fonte.origem === 'totvs' ? (
           <span className="text-[11px] text-gray-500">
@@ -1259,7 +1285,7 @@ export default function DreAnalitica() {
       )}
 
       {/* filtros globais */}
-      <div className="bg-white border border-[#000638]/10 rounded-xl shadow-sm px-4 py-3 flex flex-wrap items-center gap-2">
+      <div className={`bg-white border border-[#000638]/10 rounded-xl shadow-sm px-4 py-3 flex flex-wrap items-center gap-2${apresentacao ? ' hidden' : ''}`}>
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -1288,7 +1314,14 @@ export default function DreAnalitica() {
             <option key={f} value={f} />
           ))}
         </datalist>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            onClick={() => setApresentacao(true)}
+            title="Modo apresentação — tela limpa para a diretoria"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border border-[#000638] text-[#000638] bg-white hover:bg-[#000638]/5 transition"
+          >
+            <Presentation size={13} weight="bold" /> Apresentação
+          </button>
           <ActionBtn
             variant="primary"
             onClick={() => {
@@ -1310,7 +1343,7 @@ export default function DreAnalitica() {
         title={`DRE Analítica — ${mo.label}`}
         subtitle="clique na categoria para ver os lançamentos · clique no forecast para editar · ✔ marca a despesa como analisada · 🔒 trava a despesa"
         actions={
-          visible.length > 0 && (
+          !apresentacao && visible.length > 0 && (
             <span
               className={`text-[11px] font-semibold rounded-full px-2.5 py-1 border ${
                 nAnalisadas === visible.length
