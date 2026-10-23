@@ -57,6 +57,7 @@ const ORIGENS = {
   SOLICITACAO: { label: 'Solicitações Crosby', cor: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
   TOTVS_CP: { label: 'Contas a Pagar (TOTVS)', cor: 'bg-blue-100 text-blue-800 border-blue-300' },
   MANUAL: { label: 'Justificado', cor: 'bg-gray-100 text-gray-700 border-gray-300' },
+  MULTIPLO: { label: 'Várias duplicatas', cor: 'bg-violet-100 text-violet-800 border-violet-300' },
 };
 const origemCfg = (o) => ORIGENS[o] || { label: o || '—', cor: 'bg-gray-100 text-gray-700 border-gray-300' };
 // referência gravada na conciliação (mesmos campos que o backend usa no lote)
@@ -808,6 +809,45 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
   const [situacao, setSituacao] = useState('PENDENTES'); // PENDENTES | OK | TODAS
   const [busca, setBusca] = useState('');
   const [picker, setPicker] = useState(null); // { lancamento, candidatos, avisos, decisao }
+  const [selecao, setSelecao] = useState([]); // candidatos marcados (podem somar a saída)
+  const [buscaCp, setBuscaCp] = useState({ aberta: false, duplicata: '', fornecedor: '', de: '', ate: '', valorMin: '', valorMax: '', carregando: false, resultados: null, avisos: [] });
+  const keyCand = (c) => `${c.origem}:${c.id}`;
+  const toggleSel = (c) => setSelecao((prev) => (prev.some((x) => keyCand(x) === keyCand(c)) ? prev.filter((x) => keyCand(x) !== keyCand(c)) : [...prev, c]));
+  const somaSel = selecao.reduce((s, c) => s + Number(c.restante ?? c.valor ?? 0), 0);
+  const abrirPicker = (dados) => {
+    setPicker(dados);
+    setSelecao([]);
+    setBuscaCp((b) => ({ ...b, aberta: false, resultados: null, avisos: [], fornecedor: dados.lancamento?.nomeExibicao || dados.lancamento?.contraparte_nome || '', valorMin: '', valorMax: '', duplicata: '', de: '', ate: '' }));
+  };
+  const pesquisarCp = async () => {
+    if (!picker) return;
+    setBuscaCp((b) => ({ ...b, carregando: true, resultados: null, avisos: [] }));
+    try {
+      const q = new URLSearchParams({ lancamentoId: picker.lancamento.id });
+      for (const k of ['duplicata', 'fornecedor', 'de', 'ate', 'valorMin', 'valorMax']) if (String(buscaCp[k] || '').trim()) q.set(k, String(buscaCp[k]).trim());
+      const r = await fetch(`${API}/conciliacao/buscar-cp?${q}`);
+      const j = await r.json();
+      if (!j?.success) throw new Error(j?.message || 'Falha na busca.');
+      setBuscaCp((b) => ({ ...b, carregando: false, resultados: j.data.candidatos, avisos: j.data.avisos || [] }));
+    } catch (e) {
+      setBuscaCp((b) => ({ ...b, carregando: false, resultados: [], avisos: [e.message] }));
+    }
+  };
+  const conciliarSelecionadas = async () => {
+    if (!picker || !selecao.length) return;
+    const l = picker.lancamento;
+    setOcupado(l.id);
+    try {
+      const itens = selecao.map((c) => ({ origem: c.origem, id: c.id, nome: c.nome, doc: c.doc, duplicata: c.duplicata, vencimento: c.vencimento, data: c.data, empresa: c.empresa, detalhe: c.detalhe, valorDuplicata: c.valorDuplicata ?? c.valor, valor: c.valor }));
+      await salvar(l.id, selecao.length > 1 ? 'MULTIPLO' : selecao[0].origem, { itens }, null, null);
+      setPicker(null);
+      setSelecao([]);
+    } catch (e) {
+      setErroModal(e.message);
+    } finally {
+      setOcupado(null);
+    }
+  };
   const [justificando, setJustificando] = useState(null); // { lancamento, texto }
   const [ocupado, setOcupado] = useState(null); // id do lançamento em processamento
   const [erroModal, setErroModal] = useState(null);
@@ -865,7 +905,7 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
         const esc = d.decisao.escolhido;
         await salvar(l.id, esc.origem, refDe(esc), justDe(esc), esc.score);
       } else {
-        setPicker({ lancamento: l, ...d });
+        abrirPicker({ lancamento: l, ...d });
       }
     } catch (e) {
       setErroModal(e.message);
@@ -1191,51 +1231,76 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
                   </div>
                   <div className="flex-1 overflow-auto">
                     {picker.candidatos?.length ? (
-                      <table className="w-full text-xs">
-                        <thead className="bg-gray-50 text-gray-600">
-                          <tr>
-                            <Th>Origem</Th>
-                            <Th>Fornecedor / detalhe</Th>
-                            <Th>Data</Th>
-                            <Th right>Valor</Th>
-                            <Th right>Pontos</Th>
-                            <Th />
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {picker.candidatos.map((cand) => (
-                            <tr key={`${cand.origem}-${cand.id}`} className="border-b border-gray-100 hover:bg-gray-50">
-                              <td className="px-3 py-2 whitespace-nowrap">
-                                <Badge cfg={origemCfg(cand.origem)}>{origemCfg(cand.origem).label}</Badge>
-                              </td>
-                              <td className="px-3 py-2">
-                                <div className="font-medium text-gray-800">{cand.nome || '(sem nome)'}{cand.doc ? <span className="text-gray-400 font-normal"> · {fmtDoc(cand.doc)}</span> : null}</div>
-                                <div className="text-[11px] text-gray-500">{[cand.empresa, cand.detalhe].filter(Boolean).join(' · ')}</div>
-                                <div className="text-[10px] text-emerald-700">{cand.motivos?.join(' · ')}</div>
-                              </td>
-                              <td className="px-3 py-2 whitespace-nowrap">{fmtData(cand.data)}</td>
-                              <td className="px-3 py-2 text-right whitespace-nowrap font-semibold">{fmt(cand.valor)}</td>
-                              <td className="px-3 py-2 text-right whitespace-nowrap">{cand.score}</td>
-                              <td className="px-3 py-2 text-right">
-                                <button disabled={ocupado} onClick={() => escolher(cand)} className="px-2.5 py-1 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50">
-                                  Usar
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                      <TabelaCandidatos candidatos={picker.candidatos} selecao={selecao} onToggle={toggleSel} onUsar={escolher} ocupado={ocupado} keyCand={keyCand} mostrarPontos />
                     ) : (
                       <p className="p-6 text-center text-sm text-gray-400">Nenhum pagamento com este valor nas três fontes (±5 dias).</p>
                     )}
+
+                    {/* busca manual no Contas a Pagar */}
+                    <div className="border-t border-gray-200">
+                      <button onClick={() => setBuscaCp((b) => ({ ...b, aberta: !b.aberta }))} className="w-full flex items-center justify-between px-4 py-2 text-xs font-semibold text-gray-700 bg-gray-50 hover:bg-gray-100">
+                        <span className="inline-flex items-center gap-1">
+                          <MagnifyingGlass size={13} /> Procurar no Contas a Pagar (duplicata, fornecedor, vencimento, valor)
+                        </span>
+                        <span className="text-gray-400">{buscaCp.aberta ? 'ocultar' : 'abrir'}</span>
+                      </button>
+                      {buscaCp.aberta && (
+                        <div className="p-3 space-y-2">
+                          <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
+                            <input value={buscaCp.duplicata} onChange={(e) => setBuscaCp({ ...buscaCp, duplicata: e.target.value })} placeholder="Nº duplicata" className="px-2 py-1.5 text-xs border border-gray-300 rounded-lg" />
+                            <input value={buscaCp.fornecedor} onChange={(e) => setBuscaCp({ ...buscaCp, fornecedor: e.target.value })} placeholder="Fornecedor (nome ou CNPJ)" className="px-2 py-1.5 text-xs border border-gray-300 rounded-lg md:col-span-2" />
+                            <input type="date" value={buscaCp.de} onChange={(e) => setBuscaCp({ ...buscaCp, de: e.target.value })} title="Vencimento de" className="px-2 py-1.5 text-xs border border-gray-300 rounded-lg" />
+                            <input type="date" value={buscaCp.ate} onChange={(e) => setBuscaCp({ ...buscaCp, ate: e.target.value })} title="Vencimento até" className="px-2 py-1.5 text-xs border border-gray-300 rounded-lg" />
+                            <div className="flex gap-1">
+                              <input value={buscaCp.valorMin} onChange={(e) => setBuscaCp({ ...buscaCp, valorMin: e.target.value })} placeholder="Valor de" className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-lg" />
+                              <input value={buscaCp.valorMax} onChange={(e) => setBuscaCp({ ...buscaCp, valorMax: e.target.value })} placeholder="até" className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded-lg" />
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button onClick={pesquisarCp} disabled={buscaCp.carregando} className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-md bg-[#000638] text-white hover:bg-blue-900 disabled:opacity-50">
+                              {buscaCp.carregando ? <ArrowsClockwise size={12} className="animate-spin" /> : <MagnifyingGlass size={12} />} Buscar
+                            </button>
+                            <span className="text-[11px] text-gray-400">Traz títulos pagos e em aberto; marque uma ou mais duplicatas para somar o valor.</span>
+                          </div>
+                          {buscaCp.avisos?.length > 0 && <p className="text-[11px] text-amber-700">{buscaCp.avisos.join(' · ')}</p>}
+                          {buscaCp.resultados && (buscaCp.resultados.length ? (
+                            <div className="border border-gray-200 rounded-lg overflow-hidden max-h-72 overflow-y-auto">
+                              <TabelaCandidatos candidatos={buscaCp.resultados} selecao={selecao} onToggle={toggleSel} onUsar={escolher} ocupado={ocupado} keyCand={keyCand} />
+                            </div>
+                          ) : (
+                            <p className="text-xs text-gray-400 py-2">Nada encontrado com esses filtros.</p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div className="px-4 py-3 border-t border-gray-200 flex justify-between gap-2">
+                  <div className="px-4 py-3 border-t border-gray-200 flex flex-wrap items-center gap-2">
                     <button onClick={() => setJustificando({ lancamento: picker.lancamento, texto: '' })} className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50">
                       <ChatText size={13} /> Justificar manualmente
                     </button>
-                    <button onClick={() => setPicker(null)} className="px-3 py-1.5 text-xs rounded-md text-gray-500 hover:bg-gray-100">
-                      Fechar
-                    </button>
+                    <div className="ml-auto flex items-center gap-3">
+                      {selecao.length > 0 && (() => {
+                        const alvo = Math.abs(picker.lancamento.valor);
+                        const dif = Math.round((somaSel - alvo) * 100) / 100;
+                        return (
+                          <span className={`text-xs ${dif < -0.01 ? 'text-red-600' : 'text-emerald-700'}`}>
+                            {selecao.length} selecionada(s) · soma {fmt(somaSel)} / saída {fmt(alvo)}
+                            {dif < -0.01 ? ` · faltam ${fmt(-dif)}` : dif > 0.01 ? ` · sobra ${fmt(dif)} (fica parcial)` : ' · fecha'}
+                          </span>
+                        );
+                      })()}
+                      <button
+                        disabled={!selecao.length || somaSel < Math.abs(picker.lancamento.valor) - 0.01 || ocupado}
+                        onClick={conciliarSelecionadas}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-40"
+                        title="Concilia a saída com as duplicatas marcadas (a soma precisa cobrir a saída)"
+                      >
+                        <Check size={13} weight="bold" /> Conciliar selecionadas
+                      </button>
+                      <button onClick={() => setPicker(null)} className="px-3 py-1.5 text-xs rounded-md text-gray-500 hover:bg-gray-100">
+                        Fechar
+                      </button>
+                    </div>
                   </div>
                 </>
               )}
@@ -1320,6 +1385,60 @@ const CelulaConciliacao = ({ l, ocupado, onConciliar, onJustificar, onDesfazer, 
   );
 };
 
+// ─── tabela de candidatos (automáticos ou da busca manual) ─────
+const TabelaCandidatos = ({ candidatos, selecao, onToggle, onUsar, ocupado, keyCand, mostrarPontos = false }) => (
+  <table className="w-full text-xs">
+    <thead className="bg-gray-50 text-gray-600 sticky top-0">
+      <tr>
+        <Th className="w-8" />
+        <Th>Origem</Th>
+        <Th>Fornecedor / detalhe</Th>
+        <Th>Vencimento</Th>
+        <Th>Pagamento</Th>
+        <Th right>Valor</Th>
+        <Th right>Disponível</Th>
+        {mostrarPontos && <Th right>Pontos</Th>}
+        <Th />
+      </tr>
+    </thead>
+    <tbody>
+      {candidatos.map((cand) => {
+        const marcado = selecao.some((x) => keyCand(x) === keyCand(cand));
+        const disponivel = cand.restante ?? cand.valor;
+        return (
+          <tr key={keyCand(cand)} className={`border-b border-gray-100 hover:bg-gray-50 ${marcado ? 'bg-emerald-50' : ''}`}>
+            <td className="px-2 py-2 text-center">
+              <input type="checkbox" checked={marcado} onChange={() => onToggle(cand)} className="accent-green-600" title="Marcar para somar" />
+            </td>
+            <td className="px-3 py-2 whitespace-nowrap">
+              <Badge cfg={origemCfg(cand.origem)}>{origemCfg(cand.origem).label}</Badge>
+              {cand.pago === false && <span className="block text-[10px] text-amber-700">em aberto</span>}
+            </td>
+            <td className="px-3 py-2">
+              <div className="font-medium text-gray-800">{cand.nome || '(sem nome)'}{cand.doc ? <span className="text-gray-400 font-normal"> · {fmtDoc(cand.doc)}</span> : null}</div>
+              <div className="text-[11px] text-gray-500">{[cand.empresa, cand.detalhe].filter(Boolean).join(' · ')}</div>
+              {cand.motivos?.length > 0 && <div className="text-[10px] text-emerald-700">{cand.motivos.join(' · ')}</div>}
+            </td>
+            <td className="px-3 py-2 whitespace-nowrap">{fmtData(cand.vencimento)}</td>
+            <td className="px-3 py-2 whitespace-nowrap">{fmtData(cand.data)}</td>
+            <td className="px-3 py-2 text-right whitespace-nowrap font-semibold">{fmt(cand.valorDuplicata ?? cand.valor)}</td>
+            <td className={`px-3 py-2 text-right whitespace-nowrap ${cand.usado > 0 ? 'text-orange-700' : 'text-gray-600'}`}>
+              {fmt(disponivel)}
+              {cand.usado > 0 && <span className="block text-[10px]">já usado {fmt(cand.usado)}</span>}
+            </td>
+            {mostrarPontos && <td className="px-3 py-2 text-right whitespace-nowrap">{cand.score}</td>}
+            <td className="px-3 py-2 text-right">
+              <button disabled={ocupado} onClick={() => onUsar(cand)} className="px-2.5 py-1 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50" title="Conciliar só com esta">
+                Usar
+              </button>
+            </td>
+          </tr>
+        );
+      })}
+    </tbody>
+  </table>
+);
+
 // ─── detalhe da conciliação ────────────────────────────────────
 const Campo = ({ label, children }) => (
   <div className="min-w-0">
@@ -1382,6 +1501,40 @@ const DetalheConciliacao = ({ detalhe, onClose, onAnexar, onRemoverAnexo }) => {
               <Campo label="Justificativa">{c.justificativa}</Campo>
               <Campo label="Por">{c.usuario || '—'}</Campo>
               <Campo label="Em">{c.criado_em ? fmtData(c.criado_em) : '—'}</Campo>
+            </div>
+          )}
+
+          {dados?.itens?.length > 1 && (
+            <div className="border border-violet-200 rounded-lg overflow-hidden">
+              <div className="px-3 py-2 bg-violet-50 text-xs font-semibold text-violet-900">
+                {dados.itens.length} duplicatas somando {fmt(dados.parcial?.totalUsado)}
+              </div>
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50 text-gray-600">
+                  <tr>
+                    <Th>Origem</Th>
+                    <Th>Fornecedor</Th>
+                    <Th>Duplicata</Th>
+                    <Th>Vencimento</Th>
+                    <Th>Pagamento</Th>
+                    <Th right>Valor dup.</Th>
+                    <Th right>Usado aqui</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dados.itens.map((it, i) => (
+                    <tr key={i} className="border-t border-gray-100">
+                      <td className="px-3 py-1.5"><Badge cfg={origemCfg(it.origem)}>{origemCfg(it.origem).label}</Badge></td>
+                      <td className="px-3 py-1.5">{it.nome || '—'}{it.doc ? <span className="block text-[10px] text-gray-400">{fmtDoc(it.doc)}</span> : null}</td>
+                      <td className="px-3 py-1.5 font-mono">{it.duplicata ? String(it.duplicata).replace('|', '/') : '—'}</td>
+                      <td className="px-3 py-1.5">{fmtData(it.vencimento)}</td>
+                      <td className="px-3 py-1.5">{fmtData(it.data)}</td>
+                      <td className="px-3 py-1.5 text-right">{fmt(it.valorDuplicata)}</td>
+                      <td className="px-3 py-1.5 text-right font-semibold">{fmt(it.valorUsado)}{it.parcial ? <span className="ml-1 text-[10px] text-orange-700">parcial</span> : null}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
 
