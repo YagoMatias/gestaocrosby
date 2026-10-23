@@ -2,6 +2,8 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import {
   CaretRight,
   CaretDown,
+  CaretUp,
+  CaretUpDown,
   Plus,
   X,
   Flag,
@@ -304,6 +306,8 @@ export default function DreAnalitica() {
   const [catFornFilter, setCatFornFilter] = useState({}); // 'mes||cat' -> [forns]
   const [catSort, setCatSort] = useState({}); // 'mes||cat' -> 'asc'|'desc'
   const [catPayFilter, setCatPayFilter] = useState({}); // 'mes||cat' -> 'pago'|'aberto'
+  // ordenação da tabela principal por cabeçalho (clique): col + direção
+  const [mainSort, setMainSort] = useState({ col: null, dir: 'desc' });
 
   const toggleExpand = useCallback((cat) => {
     setExpanded((prev) => {
@@ -355,6 +359,62 @@ export default function DreAnalitica() {
   }, [visible]);
 
   const fcTotal = fcTotalFor(activeMonth);
+
+  // valor de cada coluna por categoria (grupos de forecast único somam os membros)
+  const valorColuna = (sc) => {
+    const gp = catToGroup.get(sc.cat);
+    if (gp && gp.members.length > 1) {
+      const fcKey = fcKeyFor(gp.members[0].cat);
+      const fc =
+        forecasts[fcKey] !== undefined
+          ? parseFloat(forecasts[fcKey])
+          : forecastPadraoFor(gp.members[0].cat, activeMonth);
+      const real = mergeRealizedG(gp.g, activeMonth);
+      return { cat: gp.members[0].cat, realizado: real, forecast: fc, variacao: real - fc, pct: mo.total > 0 ? real / mo.total : 0 };
+    }
+    const fcKey = fcKeyFor(sc.cat);
+    const fc =
+      forecasts[fcKey] !== undefined
+        ? parseFloat(forecasts[fcKey])
+        : forecastPadraoFor(sc.cat, activeMonth);
+    return { cat: sc.cat, realizado: sc.total, forecast: fc, variacao: sc.total - fc, pct: mo.total > 0 ? sc.total / mo.total : 0 };
+  };
+
+  // ordena as categorias conforme o cabeçalho clicado; mantém os membros de um
+  // mesmo grupo (forecast único) juntos, pois compartilham o valor do grupo.
+  const visibleOrdenado = useMemo(() => {
+    if (!mainSort.col) return visible;
+    const dir = mainSort.dir === 'asc' ? 1 : -1;
+    return visible
+      .map((sc, i) => ({ sc, i, v: valorColuna(sc) }))
+      .sort((a, b) => {
+        const ka = a.v[mainSort.col];
+        const kb = b.v[mainSort.col];
+        let c;
+        if (typeof ka === 'string') c = ka.localeCompare(kb, 'pt-BR');
+        else c = (ka || 0) - (kb || 0);
+        return c !== 0 ? dir * c : a.i - b.i;
+      })
+      .map((x) => x.sc);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, catToGroup, mainSort, forecasts, activeMonth, mo.total]);
+
+  const toggleSort = (col) =>
+    setMainSort((p) =>
+      p.col !== col
+        ? { col, dir: 'desc' }
+        : p.dir === 'desc'
+          ? { col, dir: 'asc' }
+          : { col: null, dir: 'desc' },
+    );
+  const sortArrow = (col) =>
+    mainSort.col !== col ? (
+      <CaretUpDown size={10} className="opacity-40" />
+    ) : mainSort.dir === 'desc' ? (
+      <CaretDown size={10} weight="bold" />
+    ) : (
+      <CaretUp size={10} weight="bold" />
+    );
 
   // bloco de lançamentos de uma categoria expandida
   const detailBlock = (cat) => {
@@ -801,7 +861,7 @@ export default function DreAnalitica() {
   };
   const rowCls = (cat) =>
     catTravada(activeMonth, cat) ? 'bg-amber-50/60' : catAnalisada(activeMonth, cat) ? 'bg-green-50/60' : '';
-  visible.forEach((s) => {
+  visibleOrdenado.forEach((s) => {
     const gp = catToGroup.get(s.cat);
     const pct = mo.total > 0 ? ((s.total / mo.total) * 100).toFixed(1) : '0.0';
     const isOpen = expanded.has(s.cat);
@@ -1239,11 +1299,41 @@ export default function DreAnalitica() {
             <thead className="sticky top-0 z-10">
               <tr className="bg-[#000638] text-white">
                 <th className="px-3 py-2 w-7"></th>
-                <th className="px-2 py-2 text-left font-semibold">Categoria</th>
-                <th className="px-2 py-2 text-right font-semibold">Realizado</th>
-                <th className="px-2 py-2 text-right font-semibold">Forecast</th>
-                <th className="px-2 py-2 text-right font-semibold">Variação</th>
-                <th className="px-2 py-2 text-right font-semibold">% Total</th>
+                <th
+                  onClick={() => toggleSort('cat')}
+                  title="Clique para ordenar (A→Z, depois Z→A)"
+                  className="px-2 py-2 text-left font-semibold cursor-pointer select-none hover:bg-white/10"
+                >
+                  <span className="inline-flex items-center gap-1">Categoria {sortArrow('cat')}</span>
+                </th>
+                <th
+                  onClick={() => toggleSort('realizado')}
+                  title="Clique para ordenar (maior→menor, depois menor→maior)"
+                  className="px-2 py-2 text-right font-semibold cursor-pointer select-none hover:bg-white/10"
+                >
+                  <span className="inline-flex items-center justify-end gap-1">Realizado {sortArrow('realizado')}</span>
+                </th>
+                <th
+                  onClick={() => toggleSort('forecast')}
+                  title="Clique para ordenar (maior→menor, depois menor→maior)"
+                  className="px-2 py-2 text-right font-semibold cursor-pointer select-none hover:bg-white/10"
+                >
+                  <span className="inline-flex items-center justify-end gap-1">Forecast {sortArrow('forecast')}</span>
+                </th>
+                <th
+                  onClick={() => toggleSort('variacao')}
+                  title="Clique para ordenar (maior→menor, depois menor→maior)"
+                  className="px-2 py-2 text-right font-semibold cursor-pointer select-none hover:bg-white/10"
+                >
+                  <span className="inline-flex items-center justify-end gap-1">Variação {sortArrow('variacao')}</span>
+                </th>
+                <th
+                  onClick={() => toggleSort('pct')}
+                  title="Clique para ordenar (maior→menor, depois menor→maior)"
+                  className="px-2 py-2 text-right font-semibold cursor-pointer select-none hover:bg-white/10"
+                >
+                  <span className="inline-flex items-center justify-end gap-1">% Total {sortArrow('pct')}</span>
+                </th>
               </tr>
             </thead>
             <tbody>
