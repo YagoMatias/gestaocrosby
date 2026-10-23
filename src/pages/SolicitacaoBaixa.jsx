@@ -86,7 +86,12 @@ const SolicitacaoBaixa = () => {
     {
       id: 'cartao_debito',
       label: 'Cartão de Débito (PAGARME DEBITO)',
-      paidType: 2,
+      // TESTE 23/10/2026: o swagger do TOTVS documenta "4 = Cartão de Débito,
+      // 5 = Cartão de Crédito" (FCXFL002), mas nesta base é o inverso e o
+      // PAGARME DEBITO (seq 63) é tipo 5. Se a API mapeia paidType 2 → tipo 4,
+      // procura entre os PAGARME CREDITO (sem operadora) e nunca acha. Com
+      // paidType 1 ela deve procurar nos tipo 5. Voltar a 2 se não resolver.
+      paidType: 1,
       cardAuto: true,
       // TOTVS: cartão seq 63 (portador 9901 "PAGARME DEBITO"), operatorName PAGARME.
       // Combinação ainda em acerto — os dois campos ficam editáveis.
