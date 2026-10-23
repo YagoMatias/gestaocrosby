@@ -57,12 +57,14 @@ const ORIGENS = {
   SOLICITACAO: { label: 'Solicitações Crosby', cor: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
   TOTVS_CP: { label: 'Contas a Pagar (TOTVS)', cor: 'bg-blue-100 text-blue-800 border-blue-300' },
   STONE: { label: 'Vendas Stone', cor: 'bg-green-100 text-green-800 border-green-300' },
+  TOTVS_CR: { label: 'Contas a Receber (TOTVS)', cor: 'bg-cyan-100 text-cyan-800 border-cyan-300' },
   MANUAL: { label: 'Justificado', cor: 'bg-gray-100 text-gray-700 border-gray-300' },
   MULTIPLO: { label: 'Várias duplicatas', cor: 'bg-violet-100 text-violet-800 border-violet-300' },
 };
 const origemCfg = (o) => ORIGENS[o] || { label: o || '—', cor: 'bg-gray-100 text-gray-700 border-gray-300' };
 // referência gravada na conciliação (mesmos campos que o backend usa no lote)
-const podeConciliarLinha = (l, conta) => l.valor < 0 || (String(conta?.banco || '').toUpperCase() === 'STONE' && ['antecipacao', 'cartao'].includes(l.categoria));
+const ehPixMaquininha = (l) => l.categoria === 'pix' && /MAQUININHA/i.test(`${l.descricao || ''} ${l.memo || ''}`);
+const podeConciliarLinha = (l, conta) => l.valor < 0 || (String(conta?.banco || '').toUpperCase() === 'STONE' && (['antecipacao', 'cartao'].includes(l.categoria) || ehPixMaquininha(l)));
 const refDe = (c) => ({ id: c.id, nome: c.nome, doc: c.doc, valor: c.valor, valorDuplicata: c.valorDuplicata ?? c.valor, parcial: !!c.parcial, restanteDepois: c.restanteDepois ?? null, data: c.data, vencimento: c.vencimento, empresa: c.empresa, detalhe: c.detalhe, duplicata: c.duplicata, motivos: c.motivos });
 const justDe = (c) => [c.parcial ? 'PARCIAL' : null, c.nome, c.detalhe].filter(Boolean).join(' · ');
 const STORAGE_BUCKET = 'solicitacoes-crosby';
@@ -1236,7 +1238,7 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
                     {picker.candidatos?.length ? (
                       <TabelaCandidatos candidatos={picker.candidatos} selecao={selecao} onToggle={toggleSel} onUsar={escolher} ocupado={ocupado} keyCand={keyCand} mostrarPontos />
                     ) : (
-                      <p className="p-6 text-center text-sm text-gray-400">{picker.lancamento.valor > 0 ? 'Nenhum depósito da Stone com este valor (±2 dias) no arquivo de conciliação da loja.' : 'Nenhum pagamento com este valor nas três fontes (±5 dias).'}</p>
+                      <p className="p-6 text-center text-sm text-gray-400">{picker.lancamento.valor > 0 ? (ehPixMaquininha(picker.lancamento) ? 'Nenhum título do contas a receber (fatura, promissória, Pix, adiantamento) com este valor nas empresas desta conta (±5 dias).' : 'Nenhum depósito da Stone com este valor (±2 dias) no arquivo de conciliação da loja.') : 'Nenhum pagamento com este valor nas três fontes (±5 dias).'}</p>
                     )}
 
                     {/* busca manual no Contas a Pagar (só saídas) */}
@@ -1413,7 +1415,7 @@ const CelulaConciliacao = ({ l, podeConciliar = l.valor < 0, ocupado, onConcilia
     <div className="flex items-center gap-1.5">
       <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-medium">Pendente</span>
       {podeConciliar ? (
-        <button onClick={onConciliar} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-[#000638] text-white hover:bg-blue-900 text-[11px] font-medium" title={l.valor < 0 ? 'Buscar em Liberação de Pagamento, Solicitações Crosby e Contas a Pagar' : 'Buscar o depósito no arquivo de conciliação da Stone (antecipação / liquidação de vendas)'}>
+        <button onClick={onConciliar} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-[#000638] text-white hover:bg-blue-900 text-[11px] font-medium" title={l.valor < 0 ? 'Buscar em Liberação de Pagamento, Solicitações Crosby e Contas a Pagar' : ehPixMaquininha(l) ? 'Buscar o título da venda no contas a receber do TOTVS (fatura, promissória, Pix, adiantamento)' : 'Buscar o depósito no arquivo de conciliação da Stone (antecipação / liquidação de vendas)'}>
           <Lightning size={11} weight="fill" /> Conciliar
         </button>
       ) : null}
@@ -1649,18 +1651,18 @@ const DetalheConciliacao = ({ detalhe, onClose, onAnexar, onRemoverAnexo }) => {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <Campo label="Origem">{o.tipo}</Campo>
                 <Campo label="Empresa">{o.empresa}</Campo>
-                <Campo label="Fornecedor">
+                <Campo label={o.cliente ? 'Cliente' : 'Fornecedor'}>
                   {o.fornecedor || '—'}
                   {o.doc ? <span className="block text-[11px] text-gray-500">{fmtDoc(o.doc)}</span> : null}
                   {o.fornecedorCodigo ? <span className="block text-[11px] text-gray-400">cód. {o.fornecedorCodigo}</span> : null}
                 </Campo>
-                <Campo label="Duplicata / parcela">{o.duplicata ? `${o.duplicata}${o.parcela ? ` / ${o.parcela}` : ''}` : '—'}</Campo>
+                <Campo label={o.cliente ? 'Título / parcela' : 'Duplicata / parcela'}>{o.duplicata ? `${o.duplicata}${o.parcela ? ` / ${o.parcela}` : ''}` : '—'}</Campo>
                 <Campo label="Emissão">{fmtData(o.emissao)}</Campo>
                 <Campo label="Vencimento">{fmtData(o.vencimento)}</Campo>
                 <Campo label="Data de pagamento">{fmtData(o.dataPagamento)}</Campo>
-                <Campo label="Valor da duplicata">{fmt(o.valor)}</Campo>
-                <Campo label="Valor pago">{fmt(o.valorPago)}</Campo>
-                <Campo label="Forma / banco">{[o.forma, o.banco].filter(Boolean).join(' · ') || '—'}</Campo>
+                <Campo label={o.cliente ? 'Valor do título' : 'Valor da duplicata'}>{fmt(o.valor)}</Campo>
+                <Campo label={o.cliente ? 'Valor recebido' : 'Valor pago'}>{fmt(o.valorPago)}</Campo>
+                <Campo label={o.cliente ? 'Tipo / portador' : 'Forma / banco'}>{[o.forma, o.banco].filter(Boolean).join(' · ') || '—'}</Campo>
                 <Campo label="Despesa">{o.despesa || '—'}</Campo>
                 <Campo label="Pago por">{o.pagoPor || '—'}</Campo>
                 {o.chavePix && <Campo label="Chave PIX">{o.chavePix}</Campo>}
