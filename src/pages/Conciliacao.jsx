@@ -65,7 +65,8 @@ const origemCfg = (o) => ORIGENS[o] || { label: o || '—', cor: 'bg-gray-100 te
 // referência gravada na conciliação (mesmos campos que o backend usa no lote)
 const ehPixMaquininha = (l) => l.categoria === 'pix' && /MAQUININHA/i.test(`${l.descricao || ''} ${l.memo || ''}`);
 const ehPixTotvs = (l) => l.categoria === 'pix' && /FISERV/i.test(l.contraparte_banco || ''); // QR Code gerado no TOTVS (líquido da taxa 0,79)
-const podeConciliarLinha = (l, conta) => l.valor < 0 || ehPixTotvs(l) || (String(conta?.banco || '').toUpperCase() === 'STONE' && (['antecipacao', 'cartao'].includes(l.categoria) || ehPixMaquininha(l)));
+const ehPixCliente = (l) => l.valor > 0 && l.categoria === 'pix' && !l.transferencia_id && !/DEVOLU/i.test(l.descricao || '');
+const podeConciliarLinha = (l, conta) => l.valor < 0 || ehPixCliente(l) || (String(conta?.banco || '').toUpperCase() === 'STONE' && ['antecipacao', 'cartao'].includes(l.categoria));
 const refDe = (c) => ({ id: c.id, nome: c.nome, doc: c.doc, valor: c.valor, valorDuplicata: c.valorDuplicata ?? c.valor, parcial: !!c.parcial, restanteDepois: c.restanteDepois ?? null, data: c.data, vencimento: c.vencimento, empresa: c.empresa, detalhe: c.detalhe, duplicata: c.duplicata, motivos: c.motivos });
 const justDe = (c) => [c.parcial ? 'PARCIAL' : null, c.nome, c.detalhe].filter(Boolean).join(' · ');
 const STORAGE_BUCKET = 'solicitacoes-crosby';
@@ -829,9 +830,11 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
     if (!picker) return;
     setBuscaCp((b) => ({ ...b, carregando: true, resultados: null, avisos: [] }));
     try {
+      const receber = picker.lancamento.valor > 0;
       const q = new URLSearchParams({ lancamentoId: picker.lancamento.id });
-      for (const k of ['duplicata', 'fornecedor', 'de', 'ate', 'emissaoDe', 'emissaoAte', 'valorMin', 'valorMax']) if (String(buscaCp[k] || '').trim()) q.set(k, String(buscaCp[k]).trim());
-      const r = await fetch(`${API}/conciliacao/buscar-cp?${q}`);
+      const nomes = receber ? { duplicata: 'titulo', fornecedor: 'cliente' } : {};
+      for (const k of ['duplicata', 'fornecedor', 'de', 'ate', 'emissaoDe', 'emissaoAte', 'valorMin', 'valorMax']) if (String(buscaCp[k] || '').trim()) q.set(nomes[k] || k, String(buscaCp[k]).trim());
+      const r = await fetch(`${API}/conciliacao/${receber ? 'buscar-cr' : 'buscar-cp'}?${q}`);
       const j = await r.json();
       if (!j?.success) throw new Error(j?.message || 'Falha na busca.');
       setBuscaCp((b) => ({ ...b, carregando: false, resultados: j.data.candidatos, avisos: j.data.avisos || [] }));
@@ -1239,14 +1242,14 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
                     {picker.candidatos?.length ? (
                       <TabelaCandidatos candidatos={picker.candidatos} selecao={selecao} onToggle={toggleSel} onUsar={escolher} ocupado={ocupado} keyCand={keyCand} mostrarPontos />
                     ) : (
-                      <p className="p-6 text-center text-sm text-gray-400">{picker.lancamento.valor > 0 ? (ehPixTotvs(picker.lancamento) ? 'Nenhum título PIX do contas a receber com este valor + taxa Fiserv de R$ 0,79 nas empresas desta conta (±5 dias).' : ehPixMaquininha(picker.lancamento) ? 'Nenhum título do contas a receber (fatura, promissória, Pix, adiantamento) com este valor nas empresas desta conta (±5 dias).' : 'Nenhum depósito da Stone com este valor (±2 dias) no arquivo de conciliação da loja.') : 'Nenhum pagamento com este valor nas três fontes (±5 dias).'}</p>
+                      <p className="p-6 text-center text-sm text-gray-400">{picker.lancamento.valor > 0 ? (ehPixTotvs(picker.lancamento) ? 'Nenhum título PIX do contas a receber com este valor + taxa Fiserv de R$ 0,79 nas empresas desta conta (±5 dias).' : ehPixCliente(picker.lancamento) ? 'Nenhum título do contas a receber (fatura, promissória, Pix, adiantamento) com este valor nas empresas desta conta (±5 dias).' : 'Nenhum depósito da Stone com este valor (±2 dias) no arquivo de conciliação da loja.') : 'Nenhum pagamento com este valor nas três fontes (±5 dias).'}</p>
                     )}
 
-                    {/* busca manual no Contas a Pagar (só saídas) */}
-                    {picker.lancamento.valor < 0 && <div className="border-t border-gray-200">
+                    {/* busca manual: Contas a Pagar (saídas) ou Contas a Receber (entradas Pix) */}
+                    {(picker.lancamento.valor < 0 || ehPixCliente(picker.lancamento)) && <div className="border-t border-gray-200">
                       <button onClick={() => setBuscaCp((b) => ({ ...b, aberta: !b.aberta }))} className="w-full flex items-center justify-between px-4 py-2 text-xs font-semibold text-gray-700 bg-gray-50 hover:bg-gray-100">
                         <span className="inline-flex items-center gap-1">
-                          <MagnifyingGlass size={13} /> Procurar no Contas a Pagar (duplicata, fornecedor, emissão, vencimento, valor)
+                          <MagnifyingGlass size={13} /> {picker.lancamento.valor > 0 ? 'Procurar no Contas a Receber (título, cliente, emissão, vencimento, valor)' : 'Procurar no Contas a Pagar (duplicata, fornecedor, emissão, vencimento, valor)'}
                         </span>
                         <span className="text-gray-400">{buscaCp.aberta ? 'ocultar' : 'abrir'}</span>
                       </button>
@@ -1256,15 +1259,16 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
                             const inp = 'w-full px-2 py-1.5 text-xs border border-gray-300 rounded-lg';
                             const Lbl = ({ children }) => <label className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-0.5">{children}</label>;
                             const set = (k) => (e) => setBuscaCp({ ...buscaCp, [k]: e.target.value });
+                            const receber = picker.lancamento.valor > 0;
                             return (
                               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2">
                                 <div>
-                                  <Lbl>Nº duplicata</Lbl>
-                                  <input value={buscaCp.duplicata} onChange={set('duplicata')} placeholder="ex.: 160605" className={inp} />
+                                  <Lbl>{receber ? 'Nº título' : 'Nº duplicata'}</Lbl>
+                                  <input value={buscaCp.duplicata} onChange={set('duplicata')} placeholder={receber ? 'ex.: 249711' : 'ex.: 160605'} className={inp} />
                                 </div>
                                 <div className="md:col-span-3 lg:col-span-3">
-                                  <Lbl>Fornecedor</Lbl>
-                                  <input value={buscaCp.fornecedor} onChange={set('fornecedor')} placeholder="nome, CNPJ/CPF ou código no TOTVS" className={inp} />
+                                  <Lbl>{receber ? 'Cliente' : 'Fornecedor'}</Lbl>
+                                  <input value={buscaCp.fornecedor} onChange={set('fornecedor')} placeholder={receber ? 'nome (do mês), CPF/CNPJ ou código do cliente' : 'nome, CNPJ/CPF ou código no TOTVS'} className={inp} />
                                 </div>
                                 <div>
                                   <Lbl>Emissão de</Lbl>
@@ -1297,7 +1301,7 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
                             <button onClick={pesquisarCp} disabled={buscaCp.carregando} className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-md bg-[#000638] text-white hover:bg-blue-900 disabled:opacity-50">
                               {buscaCp.carregando ? <ArrowsClockwise size={12} className="animate-spin" /> : <MagnifyingGlass size={12} />} Buscar
                             </button>
-                            <span className="text-[11px] text-gray-400">Traz títulos pagos e em aberto; marque uma ou mais duplicatas para somar o valor.</span>
+                            <span className="text-[11px] text-gray-400">Traz títulos pagos e em aberto; marque um ou mais para somar o valor {picker.lancamento.valor > 0 ? 'do Pix' : 'da saída'}.</span>
                           </div>
                           {buscaCp.avisos?.length > 0 && <p className="text-[11px] text-amber-700">{buscaCp.avisos.join(' · ')}</p>}
                           {buscaCp.resultados && (buscaCp.resultados.length ? (
@@ -1321,7 +1325,7 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
                         const dif = Math.round((somaSel - alvo) * 100) / 100;
                         return (
                           <span className={`text-xs ${dif < -0.01 ? 'text-red-600' : 'text-emerald-700'}`}>
-                            {selecao.length} selecionada(s) · soma {fmt(somaSel)} / saída {fmt(alvo)}
+                            {selecao.length} selecionada(s) · soma {fmt(somaSel)} / {picker.lancamento.valor > 0 ? 'entrada' : 'saída'} {fmt(alvo)}
                             {dif < -0.01 ? ` · faltam ${fmt(-dif)}` : dif > 0.01 ? ` · sobra ${fmt(dif)} (fica parcial)` : ' · fecha'}
                           </span>
                         );
@@ -1421,7 +1425,7 @@ const CelulaConciliacao = ({ l, podeConciliar = l.valor < 0, ocupado, onConcilia
     <div className="flex items-center gap-1.5">
       <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-medium">Pendente</span>
       {podeConciliar ? (
-        <button onClick={onConciliar} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-[#000638] text-white hover:bg-blue-900 text-[11px] font-medium" title={l.valor < 0 ? 'Buscar em Liberação de Pagamento, Solicitações Crosby e Contas a Pagar' : ehPixMaquininha(l) || ehPixTotvs(l) ? 'Buscar o título da venda no contas a receber do TOTVS (fatura, promissória, Pix, adiantamento)' : 'Buscar o depósito no arquivo de conciliação da Stone (antecipação / liquidação de vendas)'}>
+        <button onClick={onConciliar} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-[#000638] text-white hover:bg-blue-900 text-[11px] font-medium" title={l.valor < 0 ? 'Buscar em Liberação de Pagamento, Solicitações Crosby e Contas a Pagar' : ehPixCliente(l) ? 'Buscar o título no contas a receber do TOTVS (fatura, promissória, Pix, adiantamento)' : 'Buscar o depósito no arquivo de conciliação da Stone (antecipação / liquidação de vendas)'}>
           <Lightning size={11} weight="fill" /> Conciliar
         </button>
       ) : null}
@@ -1671,9 +1675,15 @@ const DetalheConciliacao = ({ detalhe, onClose, onAnexar, onRemoverAnexo }) => {
                   {o.taxa ? (
                     <>
                       {fmt(Math.abs(l.valor))}
-                      <span className="block text-[11px] text-orange-700">taxa Fiserv {fmt(o.taxa)} · título {fmt(o.valorPago)}</span>
+                      <span className="block text-[11px] text-orange-700">taxa Fiserv {fmt(o.taxa)} · título {fmt(o.valor)}</span>
                     </>
-                  ) : fmt(o.valorPago)}
+                  ) : (
+                    <>
+                      {fmt(o.valorPago)}
+                      {o.juros ? <span className="block text-[11px] text-orange-700">juros {fmt(o.juros)}</span> : null}
+                      {o.desconto ? <span className="block text-[11px] text-emerald-700">desconto {fmt(o.desconto)}</span> : null}
+                    </>
+                  )}
                 </Campo>
                 <Campo label={o.cliente ? 'Tipo / portador' : 'Forma / banco'}>{[o.forma, o.banco].filter(Boolean).join(' · ') || '—'}</Campo>
                 <Campo label="Despesa">{o.despesa || '—'}</Campo>
