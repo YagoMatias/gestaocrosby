@@ -5,6 +5,7 @@ import {
   CaretUp,
   CaretUpDown,
   Presentation,
+  Knife,
   Plus,
   X,
   Flag,
@@ -145,6 +146,10 @@ export default function DreAnalitica() {
     toggleAnalisada,
     catTravada,
     toggleTravaDespesa,
+    chaveCorte,
+    corteAtivo,
+    toggleCorte2027,
+    forecast2027Cat,
     ultimaSyncDespesa,
     limparUltimaSyncDespesa,
     setForecast,
@@ -311,6 +316,8 @@ export default function DreAnalitica() {
   const [mainSort, setMainSort] = useState({ col: null, dir: 'desc' });
   // modo apresentacao (tela limpa para a diretoria)
   const [apresentacao, setApresentacao] = useState(false);
+  // linhas marcadas no check discreto: soma mostrada no cabeçalho do card
+  const [selecionadas, setSelecionadas] = useState(() => new Set());
 
   const toggleExpand = useCallback((cat) => {
     setExpanded((prev) => {
@@ -396,14 +403,14 @@ export default function DreAnalitica() {
           ? parseFloat(forecasts[fcKey])
           : forecastPadraoFor(gp.members[0].cat, activeMonth);
       const real = mergeRealizedG(gp.g, activeMonth);
-      return { cat: gp.members[0].cat, realizado: real, forecast: fc, variacao: real - fc, pct: mo.total > 0 ? real / mo.total : 0 };
+      return { cat: gp.members[0].cat, realizado: real, forecast: fc, variacao: real - fc, pct: mo.total > 0 ? real / mo.total : 0, f2027: gp.members.reduce((a, g) => a + forecast2027Cat(activeMonth, g.cat), 0) };
     }
     const fcKey = fcKeyFor(sc.cat);
     const fc =
       forecasts[fcKey] !== undefined
         ? parseFloat(forecasts[fcKey])
         : forecastPadraoFor(sc.cat, activeMonth);
-    return { cat: sc.cat, realizado: sc.total, forecast: fc, variacao: sc.total - fc, pct: mo.total > 0 ? sc.total / mo.total : 0 };
+    return { cat: sc.cat, realizado: sc.total, forecast: fc, variacao: sc.total - fc, pct: mo.total > 0 ? sc.total / mo.total : 0, f2027: forecast2027Cat(activeMonth, sc.cat) };
   };
 
   // ordena as categorias conforme o cabeçalho clicado; mantém os membros de um
@@ -433,6 +440,22 @@ export default function DreAnalitica() {
           ? { col, dir: 'asc' }
           : { col: null, dir: 'desc' },
     );
+  // soma das linhas marcadas (check discreto) no mês ativo
+  const somaSelecionadas = useMemo(() => {
+    let soma = 0;
+    let n = 0;
+    Object.entries(mo.details || {}).forEach(([c, rows]) =>
+      rows.forEach((d, i) => {
+        if (selecionadas.has(chaveCorte(c, d, i))) {
+          soma += parseFloat(d.val) || 0;
+          n++;
+        }
+      }),
+    );
+    return { s: Math.round(soma * 100) / 100, n };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mo, selecionadas]);
+
   const sortArrow = (col) =>
     mainSort.col !== col ? (
       <CaretUpDown size={10} className="opacity-40" />
@@ -445,6 +468,8 @@ export default function DreAnalitica() {
   // bloco de lançamentos de uma categoria expandida
   const detailBlock = (cat) => {
     const allRows = (mo.details[cat] || []).map((d, i) => ({ d, i }));
+    const f27 = forecast2027Cat(activeMonth, cat);
+    const nCortes = allRows.filter(({ d, i }) => corteAtivo(activeMonth, chaveCorte(cat, d, i))).length;
     const catKey = activeMonth + '||' + cat;
     const selForns = catFornFilter[catKey] || [];
     let dets = allRows;
@@ -620,6 +645,7 @@ export default function DreAnalitica() {
             <table className="w-full text-[11px]">
               <thead>
                 <tr className="bg-gray-100 text-gray-600">
+                  <th className="px-1 py-1.5 w-12" title="☑ soma a linha · 🔪 corte (sai do Forecast 2027)"></th>
                   <th className="px-2 py-1.5 text-left font-semibold">Emp.</th>
                   <th className="px-2 py-1.5 text-left font-semibold">
                     Fornecedor
@@ -667,11 +693,40 @@ export default function DreAnalitica() {
                 {dets.map(({ d, i }) => {
                   const fk = flagKeyFor(activeMonth, cat, d, i);
                   const fl = flags[fk];
+                  const chave = chaveCorte(cat, d, i);
+                  const cortado = corteAtivo(activeMonth, chave);
+                  const sel = selecionadas.has(chave);
                   return (
                     <tr
                       key={i}
-                      className="border-b border-gray-50 hover:bg-blue-50/40"
+                      className={`border-b border-gray-50 hover:bg-blue-50/40 ${
+                        cortado ? 'bg-red-50/40 text-gray-400' : sel ? 'bg-sky-50/60' : ''
+                      }`}
                     >
+                      <td className="px-1 py-1 whitespace-nowrap">
+                        <input
+                          type="checkbox"
+                          checked={sel}
+                          onChange={() =>
+                            setSelecionadas((p) => {
+                              const nx = new Set(p);
+                              nx.has(chave) ? nx.delete(chave) : nx.add(chave);
+                              return nx;
+                            })
+                          }
+                          title="Marcar para somar"
+                          className="w-3 h-3 accent-sky-600 align-middle opacity-50 hover:opacity-100 cursor-pointer"
+                        />
+                        <button
+                          onClick={() => toggleCorte2027(activeMonth, chave)}
+                          title={cortado ? 'Corte marcado: fora do Forecast 2027 (clique para desfazer)' : 'Marcar corte: este lançamento não entra no Forecast 2027'}
+                          className={`ml-1 align-middle transition ${
+                            cortado ? 'text-red-600' : 'text-gray-300 hover:text-red-500 opacity-60 hover:opacity-100'
+                          }`}
+                        >
+                          <Knife size={12} weight={cortado ? 'fill' : 'regular'} />
+                        </button>
+                      </td>
                       <td className="px-2 py-1 text-gray-400">
                         <EditableText
                           value={d.emp}
@@ -716,7 +771,7 @@ export default function DreAnalitica() {
                       <td className="px-2 py-1 font-mono text-gray-500">
                         {d.liq || <span className="text-gray-300">—</span>}
                       </td>
-                      <td className="px-2 py-1 text-right font-medium">
+                      <td className={`px-2 py-1 text-right font-medium${cortado ? ' line-through text-red-500' : ''}`}>
                         <EditableText
                           value={fmtBRL(d.val)}
                           onCommit={(v) =>
@@ -815,7 +870,7 @@ export default function DreAnalitica() {
                   );
                 })}
                 <tr className="bg-gray-50 font-semibold">
-                  <td colSpan={6} className="px-2 py-1.5 text-right text-gray-500">
+                  <td colSpan={7} className="px-2 py-1.5 text-right text-gray-500">
                     Subtotal
                     {selForns.length
                       ? ` (${selForns.length} fornecedor${selForns.length > 1 ? 'es' : ''})`
@@ -824,11 +879,17 @@ export default function DreAnalitica() {
                   <td className="px-2 py-1.5 text-right text-[#000638]">
                     {fmtBRL(sub)}
                   </td>
-                  <td colSpan={4}></td>
+                  <td colSpan={4} className="px-2 py-1.5 text-left">
+                    {nCortes > 0 && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700" title="Subtotal sem os lançamentos cortados">
+                        <Knife size={11} weight="fill" className="text-red-500" /> {nCortes} corte{nCortes > 1 ? 's' : ''} · Forecast 2027: {fmtBRL(f27)}
+                      </span>
+                    )}
+                  </td>
                 </tr>
                 {!apresentacao && (
                   <tr>
-                    <td colSpan={11} className="px-2 py-1.5">
+                    <td colSpan={12} className="px-2 py-1.5">
                       <button
                         onClick={() => addRow(activeMonth, cat)}
                         className="inline-flex items-center gap-1 text-[11px] text-[#000638] font-semibold hover:underline"
@@ -952,6 +1013,9 @@ export default function DreAnalitica() {
                 <FcCell fcKey={fcKey} value={fc} onCommit={setForecast} auto={!fcManual} />
               </td>
             )}
+            <td className="px-2 py-2 text-right font-semibold text-emerald-700 bg-emerald-50/40">
+              {fmtBRL(forecast2027Cat(activeMonth, gm.cat))}
+            </td>
             {idx === 0 && (
               <td
                 rowSpan={n}
@@ -996,6 +1060,9 @@ export default function DreAnalitica() {
         >
           <FcCell fcKey={fcKey} value={fc} onCommit={setForecast} auto={!fcManual} />
         </td>
+        <td className="px-2 py-2 text-right font-semibold text-emerald-700 bg-emerald-50/40">
+          {fmtBRL(forecast2027Cat(activeMonth, s.cat))}
+        </td>
         <td className="px-2 py-2 text-right">
           <Variacao real={s.total} fc={fc} />
         </td>
@@ -1006,6 +1073,7 @@ export default function DreAnalitica() {
   });
 
   const totalVisivel = visible.reduce((s, x) => s + x.total, 0);
+  const f2027Total = visible.reduce((s, x) => s + forecast2027Cat(activeMonth, x.cat), 0);
 
   return (
     <div className="space-y-4">
@@ -1338,7 +1406,19 @@ export default function DreAnalitica() {
         title={`DRE Analítica — ${mo.label}`}
         subtitle="clique na categoria para ver os lançamentos · clique no forecast para editar · ✔ marca a despesa como analisada · 🔒 trava a despesa"
         actions={
-          !apresentacao && visible.length > 0 && (
+          <div className="flex items-center gap-2">
+            {somaSelecionadas.n > 0 && (
+              <span
+                className="inline-flex items-center gap-1.5 text-[11px] font-semibold rounded-full px-2.5 py-1 border bg-sky-50 text-sky-800 border-sky-200"
+                title="Soma das linhas marcadas no check"
+              >
+                Σ {somaSelecionadas.n} linha{somaSelecionadas.n === 1 ? '' : 's'} · {fmtBRL(somaSelecionadas.s)}
+                <button onClick={() => setSelecionadas(new Set())} className="text-sky-500 hover:text-sky-800" title="Limpar seleção">
+                  <X size={11} weight="bold" />
+                </button>
+              </span>
+            )}
+            {!apresentacao && visible.length > 0 && (
             <span
               className={`text-[11px] font-semibold rounded-full px-2.5 py-1 border ${
                 nAnalisadas === visible.length
@@ -1349,7 +1429,8 @@ export default function DreAnalitica() {
             >
               ✔ {nAnalisadas} de {visible.length} analisadas
             </span>
-          )
+            )}
+          </div>
         }
       >
         <div className="overflow-x-auto" style={{ maxHeight: 'calc(100vh - 220px)', overflowY: 'auto' }}>
@@ -1379,6 +1460,13 @@ export default function DreAnalitica() {
                   <span className="inline-flex items-center justify-end gap-1">Forecast {sortArrow('forecast')}</span>
                 </th>
                 <th
+                  onClick={() => toggleSort('f2027')}
+                  title="Realizado sem os lançamentos marcados como corte (faquinha). Clique para ordenar."
+                  className="px-2 py-2 text-right font-semibold cursor-pointer select-none hover:bg-white/10 bg-emerald-900/40"
+                >
+                  <span className="inline-flex items-center justify-end gap-1">Forecast 2027 {sortArrow('f2027')}</span>
+                </th>
+                <th
                   onClick={() => toggleSort('variacao')}
                   title="Clique para ordenar (maior→menor, depois menor→maior)"
                   className="px-2 py-2 text-right font-semibold cursor-pointer select-none hover:bg-white/10"
@@ -1402,6 +1490,9 @@ export default function DreAnalitica() {
                 <td className="px-2 py-2 text-right">{fmtBRL(totalVisivel)}</td>
                 <td className="px-2 py-2 text-right text-violet-700">
                   {fcTotal > 0 ? fmtBRL(fcTotal) : '—'}
+                </td>
+                <td className="px-2 py-2 text-right text-emerald-700" title="Total sem os lançamentos cortados">
+                  {fmtBRL(f2027Total)}
                 </td>
                 <td className="px-2 py-2 text-right">
                   {fcTotal > 0 ? <Variacao real={mo.total} fc={fcTotal} /> : '—'}

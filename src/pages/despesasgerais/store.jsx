@@ -404,6 +404,7 @@ function loadInitial() {
     travas: {}, // m -> { travado: true, em } — mês travado após análise (sem sync, sem edição)
     analisadas: {}, // m -> { cat: { em } } — despesas já conferidas pelo financeiro
     travasDespesa: {}, // m -> { cat: { em } } — despesa travada (sem sync, sem edição)
+    cortes2027: {}, // m -> { chave: { em } } — lançamentos cortados (fora do Forecast 2027)
   };
   MONTH_KEYS.forEach((m) => {
     if (!base.months[m]) base.months[m] = mesVazio(m);
@@ -429,6 +430,7 @@ function loadInitial() {
       if (saved.travas) base.travas = saved.travas;
       if (saved.analisadas) base.analisadas = saved.analisadas;
       if (saved.travasDespesa) base.travasDespesa = saved.travasDespesa;
+      if (saved.cortes2027) base.cortes2027 = saved.cortes2027;
     }
   } catch (e) {
     console.warn('DespesasGerais: falha ao ler estado salvo', e);
@@ -520,6 +522,40 @@ export function DespesasGeraisProvider({ children }) {
       return { ...st, travasDespesa: todas };
     });
   }, []);
+
+  // FORECAST 2027 (apresentação p/ diretoria, pedido do Yago em 23/10/2026):
+  // lançamento marcado como "corte" (faquinha) sai do Forecast 2027 da
+  // despesa — ex.: colaborador demitido que não volta nos próximos meses.
+  // O Realizado NÃO muda. Chave da linha: id do TOTVS ou cat|índice (manual).
+  const cortes2027 = state.cortes2027 || {};
+  const chaveCorte = (cat, d, i) => (d && d.id ? `id:${d.id}` : `${cat}|i:${i}`);
+  const corteAtivo = useCallback(
+    (m, chave) => !!(cortes2027[m] && cortes2027[m][chave]),
+    [cortes2027],
+  );
+  const toggleCorte2027 = useCallback((m, chave) => {
+    setState((st) => {
+      const todas = { ...(st.cortes2027 || {}) };
+      const doMes = { ...(todas[m] || {}) };
+      if (doMes[chave]) delete doMes[chave];
+      else doMes[chave] = { em: new Date().toISOString() };
+      todas[m] = doMes;
+      return { ...st, cortes2027: todas };
+    });
+  }, []);
+  // Realizado da despesa sem as linhas cortadas
+  const forecast2027Cat = useCallback(
+    (m, cat) => {
+      const rows = (months[m] && months[m].details[cat]) || [];
+      const cm = cortes2027[m] || {};
+      const soma = rows.reduce(
+        (acc, d, i) => (cm[chaveCorte(cat, d, i)] ? acc : acc + (parseFloat(d.val) || 0)),
+        0,
+      );
+      return Math.round(soma * 100) / 100;
+    },
+    [months, cortes2027],
+  );
   // lê a trava dentro de setState/mutateMonth (estado mais recente)
   const despesaTravadaEm = (st, m, cat) =>
     !!(st.travasDespesa && st.travasDespesa[m] && st.travasDespesa[m][cat]);
@@ -1262,6 +1298,7 @@ export function DespesasGeraisProvider({ children }) {
           travas: parsed.travas || st.travas || {},
           analisadas: parsed.analisadas || st.analisadas || {},
           travasDespesa: parsed.travasDespesa || st.travasDespesa || {},
+          cortes2027: parsed.cortes2027 || st.cortes2027 || {},
         }));
         onDone && onDone(null);
       } catch (e) {
@@ -1299,6 +1336,11 @@ export function DespesasGeraisProvider({ children }) {
     travasDespesa,
     catTravada,
     toggleTravaDespesa,
+    cortes2027,
+    chaveCorte,
+    corteAtivo,
+    toggleCorte2027,
+    forecast2027Cat,
     ultimaSyncDespesa,
     limparUltimaSyncDespesa: () => setUltimaSyncDespesa(null),
     hcRows: baseData.hcRows,
