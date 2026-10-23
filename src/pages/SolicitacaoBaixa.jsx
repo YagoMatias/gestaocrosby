@@ -86,13 +86,13 @@ const SolicitacaoBaixa = () => {
     {
       id: 'cartao_debito',
       label: 'Cartão de Débito (PAGARME DEBITO)',
-      // TESTE 23/10/2026: o swagger do TOTVS documenta "4 = Cartão de Débito,
-      // 5 = Cartão de Crédito" (FCXFL002), mas nesta base é o inverso e o
-      // PAGARME DEBITO (seq 63) é tipo 5. Se a API mapeia paidType 2 → tipo 4,
-      // procura entre os PAGARME CREDITO (sem operadora) e nunca acha. Com
-      // paidType 1 ela deve procurar nos tipo 5. Voltar a 2 se não resolver.
-      paidType: 1,
+      // 23/10/2026: provado com sonda na API (fatura inexistente) que o tipo
+      // (1/2) não muda nada e que a API só acha cartão com Bandeira preenchida
+      // no cadastro (FCXFL002). O backend resolve operadora/bandeira lendo o
+      // cadastro do cartão do portador 9901 na hora da baixa (`portador`).
+      paidType: 2,
       cardAuto: true,
+      portador: 9901,
       // TOTVS: cartão seq 63 (portador 9901 "PAGARME DEBITO"), operatorName PAGARME.
       // Combinação ainda em acerto — os dois campos ficam editáveis.
       // Fixos = exatamente o cadastro de cartões do TOTVS (payment-cards, débito
@@ -511,6 +511,7 @@ const SolicitacaoBaixa = () => {
                   bandeira: formaSelecionada.bandeira,
                   operadora: formaSelecionada.operadora,
                   parcelas: 1,
+                  portador: formaSelecionada.portador,
                 },
               }
             : {}),
@@ -536,7 +537,7 @@ const SolicitacaoBaixa = () => {
             formaPagamentoProcessamento === 'cartao_credito'
               ? dadosCartaoProcessamento
               : formaSelecionada?.cardAuto
-                ? { bandeira: formaSelecionada.bandeira, operadora: formaSelecionada.operadora, parcelas: 1 }
+                ? { bandeira: formaSelecionada.bandeira, operadora: formaSelecionada.operadora, parcelas: 1, portador: formaSelecionada.portador }
                 : undefined,
         }),
       });
@@ -1621,7 +1622,7 @@ const SolicitacaoBaixa = () => {
                     />
                   </div>
                   <p className="text-[11px] text-violet-700">
-                    Fixos (iguais ao cadastro do cartão no TOTVS): operadora <b>PAGARME</b>, sem bandeira, 1 parcela, portador 9901 ·
+                    Operadora e bandeira são lidas do <b>cadastro do cartão do portador 9901</b> no TOTVS na hora da baixa (1 parcela) ·
                     NSU e autorização = data real (ddmmaaaa) · liquidação na empresa 1.
                   </p>
                 </div>
