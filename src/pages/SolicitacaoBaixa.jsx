@@ -90,8 +90,10 @@ const SolicitacaoBaixa = () => {
       cardAuto: true,
       // TOTVS: cartão seq 63 (portador 9901 "PAGARME DEBITO"), operatorName PAGARME.
       // Combinação ainda em acerto — os dois campos ficam editáveis.
-      operadora: 'PAGARME DEBITO',
-      bandeira: '',
+      // payment-cards seq 63: operatorName "PAGARME"; bandeira a ser preenchida
+      // no cadastro de cartões (João escolheu "OUTROS" em 23/10/2026).
+      operadora: 'PAGARME',
+      bandeira: 'OUTROS',
     },
     { id: 'credev', label: 'CREDEV', paidType: 5 },
     // Pix pago dentro do app BlueCard, pela conta Pagar.me da Crosby. O dinheiro
@@ -1412,8 +1414,8 @@ const SolicitacaoBaixa = () => {
                     if (e.target.value === 'cartao_debito') {
                       setDadosCartaoProcessamento((prev) => ({
                         ...prev,
-                        bandeira: '',
-                        operadora: 'PAGARME DEBITO',
+                        bandeira: 'OUTROS',
+                        operadora: 'PAGARME',
                       }));
                     }
                     setBancoSelecionado(null);
@@ -1625,7 +1627,7 @@ const SolicitacaoBaixa = () => {
                         type="text"
                         value={dadosCartaoProcessamento.bandeira ?? ''}
                         onChange={(e) => setDadosCartaoProcessamento((prev) => ({ ...prev, bandeira: e.target.value }))}
-                        placeholder="PAGARME DEBITO"
+                        placeholder="OUTROS"
                         className="w-full border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#000638]"
                       />
                     </div>
