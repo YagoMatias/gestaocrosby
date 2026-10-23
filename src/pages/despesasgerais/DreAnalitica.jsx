@@ -368,6 +368,13 @@ export default function DreAnalitica() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mo, search, statusFilter, fornFilter, activeMonth, months, forecasts]);
 
+  // modo apresentação: abre todas as despesas ao ligar (o clique na
+  // categoria continua abrindo/fechando cada uma normalmente)
+  useEffect(() => {
+    if (apresentacao) setExpanded(new Set(visible.map((s) => s.cat)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apresentacao]);
+
   // agrupamento de forecast mesclado presente no mês
   const catToGroup = useMemo(() => {
     const map = new Map();
@@ -656,13 +663,11 @@ export default function DreAnalitica() {
                   <th className="px-2 py-1.5 text-left font-semibold">
                     Observação
                   </th>
+                  <th className="px-2 py-1.5 text-center font-semibold">
+                    Enviar p/
+                  </th>
                   {!apresentacao && (
-                    <>
-                      <th className="px-2 py-1.5 text-center font-semibold">
-                        Enviar p/
-                      </th>
-                      <th className="px-2 py-1.5 text-center font-semibold"></th>
-                    </>
+                    <th className="px-2 py-1.5 text-center font-semibold"></th>
                   )}
                 </tr>
               </thead>
@@ -772,36 +777,34 @@ export default function DreAnalitica() {
                           className="block truncate"
                         />
                       </td>
-                      {!apresentacao && (
-                        <td className="px-2 py-1 text-center whitespace-nowrap">
-                          <button
-                            onClick={() =>
-                              toggleFlag('correcao', activeMonth, cat, i, d)
-                            }
-                            title="Enviar para Correções DRE"
-                            className={`p-1 rounded transition ${
-                              fl?.tipo === 'correcao'
-                                ? 'bg-amber-100 text-amber-600'
-                                : 'text-gray-300 hover:text-amber-500'
-                            }`}
-                          >
-                            <Flag size={13} weight={fl?.tipo === 'correcao' ? 'fill' : 'regular'} />
-                          </button>
-                          <button
-                            onClick={() =>
-                              toggleFlag('corte', activeMonth, cat, i, d)
-                            }
-                            title="Enviar para Corte de custo"
-                            className={`p-1 rounded transition ${
-                              fl?.tipo === 'corte'
-                                ? 'bg-red-100 text-red-600'
-                                : 'text-gray-300 hover:text-red-500'
-                            }`}
-                          >
-                            <Scissors size={13} weight={fl?.tipo === 'corte' ? 'fill' : 'regular'} />
-                          </button>
-                        </td>
-                      )}
+                      <td className="px-2 py-1 text-center whitespace-nowrap">
+                        <button
+                          onClick={() =>
+                            toggleFlag('correcao', activeMonth, cat, i, d)
+                          }
+                          title="Enviar para Correções DRE"
+                          className={`p-1 rounded transition ${
+                            fl?.tipo === 'correcao'
+                              ? 'bg-amber-100 text-amber-600'
+                              : 'text-gray-300 hover:text-amber-500'
+                          }`}
+                        >
+                          <Flag size={13} weight={fl?.tipo === 'correcao' ? 'fill' : 'regular'} />
+                        </button>
+                        <button
+                          onClick={() =>
+                            toggleFlag('corte', activeMonth, cat, i, d)
+                          }
+                          title="Enviar para Corte de custo"
+                          className={`p-1 rounded transition ${
+                            fl?.tipo === 'corte'
+                              ? 'bg-red-100 text-red-600'
+                              : 'text-gray-300 hover:text-red-500'
+                          }`}
+                        >
+                          <Scissors size={13} weight={fl?.tipo === 'corte' ? 'fill' : 'regular'} />
+                        </button>
+                      </td>
                       {!apresentacao && (
                         <td className="px-2 py-1 text-center">
                           <button
@@ -902,7 +905,7 @@ export default function DreAnalitica() {
   visibleOrdenado.forEach((s) => {
     const gp = catToGroup.get(s.cat);
     const pct = mo.total > 0 ? ((s.total / mo.total) * 100).toFixed(1) : '0.0';
-    const isOpen = apresentacao || expanded.has(s.cat);
+    const isOpen = expanded.has(s.cat);
 
     const arrow = (cat) => (
       <span className="inline-flex items-center text-gray-400">
@@ -970,7 +973,7 @@ export default function DreAnalitica() {
         );
       });
       gp.members.forEach((gm) => {
-        if (apresentacao || expanded.has(gm.cat)) bodyRows.push(detailBlock(gm.cat));
+        if (expanded.has(gm.cat)) bodyRows.push(detailBlock(gm.cat));
       });
       return;
     }
