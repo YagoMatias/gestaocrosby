@@ -330,7 +330,7 @@ export default function DreAnalitica() {
   const visible = useMemo(() => {
     const sq = search.toLowerCase();
     const ff = fornFilter.toLowerCase();
-    return mo.summary.filter((s) => {
+    const base = mo.summary.filter((s) => {
       if (sq && !s.cat.toLowerCase().includes(sq)) return false;
       const dets = mo.details[s.cat] || [];
       if (statusFilter && !dets.some((d) => situacaoPagamento(d) === statusFilter))
@@ -339,7 +339,31 @@ export default function DreAnalitica() {
         return false;
       return true;
     });
-  }, [mo, search, statusFilter, fornFilter]);
+    // A partir de OUTUBRO: despesas que têm forecast (apareceram em meses
+    // anteriores ou têm forecast manual) aparecem mesmo sem Realizado no mês,
+    // zeradas na coluna Realizado (pedido da Niziany em 23/10/2026). Só quando
+    // não há filtro de status/fornecedor (essas linhas não têm lançamentos).
+    const idx = MES_SEQ.indexOf(activeMonth);
+    if (idx < MES_SEQ.indexOf('out') || statusFilter || fornFilter) return base;
+    const presentes = new Set(base.map((s) => s.cat));
+    const candidatos = new Set();
+    MES_SEQ.slice(0, idx).forEach((mk) => {
+      const d = months[mk] && months[mk].details;
+      if (d) Object.keys(d).forEach((c) => candidatos.add(c));
+    });
+    const extras = [];
+    candidatos.forEach((cat) => {
+      if (presentes.has(cat)) return;
+      if (sq && !cat.toLowerCase().includes(sq)) return;
+      const fcKey = fcKeyFor(cat);
+      const manual = forecasts[fcKey] !== undefined;
+      const fc = manual ? parseFloat(forecasts[fcKey]) : forecastPadraoFor(cat, activeMonth);
+      if (manual || (fc && fc > 0)) extras.push({ cat, total: 0, semRealizado: true });
+    });
+    extras.sort((a, b) => a.cat.localeCompare(b.cat, 'pt-BR'));
+    return [...base, ...extras];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mo, search, statusFilter, fornFilter, activeMonth, months, forecasts]);
 
   // agrupamento de forecast mesclado presente no mês
   const catToGroup = useMemo(() => {
@@ -896,6 +920,9 @@ export default function DreAnalitica() {
             <td className="px-3 py-2 w-7">{arrow(gm.cat)}</td>
             <td className="px-2 py-2 font-medium text-[#000638]">
               {gm.cat}
+              {gm.semRealizado && (
+                <span className="ml-2 text-[9px] font-semibold uppercase text-gray-400 bg-gray-100 border border-gray-200 rounded-full px-1.5 py-0.5" title="Tem forecast mas não teve lançamento neste mês">sem lançamento</span>
+              )}
               {analisadaBtn(gm.cat)}
               {idx === 0 && (
                 <span
@@ -948,6 +975,9 @@ export default function DreAnalitica() {
         <td className="px-3 py-2 w-7">{arrow(s.cat)}</td>
         <td className="px-2 py-2 font-medium text-[#000638]">
           {s.cat}
+          {s.semRealizado && (
+            <span className="ml-2 text-[9px] font-semibold uppercase text-gray-400 bg-gray-100 border border-gray-200 rounded-full px-1.5 py-0.5" title="Tem forecast mas não teve lançamento neste mês">sem lançamento</span>
+          )}
           {analisadaBtn(s.cat)}
         </td>
         <td className="px-2 py-2 text-right">{fmtBRL(s.total)}</td>
