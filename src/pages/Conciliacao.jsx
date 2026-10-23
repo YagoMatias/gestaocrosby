@@ -41,7 +41,7 @@ const CONTAS = [
   { empresa: 'FERREIRA COMERCIO E CONFECCOES LTDA', cta: 10012, cnpj: '17.177.680/0009-73', banco: 'STONE TERESINA', codigo: 197, ag: '1', conta: '-' },
   { empresa: 'FERREIRA COMERCIO E CONFECCOES LTDA', cta: 10018, cnpj: '17.177.680/0010-07', banco: 'STONE BREJINHO', codigo: 197, ag: '1', conta: '71938990-0' },
   { empresa: 'FERREIRA COMERCIO E CONFECCOES LTDA', cta: 60001, cnpj: '17.177.680/0001-16', banco: 'MENTORE', codigo: '-', ag: '1', conta: '47097134-2' },
-  { empresa: 'FERREIRA COMERCIO E CONFECCOES LTDA', cta: 1015, cnpj: '17.177.680/0010-07', banco: 'PAGARME', codigo: '-', ag: '-', conta: '-' },
+  { empresa: 'FERREIRA COMERCIO E CONFECCOES LTDA', cta: 1015, cnpj: '17.177.680/0010-07', banco: 'PAGARME', codigo: '-', ag: '-', conta: '-', ligacao: { banco: 'PAGARME', conta: 'CROSBY' } },
   // FA MODA & VAREJO LTDA
   { empresa: 'FA MODA & VAREJO LTDA', cta: 20001, cnpj: '27.728.810/0001-15', banco: 'ITAU', codigo: 341, ag: '6530', conta: '33688-9' },
   { empresa: 'FA MODA & VAREJO LTDA', cta: 20002, cnpj: '27.728.810/0001-15', banco: 'ITAU VINCULADA', codigo: 341, ag: '6530', conta: '56927-3' },
@@ -129,6 +129,11 @@ const BANCOS = {
   SICREDI: { label: 'Sicredi', cor: 'bg-lime-100 text-lime-800 border-lime-300' },
   CAIXA: { label: 'Caixa', cor: 'bg-blue-100 text-blue-800 border-blue-300' },
   MENTORE: { label: 'Mêntore', cor: 'bg-purple-100 text-purple-800 border-purple-300' },
+  BNB: { label: 'BNB', cor: 'bg-red-100 text-red-800 border-red-300' },
+  SANTANDER: { label: 'Santander', cor: 'bg-rose-100 text-rose-800 border-rose-300' },
+  UNICRED: { label: 'Unicred', cor: 'bg-teal-100 text-teal-800 border-teal-300' },
+  DAYCOVAL: { label: 'Daycoval', cor: 'bg-sky-100 text-sky-800 border-sky-300' },
+  PAGARME: { label: 'Pagar.me', cor: 'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-300' },
 };
 const bancoCfg = (b) => BANCOS[b] || { label: b || '—', cor: 'bg-gray-100 text-gray-700 border-gray-300' };
 const TIPOS = {
@@ -237,6 +242,12 @@ const Conciliacao = () => {
   const ligacoes = useMemo(() => {
     const map = new Map(); // cta → fluxo conta
     for (const c of CONTAS) {
+      // ligação explícita (ex.: Pagar.me, que não tem número de conta)
+      if (c.ligacao) {
+        const fc = fluxoContas.find((f) => f.banco === c.ligacao.banco && String(f.conta).toUpperCase() === String(c.ligacao.conta).toUpperCase());
+        if (fc) map.set(c.cta, fc);
+        continue;
+      }
       const k = chavePlanilha(c);
       if (!k) continue;
       const fc = fluxoContas.find((f) => chaveConta(f.conta, f.conta_dv) === k && bancoBate(c, f));
