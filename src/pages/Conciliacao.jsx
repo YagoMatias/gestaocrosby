@@ -56,11 +56,13 @@ const ORIGENS = {
   LIBERACAO: { label: 'Liberação de Pagamento', cor: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
   SOLICITACAO: { label: 'Solicitações Crosby', cor: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
   TOTVS_CP: { label: 'Contas a Pagar (TOTVS)', cor: 'bg-blue-100 text-blue-800 border-blue-300' },
+  STONE: { label: 'Vendas Stone', cor: 'bg-green-100 text-green-800 border-green-300' },
   MANUAL: { label: 'Justificado', cor: 'bg-gray-100 text-gray-700 border-gray-300' },
   MULTIPLO: { label: 'Várias duplicatas', cor: 'bg-violet-100 text-violet-800 border-violet-300' },
 };
 const origemCfg = (o) => ORIGENS[o] || { label: o || '—', cor: 'bg-gray-100 text-gray-700 border-gray-300' };
 // referência gravada na conciliação (mesmos campos que o backend usa no lote)
+const podeConciliarLinha = (l, conta) => l.valor < 0 || (String(conta?.banco || '').toUpperCase() === 'STONE' && ['antecipacao', 'cartao'].includes(l.categoria));
 const refDe = (c) => ({ id: c.id, nome: c.nome, doc: c.doc, valor: c.valor, valorDuplicata: c.valorDuplicata ?? c.valor, parcial: !!c.parcial, restanteDepois: c.restanteDepois ?? null, data: c.data, vencimento: c.vencimento, empresa: c.empresa, detalhe: c.detalhe, duplicata: c.duplicata, motivos: c.motivos });
 const justDe = (c) => [c.parcial ? 'PARCIAL' : null, c.nome, c.detalhe].filter(Boolean).join(' · ');
 const STORAGE_BUCKET = 'solicitacoes-crosby';
@@ -1152,7 +1154,7 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
                     <td className="px-3 py-2 text-right font-semibold text-red-600 whitespace-nowrap">{l.valor < 0 ? fmt(-l.valor) : ''}</td>
                     <td className={`px-3 py-2 text-right whitespace-nowrap ${l.saldo_apos < 0 ? 'text-red-600' : 'text-gray-500'}`}>{l.saldo_apos != null ? fmt(l.saldo_apos) : ''}</td>
                     <td className="px-3 py-2 max-w-[300px]">
-                      <CelulaConciliacao l={l} ocupado={ocupado === l.id} onConciliar={() => conciliarLinha(l)} onJustificar={() => setJustificando({ lancamento: l, texto: '' })} onDesfazer={() => desfazerLinha(l)} onDetalhe={() => abrirDetalhe(l)} />
+                      <CelulaConciliacao l={l} podeConciliar={podeConciliarLinha(l, c)} ocupado={ocupado === l.id} onConciliar={() => conciliarLinha(l)} onJustificar={() => setJustificando({ lancamento: l, texto: '' })} onDesfazer={() => desfazerLinha(l)} onDetalhe={() => abrirDetalhe(l)} />
                     </td>
                   </tr>
                 );
@@ -1202,7 +1204,7 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
                     <Badge cfg={tcfg}>{tcfg.label}</Badge>
                   </div>
                   <div className="mt-1.5">
-                    <CelulaConciliacao l={l} ocupado={ocupado === l.id} onConciliar={() => conciliarLinha(l)} onJustificar={() => setJustificando({ lancamento: l, texto: '' })} onDesfazer={() => desfazerLinha(l)} onDetalhe={() => abrirDetalhe(l)} />
+                    <CelulaConciliacao l={l} podeConciliar={podeConciliarLinha(l, c)} ocupado={ocupado === l.id} onConciliar={() => conciliarLinha(l)} onJustificar={() => setJustificando({ lancamento: l, texto: '' })} onDesfazer={() => desfazerLinha(l)} onDetalhe={() => abrirDetalhe(l)} />
                   </div>
                 </div>
               );
@@ -1234,11 +1236,11 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
                     {picker.candidatos?.length ? (
                       <TabelaCandidatos candidatos={picker.candidatos} selecao={selecao} onToggle={toggleSel} onUsar={escolher} ocupado={ocupado} keyCand={keyCand} mostrarPontos />
                     ) : (
-                      <p className="p-6 text-center text-sm text-gray-400">Nenhum pagamento com este valor nas três fontes (±5 dias).</p>
+                      <p className="p-6 text-center text-sm text-gray-400">{picker.lancamento.valor > 0 ? 'Nenhum depósito da Stone com este valor (±2 dias) no arquivo de conciliação da loja.' : 'Nenhum pagamento com este valor nas três fontes (±5 dias).'}</p>
                     )}
 
-                    {/* busca manual no Contas a Pagar */}
-                    <div className="border-t border-gray-200">
+                    {/* busca manual no Contas a Pagar (só saídas) */}
+                    {picker.lancamento.valor < 0 && <div className="border-t border-gray-200">
                       <button onClick={() => setBuscaCp((b) => ({ ...b, aberta: !b.aberta }))} className="w-full flex items-center justify-between px-4 py-2 text-xs font-semibold text-gray-700 bg-gray-50 hover:bg-gray-100">
                         <span className="inline-flex items-center gap-1">
                           <MagnifyingGlass size={13} /> Procurar no Contas a Pagar (duplicata, fornecedor, emissão, vencimento, valor)
@@ -1304,7 +1306,7 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
                           ))}
                         </div>
                       )}
-                    </div>
+                    </div>}
                   </div>
                   <div className="px-4 py-3 border-t border-gray-200 flex flex-wrap items-center gap-2">
                     <button onClick={() => setJustificando({ lancamento: picker.lancamento, texto: '' })} className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50">
@@ -1373,7 +1375,7 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
 };
 
 // ─── célula de conciliação (OK / pendente + ações) ─────────────
-const CelulaConciliacao = ({ l, ocupado, onConciliar, onJustificar, onDesfazer, onDetalhe }) => {
+const CelulaConciliacao = ({ l, podeConciliar = l.valor < 0, ocupado, onConciliar, onJustificar, onDesfazer, onDetalhe }) => {
   if (ocupado) return <ArrowsClockwise size={14} className="animate-spin text-blue-600" />;
   const c = l.conciliacao;
   if (c) {
@@ -1388,6 +1390,11 @@ const CelulaConciliacao = ({ l, ocupado, onConciliar, onJustificar, onDesfazer, 
             {c.referencia?.parcial && <span className="px-1 rounded bg-orange-100 text-orange-800 text-[10px]">parcial</span>}
             {temAnexo && <Paperclip size={11} className="text-gray-400" />}
             {c.automatico && c.origem !== 'TRANSFERENCIA' && <span className="text-[10px] text-gray-400">auto {c.pontuacao != null ? `· ${c.pontuacao} pts` : ''}</span>}
+            {c.referencia?.stone && (
+              <span className="px-1 rounded bg-orange-100 text-orange-800 text-[10px]" title={`bruto ${fmt(c.referencia.stone.bruto)} · líquido ${fmt(c.referencia.stone.liquido)}`}>
+                taxa {fmt(c.referencia.stone.taxa)}{c.referencia.stone.taxaPct != null ? ` (${c.referencia.stone.taxaPct.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)` : ''}
+              </span>
+            )}
           </div>
           <div className="text-[11px] text-gray-600 truncate max-w-[260px]" title={c.justificativa || ''}>
             {c.justificativa || c.referencia?.nome || ''}
@@ -1405,8 +1412,8 @@ const CelulaConciliacao = ({ l, ocupado, onConciliar, onJustificar, onDesfazer, 
   return (
     <div className="flex items-center gap-1.5">
       <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-medium">Pendente</span>
-      {l.valor < 0 ? (
-        <button onClick={onConciliar} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-[#000638] text-white hover:bg-blue-900 text-[11px] font-medium" title="Buscar em Liberação de Pagamento, Solicitações Crosby e Contas a Pagar">
+      {podeConciliar ? (
+        <button onClick={onConciliar} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-[#000638] text-white hover:bg-blue-900 text-[11px] font-medium" title={l.valor < 0 ? 'Buscar em Liberação de Pagamento, Solicitações Crosby e Contas a Pagar' : 'Buscar o depósito no arquivo de conciliação da Stone (antecipação / liquidação de vendas)'}>
           <Lightning size={11} weight="fill" /> Conciliar
         </button>
       ) : null}
@@ -1472,6 +1479,71 @@ const TabelaCandidatos = ({ candidatos, selecao, onToggle, onUsar, ocupado, keyC
 );
 
 // ─── detalhe da conciliação ────────────────────────────────────
+const pct = (v) => (v == null ? '—' : `${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`);
+const DetalheStone = ({ o }) => {
+  const st = o.stone || {};
+  const parcelas = st.parcelas || [];
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Campo label="Origem">{o.tipo}</Campo>
+        <Campo label="Loja">{o.empresa || '—'}</Campo>
+        <Campo label="StoneCode / depósito">{st.stonecode || '—'}{st.paymentId ? <span className="block text-[11px] text-gray-400">pag. {st.paymentId}</span> : null}</Campo>
+        <Campo label="Carteira">{st.carteira || '—'}</Campo>
+        <Campo label="Data do depósito">{fmtData(o.dataPagamento)}</Campo>
+        <Campo label="Valor bruto das vendas">{fmt(st.bruto)}</Campo>
+        <Campo label="Valor líquido">{fmt(st.liquido)}</Campo>
+        <Campo label="Taxa cobrada">
+          <span className="text-orange-700 font-semibold">{fmt(st.taxa)}</span>
+          <span className="block text-[11px] text-gray-500">{pct(st.taxaPct)} sobre o bruto</span>
+        </Campo>
+        <Campo label="Parcelas liquidadas">{st.parcelas != null ? `${parcelas.length || st.parcelas}${st.antecipadas ? ` (${st.antecipadas} antecipada(s))` : ''}` : '—'}</Campo>
+        <Campo label="Depositado em">{fmt(o.valor)}</Campo>
+        {st.valorEventos ? <Campo label="Eventos financeiros">{fmt(st.valorEventos)}</Campo> : null}
+        {st.saldoNegativoAnterior ? <Campo label="Saldo negativo anterior">{fmt(st.saldoNegativoAnterior)}</Campo> : null}
+      </div>
+      {st.erroParcelas && <p className="text-xs text-amber-700">Não foi possível carregar as parcelas agora: {st.erroParcelas}</p>}
+      {parcelas.length > 0 && (
+        <div className="border border-green-200 rounded-lg overflow-hidden">
+          <div className="px-3 py-2 bg-green-50 text-xs font-semibold text-green-900">Vendas que compõem o depósito</div>
+          <div className="max-h-72 overflow-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-gray-50 text-gray-600 sticky top-0">
+                <tr>
+                  <Th>NSU</Th>
+                  <Th>Venda (captura)</Th>
+                  <Th>Entrada</Th>
+                  <Th>Parc.</Th>
+                  <Th right>Bruto</Th>
+                  <Th right>Líquido</Th>
+                  <Th right>Taxa</Th>
+                  <Th right>%</Th>
+                  <Th>Antecipada</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {parcelas.map((x, i) => (
+                  <tr key={i} className="border-t border-gray-100">
+                    <td className="px-3 py-1.5 font-mono">{x.nsu || '—'}</td>
+                    <td className="px-3 py-1.5 whitespace-nowrap">{x.dataCaptura ? `${fmtData(String(x.dataCaptura).slice(0, 10))} ${String(x.dataCaptura).slice(11, 16)}` : '—'}</td>
+                    <td className="px-3 py-1.5">{x.formaEntrada || '—'}</td>
+                    <td className="px-3 py-1.5">{x.parcela ?? '—'}</td>
+                    <td className="px-3 py-1.5 text-right">{fmt(x.bruto)}</td>
+                    <td className="px-3 py-1.5 text-right">{fmt(x.liquido)}</td>
+                    <td className="px-3 py-1.5 text-right text-orange-700 font-semibold">{fmt(x.taxa)}</td>
+                    <td className="px-3 py-1.5 text-right">{x.bruto ? pct((x.taxa / x.bruto) * 100) : '—'}</td>
+                    <td className="px-3 py-1.5 whitespace-nowrap">{x.antecipada ? `sim · venceria ${fmtData(x.dataOriginal)}` : 'não'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Campo = ({ label, children }) => (
   <div className="min-w-0">
     <p className="text-[10px] uppercase tracking-wide text-gray-400">{label}</p>
@@ -1570,7 +1642,9 @@ const DetalheConciliacao = ({ detalhe, onClose, onAnexar, onRemoverAnexo }) => {
             </div>
           )}
 
-          {o && (
+          {o?.stone && <DetalheStone o={o} />}
+
+          {o && !o.stone && (
             <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <Campo label="Origem">{o.tipo}</Campo>
