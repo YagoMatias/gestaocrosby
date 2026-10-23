@@ -1102,6 +1102,12 @@ const SolicitacaoBaixa = () => {
                             title="Pedido pelo link de baixa do Dryland (vendedor mandou o comprovante)"
                           />
                         )}
+                        {sol.origem === 'pagarme_boleto' && (
+                          <span
+                            className="inline-block w-2 h-2 rounded-full bg-amber-500 flex-shrink-0"
+                            title="Aberta automaticamente: boleto Pagar.me pago (retorno)"
+                          />
+                        )}
                         {sol.user_nome || '--'}
                         {Number(sol.nr_fat) === 0 && (
                           <span
@@ -1117,7 +1123,9 @@ const SolicitacaoBaixa = () => {
                           ? 'automático · app BlueCard'
                           : sol.origem === 'dryland_link'
                             ? 'automático · link Dryland'
-                            : sol.user_email}
+                            : sol.origem === 'pagarme_boleto'
+                              ? 'automático · boleto Pagar.me'
+                              : sol.user_email}
                       </div>
                     </td>
                     <td className="px-3 py-2 text-center text-[10px]">
