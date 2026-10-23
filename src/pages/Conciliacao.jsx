@@ -301,6 +301,28 @@ const Conciliacao = () => {
     return () => clearTimeout(t);
   }, [carregar]);
 
+  // aquece as fontes de conciliação do período em segundo plano (a consulta ao
+  // TOTVS leva dezenas de segundos na primeira vez; depois fica em cache)
+  const [fontesProntas, setFontesProntas] = useState(null);
+  useEffect(() => {
+    if (!de || !ate || de > ate) return undefined;
+    let cancelado = false;
+    setFontesProntas(null);
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch(`${API}/conciliacao/preparar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ de, ate }) });
+        const j = await r.json();
+        if (!cancelado && j?.success) setFontesProntas(j.data);
+      } catch {
+        /* silencioso: a busca por linha carrega sob demanda */
+      }
+    }, 400);
+    return () => {
+      cancelado = true;
+      clearTimeout(t);
+    };
+  }, [de, ate]);
+
   // ── planilha × contas importadas → linhas da tela ──
   const linhasBase = useMemo(() => {
     const ligados = new Set();
@@ -594,7 +616,12 @@ const Conciliacao = () => {
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3 mb-4">
         <Kpi label="Período" value={`${fmtData(de)} a ${fmtData(ate)}`} sub={carregando ? 'carregando…' : `${totais.qtd} lançamentos`} />
-        <Kpi label="Pendências" value={totais.pendencias} sub={`${totais.pendSaidas} saídas · ${totais.pendEntradas} entradas · ${totais.comExtrato} contas com lançamentos`} tone={totais.pendencias ? 'text-amber-700' : 'text-green-700'} />
+        <Kpi
+          label="Pendências"
+          value={totais.pendencias}
+          sub={`${totais.pendSaidas} saídas · ${totais.pendEntradas} entradas · ${fontesProntas ? `fontes prontas (${fontesProntas.liberacao} liberações, ${fontesProntas.totvs} pagas no TOTVS)` : 'carregando fontes de pagamento…'}`}
+          tone={totais.pendencias ? 'text-amber-700' : 'text-green-700'}
+        />
         <Kpi label="Entradas" value={fmt(totais.entradas)} sub="inclui transferências recebidas" tone="text-green-700" />
         <Kpi label="Saídas" value={fmt(totais.saidas)} sub="inclui transferências enviadas" tone="text-red-600" />
       </div>
