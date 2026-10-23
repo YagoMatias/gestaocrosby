@@ -367,14 +367,6 @@ export default function DreAnalitica() {
     return [...base, ...extras];
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mo, search, statusFilter, fornFilter, activeMonth, months, forecasts]);
-
-  // modo apresentação: abre todas as despesas ao ligar (o clique na
-  // categoria continua abrindo/fechando cada uma normalmente)
-  useEffect(() => {
-    if (apresentacao) setExpanded(new Set(visible.map((s) => s.cat)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apresentacao]);
-
   // agrupamento de forecast mesclado presente no mês
   const catToGroup = useMemo(() => {
     const map = new Map();
