@@ -64,7 +64,8 @@ const ORIGENS = {
 const origemCfg = (o) => ORIGENS[o] || { label: o || '—', cor: 'bg-gray-100 text-gray-700 border-gray-300' };
 // referência gravada na conciliação (mesmos campos que o backend usa no lote)
 const ehPixMaquininha = (l) => l.categoria === 'pix' && /MAQUININHA/i.test(`${l.descricao || ''} ${l.memo || ''}`);
-const podeConciliarLinha = (l, conta) => l.valor < 0 || (String(conta?.banco || '').toUpperCase() === 'STONE' && (['antecipacao', 'cartao'].includes(l.categoria) || ehPixMaquininha(l)));
+const ehPixTotvs = (l) => l.categoria === 'pix' && /FISERV/i.test(l.contraparte_banco || ''); // QR Code gerado no TOTVS (líquido da taxa 0,79)
+const podeConciliarLinha = (l, conta) => l.valor < 0 || ehPixTotvs(l) || (String(conta?.banco || '').toUpperCase() === 'STONE' && (['antecipacao', 'cartao'].includes(l.categoria) || ehPixMaquininha(l)));
 const refDe = (c) => ({ id: c.id, nome: c.nome, doc: c.doc, valor: c.valor, valorDuplicata: c.valorDuplicata ?? c.valor, parcial: !!c.parcial, restanteDepois: c.restanteDepois ?? null, data: c.data, vencimento: c.vencimento, empresa: c.empresa, detalhe: c.detalhe, duplicata: c.duplicata, motivos: c.motivos });
 const justDe = (c) => [c.parcial ? 'PARCIAL' : null, c.nome, c.detalhe].filter(Boolean).join(' · ');
 const STORAGE_BUCKET = 'solicitacoes-crosby';
@@ -1238,7 +1239,7 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
                     {picker.candidatos?.length ? (
                       <TabelaCandidatos candidatos={picker.candidatos} selecao={selecao} onToggle={toggleSel} onUsar={escolher} ocupado={ocupado} keyCand={keyCand} mostrarPontos />
                     ) : (
-                      <p className="p-6 text-center text-sm text-gray-400">{picker.lancamento.valor > 0 ? (ehPixMaquininha(picker.lancamento) ? 'Nenhum título do contas a receber (fatura, promissória, Pix, adiantamento) com este valor nas empresas desta conta (±5 dias).' : 'Nenhum depósito da Stone com este valor (±2 dias) no arquivo de conciliação da loja.') : 'Nenhum pagamento com este valor nas três fontes (±5 dias).'}</p>
+                      <p className="p-6 text-center text-sm text-gray-400">{picker.lancamento.valor > 0 ? (ehPixTotvs(picker.lancamento) ? 'Nenhum título PIX do contas a receber com este valor + taxa Fiserv de R$ 0,79 nas empresas desta conta (±5 dias).' : ehPixMaquininha(picker.lancamento) ? 'Nenhum título do contas a receber (fatura, promissória, Pix, adiantamento) com este valor nas empresas desta conta (±5 dias).' : 'Nenhum depósito da Stone com este valor (±2 dias) no arquivo de conciliação da loja.') : 'Nenhum pagamento com este valor nas três fontes (±5 dias).'}</p>
                     )}
 
                     {/* busca manual no Contas a Pagar (só saídas) */}
@@ -1392,6 +1393,11 @@ const CelulaConciliacao = ({ l, podeConciliar = l.valor < 0, ocupado, onConcilia
             {c.referencia?.parcial && <span className="px-1 rounded bg-orange-100 text-orange-800 text-[10px]">parcial</span>}
             {temAnexo && <Paperclip size={11} className="text-gray-400" />}
             {c.automatico && c.origem !== 'TRANSFERENCIA' && <span className="text-[10px] text-gray-400">auto {c.pontuacao != null ? `· ${c.pontuacao} pts` : ''}</span>}
+            {c.referencia?.taxaFixa && !c.referencia?.stone && (
+              <span className="px-1 rounded bg-orange-100 text-orange-800 text-[10px]" title="Taxa fixa por Pix descontada pela Fiserv (título do TOTVS = valor recebido + taxa)">
+                taxa {fmt(c.referencia.taxaFixa)}
+              </span>
+            )}
             {c.referencia?.stone && (
               <span className="px-1 rounded bg-orange-100 text-orange-800 text-[10px]" title={`bruto ${fmt(c.referencia.stone.bruto)} · líquido ${fmt(c.referencia.stone.liquido)}`}>
                 taxa {fmt(c.referencia.stone.taxa)}{c.referencia.stone.taxaPct != null ? ` (${c.referencia.stone.taxaPct.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)` : ''}
@@ -1415,7 +1421,7 @@ const CelulaConciliacao = ({ l, podeConciliar = l.valor < 0, ocupado, onConcilia
     <div className="flex items-center gap-1.5">
       <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-medium">Pendente</span>
       {podeConciliar ? (
-        <button onClick={onConciliar} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-[#000638] text-white hover:bg-blue-900 text-[11px] font-medium" title={l.valor < 0 ? 'Buscar em Liberação de Pagamento, Solicitações Crosby e Contas a Pagar' : ehPixMaquininha(l) ? 'Buscar o título da venda no contas a receber do TOTVS (fatura, promissória, Pix, adiantamento)' : 'Buscar o depósito no arquivo de conciliação da Stone (antecipação / liquidação de vendas)'}>
+        <button onClick={onConciliar} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-[#000638] text-white hover:bg-blue-900 text-[11px] font-medium" title={l.valor < 0 ? 'Buscar em Liberação de Pagamento, Solicitações Crosby e Contas a Pagar' : ehPixMaquininha(l) || ehPixTotvs(l) ? 'Buscar o título da venda no contas a receber do TOTVS (fatura, promissória, Pix, adiantamento)' : 'Buscar o depósito no arquivo de conciliação da Stone (antecipação / liquidação de vendas)'}>
           <Lightning size={11} weight="fill" /> Conciliar
         </button>
       ) : null}
@@ -1661,7 +1667,14 @@ const DetalheConciliacao = ({ detalhe, onClose, onAnexar, onRemoverAnexo }) => {
                 <Campo label="Vencimento">{fmtData(o.vencimento)}</Campo>
                 <Campo label="Data de pagamento">{fmtData(o.dataPagamento)}</Campo>
                 <Campo label={o.cliente ? 'Valor do título' : 'Valor da duplicata'}>{fmt(o.valor)}</Campo>
-                <Campo label={o.cliente ? 'Valor recebido' : 'Valor pago'}>{fmt(o.valorPago)}</Campo>
+                <Campo label={o.cliente ? 'Valor recebido' : 'Valor pago'}>
+                  {o.taxa ? (
+                    <>
+                      {fmt(Math.abs(l.valor))}
+                      <span className="block text-[11px] text-orange-700">taxa Fiserv {fmt(o.taxa)} · título {fmt(o.valorPago)}</span>
+                    </>
+                  ) : fmt(o.valorPago)}
+                </Campo>
                 <Campo label={o.cliente ? 'Tipo / portador' : 'Forma / banco'}>{[o.forma, o.banco].filter(Boolean).join(' · ') || '—'}</Campo>
                 <Campo label="Despesa">{o.despesa || '—'}</Campo>
                 <Campo label="Pago por">{o.pagoPor || '—'}</Campo>
