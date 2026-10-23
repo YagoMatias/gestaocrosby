@@ -210,6 +210,7 @@ const BANCOS = {
   SANTANDER: { label: 'Santander', cor: 'bg-rose-100 text-rose-800 border-rose-300' },
   UNICRED: { label: 'Unicred', cor: 'bg-teal-100 text-teal-800 border-teal-300' },
   DAYCOVAL: { label: 'Daycoval', cor: 'bg-sky-100 text-sky-800 border-sky-300' },
+  PAGBANK: { label: 'PagBank', cor: 'bg-amber-100 text-amber-800 border-amber-300' },
   BRADESCO: { label: 'Bradesco', cor: 'bg-red-100 text-red-900 border-red-300' },
   ITAU: { label: 'Itaú', cor: 'bg-orange-100 text-orange-800 border-orange-300' },
   BB: { label: 'Banco do Brasil', cor: 'bg-yellow-100 text-yellow-800 border-yellow-300' },

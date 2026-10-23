@@ -60,6 +60,7 @@ const BANCOS = {
   SANTANDER: { label: 'Santander', cor: 'bg-rose-100 text-rose-800 border-rose-300', ponto: 'bg-rose-500' },
   UNICRED: { label: 'Unicred', cor: 'bg-teal-100 text-teal-800 border-teal-300', ponto: 'bg-teal-500' },
   DAYCOVAL: { label: 'Daycoval', cor: 'bg-sky-100 text-sky-800 border-sky-300', ponto: 'bg-sky-500' },
+  PAGBANK: { label: 'PagBank', cor: 'bg-amber-100 text-amber-800 border-amber-300', ponto: 'bg-amber-500' },
   PAGARME: { label: 'Pagar.me', cor: 'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-300', ponto: 'bg-fuchsia-500' },
 };
 const bancoCfg = (b) => BANCOS[b] || { label: b || '—', cor: 'bg-gray-100 text-gray-700 border-gray-300', ponto: 'bg-gray-400' };
