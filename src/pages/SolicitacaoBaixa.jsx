@@ -24,8 +24,7 @@ import {
   MagnifyingGlassMinus,
   ArrowsOut,
   CalendarBlank,
-  PencilSimple,
-} from '@phosphor-icons/react';
+  PencilSimple, CreditCard } from '@phosphor-icons/react';
 
 const SolicitacaoBaixa = () => {
   const { user } = useAuth();
@@ -36,6 +35,8 @@ const SolicitacaoBaixa = () => {
   // João (23/10/2026): caixas por origem (Pix BlueCard / boleto Pagar.me recebido)
   const [filtroOrigem, setFiltroOrigem] = useState('');
   const [filtroPortador, setFiltroPortador] = useState('TODOS');
+  // João (23/10/2026): filtrar por forma de pagamento (p/ contar as baixas feitas por forma)
+  const [filtroForma, setFiltroForma] = useState('TODAS');
   const [selectedItems, setSelectedItems] = useState(new Set());
   const [processingBaixa, setProcessingBaixa] = useState(false);
 
@@ -193,8 +194,9 @@ const SolicitacaoBaixa = () => {
       );
     }
     if (filtroOrigem) lista = lista.filter((x) => x.origem === filtroOrigem);
+    if (filtroForma !== 'TODAS') lista = lista.filter((x) => (x.forma_pagamento || 'sem_forma') === filtroForma);
     return lista;
-  }, [solicitacoes, filtroStatus, filtroPortador, filtroOrigem]);
+  }, [solicitacoes, filtroStatus, filtroPortador, filtroOrigem, filtroForma]);
 
   // Totais por status
   const pendentesPorOrigem = useMemo(() => {
@@ -204,6 +206,22 @@ const SolicitacaoBaixa = () => {
     const boleto = pend.filter((x) => x.origem === 'pagarme_boleto');
     return { pix: { n: pix.length, valor: soma(pix) }, boleto: { n: boleto.length, valor: soma(boleto) } };
   }, [solicitacoes]);
+
+  const formasPresentes = useMemo(() => {
+    const m = new Map();
+    for (const x of solicitacoes) {
+      const k = x.forma_pagamento || 'sem_forma';
+      m.set(k, (m.get(k) || 0) + 1);
+    }
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  }, [solicitacoes]);
+  const resumoLista = useMemo(
+    () => ({
+      n: solicitacoesFiltradas.length,
+      valor: solicitacoesFiltradas.reduce((a, x) => a + (parseFloat(x.vl_fatura) || 0), 0),
+    }),
+    [solicitacoesFiltradas],
+  );
 
   const totais = useMemo(() => {
     return {
@@ -769,6 +787,30 @@ const SolicitacaoBaixa = () => {
               ))}
             </select>
           </div>
+          {/* Filtro por forma de pagamento (João, 23/10/2026) */}
+          <div className="flex items-center gap-1 bg-white border rounded-lg px-2 py-1">
+            <CreditCard size={14} className="text-gray-500" />
+            <select
+              value={filtroForma}
+              onChange={(e) => setFiltroForma(e.target.value)}
+              className="text-xs border-none bg-transparent focus:ring-0 pr-6"
+              title="Filtrar pela forma de pagamento (ex.: só as baixas por Cartão de Débito PAGARME)"
+            >
+              <option value="TODAS">Todas as formas</option>
+              {formasPresentes.map(([k, n]) => (
+                <option key={k} value={k}>
+                  {k === 'sem_forma' ? 'Sem forma' : FORMAS_PAGAMENTO_LABELS[k] || k} ({n})
+                </option>
+              ))}
+            </select>
+          </div>
+          <span
+            className="text-xs font-bold text-[#000638] bg-white border rounded-lg px-2 py-1"
+            title="Quantidade e valor do que está na lista com os filtros atuais"
+          >
+            {resumoLista.n} na lista · {formatarMoeda(resumoLista.valor)}
+            {filtroStatus === 'processada' && filtroForma !== 'TODAS' ? ' baixadas' : ''}
+          </span>
           <button
             onClick={carregarSolicitacoes}
             className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-[#000638] bg-white border rounded-lg hover:bg-gray-50 transition-colors"
