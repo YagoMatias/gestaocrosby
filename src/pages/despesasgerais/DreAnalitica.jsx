@@ -645,7 +645,7 @@ export default function DreAnalitica() {
             <table className="w-full text-[11px]">
               <thead>
                 <tr className="bg-gray-100 text-gray-600">
-                  <th className="px-1 py-1.5 w-12" title="☑ soma a linha · 🔪 corte (sai do Forecast 2027)"></th>
+                  <th className="px-1 py-1.5 w-6" title="☑ marca a linha para somar"></th>
                   <th className="px-2 py-1.5 text-left font-semibold">Emp.</th>
                   <th className="px-2 py-1.5 text-left font-semibold">
                     Fornecedor
@@ -717,15 +717,6 @@ export default function DreAnalitica() {
                           title="Marcar para somar"
                           className="w-3 h-3 accent-sky-600 align-middle opacity-50 hover:opacity-100 cursor-pointer"
                         />
-                        <button
-                          onClick={() => toggleCorte2027(activeMonth, chave)}
-                          title={cortado ? 'Corte marcado: fora do Forecast 2027 (clique para desfazer)' : 'Marcar corte: este lançamento não entra no Forecast 2027'}
-                          className={`ml-1 align-middle transition ${
-                            cortado ? 'text-red-600' : 'text-gray-300 hover:text-red-500 opacity-60 hover:opacity-100'
-                          }`}
-                        >
-                          <Knife size={12} weight={cortado ? 'fill' : 'regular'} />
-                        </button>
                       </td>
                       <td className="px-2 py-1 text-gray-400">
                         <EditableText
@@ -850,6 +841,15 @@ export default function DreAnalitica() {
                           }`}
                         >
                           <Scissors size={13} weight={fl?.tipo === 'corte' ? 'fill' : 'regular'} />
+                        </button>
+                        <button
+                          onClick={() => toggleCorte2027(activeMonth, chave)}
+                          title={cortado ? 'Corte marcado: fora do Forecast 2027 (clique para desfazer)' : 'Marcar corte: este lançamento não entra no Forecast 2027'}
+                          className={`p-1 rounded transition ${
+                            cortado ? 'bg-red-100 text-red-600' : 'text-gray-300 hover:text-red-500'
+                          }`}
+                        >
+                          <Knife size={13} weight={cortado ? 'fill' : 'regular'} />
                         </button>
                       </td>
                       {!apresentacao && (
