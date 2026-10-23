@@ -12,6 +12,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
+import { supabaseAdmin } from '../lib/supabase';
 import {
   Bank,
   MagnifyingGlass,
@@ -30,6 +31,10 @@ import {
   Lightning,
   ArrowCounterClockwise,
   ChatText,
+  Paperclip,
+  FileText,
+  UploadSimple,
+  Eye,
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -54,6 +59,18 @@ const ORIGENS = {
   MANUAL: { label: 'Justificado', cor: 'bg-gray-100 text-gray-700 border-gray-300' },
 };
 const origemCfg = (o) => ORIGENS[o] || { label: o || '—', cor: 'bg-gray-100 text-gray-700 border-gray-300' };
+// referência gravada na conciliação (mesmos campos que o backend usa no lote)
+const refDe = (c) => ({ id: c.id, nome: c.nome, doc: c.doc, valor: c.valor, valorDuplicata: c.valorDuplicata ?? c.valor, parcial: !!c.parcial, restanteDepois: c.restanteDepois ?? null, data: c.data, vencimento: c.vencimento, empresa: c.empresa, detalhe: c.detalhe, duplicata: c.duplicata, motivos: c.motivos });
+const justDe = (c) => [c.parcial ? 'PARCIAL' : null, c.nome, c.detalhe].filter(Boolean).join(' · ');
+const STORAGE_BUCKET = 'solicitacoes-crosby';
+const uploadAnexo = async (file, prefix) => {
+  const ext = (file.name.split('.').pop() || 'bin').toLowerCase();
+  const fileName = `${prefix}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  const { error } = await supabaseAdmin.storage.from(STORAGE_BUCKET).upload(fileName, file, { contentType: file.type, upsert: false });
+  if (error) throw error;
+  const { data } = supabaseAdmin.storage.from(STORAGE_BUCKET).getPublicUrl(fileName);
+  return data.publicUrl;
+};
 
 // Planilha CONTAS BANCARIAS — CTA = código da conta no TOTVS · CODIGO = banco (FEBRABAN).
 // Pagar.me não entra na conciliação bancária.
@@ -794,6 +811,50 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
   const [justificando, setJustificando] = useState(null); // { lancamento, texto }
   const [ocupado, setOcupado] = useState(null); // id do lançamento em processamento
   const [erroModal, setErroModal] = useState(null);
+  const [detalhe, setDetalhe] = useState(null); // { lancamento, carregando, dados }
+
+  const abrirDetalhe = async (l) => {
+    if (!l.conciliacao) return;
+    if (!l.conciliacao.id) {
+      setDetalhe({ lancamento: l, carregando: false, dados: null, transferencia: l.conciliacao });
+      return;
+    }
+    setDetalhe({ lancamento: l, carregando: true, dados: null });
+    try {
+      const r = await fetch(`${API}/conciliacao/${l.conciliacao.id}/detalhe`);
+      const j = await r.json();
+      if (!j?.success) throw new Error(j?.message || 'Falha ao carregar o detalhe.');
+      setDetalhe({ lancamento: l, carregando: false, dados: j.data });
+    } catch (e) {
+      setErroModal(e.message);
+      setDetalhe(null);
+    }
+  };
+  const anexar = async (tipo, file) => {
+    if (!file || !detalhe?.dados?.conciliacao?.id) return;
+    const cid = detalhe.dados.conciliacao.id;
+    setDetalhe((d) => ({ ...d, enviando: tipo }));
+    try {
+      const url = await uploadAnexo(file, `conciliacao/${cid}`);
+      const usuario = headersUsuario()['x-user-name'] || null;
+      const anexos = [...(detalhe.dados.conciliacao.anexos || []), { tipo, url, nome: file.name, em: new Date().toISOString(), usuario }];
+      const r = await fetch(`${API}/conciliacao/${cid}/anexos`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ anexos }) });
+      const j = await r.json();
+      if (!j?.success) throw new Error(j?.message || 'Falha ao salvar o anexo.');
+      setDetalhe((d) => ({ ...d, enviando: null, dados: { ...d.dados, conciliacao: { ...d.dados.conciliacao, anexos: j.data.anexos } } }));
+    } catch (e) {
+      setErroModal(e.message);
+      setDetalhe((d) => (d ? { ...d, enviando: null } : d));
+    }
+  };
+  const removerAnexo = async (idx) => {
+    const cid = detalhe?.dados?.conciliacao?.id;
+    if (!cid) return;
+    const anexos = (detalhe.dados.conciliacao.anexos || []).filter((_, i) => i !== idx);
+    const r = await fetch(`${API}/conciliacao/${cid}/anexos`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ anexos }) });
+    const j = await r.json();
+    if (j?.success) setDetalhe((d) => ({ ...d, dados: { ...d.dados, conciliacao: { ...d.dados.conciliacao, anexos: j.data.anexos } } }));
+  };
 
   const conciliarLinha = async (l) => {
     setOcupado(l.id);
@@ -802,7 +863,7 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
       const d = await buscar(l.id);
       if (d.decisao?.automatico && d.decisao.escolhido) {
         const esc = d.decisao.escolhido;
-        await salvar(l.id, esc.origem, { id: esc.id, nome: esc.nome, doc: esc.doc, valor: esc.valor, data: esc.data, empresa: esc.empresa, detalhe: esc.detalhe, motivos: esc.motivos }, [esc.nome, esc.detalhe].filter(Boolean).join(' · '), esc.score);
+        await salvar(l.id, esc.origem, refDe(esc), justDe(esc), esc.score);
       } else {
         setPicker({ lancamento: l, ...d });
       }
@@ -816,7 +877,7 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
     const l = picker.lancamento;
     setOcupado(l.id);
     try {
-      await salvar(l.id, cand.origem, { id: cand.id, nome: cand.nome, doc: cand.doc, valor: cand.valor, data: cand.data, empresa: cand.empresa, detalhe: cand.detalhe, motivos: cand.motivos }, [cand.nome, cand.detalhe].filter(Boolean).join(' · '), cand.score);
+      await salvar(l.id, cand.origem, refDe(cand), justDe(cand), cand.score);
       setPicker(null);
     } catch (e) {
       setErroModal(e.message);
@@ -1050,7 +1111,7 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
                     <td className="px-3 py-2 text-right font-semibold text-red-600 whitespace-nowrap">{l.valor < 0 ? fmt(-l.valor) : ''}</td>
                     <td className={`px-3 py-2 text-right whitespace-nowrap ${l.saldo_apos < 0 ? 'text-red-600' : 'text-gray-500'}`}>{l.saldo_apos != null ? fmt(l.saldo_apos) : ''}</td>
                     <td className="px-3 py-2 max-w-[300px]">
-                      <CelulaConciliacao l={l} ocupado={ocupado === l.id} onConciliar={() => conciliarLinha(l)} onJustificar={() => setJustificando({ lancamento: l, texto: '' })} onDesfazer={() => desfazerLinha(l)} />
+                      <CelulaConciliacao l={l} ocupado={ocupado === l.id} onConciliar={() => conciliarLinha(l)} onJustificar={() => setJustificando({ lancamento: l, texto: '' })} onDesfazer={() => desfazerLinha(l)} onDetalhe={() => abrirDetalhe(l)} />
                     </td>
                   </tr>
                 );
@@ -1100,13 +1161,18 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
                     <Badge cfg={tcfg}>{tcfg.label}</Badge>
                   </div>
                   <div className="mt-1.5">
-                    <CelulaConciliacao l={l} ocupado={ocupado === l.id} onConciliar={() => conciliarLinha(l)} onJustificar={() => setJustificando({ lancamento: l, texto: '' })} onDesfazer={() => desfazerLinha(l)} />
+                    <CelulaConciliacao l={l} ocupado={ocupado === l.id} onConciliar={() => conciliarLinha(l)} onJustificar={() => setJustificando({ lancamento: l, texto: '' })} onDesfazer={() => desfazerLinha(l)} onDetalhe={() => abrirDetalhe(l)} />
                   </div>
                 </div>
               );
             })}
           </div>
         </div>
+
+        {/* detalhe da conciliação (duplicata, pagamento, anexos) */}
+        {detalhe && !picker && !justificando && (
+          <DetalheConciliacao detalhe={detalhe} onClose={() => setDetalhe(null)} onAnexar={anexar} onRemoverAnexo={removerAnexo} />
+        )}
 
         {/* escolha de candidato / justificativa */}
         {(picker || justificando) && (
@@ -1210,17 +1276,20 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
 };
 
 // ─── célula de conciliação (OK / pendente + ações) ─────────────
-const CelulaConciliacao = ({ l, ocupado, onConciliar, onJustificar, onDesfazer }) => {
+const CelulaConciliacao = ({ l, ocupado, onConciliar, onJustificar, onDesfazer, onDetalhe }) => {
   if (ocupado) return <ArrowsClockwise size={14} className="animate-spin text-blue-600" />;
   const c = l.conciliacao;
   if (c) {
     const cfg = origemCfg(c.origem);
+    const temAnexo = (c.anexos || []).length > 0;
     return (
       <div className="flex items-start gap-1.5">
         <CheckCircle size={16} weight="fill" className="text-green-600 shrink-0 mt-0.5" />
-        <div className="min-w-0">
+        <div className="min-w-0 cursor-pointer hover:underline decoration-dotted" onClick={onDetalhe} title="Ver detalhes da conciliação">
           <div className="flex items-center gap-1 flex-wrap">
             <Badge cfg={cfg}>{cfg.label}</Badge>
+            {c.referencia?.parcial && <span className="px-1 rounded bg-orange-100 text-orange-800 text-[10px]">parcial</span>}
+            {temAnexo && <Paperclip size={11} className="text-gray-400" />}
             {c.automatico && c.origem !== 'TRANSFERENCIA' && <span className="text-[10px] text-gray-400">auto {c.pontuacao != null ? `· ${c.pontuacao} pts` : ''}</span>}
           </div>
           <div className="text-[11px] text-gray-600 truncate max-w-[260px]" title={c.justificativa || ''}>
@@ -1247,6 +1316,171 @@ const CelulaConciliacao = ({ l, ocupado, onConciliar, onJustificar, onDesfazer }
       <button onClick={onJustificar} className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 text-[11px]" title="Justificar manualmente">
         <ChatText size={11} /> Justificar
       </button>
+    </div>
+  );
+};
+
+// ─── detalhe da conciliação ────────────────────────────────────
+const Campo = ({ label, children }) => (
+  <div className="min-w-0">
+    <p className="text-[10px] uppercase tracking-wide text-gray-400">{label}</p>
+    <p className="text-sm text-gray-800 break-words">{children ?? '—'}</p>
+  </div>
+);
+
+const DetalheConciliacao = ({ detalhe, onClose, onAnexar, onRemoverAnexo }) => {
+  const { lancamento: l, carregando, dados, transferencia, enviando } = detalhe;
+  const c = dados?.conciliacao || l.conciliacao;
+  const o = dados?.origem;
+  const sol = dados?.solicitacao;
+  const anexos = dados?.conciliacao?.anexos || [];
+  const temComprovante = anexos.some((a) => a.tipo === 'comprovante') || sol?.comprovante_url || sol?.comprovante_gestor_url || sol?.comprovante_fabio_url;
+  const temNota = anexos.some((a) => a.tipo === 'nota_fiscal') || sol?.nota_fiscal_url;
+  const cfg = origemCfg(c?.origem);
+  const Link = ({ href, children }) => (
+    <a href={href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-blue-700 hover:underline text-xs">
+      <Eye size={12} /> {children}
+    </a>
+  );
+  return (
+    <div className="absolute inset-0 z-20 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="px-4 py-3 border-b border-gray-200 flex items-start gap-2">
+          <CheckCircle size={20} weight="fill" className="text-green-600 shrink-0 mt-0.5" />
+          <div className="min-w-0 flex-1">
+            <h4 className="text-sm font-bold text-gray-800 flex items-center gap-2 flex-wrap">
+              {l.valor < 0 ? 'Saída' : 'Entrada'} de {fmt(Math.abs(l.valor))} em {fmtData(l.data)}
+              <Badge cfg={cfg}>{cfg.label}</Badge>
+              {c?.referencia?.parcial && <span className="px-1.5 rounded bg-orange-100 text-orange-800 text-[10px]">pagamento parcial</span>}
+            </h4>
+            <p className="text-xs text-gray-500 truncate">{l.descricao} · {l.nomeExibicao || l.memo}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-auto p-4 space-y-4">
+          {carregando && (
+            <p className="text-sm text-gray-400 flex items-center gap-2">
+              <ArrowsClockwise size={14} className="animate-spin" /> Carregando a duplicata…
+            </p>
+          )}
+
+          {transferencia && (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <Campo label="Tipo">Transferência entre contas do grupo</Campo>
+              <Campo label="Outra conta">{transferencia.referencia?.outraConta ? `${transferencia.referencia.outraConta.apelido} (${bancoCfg(transferencia.referencia.outraConta.banco).label})` : '—'}</Campo>
+              <Campo label="Sentido">{transferencia.referencia?.sentido === 'SAIDA' ? 'Saiu desta conta' : 'Entrou nesta conta'}</Campo>
+              <Campo label="Confiança do casamento">{transferencia.referencia?.confianca ?? '—'}</Campo>
+              <Campo label="Justificativa">{transferencia.justificativa}</Campo>
+            </div>
+          )}
+
+          {dados && !o && c?.origem === 'MANUAL' && (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <Campo label="Justificativa">{c.justificativa}</Campo>
+              <Campo label="Por">{c.usuario || '—'}</Campo>
+              <Campo label="Em">{c.criado_em ? fmtData(c.criado_em) : '—'}</Campo>
+            </div>
+          )}
+
+          {o && (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <Campo label="Origem">{o.tipo}</Campo>
+                <Campo label="Empresa">{o.empresa}</Campo>
+                <Campo label="Fornecedor">
+                  {o.fornecedor || '—'}
+                  {o.doc ? <span className="block text-[11px] text-gray-500">{fmtDoc(o.doc)}</span> : null}
+                  {o.fornecedorCodigo ? <span className="block text-[11px] text-gray-400">cód. {o.fornecedorCodigo}</span> : null}
+                </Campo>
+                <Campo label="Duplicata / parcela">{o.duplicata ? `${o.duplicata}${o.parcela ? ` / ${o.parcela}` : ''}` : '—'}</Campo>
+                <Campo label="Emissão">{fmtData(o.emissao)}</Campo>
+                <Campo label="Vencimento">{fmtData(o.vencimento)}</Campo>
+                <Campo label="Data de pagamento">{fmtData(o.dataPagamento)}</Campo>
+                <Campo label="Valor da duplicata">{fmt(o.valor)}</Campo>
+                <Campo label="Valor pago">{fmt(o.valorPago)}</Campo>
+                <Campo label="Forma / banco">{[o.forma, o.banco].filter(Boolean).join(' · ') || '—'}</Campo>
+                <Campo label="Despesa">{o.despesa || '—'}</Campo>
+                <Campo label="Pago por">{o.pagoPor || '—'}</Campo>
+                {o.chavePix && <Campo label="Chave PIX">{o.chavePix}</Campo>}
+                {o.codigoBarras && <Campo label="Código de barras">{o.codigoBarras}</Campo>}
+                {o.observacao && (
+                  <div className="col-span-2 md:col-span-4">
+                    <Campo label="Observação">{o.observacao}</Campo>
+                  </div>
+                )}
+              </div>
+
+              {dados.parcial?.valorDuplicata != null && (dados.usos?.length > 0 || c?.referencia?.parcial) && (
+                <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-900">
+                  <p className="font-semibold">Uso da duplicata: {fmt(dados.parcial.totalUsado)} de {fmt(dados.parcial.valorDuplicata)} · restante {fmt(dados.parcial.restante)}</p>
+                  {dados.usos.map((u) => (
+                    <p key={u.id}>
+                      · {fmtData(u.data)} · {fmt(Math.abs(u.valor))} · {u.justificativa}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+          {dados && (
+            <div>
+              <p className="text-[10px] uppercase tracking-wide text-gray-400 mb-1">Comprovante de pagamento e nota fiscal</p>
+              <div className="grid md:grid-cols-2 gap-3">
+                {[
+                  { tipo: 'comprovante', rotulo: 'Comprovante de pagamento', tem: temComprovante, daSolicitacao: [sol?.comprovante_url, sol?.comprovante_gestor_url, sol?.comprovante_fabio_url].filter(Boolean) },
+                  { tipo: 'nota_fiscal', rotulo: 'Nota fiscal', tem: temNota, daSolicitacao: [sol?.nota_fiscal_url].filter(Boolean) },
+                ].map((g) => (
+                  <div key={g.tipo} className={`rounded-lg border px-3 py-2 ${g.tem ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-gray-800 flex items-center gap-1">
+                        <FileText size={13} /> {g.rotulo}
+                        {!g.tem && <span className="text-[10px] text-amber-700 font-normal">· falta</span>}
+                      </span>
+                      <label className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-[#000638] text-white text-[11px] cursor-pointer hover:bg-blue-900">
+                        {enviando === g.tipo ? <ArrowsClockwise size={11} className="animate-spin" /> : <UploadSimple size={11} />} Anexar
+                        <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" className="hidden" disabled={!!enviando} onChange={(e) => onAnexar(g.tipo, e.target.files?.[0])} />
+                      </label>
+                    </div>
+                    <div className="mt-1.5 space-y-1">
+                      {g.daSolicitacao.map((u, i) => (
+                        <div key={`s${i}`}>
+                          <Link href={u}>abrir (da solicitação)</Link>
+                        </div>
+                      ))}
+                      {anexos
+                        .map((a, idx) => ({ ...a, idx }))
+                        .filter((a) => a.tipo === g.tipo)
+                        .map((a) => (
+                          <div key={a.idx} className="flex items-center gap-2">
+                            <Link href={a.url}>{a.nome || 'abrir'}</Link>
+                            <span className="text-[10px] text-gray-400">{a.usuario ? `por ${a.usuario} · ` : ''}{a.em ? fmtData(a.em) : ''}</span>
+                            <button onClick={() => onRemoverAnexo(a.idx)} className="text-gray-300 hover:text-red-600" title="Remover anexo">
+                              <X size={12} />
+                            </button>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {c && (
+            <p className="text-[11px] text-gray-400">
+              Conciliado {c.automatico ? 'automaticamente' : 'manualmente'}
+              {c.pontuacao != null ? ` · ${c.pontuacao} pontos` : ''}
+              {c.usuario ? ` · por ${c.usuario}` : ''}
+              {c.criado_em ? ` · em ${fmtData(c.criado_em)}` : ''}
+              {c.referencia?.motivos?.length ? ` · ${c.referencia.motivos.join(', ')}` : ''}
+            </p>
+          )}
+        </div>
+      </div>
     </div>
   );
 };
