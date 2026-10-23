@@ -278,15 +278,15 @@ export default function PaginaFlags({ tipo }) {
               </tr>
             </thead>
             <tbody>
-              {keys.map((k) => {
+              {keys.map((k, i) => {
                 const r = flagRowData(k);
                 const f = flags[k];
                 const man = !!f.manual;
                 return (
                   <tr
                     key={k}
-                    className={`border-b border-gray-100 hover:bg-gray-50 ${
-                      man ? 'bg-amber-50/40' : ''
+                    className={`border-b border-gray-100 hover:bg-blue-50/40 ${
+                      man ? 'bg-amber-50/40' : i % 2 === 1 ? 'bg-gray-50' : 'bg-white'
                     }`}
                   >
                     <td className="px-3 py-1.5">
