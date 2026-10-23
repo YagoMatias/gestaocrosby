@@ -98,7 +98,11 @@ const SolicitacaoBaixa = () => {
     { id: 'credev', label: 'CREDEV', paidType: 5 },
     // Pix pago dentro do app BlueCard, pela conta Pagar.me da Crosby. O dinheiro
     // cai na conta da Pagar.me, não num banco do TOTVS — por isso sem `bank`.
-    { id: 'pix_pagarme', label: 'Pix Pagar.me (BlueCard)', paidType: 4 },
+    // 23/10/2026 — ESCONDIDA do seletor (João): baixava em conta corrente
+    // (banco fixo do backend), caminho errado. Tudo que entra pela Pagar.me
+    // deve baixar como Cartão de Débito PAGARME. Mantida só pro rótulo das
+    // solicitações antigas (forma_pagamento = 'pix_pagarme').
+    { id: 'pix_pagarme', label: 'Pix Pagar.me (BlueCard)', paidType: 4, oculta: true },
     // Regra do João (Contas a Receber, 22/10/2026): tudo que é recebido pela
     // Pagar.me (Pix do BlueCard, boleto Stone) baixa no TOTVS como CARTÃO DE
     // DÉBITO, operadora PAGARME DEBITO, NSU e autorização = data do pagamento
@@ -1428,7 +1432,7 @@ const SolicitacaoBaixa = () => {
                   className="w-full border-2 rounded-lg px-3 py-2.5 text-sm font-semibold focus:ring-2 focus:ring-[#000638] focus:border-transparent"
                 >
                   <option value="">Selecione...</option>
-                  {FORMAS_PAGAMENTO.map((fp) => (
+                  {FORMAS_PAGAMENTO.filter((f) => !f.oculta).map((fp) => (
                     <option key={fp.id} value={fp.id}>
                       {fp.label}
                     </option>
