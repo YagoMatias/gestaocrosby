@@ -498,7 +498,7 @@ const SolicitacaoBaixa = () => {
                 card: {
                   nsu: nsuDaData(dataBaixa),
                   autorizacao: autorizacaoDaData(dataBaixa),
-                  bandeira: dadosCartaoProcessamento.bandeira ?? formaSelecionada.bandeira,
+                  bandeira: dadosCartaoProcessamento.bandeira || formaSelecionada.bandeira,
                   operadora: (dadosCartaoProcessamento.operadora || formaSelecionada.operadora),
                   parcelas: 1,
                 },
@@ -526,7 +526,7 @@ const SolicitacaoBaixa = () => {
             formaPagamentoProcessamento === 'cartao_credito'
               ? dadosCartaoProcessamento
               : formaSelecionada?.cardAuto
-                ? { bandeira: dadosCartaoProcessamento.bandeira ?? formaSelecionada.bandeira, operadora: (dadosCartaoProcessamento.operadora || formaSelecionada.operadora), parcelas: 1 }
+                ? { bandeira: dadosCartaoProcessamento.bandeira || formaSelecionada.bandeira, operadora: (dadosCartaoProcessamento.operadora || formaSelecionada.operadora), parcelas: 1 }
                 : undefined,
         }),
       });
