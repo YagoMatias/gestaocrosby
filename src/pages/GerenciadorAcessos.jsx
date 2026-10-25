@@ -234,6 +234,11 @@ const AVAILABLE_PAGES = [
     name: 'Hoje (Contas a Receber)',
     category: 'Financeiro — Contas a Receber',
   },
+  {
+    path: '/receita-financeira',
+    name: 'Receita Financeira',
+    category: 'Financeiro — Contas a Receber',
+  },
 
   // ─── Financeiro (demais) ────────────────────────────────────
   {

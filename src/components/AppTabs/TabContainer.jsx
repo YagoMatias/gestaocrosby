@@ -31,6 +31,7 @@ const PAGE_COMPONENTS = {
   '/solicitacao-baixa': lazy(() => import('../../pages/SolicitacaoBaixa')),
   '/remessa-boletos': lazy(() => import('../../pages/RemessaBoletos')),
   '/retorno-boleto': lazy(() => import('../../pages/RetornoBoleto')),
+  '/receita-financeira': lazy(() => import('../../pages/ReceitaFinanceira')),
 
   // ---- Financeiro › demais ----
   '/conciliacao': lazy(() => import('../../pages/Conciliacao')),

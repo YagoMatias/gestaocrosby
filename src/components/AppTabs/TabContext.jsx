@@ -127,6 +127,11 @@ const TABBED_PAGES = {
     group: 'Contas a Receber',
     dot: 'bg-amber-500',
   },
+  '/receita-financeira': {
+    label: 'Receita Financeira',
+    group: 'Contas a Receber',
+    dot: 'bg-green-500',
+  },
 
   // ---- Financeiro › demais ----
   '/conciliacao': {

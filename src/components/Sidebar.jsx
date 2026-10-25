@@ -349,6 +349,13 @@ const financeiro = [
         roles: ['owner', 'admin', 'manager', 'user'],
       },
       {
+        name: 'Receita Financeira',
+        href: '/receita-financeira',
+        icon: Coins,
+        color: 'text-green-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
         name: 'Solicitação de Baixa',
         href: '/solicitacao-baixa',
         icon: Receipt,
