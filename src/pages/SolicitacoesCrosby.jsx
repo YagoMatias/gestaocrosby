@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../components/AuthContext';
 import { useSetoresUsuario } from '../hooks/useSetoresUsuario';
 import { supabaseAdmin } from '../lib/supabase';
@@ -3604,11 +3605,71 @@ const ELabel = ({ children }) => (
   </p>
 );
 
+// Lista do combobox renderizada em portal com position:fixed — assim não é
+// cortada pelo overflow-y-auto da modal de edição (Niziany, 26/10/2026).
+// Abre para cima quando não há espaço embaixo.
+const useFixedDropdown = (anchorRef, open) => {
+  const [pos, setPos] = React.useState(null);
+  React.useLayoutEffect(() => {
+    if (!open || !anchorRef.current) {
+      setPos(null);
+      return undefined;
+    }
+    const calc = () => {
+      const r = anchorRef.current.getBoundingClientRect();
+      const vh = window.innerHeight;
+      const below = vh - r.bottom - 8;
+      const above = r.top - 8;
+      const wanted = 288; // ~max-h-72
+      const flip = below < Math.min(wanted, 160) && above > below;
+      const maxH = Math.max(120, Math.min(wanted, flip ? above : below));
+      setPos({
+        left: r.left,
+        width: r.width,
+        top: flip ? undefined : r.bottom + 2,
+        bottom: flip ? vh - r.top + 2 : undefined,
+        maxHeight: maxH,
+      });
+    };
+    calc();
+    window.addEventListener('scroll', calc, true);
+    window.addEventListener('resize', calc);
+    return () => {
+      window.removeEventListener('scroll', calc, true);
+      window.removeEventListener('resize', calc);
+    };
+  }, [open, anchorRef]);
+  return pos;
+};
+
+const ComboListaPortal = ({ pos, listRef, children }) => {
+  if (!pos) return null;
+  return createPortal(
+    <div
+      ref={listRef}
+      style={{
+        position: 'fixed',
+        left: pos.left,
+        width: pos.width,
+        top: pos.top,
+        bottom: pos.bottom,
+        maxHeight: pos.maxHeight,
+      }}
+      className="z-[9999] bg-white border-2 border-[#000638] rounded-lg shadow-2xl overflow-y-auto"
+    >
+      {children}
+    </div>,
+    document.body,
+  );
+};
+
 // Combobox de despesas (reutilizado do formulário original)
 const DespesaComboCrosby = ({ value, onChange }) => {
   const [search, setSearch] = React.useState('');
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef(null);
+  const listRef = React.useRef(null);
+  const pos = useFixedDropdown(ref, open);
   const selectedLabel = value
     ? `${value} — ${DESPESAS_JSON[String(value)] || value}`
     : '';
@@ -3621,7 +3682,10 @@ const DespesaComboCrosby = ({ value, onChange }) => {
   }, [search]);
   React.useEffect(() => {
     const h = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+      const dentro =
+        (ref.current && ref.current.contains(e.target)) ||
+        (listRef.current && listRef.current.contains(e.target));
+      if (!dentro) setOpen(false);
     };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
@@ -3643,7 +3707,7 @@ const DespesaComboCrosby = ({ value, onChange }) => {
         }}
       />
       {open && (
-        <div className="absolute z-50 top-full left-0 right-0 mt-0.5 bg-white border-2 border-[#000638] rounded-lg shadow-xl max-h-48 overflow-y-auto">
+        <ComboListaPortal pos={pos} listRef={listRef}>
           {filtered.length === 0 ? (
             <div className="px-3 py-2 text-xs text-gray-400 italic">
               Nenhuma despesa encontrada
@@ -3658,14 +3722,14 @@ const DespesaComboCrosby = ({ value, onChange }) => {
                   setSearch('');
                   setOpen(false);
                 }}
-                className={`w-full text-left px-3 py-1.5 text-xs hover:bg-[#000638] hover:text-white transition-colors flex gap-2 ${value === code ? 'bg-[#000638]/10 font-bold' : ''}`}
+                className={`w-full text-left px-3 py-2 text-xs hover:bg-[#000638] hover:text-white transition-colors flex gap-2 items-start border-b border-gray-100 last:border-0 ${value === code ? 'bg-[#000638]/10 font-bold' : ''}`}
               >
-                <span className="font-mono shrink-0">{code}</span>
-                <span className="truncate">{name}</span>
+                <span className="font-mono shrink-0 font-semibold">{code}</span>
+                <span className="whitespace-normal break-words leading-snug">{name}</span>
               </button>
             ))
           )}
-        </div>
+        </ComboListaPortal>
       )}
     </div>
   );
@@ -3675,6 +3739,8 @@ const PortadorComboCrosby = ({ value, onChange }) => {
   const [search, setSearch] = React.useState('');
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef(null);
+  const listRef = React.useRef(null);
+  const pos = useFixedDropdown(ref, open);
   const selectedLabel = value
     ? `${value} — ${PORTADORES_JSON[String(value)] || value}`
     : '';
@@ -3687,7 +3753,10 @@ const PortadorComboCrosby = ({ value, onChange }) => {
   }, [search]);
   React.useEffect(() => {
     const h = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+      const dentro =
+        (ref.current && ref.current.contains(e.target)) ||
+        (listRef.current && listRef.current.contains(e.target));
+      if (!dentro) setOpen(false);
     };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
@@ -3709,7 +3778,7 @@ const PortadorComboCrosby = ({ value, onChange }) => {
         }}
       />
       {open && (
-        <div className="absolute z-50 top-full left-0 right-0 mt-0.5 bg-white border-2 border-[#000638] rounded-lg shadow-xl max-h-48 overflow-y-auto">
+        <ComboListaPortal pos={pos} listRef={listRef}>
           {filtered.length === 0 ? (
             <div className="px-3 py-2 text-xs text-gray-400 italic">
               Nenhum portador encontrado
@@ -3724,14 +3793,14 @@ const PortadorComboCrosby = ({ value, onChange }) => {
                   setSearch('');
                   setOpen(false);
                 }}
-                className={`w-full text-left px-3 py-1.5 text-xs hover:bg-[#000638] hover:text-white transition-colors flex gap-2 ${String(value) === code ? 'bg-[#000638]/10 font-bold' : ''}`}
+                className={`w-full text-left px-3 py-2 text-xs hover:bg-[#000638] hover:text-white transition-colors flex gap-2 items-start border-b border-gray-100 last:border-0 ${String(value) === code ? 'bg-[#000638]/10 font-bold' : ''}`}
               >
-                <span className="font-mono shrink-0">{code}</span>
-                <span className="truncate">{name}</span>
+                <span className="font-mono shrink-0 font-semibold">{code}</span>
+                <span className="whitespace-normal break-words leading-snug">{name}</span>
               </button>
             ))
           )}
-        </div>
+        </ComboListaPortal>
       )}
     </div>
   );
