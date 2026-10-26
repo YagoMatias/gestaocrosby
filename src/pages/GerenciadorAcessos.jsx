@@ -195,6 +195,11 @@ const AVAILABLE_PAGES = [
     category: 'Financeiro — Contas a Receber',
   },
   {
+    path: '/inadimplencia-mensal',
+    name: 'Inadimplência Mensal (>60 dias)',
+    category: 'Financeiro — Contas a Receber',
+  },
+  {
     path: '/metas-inadimplencia',
     name: 'Metas Inadimplência',
     category: 'Financeiro — Contas a Receber',

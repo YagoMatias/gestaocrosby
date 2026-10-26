@@ -314,6 +314,13 @@ const financeiro = [
         roles: ['owner', 'admin', 'manager', 'user'],
       },
       {
+        name: 'Inadimplência Mensal (>60 dias)',
+        href: '/inadimplencia-mensal',
+        icon: ChartBar,
+        color: 'text-red-700',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
         name: 'Metas Inadimplência',
         href: '/metas-inadimplencia',
         icon: Target,

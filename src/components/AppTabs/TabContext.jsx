@@ -87,6 +87,11 @@ const TABBED_PAGES = {
     group: 'Contas a Receber',
     dot: 'bg-green-500',
   },
+  '/inadimplencia-mensal': {
+    label: 'Inadimplência Mensal',
+    group: 'Contas a Receber',
+    dot: 'bg-red-500',
+  },
   '/metas-inadimplencia': {
     label: 'Metas Inadimplência',
     group: 'Contas a Receber',
