@@ -516,7 +516,8 @@ const SolicitacaoBaixa = () => {
 
     try {
       const items = pendentes.map((s) => {
-        const dataBaixa = dataPagamentoReal || s.dt_pagamento || new Date().toISOString().slice(0, 10);
+        const dataUnica = pendentes.length > 1 ? '' : dataPagamentoReal; // lote = cada um na sua data
+        const dataBaixa = dataUnica || s.dt_pagamento || new Date().toISOString().slice(0, 10);
         return {
           branchCode: s.cd_empresa,
           customerCode: s.cd_cliente,
@@ -1697,15 +1698,26 @@ const SolicitacaoBaixa = () => {
                     <b>autorização</b> são sempre essa data (ex.: 21102026 e 21102026).
                   </p>
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-0.5">
-                      Data única (opcional) — vazio = cada baixa na data do seu pagamento/recebimento
-                    </label>
-                    <input
-                      type="date"
-                      value={dataPagamentoReal}
-                      onChange={(e) => setDataPagamentoReal(e.target.value)}
-                      className="border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#000638]"
-                    />
+                    {(() => {
+                      const qtd = solicitacoesFiltradas.filter((x) => selectedItems.has(x.id) && x.status === 'pendente').length;
+                      const lote = qtd > 1;
+                      return (
+                        <>
+                          <label className="block text-xs font-semibold text-gray-700 mb-0.5">
+                            {lote
+                              ? `Baixa em massa (${qtd} títulos): cada um na sua data de recebimento/pagamento — data única desabilitada`
+                              : 'Data única (opcional) — vazio = data do pagamento/recebimento da solicitação'}
+                          </label>
+                          <input
+                            type="date"
+                            value={lote ? '' : dataPagamentoReal}
+                            disabled={lote}
+                            onChange={(e) => setDataPagamentoReal(e.target.value)}
+                            className="border rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-[#000638] disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+                          />
+                        </>
+                      );
+                    })()}
                   </div>
                   <p className="text-[11px] text-violet-700">
                     Operadora e bandeira são lidas do <b>cadastro do cartão do portador 9901</b> no TOTVS na hora da baixa (1 parcela) ·
