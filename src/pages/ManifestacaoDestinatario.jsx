@@ -492,6 +492,9 @@ const ManifestacaoDestinatario = () => {
   const [modalEscrituracao, setModalEscrituracao] = useState(false);
   const navigate = useNavigate();
   const [pesquisa, setPesquisa] = useState('');
+  // filtros por coluna na linha do cabeçalho da tabela (Niziany, 26/10/2026)
+  const [filtrosColuna, setFiltrosColuna] = useState({});
+  const [painelAberto, setPainelAberto] = useState(true);
 
   const [paginaAtual, setPaginaAtual] = useState(1);
   const [itensPorPagina] = useState(20);
@@ -702,28 +705,64 @@ const ManifestacaoDestinatario = () => {
     );
   };
 
-  const dadosProcessados = useMemo(() => {
-    let filtrados = [...dados];
+  const passaPesquisa = (item) => {
+    if (!pesquisa.trim()) return true;
+    const termo = pesquisa.trim().toLowerCase();
+    return [
+      item.emitente_nome,
+      item.emitente_cnpj,
+      item.chave_acesso,
+      nfDaChave(item.chave_acesso),
+      nomeDaFilial(item),
+      item.cnpj_destinatario,
+      item.empresa_codigo,
+      origemDoRegistro(item.schema_origem),
+      ESCRITURACAO_ROTULO[escrituracaoDaNota(item)],
+      item.nr_fatura,
+    ]
+      .map((v) => String(v ?? '').toLowerCase())
+      .some((v) => v.includes(termo));
+  };
 
-    if (pesquisa.trim()) {
-      const termo = pesquisa.trim().toLowerCase();
-      filtrados = filtrados.filter((item) =>
-        [
-          item.emitente_nome,
-          item.emitente_cnpj,
-          item.chave_acesso,
-          nfDaChave(item.chave_acesso),
-          nomeDaFilial(item),
-          item.cnpj_destinatario,
-          item.empresa_codigo,
-          origemDoRegistro(item.schema_origem),
-          ESCRITURACAO_ROTULO[escrituracaoDaNota(item)],
-          item.nr_fatura,
-        ]
-          .map((v) => String(v ?? '').toLowerCase())
-          .some((v) => v.includes(termo)),
-      );
+  // Filtros da linha do cabeçalho. `ignorarFilial` serve para o painel por
+  // empresa continuar mostrando todas as empresas quando uma está filtrada.
+  const passaFiltrosColuna = (item, ignorarFilial = false) => {
+    const fc = filtrosColuna;
+    const tem = (k) => fc[k] != null && String(fc[k]).trim() !== '';
+    const contem = (v, k) =>
+      String(v ?? '')
+        .toLowerCase()
+        .includes(String(fc[k]).trim().toLowerCase());
+    if (!ignorarFilial && tem('empresa_codigo') && String(item.empresa_codigo ?? '') !== String(fc.empresa_codigo)) return false;
+    if (tem('empresa_nome') && !contem(`${nomeDaFilial(item)} ${formatCnpj(item.cnpj_destinatario)} ${item.cnpj_destinatario ?? ''}`, 'empresa_nome')) return false;
+    if (tem('data_emissao') && !contem(`${formatDateBR(item.data_emissao)} ${item.data_emissao ?? ''}`, 'data_emissao')) return false;
+    if (tem('nf') && !contem(`${nfDaChave(item.chave_acesso)}/${serieDaChave(item.chave_acesso)}`, 'nf')) return false;
+    if (tem('emitente_nome') && !contem(`${item.emitente_nome ?? ''} ${formatCnpj(item.emitente_cnpj)} ${item.emitente_cnpj ?? ''}`, 'emitente_nome')) return false;
+    if (tem('tipo_operacao') && String(item.tipo_operacao ?? '') !== String(fc.tipo_operacao)) return false;
+    if (tem('situacao') && String(item.situacao ?? '') !== String(fc.situacao)) return false;
+    if (tem('manifestacao') && (fc.manifestacao === 'sem' ? !!item.manifestacao : !item.manifestacao)) return false;
+    if (tem('escriturada') && escrituracaoDaNota(item) !== fc.escriturada) return false;
+    if (tem('schema_origem') && origemDoRegistro(item.schema_origem) !== fc.schema_origem) return false;
+    if (tem('valor_total')) {
+      const v = parseFloat(item.valor_total) || 0;
+      const txt = `${v.toFixed(2)} ${v.toFixed(2).replace('.', ',')} ${v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`;
+      if (!contem(txt, 'valor_total')) return false;
     }
+    if (tem('chave_acesso') && !contem(item.chave_acesso, 'chave_acesso')) return false;
+    return true;
+  };
+  const setFiltro = (k, v) => setFiltrosColuna((p) => ({ ...p, [k]: v }));
+  const temFiltroColuna = Object.values(filtrosColuna).some((v) => v != null && String(v).trim() !== '');
+  const opcoesFilial = useMemo(
+    () =>
+      [...new Set(dados.map((d) => d.empresa_codigo).filter((v) => v != null && v !== ''))].sort(
+        (a, b) => Number(a) - Number(b),
+      ),
+    [dados],
+  );
+
+  const dadosProcessados = useMemo(() => {
+    let filtrados = dados.filter((item) => passaPesquisa(item) && passaFiltrosColuna(item));
 
     if (ordenacao.campo) {
       const campo = ordenacao.campo;
@@ -747,7 +786,8 @@ const ManifestacaoDestinatario = () => {
     }
 
     return filtrados;
-  }, [dados, ordenacao, pesquisa, nomePorCodigo]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dados, ordenacao, pesquisa, filtrosColuna, nomePorCodigo]);
 
   const totalPages = Math.ceil(dadosProcessados.length / itensPorPagina);
 
@@ -758,7 +798,7 @@ const ManifestacaoDestinatario = () => {
 
   useEffect(() => {
     setPaginaAtual(1);
-  }, [dados, ordenacao, pesquisa]);
+  }, [dados, ordenacao, pesquisa, filtrosColuna]);
 
   const totais = useMemo(() => {
     return dadosProcessados.reduce(
@@ -786,6 +826,45 @@ const ManifestacaoDestinatario = () => {
       },
     );
   }, [dadosProcessados]);
+
+  // Painel por empresa (pedido da Niziany, 26/10/2026): emitidas = lançadas +
+  // pendentes dentro dos filtros; canceladas/denegadas/entrada ficam "fora da fila".
+  const painelEmpresas = useMemo(() => {
+    const m = new Map();
+    for (const item of dados) {
+      if (!passaPesquisa(item) || !passaFiltrosColuna(item, true)) continue;
+      const cod = item.empresa_codigo ?? '--';
+      if (!m.has(cod)) {
+        m.set(cod, { codigo: cod, nome: nomeDaFilial(item) || '', emitidas: 0, lancadas: 0, pendentes: 0, foraFila: 0 });
+      }
+      const l = m.get(cod);
+      const esc = escrituracaoDaNota(item);
+      if (esc === 'escriturada') {
+        l.lancadas += 1;
+        l.emitidas += 1;
+      } else if (esc === 'pendente') {
+        l.pendentes += 1;
+        l.emitidas += 1;
+      } else {
+        l.foraFila += 1;
+      }
+    }
+    const linhas = [...m.values()]
+      .map((l) => ({ ...l, pct: l.emitidas ? (l.lancadas / l.emitidas) * 100 : 0 }))
+      .sort((a, b) => b.emitidas - a.emitidas || Number(a.codigo) - Number(b.codigo));
+    const total = linhas.reduce(
+      (t, l) => ({
+        emitidas: t.emitidas + l.emitidas,
+        lancadas: t.lancadas + l.lancadas,
+        pendentes: t.pendentes + l.pendentes,
+        foraFila: t.foraFila + l.foraFila,
+      }),
+      { emitidas: 0, lancadas: 0, pendentes: 0, foraFila: 0 },
+    );
+    total.pct = total.emitidas ? (total.lancadas / total.emitidas) * 100 : 0;
+    return { linhas, total };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dados, pesquisa, filtrosColuna, nomePorCodigo]);
 
   const handleExportExcel = () => {
     if (dadosProcessados.length === 0) {
@@ -1137,6 +1216,82 @@ const ManifestacaoDestinatario = () => {
         </div>
       )}
 
+      {/* Painel por empresa — emitidas · lançadas · pendentes */}
+      {dadosCarregados && painelEmpresas.linhas.length > 0 && (
+        <div className="bg-white rounded-lg shadow-md border border-[#000638]/10 max-w-7xl mx-auto w-full mb-4">
+          <button
+            type="button"
+            onClick={() => setPainelAberto((v) => !v)}
+            className="w-full p-3 border-b border-[#000638]/10 flex items-center justify-between text-left"
+          >
+            <h2 className="text-sm font-bold text-[#000638] font-barlow">
+              Escrituração por empresa — emitidas · lançadas · pendentes
+            </h2>
+            <span className="text-[10px] text-gray-500 whitespace-nowrap">
+              {painelEmpresas.linhas.length} empresa{painelEmpresas.linhas.length === 1 ? '' : 's'} · {painelAberto ? 'ocultar ▲' : 'mostrar ▼'}
+            </span>
+          </button>
+          {painelAberto && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50 text-gray-500 uppercase text-[10px] tracking-wider">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Empresa</th>
+                    <th className="px-3 py-2 text-right">Emitidas</th>
+                    <th className="px-3 py-2 text-right">Lançadas</th>
+                    <th className="px-3 py-2 text-right">Pendentes</th>
+                    <th className="px-3 py-2 text-right">% Lançadas</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {painelEmpresas.linhas.map((l) => {
+                    const ativa = String(filtrosColuna.empresa_codigo ?? '') === String(l.codigo);
+                    return (
+                      <tr
+                        key={l.codigo}
+                        onClick={() => setFiltro('empresa_codigo', ativa ? '' : String(l.codigo))}
+                        title={ativa ? 'Clique para tirar o filtro desta empresa' : 'Clique para filtrar a tabela por esta empresa'}
+                        className={`border-t border-gray-100 cursor-pointer hover:bg-blue-50/40 ${ativa ? 'bg-blue-50' : ''}`}
+                      >
+                        <td className="px-3 py-1.5 font-semibold text-[#000638]">
+                          {l.codigo} {l.nome}
+                          {l.foraFila > 0 && (
+                            <span className="ml-1 text-[9px] text-gray-400 font-normal">+{l.foraFila} fora da fila</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-1.5 text-right font-semibold">{l.emitidas}</td>
+                        <td className="px-3 py-1.5 text-right font-semibold text-teal-700">{l.lancadas}</td>
+                        <td className={`px-3 py-1.5 text-right font-semibold ${l.pendentes > 0 ? 'text-red-600' : 'text-gray-400'}`}>{l.pendentes}</td>
+                        <td className={`px-3 py-1.5 text-right font-bold ${l.pct >= 99.5 ? 'text-green-700' : l.pct > 0 ? 'text-amber-600' : 'text-red-600'}`}>
+                          {l.pct.toFixed(0)}%
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-gray-300 bg-gray-50 font-bold text-[#000638]">
+                    <td className="px-3 py-2">
+                      Total ({painelEmpresas.linhas.length} empresa{painelEmpresas.linhas.length === 1 ? '' : 's'})
+                      {painelEmpresas.total.foraFila > 0 && (
+                        <span className="ml-1 text-[9px] text-gray-400 font-normal">+{painelEmpresas.total.foraFila} fora da fila</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right">{painelEmpresas.total.emitidas}</td>
+                    <td className="px-3 py-2 text-right text-teal-700">{painelEmpresas.total.lancadas}</td>
+                    <td className={`px-3 py-2 text-right ${painelEmpresas.total.pendentes > 0 ? 'text-red-600' : ''}`}>{painelEmpresas.total.pendentes}</td>
+                    <td className="px-3 py-2 text-right">{painelEmpresas.total.pct.toFixed(0)}%</td>
+                  </tr>
+                </tfoot>
+              </table>
+              <div className="px-3 py-1.5 text-[10px] text-gray-400 border-t border-gray-100">
+                Emitidas = lançadas + pendentes, dentro dos filtros acima. Notas canceladas, denegadas e de entrada não entram na conta ("fora da fila"). Clique numa empresa para filtrar a tabela.
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Tabela */}
       <div className="bg-white rounded-lg shadow-md border border-[#000638]/10 max-w-7xl mx-auto w-full">
         <div className="p-3 border-b border-[#000638]/10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
@@ -1157,6 +1312,16 @@ const ManifestacaoDestinatario = () => {
                 className="border border-[#000638]/30 rounded-lg pl-7 pr-2 py-1.5 w-full sm:w-56 focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
               />
             </div>
+            {temFiltroColuna && (
+              <button
+                type="button"
+                onClick={() => setFiltrosColuna({})}
+                className="text-[10px] font-bold text-red-600 hover:underline whitespace-nowrap"
+                title="Limpar os filtros da linha do cabeçalho"
+              >
+                limpar filtros
+              </button>
+            )}
             <div className="text-xs text-gray-600 whitespace-nowrap">
               {dadosCarregados
                 ? `${dadosProcessados.length} registros`
@@ -1240,6 +1405,51 @@ const ManifestacaoDestinatario = () => {
                     ))}
                     <th className="px-2 py-2 text-left">Chave de Acesso</th>
                   </tr>
+                  {/* linha de filtros por coluna */}
+                  {(() => {
+                    const cls =
+                      'w-full mb-0 px-1 py-0.5 text-[10px] font-normal normal-case tracking-normal text-gray-800 bg-white border border-white/40 rounded focus:outline-none focus:ring-1 focus:ring-amber-300';
+                    const inp = (k, ph) => (
+                      <input
+                        type="text"
+                        value={filtrosColuna[k] || ''}
+                        onChange={(e) => setFiltro(k, e.target.value)}
+                        placeholder={ph}
+                        className={cls}
+                      />
+                    );
+                    const sel = (k, opts) => (
+                      <select value={filtrosColuna[k] || ''} onChange={(e) => setFiltro(k, e.target.value)} className={cls}>
+                        <option value="">Todas</option>
+                        {opts.map(([v, l]) => (
+                          <option key={v} value={v}>
+                            {l}
+                          </option>
+                        ))}
+                      </select>
+                    );
+                    return (
+                      <tr className="bg-[#000638]/90">
+                        <th className="px-1 py-1">
+                          {sel(
+                            'empresa_codigo',
+                            opcoesFilial.map((c) => [String(c), `${c} - ${nomePorCodigo[c] || ''}`]),
+                          )}
+                        </th>
+                        <th className="px-1 py-1">{inp('empresa_nome', 'filtrar…')}</th>
+                        <th className="px-1 py-1">{inp('data_emissao', 'dd/mm/aaaa')}</th>
+                        <th className="px-1 py-1">{inp('nf', 'nº')}</th>
+                        <th className="px-1 py-1">{inp('emitente_nome', 'filtrar…')}</th>
+                        <th className="px-1 py-1">{sel('tipo_operacao', [['1', 'Saída'], ['0', 'Entrada']])}</th>
+                        <th className="px-1 py-1">{sel('situacao', Object.entries(SITUACAO_LABEL))}</th>
+                        <th className="px-1 py-1">{sel('manifestacao', [['sem', 'Pendente'], ['com', 'Manifestada']])}</th>
+                        <th className="px-1 py-1">{sel('escriturada', Object.entries(ESCRITURACAO_ROTULO))}</th>
+                        <th className="px-1 py-1">{sel('schema_origem', [['SEFAZ', 'SEFAZ'], ['TOTVS', 'TOTVS']])}</th>
+                        <th className="px-1 py-1">{inp('valor_total', 'valor')}</th>
+                        <th className="px-1 py-1">{inp('chave_acesso', 'chave')}</th>
+                      </tr>
+                    );
+                  })()}
                 </thead>
                 <tbody className="bg-white">
                   {dadosPaginados.map((item, index) => (
