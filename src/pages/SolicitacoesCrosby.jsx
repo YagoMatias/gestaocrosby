@@ -2939,6 +2939,38 @@ const ModalDetalhe = ({
                                 </tr>
                               ))}
                             </tbody>
+                            {(() => {
+                              const t = totaisRateio(p.expenses, p.duplicateValue);
+                              const cls = t.ok
+                                ? 'bg-green-50 text-green-800'
+                                : 'bg-red-50 text-red-700';
+                              return (
+                                <tfoot>
+                                  <tr className={`border-t-2 border-gray-300 font-bold ${cls}`}>
+                                    <td className="px-3 py-1.5 text-xs" colSpan={2}>
+                                      Total do rateio ({t.n} {t.n === 1 ? 'linha' : 'linhas'})
+                                      {!t.ok && (
+                                        <span className="ml-2 font-normal italic">
+                                          {!t.okPct && `— faltam ${(100 - t.pct).toFixed(2)}% para 100%`}
+                                          {t.okPct && !t.okVal && `— difere ${formatarMoeda(t.total - t.val)} do valor da parcela`}
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className={`px-3 py-1.5 text-right ${t.okPct ? '' : 'underline decoration-2'}`}>
+                                      {t.pct.toFixed(2)}%
+                                    </td>
+                                    <td className={`px-3 py-1.5 text-right ${t.okVal ? '' : 'underline decoration-2'}`}>
+                                      {formatarMoeda(t.val)}
+                                      {t.total > 0 && !t.okVal && (
+                                        <span className="block text-[9px] font-normal">
+                                          parcela: {formatarMoeda(t.total)}
+                                        </span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                </tfoot>
+                              );
+                            })()}
                           </table>
                         </div>
                       )}
@@ -3591,6 +3623,24 @@ const ModalDetalhe = ({
       </div>
     </div>
   );
+};
+
+// Totais do rateio de uma parcela (pedido da Niziany, 26/10/2026): soma dos %
+// e dos R$ rateados, com flag de erro quando não fecha em 100% / no valor
+// da parcela (tolerância de 1 centavo e 0,01%).
+const totaisRateio = (expenses, duplicateValue) => {
+  const total = Number(duplicateValue) || 0;
+  const rows = Array.isArray(expenses) ? expenses : [];
+  const pct = rows.reduce((a, e) => a + (parseFloat(e.proratedPercentage) || 0), 0);
+  const val = rows.reduce(
+    (a, e) => a + (total * (parseFloat(e.proratedPercentage) || 0)) / 100,
+    0,
+  );
+  const pctR = Math.round(pct * 100) / 100;
+  const valR = Math.round(val * 100) / 100;
+  const okPct = Math.abs(pctR - 100) <= 0.01;
+  const okVal = total > 0 ? Math.abs(valR - total) <= 0.01 : true;
+  return { pct: pctR, val: valR, total, okPct, okVal, ok: okPct && okVal, n: rows.length };
 };
 
 // =====================================================================
@@ -5069,6 +5119,36 @@ const ModalEdicao = ({
                       </div>
                     </div>
                   ))}
+                  {(() => {
+                    const t = totaisRateio(p.expenses, p.duplicateValue);
+                    const cls = t.ok
+                      ? 'bg-green-50 border-green-200 text-green-800'
+                      : 'bg-red-50 border-red-300 text-red-700';
+                    return (
+                      <div className={`mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border px-3 py-2 text-xs font-bold ${cls}`}>
+                        <span>Total do rateio:</span>
+                        <span className={t.okPct ? '' : 'underline decoration-2'}>
+                          {t.pct.toFixed(2)}%
+                        </span>
+                        <span className={t.okVal ? '' : 'underline decoration-2'}>
+                          {t.val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        </span>
+                        {t.total > 0 && (
+                          <span className="font-normal text-[10px] opacity-80">
+                            parcela: {t.total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          </span>
+                        )}
+                        {!t.ok && (
+                          <span className="font-normal italic">
+                            {!t.okPct
+                              ? `faltam ${(100 - t.pct).toFixed(2)}% para fechar 100%`
+                              : `difere ${(t.total - t.val).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} do valor da parcela`}
+                          </span>
+                        )}
+                        {t.ok && <span className="font-normal">✔ fecha 100%</span>}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
