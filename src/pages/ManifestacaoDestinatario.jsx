@@ -4,6 +4,7 @@ import FiltroEmpresa from '../components/FiltroEmpresa';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { API_BASE_URL } from '../config/constants';
 import PageTitle from '../components/ui/PageTitle';
+import ManifestacaoNav from '../components/fiscal/ManifestacaoNav';
 import {
   Funnel,
   Spinner,
@@ -914,6 +915,7 @@ const ManifestacaoDestinatario = () => {
         icon={ClipboardText}
         iconColor="text-amber-600"
       />
+      <ManifestacaoNav ativo="pendentes" />
 
       {/* Formulário de Filtros */}
       <div className="mb-4">
@@ -1197,14 +1199,6 @@ const ManifestacaoDestinatario = () => {
                 className="border border-[#000638]/30 rounded-lg pl-7 pr-2 py-1.5 w-full sm:w-56 focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
               />
             </div>
-            <button
-              type="button"
-              onClick={() => navigate('/fiscal/escrituracao-por-empresa')}
-              className="inline-flex items-center gap-1 text-[10px] font-bold text-[#000638] border border-[#000638]/30 rounded-lg px-2 py-1 hover:bg-[#000638]/5 whitespace-nowrap"
-              title="Painel de escrituração por empresa (emitidas · lançadas · pendentes)"
-            >
-              Por empresa →
-            </button>
             {temFiltroColuna && (
               <button
                 type="button"

@@ -257,17 +257,26 @@ const financeiro = [
     children: [
       {
         name: 'Manifestação do Destinatário',
-        href: '/manifestacao-destinatario',
+        href: '#',
         icon: ClipboardText,
         color: 'text-amber-600',
         roles: ['owner', 'admin', 'manager', 'user'],
-      },
-      {
-        name: 'Escrituração por Empresa',
-        href: '/fiscal/escrituracao-por-empresa',
-        icon: ChartBar,
-        color: 'text-amber-600',
-        roles: ['owner', 'admin', 'manager', 'user'],
+        children: [
+          {
+            name: 'Painel',
+            href: '/fiscal/escrituracao-por-empresa',
+            icon: ChartBar,
+            color: 'text-amber-600',
+            roles: ['owner', 'admin', 'manager', 'user'],
+          },
+          {
+            name: 'Pendentes',
+            href: '/manifestacao-destinatario',
+            icon: ClipboardText,
+            color: 'text-amber-600',
+            roles: ['owner', 'admin', 'manager', 'user'],
+          },
+        ],
       },
       {
         name: 'Impostos',

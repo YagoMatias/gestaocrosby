@@ -159,12 +159,12 @@ const AVAILABLE_PAGES = [
   // ─── Financeiro › Fiscal ────────────────────────────────────
   {
     path: '/manifestacao-destinatario',
-    name: 'Manifestação do Destinatário',
+    name: 'Manifestação do Destinatário — Pendentes',
     category: 'Financeiro — Fiscal',
   },
   {
     path: '/fiscal/escrituracao-por-empresa',
-    name: 'Escrituração por Empresa',
+    name: 'Manifestação do Destinatário — Painel',
     category: 'Financeiro — Fiscal',
   },
   {

@@ -1,12 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { API_BASE_URL } from '../config/constants';
 import PageTitle from '../components/ui/PageTitle';
+import ManifestacaoNav from '../components/fiscal/ManifestacaoNav';
 import {
   ChartBar,
   ArrowsClockwise,
   FileArrowDown,
-  ClipboardText,
   Spinner,
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
@@ -77,7 +76,6 @@ const fmtDataHora = (iso) =>
   iso ? new Date(iso).toLocaleString('pt-BR') : '—';
 
 export default function EscrituracaoPorEmpresa() {
-  const navigate = useNavigate();
   const [mes, setMes] = useState(mesAtual());
   const [periodo, setPeriodo] = useState(periodoDoMes(mesAtual()));
   const [empresas, setEmpresas] = useState([]);
@@ -230,11 +228,12 @@ export default function EscrituracaoPorEmpresa() {
   return (
     <div className="w-full max-w-7xl mx-auto px-2 sm:px-4 pt-4 pb-8 flex flex-col gap-4">
       <PageTitle
-        title="Escrituração por Empresa"
-        subtitle="Notas emitidas contra os CNPJs · lançadas × pendentes por filial (Manifestação do Destinatário)"
+        title="Manifestação do Destinatário — Painel"
+        subtitle="Notas emitidas contra os CNPJs · lançadas × pendentes por empresa"
         icon={ChartBar}
         iconColor="text-amber-600"
       />
+      <ManifestacaoNav ativo="painel" />
 
       {/* Filtros */}
       <div className="bg-white rounded-lg shadow-md border border-[#000638]/10 p-3 flex flex-wrap items-end gap-3">
@@ -298,14 +297,6 @@ export default function EscrituracaoPorEmpresa() {
             className="inline-flex items-center gap-1.5 bg-green-600 text-white text-xs font-bold px-3 py-2 rounded-lg hover:bg-green-700 disabled:opacity-50"
           >
             <FileArrowDown size={14} weight="bold" /> Baixar Excel
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate('/manifestacao-destinatario')}
-            className="inline-flex items-center gap-1.5 border border-[#000638] text-[#000638] text-xs font-bold px-3 py-2 rounded-lg hover:bg-[#000638]/5"
-            title="Abrir a lista de notas (Manifestação do Destinatário)"
-          >
-            <ClipboardText size={14} weight="bold" /> Ver as notas
           </button>
         </div>
         <div className="w-full text-[10px] text-gray-400">

@@ -162,12 +162,12 @@ const TABBED_PAGES = {
 
   // ---- Financeiro › Fiscal ----
   '/manifestacao-destinatario': {
-    label: 'Manifestação Destinatário',
+    label: 'Manifestação · Pendentes',
     group: 'Fiscal',
     dot: 'bg-amber-500',
   },
   '/fiscal/escrituracao-por-empresa': {
-    label: 'Escrituração por Empresa',
+    label: 'Manifestação · Painel',
     group: 'Fiscal',
     dot: 'bg-amber-500',
   },
