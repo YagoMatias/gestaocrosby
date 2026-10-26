@@ -263,6 +263,13 @@ const financeiro = [
         roles: ['owner', 'admin', 'manager', 'user'],
       },
       {
+        name: 'Escrituração por Empresa',
+        href: '/fiscal/escrituracao-por-empresa',
+        icon: ChartBar,
+        color: 'text-amber-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
         name: 'Impostos',
         href: '/fiscal/impostos',
         icon: Scales,

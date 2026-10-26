@@ -37,6 +37,9 @@ const NotasFiscais = lazy(() => import('./pages/NotasFiscais'));
 const ManifestacaoDestinatario = lazy(
   () => import('./pages/ManifestacaoDestinatario'),
 );
+const EscrituracaoPorEmpresa = lazy(
+  () => import('./pages/EscrituracaoPorEmpresa'),
+);
 const AniversariantesFranquia = lazy(
   () => import('./pages/AniversariantesFranquia'),
 );
@@ -268,6 +271,7 @@ const protectedRoutes = [
     path: '/manifestacao-destinatario',
     component: ManifestacaoDestinatario,
   },
+  { path: '/fiscal/escrituracao-por-empresa', component: EscrituracaoPorEmpresa },
   { path: '/consulta-nfs', component: ConsultaNFs },
   { path: '/atividade-clientes', component: AtividadeClientes },
   { path: '/extratos-bancos', component: ExtratosBancos },

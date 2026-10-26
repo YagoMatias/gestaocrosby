@@ -166,6 +166,11 @@ const TABBED_PAGES = {
     group: 'Fiscal',
     dot: 'bg-amber-500',
   },
+  '/fiscal/escrituracao-por-empresa': {
+    label: 'Escrituração por Empresa',
+    group: 'Fiscal',
+    dot: 'bg-amber-500',
+  },
 
   // ---- Solicitações Crosby ----
   '/solicitacoes-crosby': {

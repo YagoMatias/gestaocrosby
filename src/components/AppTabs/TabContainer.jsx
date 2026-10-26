@@ -43,6 +43,9 @@ const PAGE_COMPONENTS = {
   '/manifestacao-destinatario': lazy(
     () => import('../../pages/ManifestacaoDestinatario'),
   ),
+  '/fiscal/escrituracao-por-empresa': lazy(
+    () => import('../../pages/EscrituracaoPorEmpresa'),
+  ),
 
   // ---- Solicitações Crosby ----
   '/solicitacoes-crosby': lazy(() => import('../../pages/SolicitacoesCrosby')),

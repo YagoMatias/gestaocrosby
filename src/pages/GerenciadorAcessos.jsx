@@ -163,6 +163,11 @@ const AVAILABLE_PAGES = [
     category: 'Financeiro — Fiscal',
   },
   {
+    path: '/fiscal/escrituracao-por-empresa',
+    name: 'Escrituração por Empresa',
+    category: 'Financeiro — Fiscal',
+  },
+  {
     path: '/fiscal/impostos',
     name: 'Impostos',
     category: 'Financeiro — Fiscal',
