@@ -193,7 +193,10 @@ const SolicitacaoBaixa = () => {
           s.nm_portador === filtroPortador,
       );
     }
-    if (filtroOrigem) lista = lista.filter((x) => x.origem === filtroOrigem);
+    if (filtroOrigem) {
+      const grupo = filtroOrigem === 'pix' ? ['bluecard_pagarme', 'pix_pagarme_tadeu'] : [filtroOrigem];
+      lista = lista.filter((x) => grupo.includes(x.origem));
+    }
     if (filtroForma !== 'TODAS') lista = lista.filter((x) => (x.forma_pagamento || 'sem_forma') === filtroForma);
     return lista;
   }, [solicitacoes, filtroStatus, filtroPortador, filtroOrigem, filtroForma]);
@@ -202,7 +205,7 @@ const SolicitacaoBaixa = () => {
   const pendentesPorOrigem = useMemo(() => {
     const soma = (lista) => lista.reduce((a, x) => a + (parseFloat(x.vl_fatura) || 0), 0);
     const pend = solicitacoes.filter((x) => x.status === 'pendente');
-    const pix = pend.filter((x) => x.origem === 'bluecard_pagarme');
+    const pix = pend.filter((x) => x.origem === 'bluecard_pagarme' || x.origem === 'pix_pagarme_tadeu');
     const boleto = pend.filter((x) => x.origem === 'pagarme_boleto');
     return { pix: { n: pix.length, valor: soma(pix) }, boleto: { n: boleto.length, valor: soma(boleto) } };
   }, [solicitacoes]);
@@ -691,7 +694,7 @@ const SolicitacaoBaixa = () => {
       {/* Pendentes por origem — Pix (BlueCard) × boleto Pagar.me recebido (João, 23/10/2026) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
         {[
-          { key: 'bluecard_pagarme', label: 'Pix a baixar (BlueCard / Pagar.me)', hint: 'Pix pagos no app — baixar como cartão débito PAGARME na data do pagamento', dados: pendentesPorOrigem.pix, cor: 'border-sky-300 bg-sky-50 text-sky-900', dot: 'bg-sky-500' },
+          { key: 'pix', label: 'Pix a baixar (BlueCard + Pix do Tadeu)', hint: 'Pix pagos no app BlueCard e Pix da Pagar.me pelos links/Gerador do Dryland — baixar como cartão débito PAGARME na data do pagamento', dados: pendentesPorOrigem.pix, cor: 'border-sky-300 bg-sky-50 text-sky-900', dot: 'bg-sky-500' },
           { key: 'pagarme_boleto', label: 'Boleto recebido a baixar (Pagar.me)', hint: 'Boletos pagos que já creditaram — baixar como cartão débito PAGARME na data do recebimento', dados: pendentesPorOrigem.boleto, cor: 'border-amber-300 bg-amber-50 text-amber-900', dot: 'bg-amber-500' },
         ].map((c) => (
           <button
@@ -1187,6 +1190,12 @@ const SolicitacaoBaixa = () => {
                             title="Aberta automaticamente: boleto Pagar.me pago (retorno)"
                           />
                         )}
+                        {sol.origem === 'pix_pagarme_tadeu' && (
+                          <span
+                            className="inline-block w-2 h-2 rounded-full bg-cyan-500 flex-shrink-0"
+                            title="Pix recebido na Pagar.me pelos links/Gerador do Dryland (Pix do Tadeu)"
+                          />
+                        )}
                         {sol.user_nome || '--'}
                         {Number(sol.nr_fat) === 0 && (
                           <span
@@ -1204,7 +1213,9 @@ const SolicitacaoBaixa = () => {
                             ? 'automático · link Dryland'
                             : sol.origem === 'pagarme_boleto'
                               ? 'automático · boleto Pagar.me'
-                              : sol.user_email}
+                              : sol.origem === 'pix_pagarme_tadeu'
+                                ? 'automático · Pix do Tadeu (Pagar.me)'
+                                : sol.user_email}
                       </div>
                     </td>
                     <td className="px-3 py-2 text-center text-[10px]">
