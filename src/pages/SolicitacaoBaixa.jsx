@@ -24,7 +24,7 @@ import {
   MagnifyingGlassMinus,
   ArrowsOut,
   CalendarBlank,
-  PencilSimple, CreditCard } from '@phosphor-icons/react';
+  PencilSimple, CreditCard, ClockCounterClockwise } from '@phosphor-icons/react';
 
 const SolicitacaoBaixa = () => {
   const { user } = useAuth();
@@ -39,6 +39,23 @@ const SolicitacaoBaixa = () => {
   const [filtroForma, setFiltroForma] = useState('TODAS');
   // João (26/10/2026): baixar dia a dia — filtro por data de pagamento (de/até)
   const [filtroDataDe, setFiltroDataDe] = useState('');
+  // Histórico de lotes (João, 26/10/2026): cada Processar vira 1 lote com os itens e os erros
+  const [modalHistorico, setModalHistorico] = useState(false);
+  const [lotes, setLotes] = useState([]);
+  const [loteAberto, setLoteAberto] = useState(null);
+  const [carregandoLotes, setCarregandoLotes] = useState(false);
+  const carregarLotes = async () => {
+    setCarregandoLotes(true);
+    try {
+      const r = await fetch(`${TotvsURL.replace(/totvs\/?$/, '')}baixa-lotes?dias=60`);
+      const j = await r.json();
+      setLotes(j.lotes || []);
+    } catch (e) {
+      setLotes([]);
+    } finally {
+      setCarregandoLotes(false);
+    }
+  };
   const [filtroDataAte, setFiltroDataAte] = useState('');
   const [selectedItems, setSelectedItems] = useState(new Set());
   const [processingBaixa, setProcessingBaixa] = useState(false);
@@ -534,6 +551,8 @@ const SolicitacaoBaixa = () => {
           paidValue: parseFloat(s.vl_fatura) || 0,
           // João (26/10/2026): baixa com juros — o valor baixado tem que ser o recebido
           interestValue: parseFloat(s.vl_juros) || 0,
+          nomeCliente: s.nm_cliente,
+          solicitacaoId: s.id,
           settlementDate: dataBaixa,
           ...(formaSelecionada?.cardAuto
             ? {
@@ -555,6 +574,10 @@ const SolicitacaoBaixa = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           items,
+          // histórico de lotes (João, 26/10/2026)
+          usuario: user?.email || user?.nome || null,
+          origem: 'solicitacoes-baixa',
+          formaLabel: formaSelecionada?.label || formaPagamentoProcessamento,
           paidType: formaSelecionada?.paidType || 4,
           // cartão PAGARME débito liquida na empresa 1 (onde o cartão está cadastrado)
           ...(formaSelecionada?.cardAuto ? { cardSettlementBranch: 1 } : {}),
@@ -860,6 +883,19 @@ const SolicitacaoBaixa = () => {
             {resumoLista.n} na lista · {formatarMoeda(resumoLista.valor)}
             {filtroStatus === 'processada' && filtroForma !== 'TODAS' ? ' baixadas' : ''}
           </span>
+          <button
+            type="button"
+            onClick={() => {
+              setModalHistorico(true);
+              setLoteAberto(null);
+              carregarLotes();
+            }}
+            className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-[#000638] bg-white border rounded-lg hover:bg-gray-50 transition-colors"
+            title="Histórico dos lotes processados: quantidade, valores, títulos e motivos de erro"
+          >
+            <ClockCounterClockwise size={14} weight="bold" />
+            Histórico
+          </button>
           <button
             onClick={carregarSolicitacoes}
             className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-[#000638] bg-white border rounded-lg hover:bg-gray-50 transition-colors"
@@ -1329,6 +1365,82 @@ const SolicitacaoBaixa = () => {
         <div className="mt-3 text-xs text-gray-400">
           * Algumas solicitações possuem observações. Clique no comprovante para
           ver detalhes.
+        </div>
+      )}
+
+      {/* Modal Histórico de lotes */}
+      {modalHistorico && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-[#000638] text-white p-4 rounded-t-xl flex justify-between items-center">
+              <h3 className="text-lg font-bold">Histórico de lotes processados</h3>
+              <button onClick={() => setModalHistorico(false)} className="text-white hover:text-red-300">
+                <X size={22} weight="bold" />
+              </button>
+            </div>
+            <div className="p-4 space-y-2 text-sm">
+              {carregandoLotes && <p className="text-gray-500">Carregando…</p>}
+              {!carregandoLotes && lotes.length === 0 && <p className="text-gray-500">Nenhum lote nos últimos 60 dias.</p>}
+              {lotes.map((l) => {
+                const aberto = loteAberto === l.id;
+                const em = new Date(l.em);
+                return (
+                  <div key={l.id} className={`rounded-lg border ${l.falhas > 0 ? 'border-red-200' : 'border-gray-200'}`}>
+                    <button
+                      type="button"
+                      onClick={() => setLoteAberto(aberto ? null : l.id)}
+                      className="w-full flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 text-left hover:bg-gray-50"
+                    >
+                      <span className="font-bold text-[#000638]">
+                        {em.toLocaleDateString('pt-BR')} {em.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      <span className="text-gray-600">{l.forma || '—'}</span>
+                      <span className="text-gray-500 text-xs">{l.usuario || ''}</span>
+                      <span className="ml-auto text-xs">
+                        <b>{l.qtd}</b> título(s) · <span className="text-green-700 font-semibold">{l.sucesso} ok</span>
+                        {l.falhas > 0 && <span className="text-red-600 font-semibold"> · {l.falhas} erro(s)</span>}
+                        {' · '}
+                        {formatarMoeda(Number(l.valor_ok || 0))}
+                        {Number(l.valor_falha || 0) > 0 && <span className="text-red-600"> (+{formatarMoeda(Number(l.valor_falha))} com erro)</span>}
+                      </span>
+                    </button>
+                    {aberto && (
+                      <div className="border-t border-gray-100 overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead className="bg-gray-50 text-gray-600">
+                            <tr>
+                              <th className="px-2 py-1 text-left">Título</th>
+                              <th className="px-2 py-1 text-left">Cliente</th>
+                              <th className="px-2 py-1 text-right">Valor</th>
+                              <th className="px-2 py-1 text-right">Juros</th>
+                              <th className="px-2 py-1 text-center">Data</th>
+                              <th className="px-2 py-1 text-center">Resultado</th>
+                              <th className="px-2 py-1 text-left">Motivo</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(l.itens || []).map((it, i) => (
+                              <tr key={i} className={it.ok ? '' : 'bg-red-50'}>
+                                <td className="px-2 py-1 font-mono">{it.titulo}</td>
+                                <td className="px-2 py-1">{it.nm_cliente || it.cd_cliente || '—'}</td>
+                                <td className="px-2 py-1 text-right">{formatarMoeda(Number(it.valor || 0))}</td>
+                                <td className="px-2 py-1 text-right">{Number(it.juros || 0) > 0 ? formatarMoeda(Number(it.juros)) : '—'}</td>
+                                <td className="px-2 py-1 text-center">{it.data ? it.data.split('-').reverse().join('/') : '—'}</td>
+                                <td className="px-2 py-1 text-center">
+                                  {it.ok ? <span className="text-green-700 font-bold">OK</span> : <span className="text-red-600 font-bold">ERRO</span>}
+                                </td>
+                                <td className="px-2 py-1 text-red-700">{it.motivo || ''}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
 
