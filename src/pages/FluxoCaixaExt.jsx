@@ -29,9 +29,12 @@ import {
   CreditCard,
   Storefront,
   CaretDown,
+  Robot,
+  FilePdf,
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
+import BotStoneExtratos from '../components/BotStoneExtratos';
 
 const API = `${API_BASE_URL}/api/fluxo-caixa-ext`;
 
@@ -284,6 +287,24 @@ const FluxoCaixaExt = () => {
     }
   };
 
+  // PDF guardado pelo bot Stone (Storage): abre um link temporário
+  const baixarArquivo = async (imp) => {
+    try {
+      const r = await fetch(`${API}/importacoes/${imp.id}/arquivo`);
+      const j = await r.json();
+      if (!j?.success) throw new Error(j?.message);
+      window.open(j.data.url, '_blank', 'noopener');
+    } catch (e) {
+      setErro(e.message);
+    }
+  };
+
+  // chamado pela aba Bot Stone quando uma execução termina
+  const aposBot = useCallback(() => {
+    carregar();
+    carregarImportacoes();
+  }, [carregar, carregarImportacoes]);
+
   const salvarConta = async () => {
     if (!editConta) return;
     try {
@@ -414,6 +435,7 @@ const FluxoCaixaExt = () => {
     { id: 'contas', label: `Contas (${dados?.porConta?.length || 0})` },
     { id: 'dias', label: 'Por dia' },
     { id: 'importacoes', label: 'Importações' },
+    { id: 'bot', label: 'Bot Stone' },
   ];
 
   return (
@@ -475,6 +497,13 @@ const FluxoCaixaExt = () => {
         </button>
         <button onClick={() => setModalImport(true)} className="px-3 py-1.5 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-1 font-medium">
           <UploadSimple size={14} weight="bold" /> Importar extratos
+        </button>
+        <button
+          onClick={() => setAba('bot')}
+          className={`px-3 py-1.5 text-xs rounded-lg flex items-center gap-1 font-medium ${aba === 'bot' ? 'bg-emerald-700 text-white' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}
+          title="Bot que baixa os extratos das contas Stone, importa aqui e atualiza o saldo na Liberação de Pagamento"
+        >
+          <Robot size={14} weight="bold" /> Bot Stone
         </button>
       </div>
 
@@ -612,7 +641,9 @@ const FluxoCaixaExt = () => {
           {carregando && <ArrowsClockwise size={14} className="animate-spin text-blue-600 ml-2" />}
         </div>
 
-        {!dados && !carregando && !migrationPendente && (
+        {aba === 'bot' && <BotStoneExtratos onImportou={aposBot} />}
+
+        {!dados && !carregando && !migrationPendente && aba !== 'bot' && aba !== 'importacoes' && (
           <div className="p-12 text-center text-gray-400">
             <Bank size={40} className="mx-auto mb-3 opacity-40" />
             <p className="text-sm">Nenhum dado no período. Importe os PDFs dos extratos para começar.</p>
@@ -1088,7 +1119,20 @@ const FluxoCaixaExt = () => {
                 {(importacoes || []).map((i) => (
                   <tr key={i.id} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="px-3 py-2 whitespace-nowrap text-gray-500">{new Date(i.importado_em).toLocaleString('pt-BR')}</td>
-                    <td className="px-3 py-2 text-gray-800">{i.arquivo_nome}</td>
+                    <td className="px-3 py-2 text-gray-800">
+                      {i.arquivo_path ? (
+                        <button onClick={() => baixarArquivo(i)} className="inline-flex items-center gap-1 text-blue-700 hover:underline" title="Abrir o PDF guardado">
+                          <FilePdf size={14} className="text-red-600 shrink-0" /> {i.arquivo_nome}
+                        </button>
+                      ) : (
+                        i.arquivo_nome
+                      )}
+                      {i.origem?.startsWith('bot-stone') && (
+                        <span className="ml-1 inline-flex items-center gap-0.5 text-[10px] text-emerald-700" title={i.origem === 'bot-stone-pdf' ? 'PDF baixado pelo bot' : 'Lançamentos pela API do portal (bot, sem PDF)'}>
+                          <Robot size={11} /> {i.origem === 'bot-stone-pdf' ? 'bot' : 'bot·API'}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-3 py-2">{i.conta ? <Badge cfg={bancoCfg(i.conta.banco)}>{i.conta.apelido}</Badge> : i.conta_id}</td>
                     <td className="px-3 py-2 whitespace-nowrap">
                       {fmtData(i.periodo_inicio)} – {fmtData(i.periodo_fim)}
