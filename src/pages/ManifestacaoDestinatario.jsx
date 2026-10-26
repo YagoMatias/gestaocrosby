@@ -923,7 +923,7 @@ const ManifestacaoDestinatario = () => {
                 {importando ? 'Importando...' : 'Importar Escrituradas'}
                 <input
                   type="file"
-                  accept=".csv,text/csv"
+                  accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
                   className="hidden"
                   disabled={!!importando}
                   onChange={(e) => {
