@@ -524,6 +524,8 @@ const SolicitacaoBaixa = () => {
           receivableCode: s.nr_fat,
           installmentCode: s.nr_parcela || 1,
           paidValue: parseFloat(s.vl_fatura) || 0,
+          // João (26/10/2026): baixa com juros — o valor baixado tem que ser o recebido
+          interestValue: parseFloat(s.vl_juros) || 0,
           settlementDate: dataBaixa,
           ...(formaSelecionada?.cardAuto
             ? {
@@ -1770,11 +1772,22 @@ const SolicitacaoBaixa = () => {
                     <span className="font-semibold">{selectedItems.size}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Valor total a baixar:</span>
+                    <span className="text-gray-500">Valor dos títulos:</span>
                     <span className="font-bold text-red-600">
                       {formatarMoeda(valorTotalSelecionado)}
                     </span>
                   </div>
+                  {(() => {
+                    const juros = solicitacoesFiltradas
+                      .filter((x) => selectedItems.has(x.id) && x.status === 'pendente')
+                      .reduce((a, x) => a + (parseFloat(x.vl_juros) || 0), 0);
+                    return juros > 0 ? (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">+ juros/encargos (baixa com juros):</span>
+                        <span className="font-bold text-red-600">{formatarMoeda(juros)}</span>
+                      </div>
+                    ) : null;
+                  })()}
                   {(() => {
                     const sel = solicitacoesFiltradas.filter((x) => selectedItems.has(x.id) && x.status === 'pendente');
                     const porData = {};
