@@ -33,6 +33,7 @@ import {
   ChatText,
   Paperclip,
   FileText,
+  FilePdf,
   UploadSimple,
   Eye,
 } from '@phosphor-icons/react';
@@ -1381,6 +1382,32 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
   );
 };
 
+// ─── comprovante de saída baixado do portal Stone pelo bot ──────
+const abrirComprovanteBot = async (comp) => {
+  try {
+    const r = await fetch(`${API}/comprovantes/${comp.id}/arquivo`);
+    const j = await r.json();
+    if (!j?.success) throw new Error(j?.message || 'Falha ao abrir o comprovante');
+    window.open(j.data.url, '_blank', 'noopener');
+  } catch (e) {
+    alert(e.message);
+  }
+};
+const BotaoComprovanteBot = ({ comp }) =>
+  comp ? (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        abrirComprovanteBot(comp);
+      }}
+      className="inline-flex items-center gap-0.5 text-[10px] text-emerald-700 hover:underline whitespace-nowrap"
+      title={`Comprovante baixado do portal Stone pelo bot${comp.solicitacaoId ? ' · já anexado na Solicitação Crosby' : ''}`}
+    >
+      <FilePdf size={12} className="text-red-600" /> comprovante
+    </button>
+  ) : null;
+
 // ─── célula de conciliação (OK / pendente + ações) ─────────────
 const CelulaConciliacao = ({ l, podeConciliar = l.valor < 0, ocupado, onConciliar, onJustificar, onDesfazer, onDetalhe }) => {
   if (ocupado) return <ArrowsClockwise size={14} className="animate-spin text-blue-600" />;
@@ -1396,6 +1423,7 @@ const CelulaConciliacao = ({ l, podeConciliar = l.valor < 0, ocupado, onConcilia
             <Badge cfg={cfg}>{cfg.label}</Badge>
             {c.referencia?.parcial && <span className="px-1 rounded bg-orange-100 text-orange-800 text-[10px]">parcial</span>}
             {temAnexo && <Paperclip size={11} className="text-gray-400" />}
+            <BotaoComprovanteBot comp={l.comprovante} />
             {c.automatico && c.origem !== 'TRANSFERENCIA' && <span className="text-[10px] text-gray-400">auto {c.pontuacao != null ? `· ${c.pontuacao} pts` : ''}</span>}
             {c.referencia?.taxaFixa && !c.referencia?.stone && (
               <span className="px-1 rounded bg-orange-100 text-orange-800 text-[10px]" title="Taxa fixa por Pix descontada pela Fiserv (título do TOTVS = valor recebido + taxa)">
@@ -1422,8 +1450,9 @@ const CelulaConciliacao = ({ l, podeConciliar = l.valor < 0, ocupado, onConcilia
     );
   }
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-1.5 flex-wrap">
       <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-medium">Pendente</span>
+      <BotaoComprovanteBot comp={l.comprovante} />
       {podeConciliar ? (
         <button onClick={onConciliar} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-[#000638] text-white hover:bg-blue-900 text-[11px] font-medium" title={l.valor < 0 ? 'Buscar em Liberação de Pagamento, Solicitações Crosby e Contas a Pagar' : ehPixCliente(l) ? 'Buscar o título no contas a receber do TOTVS (fatura, promissória, Pix, adiantamento)' : 'Buscar o depósito no arquivo de conciliação da Stone (antecipação / liquidação de vendas)'}>
           <Lightning size={11} weight="fill" /> Conciliar
@@ -1569,7 +1598,8 @@ const DetalheConciliacao = ({ detalhe, onClose, onAnexar, onRemoverAnexo }) => {
   const o = dados?.origem;
   const sol = dados?.solicitacao;
   const anexos = dados?.conciliacao?.anexos || [];
-  const temComprovante = anexos.some((a) => a.tipo === 'comprovante') || sol?.comprovante_url || sol?.comprovante_gestor_url || sol?.comprovante_fabio_url;
+  const compBot = dados?.comprovante || null; // PDF baixado do portal Stone pelo bot
+  const temComprovante = !!compBot || anexos.some((a) => a.tipo === 'comprovante') || sol?.comprovante_url || sol?.comprovante_gestor_url || sol?.comprovante_fabio_url;
   const temNota = anexos.some((a) => a.tipo === 'nota_fiscal') || sol?.nota_fiscal_url;
   const cfg = origemCfg(c?.origem);
   const Link = ({ href, children }) => (
@@ -1730,6 +1760,14 @@ const DetalheConciliacao = ({ detalhe, onClose, onAnexar, onRemoverAnexo }) => {
                       </label>
                     </div>
                     <div className="mt-1.5 space-y-1">
+                      {g.tipo === 'comprovante' && compBot && (
+                        <div className="flex items-center gap-2">
+                          <Link href={compBot.url}>
+                            <FilePdf size={12} className="text-red-600" /> {compBot.nome || 'comprovante'} (portal Stone, pelo bot)
+                          </Link>
+                          {compBot.solicitacaoId && <span className="text-[10px] text-emerald-700">· anexado na Solicitação Crosby</span>}
+                        </div>
+                      )}
                       {g.daSolicitacao.map((u, i) => (
                         <div key={`s${i}`}>
                           <Link href={u}>abrir (da solicitação)</Link>

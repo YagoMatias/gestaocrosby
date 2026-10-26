@@ -150,17 +150,21 @@ const fmtDateTime = (d) => {
   });
 };
 
+// STONE e PAGARME são atualizados pelo bot (soma das contas); os demais à mão.
+// Sicredi, Itaú Flávio e Caixa Irmãos saíram do saldo em 26/10/2026 (pedido do Yago).
 const BANCOS_SALDO = [
-  'SICREDI CROSBY',
-  'SICREDI FÁBIO',
   'STONE',
-  'PAGARME', // disponível na Pagar.me (atualizado pelo bot/servidor)
+  'PAGARME', // disponível na Pagar.me
   'PAGARME A RECEBER', // boletos/vendas online ainda não liquidados
-  'ITAU FLAVIO',
   'ITAU RECIFE',
-  'CAIXA IRMAOS',
   'MENTORE',
 ];
+// bancos com detalhe por conta (stone_bot_saldos)
+const BANCOS_COM_DETALHE = { STONE: 'STONE', PAGARME: 'PAGARME', 'PAGARME A RECEBER': 'PAGARME' };
+const sufixoCnpj = (cnpj) => {
+  const d = String(cnpj || '').replace(/\D/g, '');
+  return d.length === 14 ? d.slice(8, 12) : d.slice(-4);
+};
 
 // ─── Modal de Saldo Bancário ──────────────────────────
 const ModalSaldoBancario = ({ onClose, onSaved, userEmail }) => {
@@ -2850,6 +2854,8 @@ const LiberacaoPagamento = () => {
   const [modalItem, setModalItem] = useState(null);
   // Saldo bancário
   const [saldos, setSaldos] = useState([]);
+  const [saldosDetalhe, setSaldosDetalhe] = useState({ data: null, linhas: [] });
+  const [bancoAberto, setBancoAberto] = useState(null); // STONE | PAGARME
   const [showModalSaldo, setShowModalSaldo] = useState(false);
   const [showModalTransferencia, setShowModalTransferencia] = useState(false);
   // Filtros extras (PAGO)
@@ -2918,6 +2924,25 @@ const LiberacaoPagamento = () => {
   const carregarSaldos = useCallback(async () => {
     const { data } = await supabase.from('saldo_bancario').select('*');
     setSaldos(data || []);
+    // saldo por conta Stone / Pagar.me capturado pelo bot (último dia)
+    try {
+      const { data: ult } = await supabase
+        .from('stone_bot_saldos')
+        .select('data')
+        .order('data', { ascending: false })
+        .limit(1);
+      const dia = ult?.[0]?.data;
+      if (dia) {
+        const { data: linhas } = await supabase
+          .from('stone_bot_saldos')
+          .select('*')
+          .eq('data', dia)
+          .order('saldo', { ascending: false });
+        setSaldosDetalhe({ data: dia, linhas: linhas || [] });
+      }
+    } catch {
+      /* tabela do bot ainda não existe */
+    }
   }, []);
 
   // Dispara o job de provisão automática sob demanda (admin/owner).
@@ -3984,11 +4009,13 @@ const LiberacaoPagamento = () => {
       {/* Card Saldo Bancário + Cards de seleção */}
       <div className="flex flex-wrap gap-3 mb-4">
         {/* Saldo Bancário */}
-        <button
-          onClick={() => setShowModalSaldo(true)}
-          className="flex-1 min-w-[260px] bg-white rounded-xl shadow border border-teal-200 p-4 text-left hover:shadow-md transition-shadow group"
-        >
-          <div className="flex items-center gap-3 mb-3">
+        <div className="flex-1 min-w-[260px] bg-white rounded-xl shadow border border-teal-200 p-4 text-left group">
+          <button
+            type="button"
+            onClick={() => setShowModalSaldo(true)}
+            className="flex items-center gap-3 mb-3 text-left w-full"
+            title="Editar os saldos à mão"
+          >
             <div className="p-2 bg-teal-50 rounded-lg group-hover:bg-teal-100 transition-colors">
               <Wallet size={20} weight="bold" className="text-teal-600" />
             </div>
@@ -4003,27 +4030,118 @@ const LiberacaoPagamento = () => {
                 {fmtBRL(totalSaldo)}
               </p>
             </div>
-          </div>
+          </button>
           <div className="flex flex-wrap gap-1.5">
             {BANCOS_SALDO.map((b) => {
               const s = saldos.find((r) => r.banco === b);
               const v = parseFloat(s?.valor || 0);
+              const detalhe = BANCOS_COM_DETALHE[b];
+              const aberto = detalhe && bancoAberto === detalhe;
               return (
-                <span
+                <button
                   key={b}
+                  type="button"
+                  onClick={() =>
+                    detalhe && setBancoAberto((a) => (a === detalhe ? null : detalhe))
+                  }
+                  title={detalhe ? 'Ver o saldo de cada conta' : undefined}
                   className={`inline-flex items-center gap-1 text-[9px] px-2 py-1 rounded-full border font-semibold ${
-                    v > 0
-                      ? 'bg-teal-50 text-teal-700 border-teal-200'
-                      : 'bg-gray-50 text-gray-400 border-gray-200'
-                  }`}
+                    aberto
+                      ? 'bg-teal-600 text-white border-teal-600'
+                      : v > 0
+                        ? 'bg-teal-50 text-teal-700 border-teal-200'
+                        : 'bg-gray-50 text-gray-400 border-gray-200'
+                  } ${detalhe ? 'cursor-pointer hover:shadow-sm' : 'cursor-default'}`}
                 >
                   <Bank size={8} />
                   {b}: {fmtBRL(v)}
-                </span>
+                  {detalhe && (
+                    <CaretDown
+                      size={8}
+                      weight="bold"
+                      className={`transition-transform ${aberto ? 'rotate-180' : ''}`}
+                    />
+                  )}
+                </button>
               );
             })}
           </div>
-        </button>
+          {bancoAberto && (
+            <div className="mt-3 border-t border-gray-100 pt-2">
+              {(() => {
+                const linhas = saldosDetalhe.linhas.filter(
+                  (l) => (l.banco || 'STONE') === bancoAberto,
+                );
+                if (!linhas.length)
+                  return (
+                    <p className="text-[11px] text-gray-400">
+                      O bot ainda não capturou o saldo por conta.
+                    </p>
+                  );
+                const totAnt = linhas.reduce(
+                  (s, l) => s + parseFloat(l.saldo_antecipavel || 0),
+                  0,
+                );
+                const totRec = linhas.reduce(
+                  (s, l) => s + parseFloat(l.saldo_a_receber || 0),
+                  0,
+                );
+                return (
+                  <>
+                    <p className="text-[10px] text-gray-400 mb-1">
+                      {bancoAberto === 'STONE' ? 'Stone' : 'Pagar.me'} por conta ·{' '}
+                      {saldosDetalhe.data
+                        ? new Date(`${saldosDetalhe.data}T12:00:00`).toLocaleDateString('pt-BR')
+                        : ''}
+                      {bancoAberto === 'STONE' && totAnt > 0 && (
+                        <span className="ml-2 text-amber-700 font-semibold">
+                          · {fmtBRL(totAnt)} para antecipar
+                        </span>
+                      )}
+                      {bancoAberto === 'PAGARME' && totRec > 0 && (
+                        <span className="ml-2 text-fuchsia-700 font-semibold">
+                          · {fmtBRL(totRec)} a receber
+                        </span>
+                      )}
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-0.5">
+                      {linhas.map((l) => (
+                        <div
+                          key={l.id}
+                          className="flex items-center justify-between text-[11px] py-0.5"
+                          title={`${l.titular_nome || ''} · ${l.titular_cnpj || ''}`}
+                        >
+                          <span className="text-gray-600 font-medium truncate">
+                            {bancoAberto === 'STONE'
+                              ? `Stone ${sufixoCnpj(l.titular_cnpj) || l.conta}`
+                              : l.titular_nome || l.conta}
+                          </span>
+                          <span className="flex items-center gap-2 whitespace-nowrap">
+                            <span
+                              className={`font-semibold ${parseFloat(l.saldo) > 0 ? 'text-gray-800' : 'text-gray-400'}`}
+                            >
+                              {fmtBRL(parseFloat(l.saldo || 0))}
+                            </span>
+                            {bancoAberto === 'STONE' && parseFloat(l.saldo_antecipavel || 0) > 0 && (
+                              <span className="text-amber-700" title="Disponível para antecipação">
+                                +{fmtBRL(parseFloat(l.saldo_antecipavel))} antec.
+                              </span>
+                            )}
+                            {bancoAberto === 'PAGARME' && parseFloat(l.saldo_a_receber || 0) > 0 && (
+                              <span className="text-fuchsia-700" title="A receber">
+                                +{fmtBRL(parseFloat(l.saldo_a_receber))} a rec.
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          )}
+        </div>
 
         {/* Títulos Aprovados */}
         <div className="flex-1 min-w-[200px] bg-white rounded-xl shadow border border-blue-200 p-4">
