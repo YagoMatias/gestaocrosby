@@ -154,6 +154,8 @@ const BANCOS_SALDO = [
   'SICREDI CROSBY',
   'SICREDI FÁBIO',
   'STONE',
+  'PAGARME', // disponível na Pagar.me (atualizado pelo bot/servidor)
+  'PAGARME A RECEBER', // boletos/vendas online ainda não liquidados
   'ITAU FLAVIO',
   'ITAU RECIFE',
   'CAIXA IRMAOS',

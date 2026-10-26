@@ -130,6 +130,21 @@ const BotStoneExtratos = ({ onImportou }) => {
     }
   };
 
+  const [pagarmeRodando, setPagarmeRodando] = useState(false);
+  const atualizarPagarme = async () => {
+    setPagarmeRodando(true);
+    try {
+      const j = await apiJson('/api/stone-bot/pagarme/executar', { method: 'POST', body: de && ate ? { de, ate } : {}, timeoutMs: 300000 });
+      if (j.data?.falhas) setErro(j.message || 'Pagar.me: houve falhas (veja o log do servidor).');
+      await carregar();
+      onImportou?.();
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setPagarmeRodando(false);
+    }
+  };
+
   const cancelar = async (id) => {
     if (!window.confirm('Cancelar esta execução pendente?')) return;
     try {
@@ -186,13 +201,34 @@ const BotStoneExtratos = ({ onImportou }) => {
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-3">
           <p className="text-[10px] uppercase tracking-wide text-gray-500 flex items-center gap-1">
-            <Bank size={12} /> Saldo STONE na Liberação de Pagamento
+            <Bank size={12} /> Na Liberação de Pagamento
           </p>
-          <p className="text-base font-bold text-gray-800 mt-0.5">{fmt(status?.saldoLiberacao?.valor)}</p>
+          <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-0.5 items-baseline">
+            <span>
+              <span className="text-[10px] text-gray-500">STONE </span>
+              <span className="text-base font-bold text-gray-800">{fmt(status?.saldoLiberacao?.valor)}</span>
+            </span>
+            <span>
+              <span className="text-[10px] text-gray-500">PAGARME </span>
+              <span className="text-base font-bold text-fuchsia-800">{fmt(status?.saldoPagarme?.valor)}</span>
+            </span>
+            <span>
+              <span className="text-[10px] text-gray-500">a receber </span>
+              <span className="text-sm font-semibold text-fuchsia-600">{fmt(status?.saldoPagarmeReceber?.valor)}</span>
+            </span>
+          </div>
           <p className="text-[11px] text-gray-500 mt-0.5">
-            {status?.saldoLiberacao ? `atualizado ${relativo(status.saldoLiberacao.atualizadoEm)} por ${status.saldoLiberacao.por || '—'}` : 'ainda não informado'}
-            {status?.saldos?.data ? ` · ${status.saldos.contas.length} conta(s) em ${fmtData(status.saldos.data)}` : ''}
+            {status?.saldoLiberacao ? `Stone ${relativo(status.saldoLiberacao.atualizadoEm)}` : 'Stone: ainda não informado'}
+            {status?.saldoPagarme ? ` · Pagar.me ${relativo(status.saldoPagarme.atualizadoEm)}` : ' · Pagar.me: ainda não informado'}
           </p>
+          <button
+            onClick={atualizarPagarme}
+            disabled={pagarmeRodando}
+            className="mt-2 px-2.5 py-1 text-[11px] rounded-lg border border-fuchsia-300 text-fuchsia-800 bg-fuchsia-50 hover:bg-fuchsia-100 disabled:opacity-50 flex items-center gap-1"
+            title="Consulta a API da Pagar.me no servidor (não depende do PC do bot): saldo disponível, a receber e extrato dos últimos dias"
+          >
+            {pagarmeRodando ? <ArrowsClockwise size={12} className="animate-spin" /> : <ArrowsClockwise size={12} />} Atualizar Pagar.me agora
+          </button>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-3 flex flex-col gap-2">
           <div className="flex items-end gap-2">
@@ -231,25 +267,37 @@ const BotStoneExtratos = ({ onImportou }) => {
       {status?.saldos?.contas?.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-3 py-2 border-b border-gray-200 bg-gray-50 text-xs font-semibold text-gray-700 flex items-center justify-between">
-            <span>Saldo por conta Stone em {fmtData(status.saldos.data)}</span>
-            <span className="text-gray-800">Total {fmt(status.saldos.total)}</span>
+            <span>Saldo por conta em {fmtData(status.saldos.data)}</span>
+            <span className="text-gray-800 flex flex-wrap gap-3">
+              {Object.values(status.saldos.porBanco || {}).map((b) => (
+                <span key={b.banco}>
+                  {b.banco} {fmt(b.total)}
+                  {b.aReceber ? <span className="text-fuchsia-600 font-normal"> (+{fmt(b.aReceber)} a receber)</span> : ''}
+                </span>
+              ))}
+            </span>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
                 <tr className="text-gray-500 border-b border-gray-100">
+                  <th className="px-3 py-1.5 text-left font-semibold">Banco</th>
                   <th className="px-3 py-1.5 text-left font-semibold">Titular</th>
                   <th className="px-3 py-1.5 text-left font-semibold">CNPJ</th>
                   <th className="px-3 py-1.5 text-left font-semibold">Ag / Conta</th>
                   <th className="px-3 py-1.5 text-right font-semibold">Saldo</th>
                   <th className="px-3 py-1.5 text-right font-semibold">Bloqueado</th>
                   <th className="px-3 py-1.5 text-right font-semibold">Agendado</th>
+                  <th className="px-3 py-1.5 text-right font-semibold">A receber</th>
                   <th className="px-3 py-1.5 text-left font-semibold">Capturado</th>
                 </tr>
               </thead>
               <tbody>
                 {status.saldos.contas.map((s) => (
                   <tr key={s.id} className="border-b border-gray-50 hover:bg-gray-50">
+                    <td className="px-3 py-1.5">
+                      <span className={`inline-flex px-1.5 py-0.5 rounded-full text-[10px] font-medium border ${s.banco === 'PAGARME' ? 'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-300' : 'bg-emerald-100 text-emerald-800 border-emerald-300'}`}>{s.banco === 'PAGARME' ? 'Pagar.me' : 'Stone'}</span>
+                    </td>
                     <td className="px-3 py-1.5 text-gray-800">{s.titular_nome || '—'}</td>
                     <td className="px-3 py-1.5 text-gray-500">{s.titular_cnpj || '—'}</td>
                     <td className="px-3 py-1.5 text-gray-600 whitespace-nowrap">
@@ -258,6 +306,7 @@ const BotStoneExtratos = ({ onImportou }) => {
                     <td className={`px-3 py-1.5 text-right font-medium ${Number(s.saldo) < 0 ? 'text-red-600' : 'text-gray-800'}`}>{fmt(s.saldo)}</td>
                     <td className="px-3 py-1.5 text-right text-gray-500">{s.saldo_bloqueado != null ? fmt(s.saldo_bloqueado) : '—'}</td>
                     <td className="px-3 py-1.5 text-right text-gray-500">{s.saldo_agendado != null ? fmt(s.saldo_agendado) : '—'}</td>
+                    <td className="px-3 py-1.5 text-right text-fuchsia-700">{s.saldo_a_receber != null ? fmt(s.saldo_a_receber) : '—'}</td>
                     <td className="px-3 py-1.5 text-gray-400 whitespace-nowrap">{fmtHora(s.capturado_em)}</td>
                   </tr>
                 ))}
