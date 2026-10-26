@@ -37,6 +37,9 @@ const SolicitacaoBaixa = () => {
   const [filtroPortador, setFiltroPortador] = useState('TODOS');
   // João (23/10/2026): filtrar por forma de pagamento (p/ contar as baixas feitas por forma)
   const [filtroForma, setFiltroForma] = useState('TODAS');
+  // João (26/10/2026): baixar dia a dia — filtro por data de pagamento (de/até)
+  const [filtroDataDe, setFiltroDataDe] = useState('');
+  const [filtroDataAte, setFiltroDataAte] = useState('');
   const [selectedItems, setSelectedItems] = useState(new Set());
   const [processingBaixa, setProcessingBaixa] = useState(false);
 
@@ -198,8 +201,10 @@ const SolicitacaoBaixa = () => {
       lista = lista.filter((x) => grupo.includes(x.origem));
     }
     if (filtroForma !== 'TODAS') lista = lista.filter((x) => (x.forma_pagamento || 'sem_forma') === filtroForma);
+    if (filtroDataDe) lista = lista.filter((x) => (x.dt_pagamento || '') >= filtroDataDe);
+    if (filtroDataAte) lista = lista.filter((x) => (x.dt_pagamento || '') <= filtroDataAte);
     return lista;
-  }, [solicitacoes, filtroStatus, filtroPortador, filtroOrigem, filtroForma]);
+  }, [solicitacoes, filtroStatus, filtroPortador, filtroOrigem, filtroForma, filtroDataDe, filtroDataAte]);
 
   // Totais por status
   const pendentesPorOrigem = useMemo(() => {
@@ -809,6 +814,44 @@ const SolicitacaoBaixa = () => {
                 </option>
               ))}
             </select>
+          </div>
+          {/* Filtro por data de pagamento (João, 26/10/2026: baixar dia a dia) */}
+          <div className="flex items-center gap-1 bg-white border rounded-lg px-2 py-1" title="Data do pagamento/recebimento da solicitação (de / até)">
+            <CalendarBlank size={14} className="text-gray-500" />
+            <input
+              type="date"
+              value={filtroDataDe}
+              onChange={(e) => {
+                setFiltroDataDe(e.target.value);
+                if (e.target.value && !filtroDataAte) setFiltroDataAte(e.target.value);
+                setSelectedItems(new Set());
+              }}
+              className="text-xs border-none bg-transparent focus:ring-0 p-0"
+            />
+            <span className="text-[10px] text-gray-400">até</span>
+            <input
+              type="date"
+              value={filtroDataAte}
+              onChange={(e) => {
+                setFiltroDataAte(e.target.value);
+                setSelectedItems(new Set());
+              }}
+              className="text-xs border-none bg-transparent focus:ring-0 p-0"
+            />
+            {(filtroDataDe || filtroDataAte) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFiltroDataDe('');
+                  setFiltroDataAte('');
+                  setSelectedItems(new Set());
+                }}
+                className="text-[10px] font-bold text-red-600 ml-1"
+                title="Limpar datas"
+              >
+                ×
+              </button>
+            )}
           </div>
           <span
             className="text-xs font-bold text-[#000638] bg-white border rounded-lg px-2 py-1"
