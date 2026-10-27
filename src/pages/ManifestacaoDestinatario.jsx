@@ -1108,10 +1108,10 @@ const ManifestacaoDestinatario = () => {
         acc.quantidade += 1;
         if (!item.manifestacao) acc.pendentes += 1;
         if (!item.setor) acc.semSetor += 1;
-        if (esc === 'pendente' && (chamadosPorNota[item.id] || []).length) acc.comChamado += 1;
         if (origemDoRegistro(item.schema_origem) === 'SEFAZ') acc.sefaz += 1;
         else acc.totvs += 1;
         const esc = escrituracaoDaNota(item);
+        if (esc === 'pendente' && (chamadosPorNota[item.id] || []).length) acc.comChamado += 1;
         if (esc === 'escriturada') acc.escrituradas += 1;
         else if (esc === 'pendente') acc.naoEscrituradas += 1;
         else if (esc === 'outros') acc.outros += 1;
