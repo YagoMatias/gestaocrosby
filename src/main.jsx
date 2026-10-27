@@ -4,6 +4,10 @@ import App from './App';
 import './index.css';
 import { AuthProvider } from './components/AuthContext';
 import ErrorBoundary from './components/ui/ErrorBoundary';
+import { instalarRecargaDeChunk } from './utils/recarregarSeChunkFalhou';
+
+// Aba aberta durante um deploy: recarrega uma vez se um chunk novo falhar
+instalarRecargaDeChunk();
 
 // API Key vem da variável de ambiente (VITE_ prefix para Vite injetar no build)
 const API_KEY = import.meta.env.VITE_API_KEY || '';

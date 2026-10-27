@@ -1,5 +1,6 @@
 import React from 'react';
 import { ERROR_MESSAGES } from '../../config/constants';
+import { ehErroDeChunk, recarregarUmaVez } from '../../utils/recarregarSeChunkFalhou';
 
 /**
  * Error Boundary para capturar erros JavaScript e mostrar fallback UI
@@ -24,6 +25,9 @@ class ErrorBoundary extends React.Component {
   componentDidCatch(error, errorInfo) {
     // Log do erro para monitoramento
     console.error('ErrorBoundary caught an error:', error, errorInfo);
+
+    // Chunk que sumiu/mudou num deploy (React.lazy): recarregar resolve
+    if (ehErroDeChunk(error?.message) && recarregarUmaVez(error?.message)) return;
 
     this.setState({
       error,
