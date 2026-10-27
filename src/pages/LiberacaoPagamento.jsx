@@ -160,7 +160,7 @@ const BANCOS_SALDO = [
   'MENTORE',
 ];
 // bancos com detalhe por conta (stone_bot_saldos)
-const BANCOS_COM_DETALHE = { STONE: 'STONE', PAGARME: 'PAGARME', 'PAGARME A RECEBER': 'PAGARME' };
+const BANCOS_COM_DETALHE = { STONE: 'STONE', PAGARME: 'PAGARME' };
 const sufixoCnpj = (cnpj) => {
   const d = String(cnpj || '').replace(/\D/g, '');
   return d.slice(-4); // 27.728.810/0005-49 → "0549"
@@ -4082,10 +4082,6 @@ const LiberacaoPagamento = () => {
                   (s, l) => s + parseFloat(l.saldo_antecipavel || 0),
                   0,
                 );
-                const totRec = linhas.reduce(
-                  (s, l) => s + parseFloat(l.saldo_a_receber || 0),
-                  0,
-                );
                 return (
                   <>
                     <p className="text-[10px] text-gray-400 mb-1">
@@ -4096,11 +4092,6 @@ const LiberacaoPagamento = () => {
                       {bancoAberto === 'STONE' && totAnt > 0 && (
                         <span className="ml-2 text-amber-700 font-semibold">
                           · {fmtBRL(totAnt)} para antecipar
-                        </span>
-                      )}
-                      {bancoAberto === 'PAGARME' && totRec > 0 && (
-                        <span className="ml-2 text-fuchsia-700 font-semibold">
-                          · {fmtBRL(totRec)} a receber
                         </span>
                       )}
                     </p>
@@ -4125,11 +4116,6 @@ const LiberacaoPagamento = () => {
                             {bancoAberto === 'STONE' && parseFloat(l.saldo_antecipavel || 0) > 0 && (
                               <span className="text-amber-700" title="Disponível para antecipação">
                                 +{fmtBRL(parseFloat(l.saldo_antecipavel))} antec.
-                              </span>
-                            )}
-                            {bancoAberto === 'PAGARME' && parseFloat(l.saldo_a_receber || 0) > 0 && (
-                              <span className="text-fuchsia-700" title="A receber">
-                                +{fmtBRL(parseFloat(l.saldo_a_receber))} a rec.
                               </span>
                             )}
                           </span>
