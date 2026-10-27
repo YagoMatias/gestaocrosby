@@ -44,6 +44,10 @@ const MANIFESTACAO_LABEL = {
 const origemDoRegistro = (schema) =>
   schema === 'csv-fisfp153' ? 'TOTVS' : 'SEFAZ';
 
+// Modelo do documento pela chave de acesso (posições 21-22): 55 NF-e, 57 CT-e, 65 NFC-e
+const modeloDaChave = (chave) => String(chave || '').slice(20, 22);
+const MODELO_LABEL = { 55: 'NF-e', 57: 'CT-e', 65: 'NFC-e' };
+
 // Situação da escrituração. Não se escritura nota cancelada, denegada nem
 // de entrada — elas ficam fora dos dois lados e de qualquer contagem.
 // A exclusão vem ANTES de olhar a fatura: existem notas de entrada e uma
@@ -492,6 +496,7 @@ const ManifestacaoDestinatario = () => {
   const [tipoOperacao, setTipoOperacao] = useState('');
   const [situacao, setSituacao] = useState('');
   const [origem, setOrigem] = useState('');
+  const [documento, setDocumento] = useState(''); // '' | '55' NF-e | '57' CT-e (Niziany, 27/10/2026)
   const [escrituracao, setEscrituracao] = useState('');
   const [importando, setImportando] = useState('');
   const [modalEscrituracao, setModalEscrituracao] = useState(false);
@@ -547,6 +552,10 @@ const ManifestacaoDestinatario = () => {
   const [pdfCarregando, setPdfCarregando] = useState(null); // id da nota
   const abrirPdf = async (item) => {
     if (!item?.id) return;
+    if (modeloDaChave(item.chave_acesso) === '57') {
+      setErro('O PDF de CT-e (DACTE) ainda não é suportado — por enquanto só NF-e.');
+      return;
+    }
     setPdfCarregando(item.id);
     try {
       const r = await fetch(`${API_BASE_URL}/api/sefaz/dfe/notas/${item.id}/xml`);
@@ -928,7 +937,12 @@ const ManifestacaoDestinatario = () => {
   }, [filtroAberto]);
 
   const dadosProcessados = useMemo(() => {
-    let filtrados = dados.filter((item) => passaPesquisa(item) && passaFiltrosColuna(item));
+    let filtrados = dados.filter(
+      (item) =>
+        passaPesquisa(item) &&
+        passaFiltrosColuna(item) &&
+        (!documento || modeloDaChave(item.chave_acesso) === documento),
+    );
 
     if (ordenacao.campo) {
       const campo = ordenacao.campo;
@@ -953,7 +967,7 @@ const ManifestacaoDestinatario = () => {
 
     return filtrados;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dados, ordenacao, pesquisa, filtrosColuna, nomePorCodigo]);
+  }, [dados, ordenacao, pesquisa, filtrosColuna, documento, nomePorCodigo]);
 
   const totalPages = Math.ceil(dadosProcessados.length / itensPorPagina);
 
@@ -964,7 +978,7 @@ const ManifestacaoDestinatario = () => {
 
   useEffect(() => {
     setPaginaAtual(1);
-  }, [dados, ordenacao, pesquisa, filtrosColuna]);
+  }, [dados, ordenacao, pesquisa, filtrosColuna, documento]);
 
   const totais = useMemo(() => {
     return dadosProcessados.reduce(
@@ -1022,6 +1036,7 @@ const ManifestacaoDestinatario = () => {
         Escrituração: ESCRITURACAO_ROTULO[escrituracaoDaNota(item)],
         'Nº Fatura': item.nr_fatura || '',
         'Dt. Fatura': formatDateBR(item.dt_fatura),
+        Documento: MODELO_LABEL[modeloDaChave(item.chave_acesso)] || modeloDaChave(item.chave_acesso),
         Origem: origemDoRegistro(item.schema_origem),
         'Valor Total': parseFloat(item.valor_total) || 0,
         'Chave de Acesso': item.chave_acesso || '',
@@ -1217,6 +1232,20 @@ const ManifestacaoDestinatario = () => {
                 <option value="">Todas</option>
                 <option value="sefaz">SEFAZ</option>
                 <option value="totvs">TOTVS</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Documento
+              </label>
+              <select
+                value={documento}
+                onChange={(e) => setDocumento(e.target.value)}
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+              >
+                <option value="">Todos</option>
+                <option value="55">NF-e</option>
+                <option value="57">CT-e</option>
               </select>
             </div>
             <div>
@@ -1604,7 +1633,14 @@ const ManifestacaoDestinatario = () => {
                         </span>
                       </td>
                       <td className="text-left text-gray-900 px-2 py-2">
-                        <div>{item.emitente_nome || '--'}</div>
+                        <div>
+                          {item.emitente_nome || '--'}
+                          {modeloDaChave(item.chave_acesso) === '57' && (
+                            <span className="ml-1 text-[9px] font-bold uppercase text-indigo-700 bg-indigo-100 border border-indigo-200 rounded px-1 py-0.5" title="Conhecimento de Transporte Eletrônico">
+                              CT-e
+                            </span>
+                          )}
+                        </div>
                         <div className="text-[10px] text-gray-400">
                           {formatCnpj(item.emitente_cnpj)}
                         </div>
