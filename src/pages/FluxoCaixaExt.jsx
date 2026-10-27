@@ -71,6 +71,8 @@ const BANCOS = {
   DAYCOVAL: { label: 'Daycoval', cor: 'bg-sky-100 text-sky-800 border-sky-300', ponto: 'bg-sky-500' },
   PAGBANK: { label: 'PagBank', cor: 'bg-amber-100 text-amber-800 border-amber-300', ponto: 'bg-amber-500' },
   PAGARME: { label: 'Pagar.me', cor: 'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-300', ponto: 'bg-fuchsia-500' },
+  BB: { label: 'Banco do Brasil', cor: 'bg-yellow-100 text-yellow-800 border-yellow-300', ponto: 'bg-yellow-500' },
+  ITAU: { label: 'Itaú', cor: 'bg-orange-100 text-orange-800 border-orange-300', ponto: 'bg-orange-500' },
 };
 const bancoCfg = (b) => BANCOS[b] || { label: b || '—', cor: 'bg-gray-100 text-gray-700 border-gray-300', ponto: 'bg-gray-400' };
 
