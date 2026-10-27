@@ -64,7 +64,11 @@ const contaDoBoleto = (b) =>
   b.situacao === 'cancelado' || b.situacao === 'falhou' || b.status === 'canceled' || b.status === 'failed' ? SEM_CONTA : contaDe(b.conta);
 // quem pode ser marcado: pendente (p/ baixar na Pagar.me) ou cancelado/não emitido (p/ reemitir)
 const PODE_BAIXAR = (b) => b.situacao === 'aberto' || b.situacao === 'vencido';
-const PODE_REEMITIR = (b) => b.situacao === 'cancelado' || b.situacao === 'falhou';
+// Título já renegociado/baixado/cancelado no TOTVS (conferido pela sincronização): não reemitir
+const TITULO_FECHADO_TOTVS = (b) => !!b.totvs_situacao && b.totvs_situacao !== 'aberto' && b.totvs_situacao !== 'nao_encontrado';
+const CANCELADO_OU_FALHOU = (b) => b.situacao === 'cancelado' || b.situacao === 'falhou';
+// Yago/João (27/10/2026): só reemite se o título continua aberto no TOTVS
+const PODE_REEMITIR = (b) => CANCELADO_OU_FALHOU(b) && !TITULO_FECHADO_TOTVS(b);
 const LOTE_REMESSA = 25;
 
 // Situação do título no TOTVS (conferida a cada "Atualizar retorno" / job)
@@ -170,6 +174,7 @@ export default function RetornoBoleto() {
 
   const selPendentes = useMemo(() => boletos.filter((b) => selecionados.has(b.id) && PODE_BAIXAR(b)), [boletos, selecionados]);
   const selReemitir = useMemo(() => boletos.filter((b) => selecionados.has(b.id) && PODE_REEMITIR(b)), [boletos, selecionados]);
+  const naoReemitir = useMemo(() => boletos.filter((b) => CANCELADO_OU_FALHOU(b) && TITULO_FECHADO_TOTVS(b)).length, [boletos]);
 
   const criterio = () => {
     if (selPendentes.length) return { ids: selPendentes.map((b) => b.id) };
@@ -944,6 +949,11 @@ export default function RetornoBoleto() {
             <input type="checkbox" checked={verSubstituidos} onChange={(e) => setVerSubstituidos(e.target.checked)} />
             Mostrar cancelados substituídos{substituidos.size ? ` (${substituidos.size})` : ''}
           </label>
+          {naoReemitir > 0 && (
+            <span className="text-[11px] font-semibold text-gray-700 bg-gray-100 border border-gray-300 rounded px-2 py-0.5" title="Cancelados cujo título já foi renegociado/baixado no TOTVS — ficam fora da reemissão">
+              {naoReemitir} não reemitir (título fechado no TOTVS)
+            </span>
+          )}
           {contasPagarme && (
             <span
               className={`text-[11px] font-semibold rounded px-2 py-1 border ${contaDe(contasPagarme.emissao).cls}`}
@@ -1105,6 +1115,14 @@ export default function RetornoBoleto() {
                       >
                         {sit.label}
                       </span>
+                      {CANCELADO_OU_FALHOU(b) && TITULO_FECHADO_TOTVS(b) && (
+                        <span
+                          className="ml-1 inline-block text-[10px] font-bold rounded px-1 py-0.5 bg-gray-800 text-white"
+                          title={`Título ${(TOTVS_SIT[b.totvs_situacao] || TOTVS_SIT.nao_encontrado).label.toLowerCase()} no TOTVS${b.totvs_baixa_em ? ` em ${fmtData(b.totvs_baixa_em)}` : ''} — não reemitir (as parcelas novas aparecem na Remessa)`}
+                        >
+                          {(TOTVS_SIT[b.totvs_situacao] || TOTVS_SIT.nao_encontrado).label} · não reemitir
+                        </span>
+                      )}
                       {b.totvs_situacao && b.situacao !== 'pago' && b.situacao !== 'cancelado' && b.situacao !== 'falhou' && b.totvs_situacao !== 'aberto' && (
                         <span
                           className={`ml-1 inline-block text-[10px] font-bold rounded px-1 py-0.5 ${(TOTVS_SIT[b.totvs_situacao] || TOTVS_SIT.nao_encontrado).cls}`}
