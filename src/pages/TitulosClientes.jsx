@@ -1040,17 +1040,18 @@ const TitulosClientes = ({
           nm_cliente: item.nm_cliente,
           documento: item.nr_cpfcnpj,
           vl_fatura: item.vl_fatura,
+          dt_vencimento: item.dt_vencimento,
         }),
       });
       const j = await r.json();
       if (!r.ok || !j.ok) throw new Error(j.erro || `HTTP ${r.status}`);
       try { await navigator.clipboard.writeText(j.copia_cola); } catch { /* sem clipboard */ }
       if (j.qr_code_url) window.open(j.qr_code_url, '_blank');
-      alert(
-        `Pix gerado: ${Number(j.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} ` +
-        `(sem o acréscimo de R$ 2,99 do boleto).\n\nO "copia e cola" já foi copiado. ` +
-        `Pagando no dia ou 1 dia depois, sem juro/multa (feriado e fim de semana igual).`,
-      );
+      const fmt = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+      const extra = (j.multa || j.juros)
+        ? ` Inclui multa ${fmt(j.multa)} + juros ${fmt(j.juros)} (${j.dias_atraso} dia(s) de atraso).`
+        : ' Dentro do prazo: sem juro/multa.';
+      alert(`Pix gerado: ${fmt(j.valor)} — sem o acréscimo de R$ 2,99 do boleto.${extra}\n\nO "copia e cola" já foi copiado.`);
     } catch (e) {
       alert(`Não consegui gerar o Pix: ${e.message}`);
     } finally {
@@ -2573,24 +2574,28 @@ const TitulosClientes = ({
                         <div className="flex items-center justify-center gap-1">
                           {linhaEmAberto(item) && (
                             <>
-                              <button
-                                onClick={() => copiarCodigoBarras(item)}
-                                disabled={acaoLinha === `${chaveLinha(item)}:codigo`}
-                                className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium border transition-colors disabled:opacity-50 ${copiadoChave === chaveLinha(item) ? 'bg-green-100 border-green-400 text-green-800' : 'bg-gray-100 hover:bg-gray-200 border-gray-300 text-gray-800'}`}
-                                title={item.linha_digitavel || item.cd_barras ? 'Copiar a linha digitável do boleto' : 'Gera o boleto no banco e copia o código'}
-                              >
-                                <Copy size={12} weight="bold" />
-                                {acaoLinha === `${chaveLinha(item)}:codigo` ? 'Gerando...' : copiadoChave === chaveLinha(item) ? 'Copiado!' : 'Cód. barras'}
-                              </button>
-                              <button
-                                onClick={() => baixarBoletoLinha(item)}
-                                disabled={acaoLinha === `${chaveLinha(item)}:boleto`}
-                                className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 transition-colors"
-                                title="Baixar o boleto (Pagar.me quando houver; inclui R$ 2,99). Sem o acréscimo, use o Pix."
-                              >
-                                <FileArrowDown size={12} weight="bold" />
-                                {acaoLinha === `${chaveLinha(item)}:boleto` ? '...' : 'Boleto'}
-                              </button>
+                              {boletoPg(item) && (
+                                <>
+                                  <button
+                                    onClick={() => copiarCodigoBarras(item)}
+                                    disabled={acaoLinha === `${chaveLinha(item)}:codigo`}
+                                    className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium border transition-colors disabled:opacity-50 ${copiadoChave === chaveLinha(item) ? 'bg-green-100 border-green-400 text-green-800' : 'bg-gray-100 hover:bg-gray-200 border-gray-300 text-gray-800'}`}
+                                    title="Copiar a linha digitável do boleto (Pagar.me)"
+                                  >
+                                    <Copy size={12} weight="bold" />
+                                    {copiadoChave === chaveLinha(item) ? 'Copiado!' : 'Cód. barras'}
+                                  </button>
+                                  <button
+                                    onClick={() => baixarBoletoLinha(item)}
+                                    disabled={acaoLinha === `${chaveLinha(item)}:boleto`}
+                                    className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 transition-colors"
+                                    title="Baixar o boleto da Pagar.me (inclui R$ 2,99). Sem o acréscimo, use o Pix."
+                                  >
+                                    <FileArrowDown size={12} weight="bold" />
+                                    {acaoLinha === `${chaveLinha(item)}:boleto` ? '...' : 'Boleto'}
+                                  </button>
+                                </>
+                              )}
                               <button
                                 onClick={() => gerarPixLinha(item)}
                                 disabled={acaoLinha === `${chaveLinha(item)}:pix`}
