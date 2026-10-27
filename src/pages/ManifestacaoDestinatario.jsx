@@ -500,6 +500,55 @@ const ManifestacaoDestinatario = () => {
   const [filtroAberto, setFiltroAberto] = useState(null); // { campo, label, left, top }
   const popRef = useRef(null);
 
+  // Setor responsável pela nota (Niziany, 27/10/2026, modelo Dryland).
+  // Lista em sefaz_dfe_setores; a nota guarda o nome em sefaz_dfe_notas.setor.
+  const [setores, setSetores] = useState([]);
+  const carregarSetores = async () => {
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/sefaz/dfe/setores`);
+      const json = await r.json();
+      if (json.success && Array.isArray(json.data)) setSetores(json.data);
+    } catch (e) {
+      console.error('Erro ao carregar setores:', e);
+    }
+  };
+  useEffect(() => {
+    carregarSetores();
+  }, []);
+  const salvarSetor = async (item, setor) => {
+    const anterior = item.setor || null;
+    const novo = setor || null;
+    setDados((p) => p.map((n) => (n.id === item.id ? { ...n, setor: novo } : n)));
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/sefaz/dfe/notas/${item.id}/setor`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ setor: novo }),
+      });
+      const json = await r.json();
+      if (!r.ok || !json.success) throw new Error(json.message || json.error || `HTTP ${r.status}`);
+    } catch (e) {
+      setDados((p) => p.map((n) => (n.id === item.id ? { ...n, setor: anterior } : n)));
+      setErro(`Não consegui salvar o setor: ${e.message}`);
+    }
+  };
+  const novoSetor = async () => {
+    const nome = window.prompt('Nome do novo setor:');
+    if (!nome || !nome.trim()) return;
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/sefaz/dfe/setores`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nome: nome.trim() }),
+      });
+      const json = await r.json();
+      if (!r.ok || !json.success) throw new Error(json.message || json.error || `HTTP ${r.status}`);
+      await carregarSetores();
+    } catch (e) {
+      setErro(`Não consegui criar o setor: ${e.message}`);
+    }
+  };
+
   const [paginaAtual, setPaginaAtual] = useState(1);
   const [itensPorPagina] = useState(20);
   const [ordenacao, setOrdenacao] = useState({
@@ -723,6 +772,7 @@ const ManifestacaoDestinatario = () => {
       origemDoRegistro(item.schema_origem),
       ESCRITURACAO_ROTULO[escrituracaoDaNota(item)],
       item.nr_fatura,
+      item.setor,
     ]
       .map((v) => String(v ?? '').toLowerCase())
       .some((v) => v.includes(termo));
@@ -744,7 +794,7 @@ const ManifestacaoDestinatario = () => {
     if (tem('emitente_nome') && !contem(`${item.emitente_nome ?? ''} ${formatCnpj(item.emitente_cnpj)} ${item.emitente_cnpj ?? ''}`, 'emitente_nome')) return false;
     if (tem('tipo_operacao') && String(item.tipo_operacao ?? '') !== String(fc.tipo_operacao)) return false;
     if (tem('situacao') && String(item.situacao ?? '') !== String(fc.situacao)) return false;
-    if (tem('manifestacao') && (fc.manifestacao === 'sem' ? !!item.manifestacao : !item.manifestacao)) return false;
+    if (tem('setor') && (fc.setor === '__sem' ? !!item.setor : (item.setor || '') !== String(fc.setor))) return false;
     if (tem('escriturada') && escrituracaoDaNota(item) !== fc.escriturada) return false;
     if (tem('schema_origem') && origemDoRegistro(item.schema_origem) !== fc.schema_origem) return false;
     if (tem('valor_total')) {
@@ -788,8 +838,12 @@ const ManifestacaoDestinatario = () => {
         return { key: 'tipo_operacao', tipo: 'select', opts: [['1', 'Saída'], ['0', 'Entrada']] };
       case 'situacao':
         return { key: 'situacao', tipo: 'select', opts: Object.entries(SITUACAO_LABEL) };
-      case 'manifestacao':
-        return { key: 'manifestacao', tipo: 'select', opts: [['sem', 'Pendente'], ['com', 'Manifestada']] };
+      case 'setor':
+        return {
+          key: 'setor',
+          tipo: 'select',
+          opts: [['__sem', '(sem setor)'], ...setores.map((st) => [st.nome, st.nome])],
+        };
       case 'escriturada':
         return { key: 'escriturada', tipo: 'select', opts: Object.entries(ESCRITURACAO_ROTULO) };
       case 'schema_origem':
@@ -884,6 +938,7 @@ const ManifestacaoDestinatario = () => {
         acc.valorTotal += parseFloat(item.valor_total) || 0;
         acc.quantidade += 1;
         if (!item.manifestacao) acc.pendentes += 1;
+        if (!item.setor) acc.semSetor += 1;
         if (origemDoRegistro(item.schema_origem) === 'SEFAZ') acc.sefaz += 1;
         else acc.totvs += 1;
         const esc = escrituracaoDaNota(item);
@@ -896,6 +951,7 @@ const ManifestacaoDestinatario = () => {
         valorTotal: 0,
         quantidade: 0,
         pendentes: 0,
+        semSetor: 0,
         sefaz: 0,
         totvs: 0,
         escrituradas: 0,
@@ -928,10 +984,7 @@ const ManifestacaoDestinatario = () => {
               ? 'Saída'
               : item.tipo_operacao || '',
         Situação: SITUACAO_LABEL[item.situacao] || item.situacao || '',
-        Manifestação:
-          MANIFESTACAO_LABEL[item.manifestacao] ||
-          item.manifestacao_descricao ||
-          'Pendente',
+        Setor: item.setor || '',
         Escrituração: ESCRITURACAO_ROTULO[escrituracaoDaNota(item)],
         'Nº Fatura': item.nr_fatura || '',
         'Dt. Fatura': formatDateBR(item.dt_fatura),
@@ -1199,10 +1252,10 @@ const ManifestacaoDestinatario = () => {
           </div>
           <div className="bg-white rounded-lg shadow p-3 border border-[#000638]/10">
             <div className="text-xs font-bold text-amber-700 mb-1">
-              Sem Manifestação
+              Sem setor
             </div>
             <div className="text-sm font-extrabold text-amber-600">
-              {totais.pendentes}
+              {totais.semSetor}
             </div>
           </div>
           <button
@@ -1434,7 +1487,7 @@ const ManifestacaoDestinatario = () => {
                       ['emitente_nome', 'Emitente', 'left'],
                       ['tipo_operacao', 'Tipo Op.', 'center'],
                       ['situacao', 'Situação', 'center'],
-                      ['manifestacao', 'Manifestação', 'center'],
+                      ['setor', 'Setor', 'center'],
                       ['escriturada', 'Escrituração', 'center'],
                       ['schema_origem', 'Origem', 'center'],
                       ['valor_total', 'Valor Total', 'center'],
@@ -1457,6 +1510,19 @@ const ManifestacaoDestinatario = () => {
                             <Funnel size={11} weight="fill" className="text-amber-300" />
                           )}
                           {getSortIcon(campo)}
+                          {campo === 'setor' && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                novoSetor();
+                              }}
+                              title="Criar um novo setor"
+                              className="ml-1 w-4 h-4 rounded-full bg-white/20 hover:bg-white/50 text-white text-[11px] font-bold leading-none inline-flex items-center justify-center"
+                            >
+                              +
+                            </button>
+                          )}
                         </div>
                       </th>
                     ))}
@@ -1527,18 +1593,27 @@ const ManifestacaoDestinatario = () => {
                             '--'}
                         </span>
                       </td>
-                      <td className="text-center px-2 py-2">
-                        <span
-                          className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${
-                            item.manifestacao
-                              ? 'bg-blue-100 text-blue-700'
-                              : 'bg-amber-100 text-amber-700'
+                      <td className="text-center px-2 py-2" onClick={(e) => e.stopPropagation()}>
+                        <select
+                          value={item.setor || ''}
+                          onChange={(e) => salvarSetor(item, e.target.value)}
+                          title="Setor responsável pela nota"
+                          className={`mb-0 px-1.5 py-1 text-[11px] rounded-lg border focus:outline-none focus:ring-1 focus:ring-[#000638] ${
+                            item.setor
+                              ? 'bg-white border-gray-300 text-gray-800 font-semibold'
+                              : 'bg-amber-50 border-amber-300 text-amber-700'
                           }`}
                         >
-                          {MANIFESTACAO_LABEL[item.manifestacao] ||
-                            item.manifestacao_descricao ||
-                            'Pendente'}
-                        </span>
+                          <option value="">(sem setor)</option>
+                          {setores.map((st) => (
+                            <option key={st.id} value={st.nome}>
+                              {st.nome}
+                            </option>
+                          ))}
+                          {item.setor && !setores.some((st) => st.nome === item.setor) && (
+                            <option value={item.setor}>{item.setor}</option>
+                          )}
+                        </select>
                       </td>
                       <td className="text-center px-2 py-2">
                         <span
