@@ -162,6 +162,18 @@ const SolicitacaoBaixa = () => {
   };
 
   // Carregar solicitações
+  // Pagamento único por Pix (João, 27/10/2026): títulos pagos pelo MESMO Pix/cobrança
+  // Pagar.me (mesma ref_externa base) são baixados numa chamada só no TOTVS — N faturas,
+  // 1 pagamento com a soma. Pix separados = baixas separadas. Boleto é 1 título.
+  const grupoDoPix = (sol) => {
+    const ref = String(sol?.ref_externa || '');
+    if (!ref || ref.startsWith('descartado:')) return '';
+    const p = ref.split(':');
+    if (p[0] === 'pagarme' && p[1] === 'pix' && p.length >= 4) return p.slice(0, 3).join(':'); // pagarme:pix:<pedido>:<fat-parc>
+    if (p[0] === 'pagarme' && p[1] !== 'boleto' && p[1] !== 'pix' && p.length === 3) return p.slice(0, 2).join(':'); // BlueCard: pagarme:<cobrança>:<parcela>
+    return '';
+  };
+
   const carregarSolicitacoes = async () => {
     setLoading(true);
     try {
@@ -528,9 +540,10 @@ const SolicitacaoBaixa = () => {
     const formaLabel = formaSelecionada?.label || formaPagamentoProcessamento;
     setModalPagamentoAberto(false);
 
+    const qtdPagamentos = new Set(pendentes.map((s) => grupoDoPix(s) || s.id)).size;
     if (
       !window.confirm(
-        `Processar baixa de ${pendentes.length} fatura(s) no TOTVS?\n\nForma: ${formaLabel}\nValor total: ${valorTotalSelecionado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}\n\nEssa ação não pode ser desfeita.`,
+        `Processar baixa de ${pendentes.length} fatura(s) no TOTVS?\n\nForma: ${formaLabel}\nValor total: ${valorTotalSelecionado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}${qtdPagamentos !== pendentes.length ? `\nPagamentos no TOTVS: ${qtdPagamentos} (títulos do mesmo Pix em um pagamento só)` : ''}\n\nEssa ação não pode ser desfeita.`,
       )
     )
       return;
@@ -553,6 +566,8 @@ const SolicitacaoBaixa = () => {
           interestValue: parseFloat(s.vl_juros) || 0,
           nomeCliente: s.nm_cliente,
           solicitacaoId: s.id,
+          // mesmo Pix → um pagamento só no TOTVS (ver grupoDoPix)
+          grupo: grupoDoPix(s) || undefined,
           settlementDate: dataBaixa,
           ...(formaSelecionada?.cardAuto
             ? {
