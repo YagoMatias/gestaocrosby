@@ -192,8 +192,42 @@ const CORES = [
   "#7c3aed",
 ];
 
+// Período de vencimento carregado (João, 27/10/2026): a tela carregava TODOS os
+// vencidos desde 2024-04-01 e demorava demais. Agora o período é escolhido aqui
+// (persistido no navegador). Títulos vencidos antes do início do período ficam
+// de fora do total — para o número completo, escolha "Tudo (desde abr/2024)".
+const PERIODOS = [
+  { id: "d90", label: "Últimos 90 dias" },
+  { id: "m6", label: "Últimos 6 meses" },
+  { id: "ano", label: "Este ano" },
+  { id: "m12", label: "Últimos 12 meses" },
+  { id: "tudo", label: "Tudo (desde abr/2024)" },
+];
+const PERIODO_PADRAO = "ano";
+const PERIODO_KEY = "dashInadimplencia.periodo";
+const inicioDoPeriodo = (id) => {
+  const hoje = new Date();
+  const iso = (d) => d.toISOString().slice(0, 10);
+  const menosMeses = (n) => { const d = new Date(hoje); d.setMonth(d.getMonth() - n); return iso(d); };
+  switch (id) {
+    case "d90": { const d = new Date(hoje); d.setDate(d.getDate() - 90); return iso(d); }
+    case "m6": return menosMeses(6);
+    case "m12": return menosMeses(12);
+    case "tudo": return "2024-04-01";
+    case "ano":
+    default: return `${hoje.getFullYear()}-01-01`;
+  }
+};
+const lerPeriodoSalvo = () => {
+  try {
+    const v = localStorage.getItem(PERIODO_KEY);
+    return PERIODOS.some((x) => x.id === v) ? v : PERIODO_PADRAO;
+  } catch { return PERIODO_PADRAO; }
+};
+
 const DashInadimplencia = memo(() => {
   const [dados, setDados] = useState([]);
+  const [periodo, setPeriodo] = useState(lerPeriodoSalvo);
   const [loading, setLoading] = useState(false);
   const [dadosCarregados, setDadosCarregados] = useState(false);
   const [timeline, setTimeline] = useState([]);
@@ -273,11 +307,13 @@ const DashInadimplencia = memo(() => {
   );
 
   // ======================== BUSCAR DADOS ========================
-  const buscarDados = useCallback(async () => {
+  const buscarDados = useCallback(async (periodoEscolhido) => {
     setLoading(true);
     try {
-      const dataIni = "2024-04-01";
+      const idPeriodo = typeof periodoEscolhido === "string" ? periodoEscolhido : periodo;
+      const dataIni = inicioDoPeriodo(idPeriodo);
       const dataFim = new Date().toISOString().split("T")[0];
+      console.log(`Período de vencimento: ${dataIni} a ${dataFim} (${idPeriodo})`);
 
       // ============================================================
       // PASSO 1: Buscar clientes MULTIMARCAS e FRANQUIAS em paralelo
@@ -457,7 +493,9 @@ const DashInadimplencia = memo(() => {
           );
         const qtdClientes = new Set(dadosEnriquecidos.map((i) => i.cd_cliente))
           .size;
-        await salvarTimelineHoje(
+        // A timeline guarda o total COMPLETO por dia; com período parcial não grava
+        // (senão o gráfico histórico despenca no dia em que alguém escolher 90 dias).
+        if (idPeriodo === "tudo") await salvarTimelineHoje(
           totalInadimplencia,
           dadosEnriquecidos.length,
           qtdClientes,
@@ -485,13 +523,19 @@ const DashInadimplencia = memo(() => {
     } finally {
       setLoading(false);
     }
-  }, [salvarTimelineHoje]);
+  }, [salvarTimelineHoje, periodo]);
 
   // Carregar timeline e dados automaticamente
   useEffect(() => {
     carregarTimeline();
     buscarDados();
   }, []);
+
+  const trocarPeriodo = (id) => {
+    setPeriodo(id);
+    try { localStorage.setItem(PERIODO_KEY, id); } catch { /* sem localStorage */ }
+    buscarDados(id);
+  };
 
   // ======================== MÉTRICAS ========================
   const metricas = useMemo(() => {
@@ -1278,9 +1322,23 @@ const DashInadimplencia = memo(() => {
       )}
 
       {/* Botão de atualizar + Export */}
-      <div className="flex gap-2 mb-4">
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-700" title="Só títulos com vencimento dentro do período entram no total. Período menor = carga mais rápida.">
+          Vencidos desde
+          <select
+            value={periodo}
+            onChange={(e) => trocarPeriodo(e.target.value)}
+            disabled={loading}
+            className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#000638]"
+          >
+            {PERIODOS.map((x) => (
+              <option key={x.id} value={x.id}>{x.label}</option>
+            ))}
+          </select>
+          <span className="text-[11px] text-gray-500 font-normal">({inicioDoPeriodo(periodo).split("-").reverse().join("/")} até hoje)</span>
+        </label>
         <button
-          onClick={buscarDados}
+          onClick={() => buscarDados()}
           disabled={loading}
           className="flex items-center gap-1.5 bg-[#000638] text-white px-4 py-2 rounded-lg hover:bg-[#fe0000] disabled:opacity-50 transition-colors text-xs font-bold shadow-md"
         >
