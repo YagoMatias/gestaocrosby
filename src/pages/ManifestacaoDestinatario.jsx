@@ -877,6 +877,14 @@ const ManifestacaoDestinatario = () => {
   };
 
   const sincronizarSefaz = async () => {
+    // A SEFAZ bloqueia por 1 h (rejeição 656) a segunda consulta do mesmo
+    // CNPJ — o FISFP153 do TOTVS usa a mesma cota (Niziany, 27/10/2026).
+    if (
+      !window.confirm(
+        'Depois de sincronizar aqui, o TOTVS (FISFP153) vai receber "Consumo Indevido" por 1 hora para os mesmos CNPJs.\n\nContinuar?',
+      )
+    )
+      return;
     setSincronizando(true);
     setAvisoSync('');
     try {
@@ -1332,7 +1340,7 @@ const ManifestacaoDestinatario = () => {
                 onClick={sincronizarSefaz}
                 disabled={sincronizando}
                 className="flex items-center gap-1 bg-amber-600 text-white px-3 py-1.5 rounded-lg hover:bg-amber-700 disabled:opacity-50 transition-colors text-xs font-bold shadow-md uppercase"
-                title="Buscar documentos novos na SEFAZ agora"
+                title="Buscar documentos novos na SEFAZ agora. Automático só às 05:00 e 21:00; depois de usar aqui, espere 1 h antes do FISFP153 no TOTVS (mesmos CNPJs)"
               >
                 {sincronizando ? (
                   <Spinner size={12} className="animate-spin" />
