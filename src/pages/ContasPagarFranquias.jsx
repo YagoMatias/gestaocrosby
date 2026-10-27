@@ -983,19 +983,59 @@ const ContasPagarFranquias = () => {
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
   };
-  const copiarCodigoBarras = async (item) => {
-    const codigo = String(item.linha_digitavel || item.cd_barras || '').trim();
-    if (!codigo) {
-      alert('Este título ainda não tem boleto registrado (sem linha digitável). Clique em "Boleto" para gerar.');
-      return;
-    }
+  const copiarTexto = async (codigo, k) => {
     try {
       await navigator.clipboard.writeText(codigo);
     } catch {
       window.prompt('Copie o código de barras:', codigo);
     }
-    setCopiadoChave(chaveLinha(item));
+    setCopiadoChave(k);
     setTimeout(() => setCopiadoChave(null), 2000);
+  };
+  const copiarCodigoBarras = async (item) => {
+    const k = chaveLinha(item);
+    let codigo = String(item.linha_digitavel || item.cd_barras || '').trim();
+    if (codigo) return copiarTexto(codigo, k);
+    // Título sem boleto registrado: gera no banco (bank-slip) e relê a linha digitável.
+    setAcaoLinha(`${k}:codigo`);
+    try {
+      await fetch(`${TotvsURL}bank-slip`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          branchCode: parseInt(item.cd_empresa) || 0,
+          customerCode: item.cd_cliente || '',
+          receivableCode: parseInt(item.nr_fat) || 0,
+          installmentNumber: parseInt(item.nr_parcela) || 0,
+        }),
+      });
+      const venc = String(item.dt_vencimento || '').slice(0, 10) || new Date().toISOString().slice(0, 10);
+      const d0 = new Date(`${venc}T12:00:00`); d0.setDate(d0.getDate() - 5);
+      const d1 = new Date(`${venc}T12:00:00`); d1.setDate(d1.getDate() + 5);
+      const p = new URLSearchParams({
+        dt_inicio: d0.toISOString().slice(0, 10),
+        dt_fim: d1.toISOString().slice(0, 10),
+        modo: 'vencimento',
+        status: 'Todos',
+        cd_cliente: String(item.cd_cliente),
+        nr_fatura: String(item.nr_fat),
+      });
+      const rr = await fetch(`${TotvsURL}accounts-receivable/filter?${p.toString()}`);
+      const jj = await rr.json();
+      const achado = (jj.data?.items || []).find(
+        (x) => String(x.nr_fat) === String(item.nr_fat) && String(x.nr_parcela || 1) === String(item.nr_parcela || 1),
+      );
+      codigo = String(achado?.linha_digitavel || achado?.cd_barras || '').trim();
+    } catch {
+      /* cai no aviso abaixo */
+    } finally {
+      setAcaoLinha(null);
+    }
+    if (!codigo) {
+      alert('Não consegui o código de barras agora. Clique em "Boleto" para gerar o PDF — o código vem impresso nele.');
+      return;
+    }
+    copiarTexto(codigo, k);
   };
   const baixarBoletoLinha = async (item) => {
     const k = chaveLinha(item);
@@ -2194,11 +2234,12 @@ const ContasPagarFranquias = () => {
                             <>
                               <button
                                 onClick={() => copiarCodigoBarras(item)}
-                                className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium border transition-colors ${copiadoChave === chaveLinha(item) ? 'bg-green-100 border-green-400 text-green-800' : 'bg-gray-100 hover:bg-gray-200 border-gray-300 text-gray-800'}`}
-                                title={item.linha_digitavel || item.cd_barras ? 'Copiar a linha digitável do boleto' : 'Sem boleto registrado — clique em Boleto para gerar'}
+                                disabled={acaoLinha === `${chaveLinha(item)}:codigo`}
+                                className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium border transition-colors disabled:opacity-50 ${copiadoChave === chaveLinha(item) ? 'bg-green-100 border-green-400 text-green-800' : 'bg-gray-100 hover:bg-gray-200 border-gray-300 text-gray-800'}`}
+                                title={item.linha_digitavel || item.cd_barras ? 'Copiar a linha digitável do boleto' : 'Gera o boleto no banco e copia o código'}
                               >
                                 <Copy size={12} weight="bold" />
-                                {copiadoChave === chaveLinha(item) ? 'Copiado!' : 'Cód. barras'}
+                                {acaoLinha === `${chaveLinha(item)}:codigo` ? 'Gerando...' : copiadoChave === chaveLinha(item) ? 'Copiado!' : 'Cód. barras'}
                               </button>
                               <button
                                 onClick={() => baixarBoletoLinha(item)}
