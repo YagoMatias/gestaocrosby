@@ -202,10 +202,13 @@ const PERIODOS = [
   { id: "ano", label: "Este ano" },
   { id: "m12", label: "Últimos 12 meses" },
   { id: "tudo", label: "Tudo (desde abr/2024)" },
+  { id: "mes", label: "Mês específico" },
 ];
 const PERIODO_PADRAO = "ano";
 const PERIODO_KEY = "dashInadimplencia.periodo";
-const inicioDoPeriodo = (id) => {
+const MES_KEY = "dashInadimplencia.mes";
+const mesAtual = () => new Date().toISOString().slice(0, 7);
+const inicioDoPeriodo = (id, mes) => {
   const hoje = new Date();
   const iso = (d) => d.toISOString().slice(0, 10);
   const menosMeses = (n) => { const d = new Date(hoje); d.setMonth(d.getMonth() - n); return iso(d); };
@@ -214,9 +217,19 @@ const inicioDoPeriodo = (id) => {
     case "m6": return menosMeses(6);
     case "m12": return menosMeses(12);
     case "tudo": return "2024-04-01";
+    case "mes": return `${/^\d{4}-\d{2}$/.test(mes || "") ? mes : mesAtual()}-01`;
     case "ano":
     default: return `${hoje.getFullYear()}-01-01`;
   }
+};
+// Fim do período: hoje, ou o último dia do mês escolhido (vencimentos daquele mês)
+const fimDoPeriodo = (id, mes) => {
+  const hoje = new Date().toISOString().slice(0, 10);
+  if (id !== "mes") return hoje;
+  const m = /^\d{4}-\d{2}$/.test(mes || "") ? mes : mesAtual();
+  const [y, mm] = m.split("-").map(Number);
+  const fim = new Date(Date.UTC(y, mm, 0, 12)).toISOString().slice(0, 10);
+  return fim < hoje ? fim : hoje;
 };
 const lerPeriodoSalvo = () => {
   try {
@@ -228,6 +241,9 @@ const lerPeriodoSalvo = () => {
 const DashInadimplencia = memo(() => {
   const [dados, setDados] = useState([]);
   const [periodo, setPeriodo] = useState(lerPeriodoSalvo);
+  const [mes, setMes] = useState(() => {
+    try { const v = localStorage.getItem(MES_KEY); return /^\d{4}-\d{2}$/.test(v || "") ? v : mesAtual(); } catch { return mesAtual(); }
+  });
   const [loading, setLoading] = useState(false);
   const [dadosCarregados, setDadosCarregados] = useState(false);
   const [timeline, setTimeline] = useState([]);
@@ -311,8 +327,8 @@ const DashInadimplencia = memo(() => {
     setLoading(true);
     try {
       const idPeriodo = typeof periodoEscolhido === "string" ? periodoEscolhido : periodo;
-      const dataIni = inicioDoPeriodo(idPeriodo);
-      const dataFim = new Date().toISOString().split("T")[0];
+      const dataIni = inicioDoPeriodo(idPeriodo, mes);
+      const dataFim = fimDoPeriodo(idPeriodo, mes);
       console.log(`Período de vencimento: ${dataIni} a ${dataFim} (${idPeriodo})`);
 
       // ============================================================
@@ -523,18 +539,21 @@ const DashInadimplencia = memo(() => {
     } finally {
       setLoading(false);
     }
-  }, [salvarTimelineHoje, periodo]);
+  }, [salvarTimelineHoje, periodo, mes]);
 
-  // Carregar timeline e dados automaticamente
+  // João (27/10/2026): NÃO carrega ao entrar — só a timeline (leve). Os dados
+  // vêm depois que o usuário escolhe o período/mês e clica em "Carregar".
   useEffect(() => {
     carregarTimeline();
-    buscarDados();
   }, []);
 
   const trocarPeriodo = (id) => {
     setPeriodo(id);
     try { localStorage.setItem(PERIODO_KEY, id); } catch { /* sem localStorage */ }
-    buscarDados(id);
+  };
+  const trocarMes = (v) => {
+    setMes(v);
+    try { localStorage.setItem(MES_KEY, v); } catch { /* sem localStorage */ }
   };
 
   // ======================== MÉTRICAS ========================
@@ -1335,7 +1354,19 @@ const DashInadimplencia = memo(() => {
               <option key={x.id} value={x.id}>{x.label}</option>
             ))}
           </select>
-          <span className="text-[11px] text-gray-500 font-normal">({inicioDoPeriodo(periodo).split("-").reverse().join("/")} até hoje)</span>
+          {periodo === "mes" && (
+            <input
+              type="month"
+              value={mes}
+              max={mesAtual()}
+              onChange={(e) => trocarMes(e.target.value)}
+              disabled={loading}
+              className="border border-gray-300 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-[#000638]"
+            />
+          )}
+          <span className="text-[11px] text-gray-500 font-normal">
+            ({inicioDoPeriodo(periodo, mes).split("-").reverse().join("/")} a {fimDoPeriodo(periodo, mes).split("-").reverse().join("/")})
+          </span>
         </label>
         <button
           onClick={() => buscarDados()}
@@ -1350,7 +1381,7 @@ const DashInadimplencia = memo(() => {
           ) : (
             <>
               <ChartBar size={14} />
-              Atualizar Dados
+              {dadosCarregados ? "Atualizar Dados" : "Carregar"}
             </>
           )}
         </button>
@@ -1378,7 +1409,7 @@ const DashInadimplencia = memo(() => {
       {/* Sem dados */}
       {!loading && !dadosCarregados && (
         <div className="flex justify-center items-center py-16 text-gray-500 text-sm">
-          Clique em "Atualizar Dados" para carregar a inadimplência
+          Escolha o período acima e clique em "Carregar" — a tela não carrega sozinha ao entrar
         </div>
       )}
 
