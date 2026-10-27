@@ -11,12 +11,10 @@ import { ChartLineUp } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import base from '../data/forecastBase.json';
 
-const VISOES = [
-  { id: 'mensal', label: 'Mensal' },
-  { id: 'trimestral', label: 'Trimestral' },
-  { id: 'semestral', label: 'Semestral' },
-  { id: 'anual', label: 'Anual e projeções' },
-];
+// Niziany (27/10/2026): manter só a visão Mensal; as demais (trimestral,
+// semestral, anual) foram retiradas. Os dados delas seguem no JSON caso
+// precise voltar.
+const VISOES = [{ id: 'mensal', label: 'Mensal' }];
 
 const BLOCOS = [
   { id: 'dre', label: 'DRE Forecast' },
