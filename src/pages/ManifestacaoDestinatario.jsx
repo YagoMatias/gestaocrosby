@@ -118,6 +118,7 @@ const ModalEscrituracao = ({
   nomeDaFilial,
   onFechar,
   onAbrirChamado,
+  chamadosPorNota = {},
 }) => {
   const [aba, setAba] = useState('pendente');
   const [selecionadas, setSelecionadas] = useState(new Set());
@@ -398,6 +399,16 @@ const ModalEscrituracao = ({
                                 <span className="text-gray-400 font-normal">
                                   {' '}/ {serieDaChave(n.chave_acesso)}
                                 </span>
+                                {(chamadosPorNota[n.id] || []).length > 0 && (
+                                  <span
+                                    className="ml-1 text-[9px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1"
+                                    title={(chamadosPorNota[n.id] || [])
+                                      .map((c) => `#${c.numero} · ${c.setor} · ${c.status} — ${c.assunto} (${c.motivo})`)
+                                      .join('\n')}
+                                  >
+                                    🎫 #{chamadosPorNota[n.id][0].numero} já tem chamado
+                                  </span>
+                                )}
                               </td>
                               <td className="px-2 py-1.5 text-gray-600 whitespace-nowrap">
                                 {formatDateBR(n.data_emissao)}
@@ -546,6 +557,21 @@ const ManifestacaoDestinatario = () => {
   // Setor responsável pela nota (Niziany, 27/10/2026, modelo Dryland).
   // Lista em sefaz_dfe_setores; a nota guarda o nome em sefaz_dfe_notas.setor.
   const [setores, setSetores] = useState([]);
+  // chamados abertos no Dryland já casados com as notas pendentes (id da nota -> chamados)
+  const [chamadosPorNota, setChamadosPorNota] = useState({});
+  const [chamadosResumo, setChamadosResumo] = useState(null);
+  const carregarChamadosNotas = async (forcar = false) => {
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/sefaz/dfe/notas/chamados${forcar ? '?forcar=1' : ''}`);
+      const json = await r.json();
+      if (r.ok && json.success) {
+        setChamadosPorNota(json.data?.porNota || {});
+        setChamadosResumo(json.data?.resumo || null);
+      }
+    } catch (e) {
+      console.error('Erro ao cruzar chamados:', e);
+    }
+  };
   const carregarSetores = async () => {
     try {
       const r = await fetch(`${API_BASE_URL}/api/sefaz/dfe/setores`);
@@ -749,6 +775,7 @@ const ManifestacaoDestinatario = () => {
       const json = await r.json();
       if (r.ok && json.success) {
         setDados(json.data || []);
+        carregarChamadosNotas();
         setDadosCarregados(true);
       } else {
         setErro(json.message || 'Erro ao buscar notas');
@@ -1081,6 +1108,7 @@ const ManifestacaoDestinatario = () => {
         acc.quantidade += 1;
         if (!item.manifestacao) acc.pendentes += 1;
         if (!item.setor) acc.semSetor += 1;
+        if (esc === 'pendente' && (chamadosPorNota[item.id] || []).length) acc.comChamado += 1;
         if (origemDoRegistro(item.schema_origem) === 'SEFAZ') acc.sefaz += 1;
         else acc.totvs += 1;
         const esc = escrituracaoDaNota(item);
@@ -1095,6 +1123,7 @@ const ManifestacaoDestinatario = () => {
         quantidade: 0,
         pendentes: 0,
         semSetor: 0,
+        comChamado: 0,
         sefaz: 0,
         totvs: 0,
         escrituradas: 0,
@@ -1103,7 +1132,7 @@ const ManifestacaoDestinatario = () => {
         naoAplica: 0,
       },
     );
-  }, [dadosProcessados]);
+  }, [dadosProcessados, chamadosPorNota]);
 
 
   const handleExportExcel = () => {
@@ -1454,6 +1483,11 @@ const ManifestacaoDestinatario = () => {
                 </>
               )}
             </div>
+            {totais.comChamado > 0 && (
+              <div className="text-[9px] text-indigo-700 mt-0.5" title="Pendentes que já têm chamado aberto no Dryland (cruzado por fornecedor + nº da NF/valor)">
+                🎫 {totais.comChamado} pendente{totais.comChamado === 1 ? '' : 's'} já com chamado aberto
+              </div>
+            )}
             {totais.naoAplica > 0 && (
               <div className="text-[9px] text-gray-400 mt-0.5">
                 + {totais.naoAplica} fora da fila (entrada, cancelada ou denegada)
@@ -1879,6 +1913,22 @@ const ManifestacaoDestinatario = () => {
                         >
                           {ESCRITURACAO_ROTULO[escrituracaoDaNota(item)]}
                         </span>
+                        {(chamadosPorNota[item.id] || []).length > 0 && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate('/tecnologia/chamados-dryland');
+                            }}
+                            title={(chamadosPorNota[item.id] || [])
+                              .map((c) => `#${c.numero} · ${c.setor} · ${c.status}\n${c.assunto}\n(casou por ${c.motivo})`)
+                              .join('\n\n')}
+                            className="block mx-auto mt-0.5 text-[9px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1 py-0.5 hover:bg-indigo-100 whitespace-nowrap"
+                          >
+                            🎫 #{chamadosPorNota[item.id][0].numero} · {chamadosPorNota[item.id][0].setor}
+                            {chamadosPorNota[item.id].length > 1 ? ` +${chamadosPorNota[item.id].length - 1}` : ''}
+                          </button>
+                        )}
                         {escrituracaoDaNota(item) === 'pendente' && (
                           <button
                             type="button"
@@ -2022,6 +2072,7 @@ const ManifestacaoDestinatario = () => {
       {modalEscrituracao && (
         <ModalEscrituracao
           notas={dadosProcessados}
+          chamadosPorNota={chamadosPorNota}
           nomeDaFilial={nomeDaFilial}
           onFechar={() => setModalEscrituracao(false)}
           onAbrirChamado={abrirChamadoDasNotas}
