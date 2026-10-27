@@ -22,6 +22,7 @@ import {
   CaretDown,
   CaretUpDown,
   FileArrowDown,
+  Copy,
   Eye,
   CheckCircle,
   XCircle,
@@ -991,6 +992,147 @@ const TitulosClientes = ({
   };
 
   // Função para abrir PDF da DANFE em nova aba
+  // ── Ações por linha (João, 27/10/2026): código de barras copiável, boleto e NF ──
+  const [acaoLinha, setAcaoLinha] = useState(null); // "<empresa>-<fat>-<parc>:boleto|nf"
+  const [copiadoChave, setCopiadoChave] = useState(null);
+  const chaveLinha = (item) => `${item.cd_empresa}-${item.nr_fat}-${item.nr_parcela}`;
+  const linhaEmAberto = (item) =>
+    !item.dt_liq && (parseFloat(item.vl_pago) || 0) < (parseFloat(item.vl_fatura) || 0);
+  const base64ParaBlob = (b64) => {
+    const limpo = String(b64 || '').replace(/^data:application\/pdf;base64,/, '');
+    const bin = window.atob(limpo);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Blob([bytes], { type: 'application/pdf' });
+  };
+  const baixarBlob = (blob, nome) => {
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = nome;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  };
+  const copiarCodigoBarras = async (item) => {
+    const codigo = String(item.linha_digitavel || item.cd_barras || '').trim();
+    if (!codigo) {
+      alert('Este título ainda não tem boleto registrado (sem linha digitável). Clique em "Boleto" para gerar.');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(codigo);
+    } catch {
+      window.prompt('Copie o código de barras:', codigo);
+    }
+    setCopiadoChave(chaveLinha(item));
+    setTimeout(() => setCopiadoChave(null), 2000);
+  };
+  const baixarBoletoLinha = async (item) => {
+    const k = chaveLinha(item);
+    setAcaoLinha(`${k}:boleto`);
+    try {
+      const r = await fetch(`${TotvsURL}bank-slip`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          branchCode: parseInt(item.cd_empresa) || 0,
+          customerCode: item.cd_cliente || '',
+          receivableCode: parseInt(item.nr_fat) || 0,
+          installmentNumber: parseInt(item.nr_parcela) || 0,
+        }),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const d = data.details;
+        throw new Error(data.message || d?.message || d?.detailedMessage || data.error || `HTTP ${r.status}`);
+      }
+      let b64 = '';
+      if (typeof data === 'string') b64 = data;
+      else if (typeof data.data === 'string') b64 = data.data;
+      else if (data.data?.base64) b64 = typeof data.data.base64 === 'string' ? data.data.base64 : data.data.base64.content || '';
+      else if (data.base64) b64 = typeof data.base64 === 'string' ? data.base64 : data.base64.content || '';
+      if (!b64) throw new Error('Boleto sem conteúdo (base64 vazio)');
+      baixarBlob(base64ParaBlob(b64), `boleto-${item.nr_fat}-parcela-${item.nr_parcela}.pdf`);
+    } catch (e) {
+      alert(`Erro ao gerar o boleto: ${e.message}`);
+    } finally {
+      setAcaoLinha(null);
+    }
+  };
+  const baixarNfLinha = async (item) => {
+    const k = chaveLinha(item);
+    setAcaoLinha(`${k}:nf`);
+    try {
+      const cd = parseInt(item.cd_cliente) || 0;
+      const emissao = String(item.dt_emissao || '').slice(0, 10);
+      if (!cd || !emissao) throw new Error('Título sem cliente ou sem data de emissão');
+      const branches = (filiaisCodigos.length ? filiaisCodigos : [parseInt(item.cd_empresa)]).filter((c) => c >= 1 && c <= 99);
+      let notas = [];
+      // mesma busca progressiva do Detalhar: mesmo dia → ±1 → ±2 → ±3
+      for (const margem of [0, 1, 2, 3]) {
+        const d0 = new Date(`${emissao}T12:00:00`);
+        d0.setDate(d0.getDate() - margem);
+        const d1 = new Date(`${emissao}T12:00:00`);
+        d1.setDate(d1.getDate() + margem);
+        const r = await fetch(`${TotvsURL}invoices-search`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filter: {
+              branchCodeList: branches,
+              personCodeList: [cd],
+              eletronicInvoiceStatusList: ['Authorized'],
+              startIssueDate: `${d0.toISOString().slice(0, 10)}T00:00:00`,
+              endIssueDate: `${d1.toISOString().slice(0, 10)}T23:59:59`,
+            },
+            page: 1,
+            pageSize: 100,
+            expand: 'person',
+          }),
+        });
+        if (!r.ok) throw new Error('Erro ao buscar a nota fiscal');
+        const j = await r.json();
+        notas = j.data?.items || j.items || [];
+        if (notas.length) break;
+      }
+      if (!notas.length) throw new Error('Nenhuma nota autorizada encontrada perto da emissão do título');
+      let nf = notas[0];
+      if (notas.length > 1) {
+        const mesmaFilial = notas.filter((n) => parseInt(n.branchCode) === parseInt(item.cd_empresa));
+        if (mesmaFilial.length === 1) nf = mesmaFilial[0];
+        else {
+          abrirObsFatura(item);
+          alert(`${notas.length} notas encontradas para este cliente na data — escolha a nota no Detalhar.`);
+          return;
+        }
+      }
+      const dataNf = String(nf.invoiceDate || '').slice(0, 10);
+      const r2 = await fetch(`${TotvsURL}danfe-from-invoice`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filter: {
+            branchCodeList: [parseInt(nf.branchCode)],
+            personCodeList: [cd],
+            invoiceCode: parseInt(nf.invoiceCode),
+            invoiceDate: dataNf,
+          },
+        }),
+      });
+      const d2 = await r2.json().catch(() => ({}));
+      if (!r2.ok) throw new Error(d2.message || 'Erro ao gerar a DANFE');
+      const b64 = d2.data?.danfePdfBase64 || d2.data?.base64 || d2.danfePdfBase64 || '';
+      if (!b64) throw new Error('DANFE não retornada pela API');
+      baixarBlob(base64ParaBlob(b64), `nota-${nf.invoiceCode}-titulo-${item.nr_fat}.pdf`);
+    } catch (e) {
+      alert(`Erro ao baixar a nota: ${e.message}`);
+    } finally {
+      setAcaoLinha(null);
+    }
+  };
+
   const abrirPDFDanfe = (base64String, nrTransacao) => {
     try {
       const base64 = base64String.replace(/^data:application\/pdf;base64,/, '');
@@ -2219,8 +2361,13 @@ const TitulosClientes = ({
                       onClick={() => handleSort('nm_portador')}
                     >
                       <div className="flex items-center justify-center">
-                        Portador
+                        Banco
                         {getSortIcon('nm_portador')}
+                      </div>
+                    </th>
+                    <th className="px-2 py-2 text-center">
+                      <div className="flex items-center justify-center">
+                        Boleto / NF
                       </div>
                     </th>
                     <th className="px-2 py-2 text-center">
@@ -2310,6 +2457,40 @@ const TitulosClientes = ({
                             return 'CROSBY';
                           return nome || '--';
                         })()}
+                      </td>
+                      <td className="text-center px-2 py-2">
+                        <div className="flex items-center justify-center gap-1">
+                          {linhaEmAberto(item) && (
+                            <>
+                              <button
+                                onClick={() => copiarCodigoBarras(item)}
+                                className={`flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium border transition-colors ${copiadoChave === chaveLinha(item) ? 'bg-green-100 border-green-400 text-green-800' : 'bg-gray-100 hover:bg-gray-200 border-gray-300 text-gray-800'}`}
+                                title={item.linha_digitavel || item.cd_barras ? 'Copiar a linha digitável do boleto' : 'Sem boleto registrado — clique em Boleto para gerar'}
+                              >
+                                <Copy size={12} weight="bold" />
+                                {copiadoChave === chaveLinha(item) ? 'Copiado!' : 'Cód. barras'}
+                              </button>
+                              <button
+                                onClick={() => baixarBoletoLinha(item)}
+                                disabled={acaoLinha === `${chaveLinha(item)}:boleto`}
+                                className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 transition-colors"
+                                title="Gerar e baixar o boleto deste título"
+                              >
+                                <FileArrowDown size={12} weight="bold" />
+                                {acaoLinha === `${chaveLinha(item)}:boleto` ? '...' : 'Boleto'}
+                              </button>
+                            </>
+                          )}
+                          <button
+                            onClick={() => baixarNfLinha(item)}
+                            disabled={acaoLinha === `${chaveLinha(item)}:nf`}
+                            className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 transition-colors"
+                            title="Baixar a nota fiscal (DANFE) deste título"
+                          >
+                            <FilePdf size={12} weight="bold" />
+                            {acaoLinha === `${chaveLinha(item)}:nf` ? '...' : 'NF'}
+                          </button>
+                        </div>
                       </td>
                       <td className="text-center px-2 py-2">
                         <button
