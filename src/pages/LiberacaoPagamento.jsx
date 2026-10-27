@@ -163,7 +163,7 @@ const BANCOS_SALDO = [
 const BANCOS_COM_DETALHE = { STONE: 'STONE', PAGARME: 'PAGARME', 'PAGARME A RECEBER': 'PAGARME' };
 const sufixoCnpj = (cnpj) => {
   const d = String(cnpj || '').replace(/\D/g, '');
-  return d.length === 14 ? d.slice(8, 12) : d.slice(-4);
+  return d.slice(-4); // 27.728.810/0005-49 → "0549"
 };
 
 // ─── Modal de Saldo Bancário ──────────────────────────
