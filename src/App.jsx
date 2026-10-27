@@ -137,6 +137,7 @@ const Showroom = lazy(() => import('./pages/Showroom'));
 const FaturamentoHistorico = lazy(() => import('./pages/FaturamentoHistorico'));
 const DashboardVendas = lazy(() => import('./pages/DashboardVendas'));
 const NewForecast = lazy(() => import('./pages/NewForecast'));
+const Forecast = lazy(() => import('./pages/Forecast'));
 const ForecastCanal = lazy(() => import('./pages/ForecastCanal'));
 const MixCanais = lazy(() => import('./pages/MixCanais'));
 const ControleChips = lazy(() => import('./pages/ControleChips'));
@@ -343,6 +344,7 @@ const protectedRoutes = [
   { path: '/painel-vendas', component: PainelVendas },
   { path: '/crm-vendas', component: CRMVendas },
   { path: '/new-forecast', component: NewForecast },
+  { path: '/forecast', component: Forecast },
   { path: '/forecast-canal/:canal', component: ForecastCanal },
   { path: '/mix-canais', component: MixCanais },
   { path: '/crm/competicao', component: PainelCompeticao },

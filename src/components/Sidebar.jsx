@@ -515,6 +515,13 @@ const financeiro = [
       },
     ],
   },
+  {
+    name: 'Forecast',
+    href: '/forecast',
+    icon: ChartLineUp,
+    color: 'text-fuchsia-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
+  },
 ];
 
 const painelVendasItems = [

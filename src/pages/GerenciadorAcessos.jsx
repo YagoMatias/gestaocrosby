@@ -309,6 +309,11 @@ const AVAILABLE_PAGES = [
     name: 'Auditoria',
     category: 'DRE',
   },
+  {
+    path: '/forecast',
+    name: 'Forecast',
+    category: 'DRE',
+  },
 
   // ─── Comercial ───────────────────────────────────────
   {

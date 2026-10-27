@@ -256,6 +256,11 @@ const TABBED_PAGES = {
     group: 'Comercial',
     dot: 'bg-sky-500',
   },
+  '/forecast': {
+    label: 'Forecast',
+    group: 'Financeiro',
+    dot: 'bg-fuchsia-500',
+  },
   '/mix-canais': {
     label: 'Mix de Canais',
     group: 'Comercial',
