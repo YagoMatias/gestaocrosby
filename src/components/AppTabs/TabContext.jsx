@@ -144,6 +144,11 @@ const TABBED_PAGES = {
     group: 'Conciliação',
     dot: 'bg-blue-500',
   },
+  '/dr-ygor/extratos-bancarios': {
+    label: 'Dr Ygor · Extratos',
+    group: 'Dr Ygor',
+    dot: 'bg-cyan-500',
+  },
   '/dre': {
     label: 'DRE',
     group: 'Financeiro',

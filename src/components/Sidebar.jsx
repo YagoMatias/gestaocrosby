@@ -60,6 +60,7 @@ import {
   WifiHigh,
   Gear,
   Scales,
+  Stethoscope,
 } from '@phosphor-icons/react';
 
 // Componentes de ícones modernos
@@ -243,6 +244,23 @@ const financeiro = [
         href: '/fluxo-caixa-ext',
         icon: Wallet,
         color: 'text-blue-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+    ],
+  },
+  {
+    // Dr Ygor Dantas (clínica parceira): extratos separados dos do grupo
+    name: 'Dr Ygor',
+    href: '#',
+    icon: Stethoscope,
+    color: 'text-cyan-700',
+    roles: ['owner', 'admin', 'manager', 'user'],
+    children: [
+      {
+        name: 'Extratos Bancários',
+        href: '/dr-ygor/extratos-bancarios',
+        icon: Wallet,
+        color: 'text-cyan-700',
         roles: ['owner', 'admin', 'manager', 'user'],
       },
     ],

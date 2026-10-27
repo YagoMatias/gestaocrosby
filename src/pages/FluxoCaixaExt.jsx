@@ -36,7 +36,13 @@ import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import BotStoneExtratos from '../components/BotStoneExtratos';
 
-const API = `${API_BASE_URL}/api/fluxo-caixa-ext`;
+// Escopo dos extratos: 'crosby' (padrão, Extrato Bancário do grupo) ou
+// 'dr_ygor' (Financeiro → Dr Ygor → Extratos Bancários, página DrYgorExtratosBancarios).
+const API_POR_ESCOPO = {
+  crosby: `${API_BASE_URL}/api/fluxo-caixa-ext`,
+  dr_ygor: `${API_BASE_URL}/api/dr-ygor/extratos-bancarios`,
+};
+const SUBTITULO_PADRAO = 'Extratos dos bancos do grupo (Stone, Sicredi, Caixa, Mêntore): tudo que foi recebido por forma de pagamento, tudo que foi pago por fornecedor e o que foi transferido entre as contas';
 
 const fmt = (v) =>
   v != null && !Number.isNaN(Number(v))
@@ -157,7 +163,8 @@ const MultiSelect = ({ label, opcoes, valor, onChange, renderOpcao, placeholder 
   );
 };
 
-const FluxoCaixaExt = () => {
+const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtitulo = SUBTITULO_PADRAO, mostrarBot = true } = {}) => {
+  const API = API_POR_ESCOPO[escopo] || API_POR_ESCOPO.crosby;
   const inputRef = useRef(null);
   const [de, setDe] = useState(primeiroDiaMes());
   const [ate, setAte] = useState(hoje());
@@ -440,11 +447,7 @@ const FluxoCaixaExt = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 px-3 py-4 md:p-6 pb-24 md:pb-6">
-      <PageTitle
-        title="Extrato Bancário"
-        subtitle="Extratos dos bancos do grupo (Stone, Sicredi, Caixa, Mêntore): tudo que foi recebido por forma de pagamento, tudo que foi pago por fornecedor e o que foi transferido entre as contas"
-        icon={Wallet}
-      />
+      <PageTitle title={titulo} subtitle={subtitulo} icon={Wallet} />
 
       {/* Barra: período + ações */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 mb-3 flex flex-wrap items-center gap-2">
@@ -498,13 +501,15 @@ const FluxoCaixaExt = () => {
         <button onClick={() => setModalImport(true)} className="px-3 py-1.5 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-1 font-medium">
           <UploadSimple size={14} weight="bold" /> Importar extratos
         </button>
-        <button
-          onClick={() => setAba('bot')}
-          className={`px-3 py-1.5 text-xs rounded-lg flex items-center gap-1 font-medium ${aba === 'bot' ? 'bg-emerald-700 text-white' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}
-          title="Bot que baixa os extratos das contas Stone, importa aqui e atualiza o saldo na Liberação de Pagamento"
-        >
-          <Robot size={14} weight="bold" /> Bot Stone
-        </button>
+        {mostrarBot && (
+          <button
+            onClick={() => setAba('bot')}
+            className={`px-3 py-1.5 text-xs rounded-lg flex items-center gap-1 font-medium ${aba === 'bot' ? 'bg-emerald-700 text-white' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}
+            title="Bot que baixa os extratos das contas Stone, importa aqui e atualiza o saldo na Liberação de Pagamento"
+          >
+            <Robot size={14} weight="bold" /> Bot Stone
+          </button>
+        )}
       </div>
 
       {/* Filtros */}
@@ -641,7 +646,7 @@ const FluxoCaixaExt = () => {
           {carregando && <ArrowsClockwise size={14} className="animate-spin text-blue-600 ml-2" />}
         </div>
 
-        {aba === 'bot' && <BotStoneExtratos onImportou={aposBot} />}
+        {mostrarBot && aba === 'bot' && <BotStoneExtratos onImportou={aposBot} />}
 
         {!dados && !carregando && !migrationPendente && aba !== 'bot' && aba !== 'importacoes' && (
           <div className="p-12 text-center text-gray-400">

@@ -257,6 +257,11 @@ const AVAILABLE_PAGES = [
     category: 'Financeiro',
   },
   {
+    path: '/dr-ygor/extratos-bancarios',
+    name: 'Dr Ygor · Extratos Bancários',
+    category: 'Financeiro',
+  },
+  {
     path: '/extratos-bancos',
     name: 'Extratos Bancos',
     category: 'Financeiro',
