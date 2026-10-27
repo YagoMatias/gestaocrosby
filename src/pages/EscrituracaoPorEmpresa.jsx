@@ -22,6 +22,7 @@ const escrituracaoDaNota = (n) => {
   if (n.situacao === '2' || n.situacao === '3') return 'nao_aplica';
   if (n.tipo_operacao === '0') return 'nao_aplica';
   if (n.escriturada) return 'escriturada';
+  if (n.status_manual === 'outros') return 'outros'; // tirada com justificativa
   return 'pendente';
 };
 
@@ -156,6 +157,7 @@ export default function EscrituracaoPorEmpresa() {
           emitidas: 0,
           lancadas: 0,
           pendentes: 0,
+          outros: 0,
           foraFila: 0,
         });
       }
@@ -167,6 +169,8 @@ export default function EscrituracaoPorEmpresa() {
       } else if (esc === 'pendente') {
         l.pendentes += 1;
         l.emitidas += 1;
+      } else if (esc === 'outros') {
+        l.outros += 1;
       } else {
         l.foraFila += 1;
       }
@@ -182,9 +186,10 @@ export default function EscrituracaoPorEmpresa() {
         emitidas: t.emitidas + l.emitidas,
         lancadas: t.lancadas + l.lancadas,
         pendentes: t.pendentes + l.pendentes,
+        outros: t.outros + l.outros,
         foraFila: t.foraFila + l.foraFila,
       }),
-      { emitidas: 0, lancadas: 0, pendentes: 0, foraFila: 0 },
+      { emitidas: 0, lancadas: 0, pendentes: 0, outros: 0, foraFila: 0 },
     );
     total.pct = total.emitidas ? (total.lancadas / total.emitidas) * 100 : 0;
     return { linhas, total, ultimaAtualizacao };
@@ -196,6 +201,7 @@ export default function EscrituracaoPorEmpresa() {
       Emitidas: l.emitidas,
       Lançadas: l.lancadas,
       Pendentes: l.pendentes,
+      Outros: l.outros,
       '% Lançadas': Number(l.pct.toFixed(1)),
       'Fora da fila': l.foraFila,
     }));
@@ -204,6 +210,7 @@ export default function EscrituracaoPorEmpresa() {
       Emitidas: painel.total.emitidas,
       Lançadas: painel.total.lancadas,
       Pendentes: painel.total.pendentes,
+      Outros: painel.total.outros,
       '% Lançadas': Number(painel.total.pct.toFixed(1)),
       'Fora da fila': painel.total.foraFila,
     });
@@ -361,6 +368,7 @@ export default function EscrituracaoPorEmpresa() {
                   <th className="px-3 py-2 text-right">Emitidas</th>
                   <th className="px-3 py-2 text-right">Lançadas</th>
                   <th className="px-3 py-2 text-right">Pendentes</th>
+                  <th className="px-3 py-2 text-right" title="Tiradas de Pendentes com justificativa">Outros</th>
                   <th className="px-3 py-2 text-right">% Lançadas</th>
                 </tr>
               </thead>
@@ -379,6 +387,9 @@ export default function EscrituracaoPorEmpresa() {
                     <td className="px-3 py-2 text-right font-semibold text-teal-700">{l.lancadas}</td>
                     <td className={`px-3 py-2 text-right font-semibold ${l.pendentes > 0 ? 'text-red-600' : 'text-gray-400'}`}>
                       {l.pendentes}
+                    </td>
+                    <td className={`px-3 py-2 text-right ${l.outros > 0 ? 'text-slate-700 font-semibold' : 'text-gray-300'}`}>
+                      {l.outros}
                     </td>
                     <td className={`px-3 py-2 text-right font-bold ${corPct(l.pct)}`}>
                       {l.pct.toFixed(0)}%
@@ -401,6 +412,7 @@ export default function EscrituracaoPorEmpresa() {
                   <td className={`px-3 py-2 text-right ${painel.total.pendentes > 0 ? 'text-red-600' : ''}`}>
                     {painel.total.pendentes}
                   </td>
+                  <td className="px-3 py-2 text-right text-slate-700">{painel.total.outros}</td>
                   <td className={`px-3 py-2 text-right ${corPct(painel.total.pct)}`}>
                     {painel.total.pct.toFixed(0)}%
                   </td>
@@ -408,7 +420,7 @@ export default function EscrituracaoPorEmpresa() {
               </tfoot>
             </table>
             <div className="px-3 py-1.5 text-[10px] text-gray-400 border-t border-gray-100">
-              Emitidas = lançadas + pendentes. Lançada = nota escriturada (com fatura no TOTVS, via "Importar Escrituradas"). Notas canceladas, denegadas e de entrada não entram na conta ("fora da fila").
+              Emitidas = lançadas + pendentes. Lançada = nota escriturada (com fatura no TOTVS, via "Importar Escrituradas"). Outros = tiradas de Pendentes com justificativa (não contam como lançadas). Notas canceladas, denegadas e de entrada não entram na conta ("fora da fila").
             </div>
           </div>
         )}

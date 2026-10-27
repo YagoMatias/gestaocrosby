@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../components/AuthContext';
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { API_BASE_URL } from '../config/constants';
@@ -56,18 +57,22 @@ const escrituracaoDaNota = (n) => {
   if (n.situacao === '2' || n.situacao === '3') return 'nao_aplica';
   if (n.tipo_operacao === '0') return 'nao_aplica';
   if (n.escriturada) return 'escriturada';
+  // tirada de Pendentes com justificativa (Niziany, 27/10/2026)
+  if (n.status_manual === 'outros') return 'outros';
   return 'pendente';
 };
 
 const ESCRITURACAO_ROTULO = {
   escriturada: 'ESCRITURADA',
   pendente: 'PENDENTE',
+  outros: 'OUTROS',
   nao_aplica: 'NÃO SE APLICA',
 };
 
 const ESCRITURACAO_CLASSE = {
   escriturada: 'bg-teal-100 text-teal-700',
   pendente: 'bg-orange-100 text-orange-700',
+  outros: 'bg-slate-200 text-slate-700',
   nao_aplica: 'bg-gray-100 text-gray-500',
 };
 
@@ -484,6 +489,9 @@ const ModalEscrituracao = ({
 };
 
 const ManifestacaoDestinatario = () => {
+  const { user } = useAuth();
+  const nomeUsuario =
+    user?.user_metadata?.nome || user?.user_metadata?.full_name || user?.email || '';
   const [dados, setDados] = useState([]);
   const [empresas, setEmpresas] = useState([]);
   const [filiaisSelecionadas, setFiliaisSelecionadas] = useState([]);
@@ -582,6 +590,55 @@ const ManifestacaoDestinatario = () => {
       setErro(`Não consegui abrir o PDF da nota: ${e.message}`);
     } finally {
       setPdfCarregando(null);
+    }
+  };
+
+  // "Outros": tira a nota de Pendentes com justificativa (modal pequena)
+  const [modalOutros, setModalOutros] = useState(null); // item
+  const [justificativaOutros, setJustificativaOutros] = useState('');
+  const [salvandoOutros, setSalvandoOutros] = useState(false);
+  const aplicarOutros = async (item, body) => {
+    const r = await fetch(`${API_BASE_URL}/api/sefaz/dfe/notas/${item.id}/outros`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const json = await r.json();
+    if (!r.ok || !json.success) throw new Error(json.message || json.error || `HTTP ${r.status}`);
+    const d = json.data || {};
+    setDados((p) =>
+      p.map((n) =>
+        n.id === item.id
+          ? {
+              ...n,
+              status_manual: d.status_manual ?? null,
+              outros_justificativa: d.outros_justificativa ?? null,
+              outros_em: d.outros_em ?? null,
+              outros_por: d.outros_por ?? null,
+            }
+          : n,
+      ),
+    );
+  };
+  const confirmarOutros = async () => {
+    if (!modalOutros) return;
+    setSalvandoOutros(true);
+    try {
+      await aplicarOutros(modalOutros, { justificativa: justificativaOutros.trim(), usuario: nomeUsuario });
+      setModalOutros(null);
+      setJustificativaOutros('');
+    } catch (e) {
+      setErro(`Não consegui mover para Outros: ${e.message}`);
+    } finally {
+      setSalvandoOutros(false);
+    }
+  };
+  const desfazerOutros = async (item) => {
+    if (!window.confirm('Voltar esta nota para Pendentes?')) return;
+    try {
+      await aplicarOutros(item, { desfazer: true });
+    } catch (e) {
+      setErro(`Não consegui desfazer: ${e.message}`);
     }
   };
 
@@ -1002,6 +1059,7 @@ const ManifestacaoDestinatario = () => {
         const esc = escrituracaoDaNota(item);
         if (esc === 'escriturada') acc.escrituradas += 1;
         else if (esc === 'pendente') acc.naoEscrituradas += 1;
+        else if (esc === 'outros') acc.outros += 1;
         else acc.naoAplica += 1;
         return acc;
       },
@@ -1014,6 +1072,7 @@ const ManifestacaoDestinatario = () => {
         totvs: 0,
         escrituradas: 0,
         naoEscrituradas: 0,
+        outros: 0,
         naoAplica: 0,
       },
     );
@@ -1044,6 +1103,8 @@ const ManifestacaoDestinatario = () => {
         Situação: SITUACAO_LABEL[item.situacao] || item.situacao || '',
         Setor: item.setor || '',
         Escrituração: ESCRITURACAO_ROTULO[escrituracaoDaNota(item)],
+        'Justificativa (Outros)': item.outros_justificativa || '',
+        'Outros por': item.outros_por || '',
         'Nº Fatura': item.nr_fatura || '',
         'Dt. Fatura': formatDateBR(item.dt_fatura),
         Documento: MODELO_LABEL[modeloDaChave(item.chave_acesso)] || modeloDaChave(item.chave_acesso),
@@ -1270,6 +1331,7 @@ const ManifestacaoDestinatario = () => {
                 <option value="">Todas</option>
                 <option value="escriturada">Escrituradas</option>
                 <option value="pendente">Pendentes de escrituração</option>
+                <option value="outros">Outros (tiradas com justificativa)</option>
               </select>
             </div>
             <div className="flex items-end">
@@ -1356,6 +1418,14 @@ const ManifestacaoDestinatario = () => {
               <span className="text-[10px] font-bold text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded">
                 PENDENTES
               </span>
+              {totais.outros > 0 && (
+                <>
+                  <span className="text-sm font-extrabold text-slate-600">{totais.outros}</span>
+                  <span className="text-[10px] font-bold text-slate-700 bg-slate-200 px-1.5 py-0.5 rounded" title="Tiradas de Pendentes com justificativa">
+                    OUTROS
+                  </span>
+                </>
+              )}
             </div>
             {totais.naoAplica > 0 && (
               <div className="text-[9px] text-gray-400 mt-0.5">
@@ -1468,6 +1538,74 @@ const ManifestacaoDestinatario = () => {
             document.body,
           );
         })()}
+
+      {/* Modal: tirar de Pendentes → Outros (com justificativa) */}
+      {modalOutros &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget && !salvandoOutros) setModalOutros(null);
+            }}
+          >
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md" onMouseDown={(e) => e.stopPropagation()}>
+              <div className="bg-[#000638] text-white px-4 py-3 rounded-t-xl flex items-center justify-between">
+                <span className="text-sm font-bold">Tirar de Pendentes → Outros</span>
+                <button type="button" onClick={() => !salvandoOutros && setModalOutros(null)} className="text-white/80 hover:text-white">
+                  <X size={16} weight="bold" />
+                </button>
+              </div>
+              <div className="p-4 space-y-3">
+                <div className="text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                  <div className="font-semibold text-[#000638]">
+                    NF {nfDaChave(modalOutros.chave_acesso)} · {modalOutros.emitente_nome || '—'}
+                  </div>
+                  <div className="text-[11px] text-gray-500">
+                    Filial {modalOutros.empresa_codigo ?? '--'} · {formatDateBR(modalOutros.data_emissao)} ·{' '}
+                    {(parseFloat(modalOutros.valor_total) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </div>
+                </div>
+                <p className="text-[11px] text-gray-500">
+                  A nota sai da fila de Pendentes e <b>não</b> conta como escriturada. Ela fica no status <b>Outros</b> (filtro “Escrituração → Outros”) e pode ser desfeita.
+                </p>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase text-gray-500 mb-1">
+                    Justificativa * <span className="font-normal normal-case">(mínimo 10 caracteres)</span>
+                  </label>
+                  <textarea
+                    value={justificativaOutros}
+                    onChange={(e) => setJustificativaOutros(e.target.value)}
+                    rows={3}
+                    autoFocus
+                    maxLength={500}
+                    placeholder="Ex.: nota de bonificação sem escrituração; emitida por engano pelo fornecedor; tratada no TOTVS por outro processo…"
+                    className="w-full mb-0 border border-gray-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#000638]"
+                  />
+                  <div className="text-[10px] text-gray-400 text-right">{justificativaOutros.trim().length}/500 · por {nomeUsuario || 'usuário'}</div>
+                </div>
+              </div>
+              <div className="px-4 py-3 border-t border-gray-100 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setModalOutros(null)}
+                  disabled={salvandoOutros}
+                  className="px-3 py-1.5 text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={confirmarOutros}
+                  disabled={salvandoOutros || justificativaOutros.trim().length < 10}
+                  className="px-3 py-1.5 text-xs font-bold text-white bg-[#000638] hover:bg-[#000638]/90 rounded-lg disabled:opacity-50"
+                >
+                  {salvandoOutros ? 'Salvando…' : 'Confirmar → Outros'}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
 
       {/* Tabela */}
       <div className="bg-white rounded-lg shadow-md border border-[#000638]/10 max-w-7xl mx-auto w-full">
@@ -1707,11 +1845,40 @@ const ManifestacaoDestinatario = () => {
                                 ? item.tipo_operacao === '0'
                                   ? 'Nota de entrada — não se escritura'
                                   : 'Nota cancelada/denegada — não se escritura'
-                                : 'Sem fatura no TOTVS'
+                                : escrituracaoDaNota(item) === 'outros'
+                                  ? `Outros — ${item.outros_justificativa || ''}${item.outros_por ? ` (${item.outros_por}` : ''}${item.outros_em ? `${item.outros_por ? ', ' : '('}${new Date(item.outros_em).toLocaleString('pt-BR')})` : item.outros_por ? ')' : ''}`
+                                  : 'Sem fatura no TOTVS'
                           }
                         >
                           {ESCRITURACAO_ROTULO[escrituracaoDaNota(item)]}
                         </span>
+                        {escrituracaoDaNota(item) === 'pendente' && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setJustificativaOutros('');
+                              setModalOutros(item);
+                            }}
+                            title="Tirar de Pendentes (vai para Outros, com justificativa)"
+                            className="block mx-auto mt-0.5 text-[9px] text-gray-400 hover:text-slate-700 hover:underline"
+                          >
+                            → outros
+                          </button>
+                        )}
+                        {escrituracaoDaNota(item) === 'outros' && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              desfazerOutros(item);
+                            }}
+                            title={`Justificativa: ${item.outros_justificativa || '—'}\nVoltar para Pendentes`}
+                            className="block mx-auto mt-0.5 text-[9px] text-gray-400 hover:text-orange-700 hover:underline"
+                          >
+                            desfazer
+                          </button>
+                        )}
                       </td>
                       <td className="text-center px-2 py-2">
                         <span
