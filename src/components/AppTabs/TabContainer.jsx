@@ -37,6 +37,7 @@ const PAGE_COMPONENTS = {
   '/conciliacao': lazy(() => import('../../pages/Conciliacao')),
   '/conciliacao-stone': lazy(() => import('../../pages/ConciliacaoStone')),
   '/fluxo-caixa-ext': lazy(() => import('../../pages/FluxoCaixaExt')),
+  '/dr-ygor/extratos-bancarios': lazy(() => import('../../pages/DrYgorExtratosBancarios')),
   '/dre': lazy(() => import('../../pages/DRE')),
 
   // ---- Financeiro › Fiscal ----
