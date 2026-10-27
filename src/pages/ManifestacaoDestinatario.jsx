@@ -564,8 +564,18 @@ const ManifestacaoDestinatario = () => {
       const html = gerarHtmlDanfeDeXml(json.data.xml);
       abrirImpressao(html);
       if (json.data.baixadoAgora) {
+        const ci = json.data.ciencia;
         setDados((p) =>
-          p.map((n) => (n.id === item.id ? { ...n, xml_completo: true, schema_origem: 'procNFe' } : n)),
+          p.map((n) =>
+            n.id === item.id
+              ? {
+                  ...n,
+                  xml_completo: true,
+                  schema_origem: 'procNFe',
+                  ...(ci ? { manifestacao: '210210', manifestacao_descricao: 'Ciência da Operação' } : {}),
+                }
+              : n,
+          ),
         );
       }
     } catch (e) {
@@ -1731,7 +1741,7 @@ const ManifestacaoDestinatario = () => {
                             type="button"
                             onClick={() => abrirPdf(item)}
                             disabled={pdfCarregando === item.id}
-                            title={item.xml_completo ? 'Abrir o DANFE (PDF) da nota' : 'Abrir o DANFE (PDF) — busca o XML completo na SEFAZ'}
+                            title={item.xml_completo ? 'Abrir o DANFE (PDF) da nota' : 'Abrir o DANFE (PDF) — registra a Ciência da Operação e busca o XML completo na SEFAZ'}
                             className={`shrink-0 p-1 rounded transition ${
                               pdfCarregando === item.id
                                 ? 'text-gray-300'
