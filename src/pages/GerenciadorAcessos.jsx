@@ -200,11 +200,6 @@ const AVAILABLE_PAGES = [
     category: 'Financeiro — Contas a Receber',
   },
   {
-    path: '/inadimplencia-mensal',
-    name: 'Inadimplência Mensal (>60 dias)',
-    category: 'Financeiro — Contas a Receber',
-  },
-  {
     path: '/metas-inadimplencia',
     name: 'Metas Inadimplência',
     category: 'Financeiro — Contas a Receber',
@@ -237,11 +232,6 @@ const AVAILABLE_PAGES = [
   {
     path: '/retorno-boleto',
     name: 'Remessa Boletos — Retorno Boleto',
-    category: 'Financeiro — Contas a Receber',
-  },
-  {
-    path: '/contas-receber-hoje',
-    name: 'Hoje (Contas a Receber)',
     category: 'Financeiro — Contas a Receber',
   },
   {
