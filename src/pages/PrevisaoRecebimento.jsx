@@ -11,6 +11,24 @@ import { API_BASE_URL } from '../config/constants';
  * automaticamente pelo histórico (12 meses de baixas no TOTVS) e pode ser
  * trocado na linha. Dados: GET /api/previsao-recebimento (ver backend).
  */
+class ErroBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { erro: null }; }
+  static getDerivedStateFromError(e) { return { erro: e }; }
+  componentDidCatch(e, info) { console.error('Previsão de Recebimento quebrou:', e, info); }
+  render() {
+    if (this.state.erro) {
+      return (
+        <div className="w-full max-w-3xl mx-auto my-8 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <b>A tela de Previsão teve um erro ao desenhar.</b>
+          <div className="mt-1 text-xs text-red-700">{String(this.state.erro?.message || this.state.erro)}</div>
+          <button className="mt-3 bg-[#000638] text-white px-3 py-1.5 rounded text-xs font-bold" onClick={() => window.location.reload()}>Recarregar</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const API = `${API_BASE_URL}/api/previsao-recebimento`;
 const ST = {
   sim: { label: 'Sim', chip: 'bg-green-100 text-green-800 border-green-300', num: 'text-green-700', btn: 'bg-green-600 hover:bg-green-700' },
@@ -35,7 +53,7 @@ const addDias = (iso, n) => {
   return d.toISOString().slice(0, 10);
 };
 
-export default function PrevisaoRecebimento() {
+function PrevisaoRecebimentoInner() {
   const { user } = useAuth();
   const [semana, setSemana] = useState(0);
   const [dados, setDados] = useState(null);
@@ -235,9 +253,21 @@ export default function PrevisaoRecebimento() {
                 <tr key={d.dia} className={`border-b hover:bg-gray-50 cursor-pointer ${filtroDia === d.dia ? 'bg-blue-50' : ''} ${d.dia === dados.hoje ? 'font-semibold' : ''}`} onClick={() => setFiltroDia(filtroDia === d.dia ? '' : d.dia)}>
                   <td className="px-2 py-1.5">{diaSemana(d.dia)} {dcurta(d.dia)}{d.dia === dados.hoje ? <span className="ml-1 text-[10px] bg-blue-100 text-blue-800 rounded px-1">hoje</span> : null}</td>
                   <td className="px-2 py-1.5 text-right">{d.fds || d.dia > dados.hoje ? <span className="text-gray-400">—</span> : <><b>{brl(d.recebido?.valor || 0)}</b>{d.recebido?.n ? <span className="text-gray-500"> · {d.recebido.n} baixa(s)</span> : null}</>}</td>
-                  <td className="px-2 py-1.5 text-right text-green-700">{brl(d.sim)}</td>
-                  <td className="px-2 py-1.5 text-right text-amber-600">{brl(d.talvez)}</td>
-                  <td className="px-2 py-1.5 text-right text-red-600">{brl(d.nao)}</td>
+                  <td
+                    className="px-2 py-1.5 text-right text-green-700 cursor-pointer hover:underline"
+                    onClick={(ev) => { ev.stopPropagation(); setFiltroDia(d.dia); setFiltroStatus('sim'); }}
+                    title="Ver os clientes Sim que vencem neste dia"
+                  >{brl(d.sim)}</td>
+                  <td
+                    className="px-2 py-1.5 text-right text-amber-600 cursor-pointer hover:underline"
+                    onClick={(ev) => { ev.stopPropagation(); setFiltroDia(d.dia); setFiltroStatus('talvez'); }}
+                    title="Ver os clientes Talvez que vencem neste dia"
+                  >{brl(d.talvez)}</td>
+                  <td
+                    className="px-2 py-1.5 text-right text-red-600 cursor-pointer hover:underline"
+                    onClick={(ev) => { ev.stopPropagation(); setFiltroDia(d.dia); setFiltroStatus('nao'); }}
+                    title="Ver os clientes Não que vencem neste dia"
+                  >{brl(d.nao)}</td>
                   <td className="px-2 py-1.5 text-right font-bold">{brl(d.sim + d.talvez + d.nao)}</td>
                   <td className="px-2 py-1.5 text-right text-gray-600">{d.pago ? brl(d.pago) : '—'}</td>
                 </tr>
@@ -353,5 +383,13 @@ export default function PrevisaoRecebimento() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function PrevisaoRecebimento() {
+  return (
+    <ErroBoundary>
+      <PrevisaoRecebimentoInner />
+    </ErroBoundary>
   );
 }
