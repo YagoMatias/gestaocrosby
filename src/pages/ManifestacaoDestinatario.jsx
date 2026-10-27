@@ -527,6 +527,14 @@ const ManifestacaoDestinatario = () => {
       });
       const json = await r.json();
       if (!r.ok || !json.success) throw new Error(json.message || json.error || `HTTP ${r.status}`);
+      // o backend aprendeu o setor do fornecedor e preencheu as outras notas dele
+      if (novo && json.data?.propagadas > 0) {
+        setDados((p) =>
+          p.map((n) =>
+            n.emitente_cnpj === item.emitente_cnpj && !n.setor ? { ...n, setor: novo } : n,
+          ),
+        );
+      }
     } catch (e) {
       setDados((p) => p.map((n) => (n.id === item.id ? { ...n, setor: anterior } : n)));
       setErro(`Não consegui salvar o setor: ${e.message}`);
