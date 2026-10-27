@@ -3,7 +3,7 @@ import FiltroEmpresa from '../components/FiltroEmpresa';
 import useApiClient from '../hooks/useApiClient';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { useAuth } from '../components/AuthContext';
-import { TotvsURL } from '../config/constants';
+import { TotvsURL, API_BASE_URL } from '../config/constants';
 import {
   Card,
   CardContent,
@@ -966,6 +966,65 @@ const ContasPagarFranquias = () => {
   const chaveLinha = (item) => `${item.cd_empresa}-${item.nr_fat}-${item.nr_parcela}`;
   const linhaEmAberto = (item) =>
     !item.dt_liq && (parseFloat(item.vl_pago) || 0) < (parseFloat(item.vl_fatura) || 0);
+
+  // Boletos/Pix da Pagar.me (João, 27/10/2026): o TOTVS não tem os boletos da
+  // Pagar.me (Stone) nem a linha digitável deles — leem-se de pagarme_boletos.
+  const [pgBoletos, setPgBoletos] = useState({}); // chave → {linha_digitavel, boleto_url, ...} | null
+  const boletoPg = (item) => pgBoletos[chaveLinha(item)] || null;
+  const carregarPgBoletos = async (itens) => {
+    const titulos = itens.map((i) => ({ cd_empresa: i.cd_empresa, nr_fatura: i.nr_fat, nr_parcela: i.nr_parcela }));
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/portal-boletos/por-titulos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ titulos }),
+      });
+      const j = await r.json();
+      const achados = j?.boletos || {};
+      setPgBoletos((prev) => {
+        const next = { ...prev };
+        for (const i of itens) {
+          const k = chaveLinha(i);
+          next[k] = achados[k] || null; // null = já procurei e não tem (não refaz)
+        }
+        return next;
+      });
+    } catch {
+      /* silencioso: os botões caem no TOTVS */
+    }
+  };
+  const gerarPixLinha = async (item) => {
+    const k = chaveLinha(item);
+    setAcaoLinha(`${k}:pix`);
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/portal-boletos/pix`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cd_empresa: item.cd_empresa,
+          nr_fatura: item.nr_fat,
+          nr_parcela: item.nr_parcela,
+          cd_cliente: item.cd_cliente,
+          nm_cliente: item.nm_cliente,
+          documento: item.nr_cpfcnpj,
+          vl_fatura: item.vl_fatura,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.ok) throw new Error(j.erro || `HTTP ${r.status}`);
+      try { await navigator.clipboard.writeText(j.copia_cola); } catch { /* sem clipboard */ }
+      if (j.qr_code_url) window.open(j.qr_code_url, '_blank');
+      alert(
+        `Pix gerado: ${Number(j.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} ` +
+        `(sem o acréscimo de R$ 2,99 do boleto).\n\nO "copia e cola" já foi copiado. ` +
+        `Pagando no dia ou 1 dia depois, sem juro/multa (feriado e fim de semana igual).`,
+      );
+    } catch (e) {
+      alert(`Não consegui gerar o Pix: ${e.message}`);
+    } finally {
+      setAcaoLinha(null);
+    }
+  };
   const base64ParaBlob = (b64) => {
     const limpo = String(b64 || '').replace(/^data:application\/pdf;base64,/, '');
     const bin = window.atob(limpo);
@@ -994,7 +1053,8 @@ const ContasPagarFranquias = () => {
   };
   const copiarCodigoBarras = async (item) => {
     const k = chaveLinha(item);
-    let codigo = String(item.linha_digitavel || item.cd_barras || '').trim();
+    const pg = boletoPg(item);
+    let codigo = String(pg?.linha_digitavel || item.linha_digitavel || item.cd_barras || '').trim();
     if (codigo) return copiarTexto(codigo, k);
     // Título sem boleto registrado: gera no banco (bank-slip) e relê a linha digitável.
     setAcaoLinha(`${k}:codigo`);
@@ -1039,6 +1099,11 @@ const ContasPagarFranquias = () => {
   };
   const baixarBoletoLinha = async (item) => {
     const k = chaveLinha(item);
+    const pg = boletoPg(item);
+    if (pg?.boleto_url || pg?.boleto_pdf) {
+      window.open(pg.boleto_url || pg.boleto_pdf, '_blank');
+      return;
+    }
     setAcaoLinha(`${k}:boleto`);
     try {
       const r = await fetch(`${TotvsURL}bank-slip`, {
@@ -1140,6 +1205,12 @@ const ContasPagarFranquias = () => {
       setAcaoLinha(null);
     }
   };
+
+  useEffect(() => {
+    const faltam = dadosPaginados.filter((it) => pgBoletos[chaveLinha(it)] === undefined);
+    if (faltam.length) carregarPgBoletos(faltam);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dadosPaginados]);
 
   const abrirPDFDanfe = (base64String, nrTransacao) => {
     try {
@@ -2245,10 +2316,18 @@ const ContasPagarFranquias = () => {
                                 onClick={() => baixarBoletoLinha(item)}
                                 disabled={acaoLinha === `${chaveLinha(item)}:boleto`}
                                 className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 transition-colors"
-                                title="Gerar e baixar o boleto deste título"
+                                title="Baixar o boleto (Pagar.me quando houver; inclui R$ 2,99). Sem o acréscimo, use o Pix."
                               >
                                 <FileArrowDown size={12} weight="bold" />
                                 {acaoLinha === `${chaveLinha(item)}:boleto` ? '...' : 'Boleto'}
+                              </button>
+                              <button
+                                onClick={() => gerarPixLinha(item)}
+                                disabled={acaoLinha === `${chaveLinha(item)}:pix`}
+                                className="flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50 transition-colors"
+                                title="Gera um Pix do valor do título, sem o acréscimo de R$ 2,99 do boleto"
+                              >
+                                {acaoLinha === `${chaveLinha(item)}:pix` ? '...' : 'Pix'}
                               </button>
                             </>
                           )}
