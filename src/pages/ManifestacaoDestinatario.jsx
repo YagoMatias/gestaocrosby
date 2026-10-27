@@ -49,6 +49,16 @@ const origemDoRegistro = (schema) =>
 const modeloDaChave = (chave) => String(chave || '').slice(20, 22);
 const MODELO_LABEL = { 55: 'NF-e', 57: 'CT-e', 65: 'NFC-e' };
 
+// Atalho "Fiscal" no filtro de empresas: as filiais que o fiscal acompanha
+// (Niziany, 27/10/2026). Também é a seleção inicial da tela.
+const PRESETS_EMPRESAS = [
+  {
+    nome: 'Fiscal',
+    codigos: [1, 2, 6, 96, 97, 94, 93, 99, 90, 91, 11, 92, 87, 88, 89, 95, 65, 75, 85],
+    cor: 'bg-amber-600 hover:bg-amber-700',
+  },
+];
+
 // Status dos chamados do Dryland (mesmos rótulos do backend /api/dryland)
 const STATUS_CHAMADO = {
   aberto: '🔵 Aberto',
@@ -1383,6 +1393,8 @@ const ManifestacaoDestinatario = () => {
               <FiltroEmpresa
                 empresasSelecionadas={filiaisSelecionadas}
                 onSelectEmpresas={setFiliaisSelecionadas}
+                presets={PRESETS_EMPRESAS}
+                presetInicial="Fiscal"
               />
             </div>
             <div>

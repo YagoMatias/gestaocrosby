@@ -9,8 +9,10 @@ const FiltroEmpresa = ({
   restrictCodes = null, // se passado, mostra só essas empresas (por cd_empresa)
   autoSelectAll = false, // pré-seleciona todas as visíveis uma vez (usado com restrictCodes)
   presets = [], // atalhos extras: [{ nome: 'Crosby', codigos: [1, 99, 100, 101], cor?: 'bg-... hover:bg-...' }]
+  presetInicial = null, // nome de um preset para pré-selecionar UMA vez após carregar a lista
 }) => {
   const autoSelecionadoRef = useRef(false);
+  const presetInicialRef = useRef(false);
   const { user } = useAuth();
   const [showDropdown, setShowDropdown] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -126,6 +128,17 @@ const FiltroEmpresa = ({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoSelectAll, restritas]);
+
+  // Pré-seleção por preset (ex.: "Fiscal" na Manifestação do Destinatário)
+  useEffect(() => {
+    if (!presetInicial || presetInicialRef.current || restritas.length === 0) return;
+    const preset = presets.find((x) => x.nome === presetInicial);
+    if (!preset || !onSelectEmpresas) return;
+    presetInicialRef.current = true;
+    const alvo = new Set((preset.codigos || []).map((c) => String(c)));
+    onSelectEmpresas(restritas.filter((emp) => alvo.has(String(emp.cd_empresa))));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetInicial, restritas]);
 
   // Filtrar empresas baseado no termo de busca (sobre a lista já restrita)
   const empresasFiltradas = restritas.filter(
