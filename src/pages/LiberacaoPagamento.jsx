@@ -154,8 +154,7 @@ const fmtDateTime = (d) => {
 // Sicredi, Itaú Flávio e Caixa Irmãos saíram do saldo em 26/10/2026 (pedido do Yago).
 const BANCOS_SALDO = [
   'STONE',
-  'PAGARME', // disponível na Pagar.me
-  'PAGARME A RECEBER', // boletos/vendas online ainda não liquidados
+  'PAGARME', // só o disponível na Pagar.me (o "a receber" demora até 2 dias e fica fora do saldo)
   'ITAU RECIFE',
   'MENTORE',
 ];
