@@ -6,6 +6,8 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import { API_BASE_URL } from '../config/constants';
 import PageTitle from '../components/ui/PageTitle';
 import ManifestacaoNav from '../components/fiscal/ManifestacaoNav';
+import { gerarHtmlDanfeDeXml } from '../utils/danfeHtml';
+import { abrirImpressao } from '../utils/documentoFiscalHtml';
 import {
   Funnel,
   Spinner,
@@ -20,6 +22,7 @@ import {
   ArrowsClockwise,
   UploadSimple,
   X,
+  FilePdf,
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -540,6 +543,29 @@ const ManifestacaoDestinatario = () => {
       setErro(`Não consegui salvar o setor: ${e.message}`);
     }
   };
+  // DANFE (PDF) da nota a partir do XML — busca na SEFAZ se só veio o resumo
+  const [pdfCarregando, setPdfCarregando] = useState(null); // id da nota
+  const abrirPdf = async (item) => {
+    if (!item?.id) return;
+    setPdfCarregando(item.id);
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/sefaz/dfe/notas/${item.id}/xml`);
+      const json = await r.json();
+      if (!r.ok || !json.success) throw new Error(json.message || json.error || `HTTP ${r.status}`);
+      const html = gerarHtmlDanfeDeXml(json.data.xml);
+      abrirImpressao(html);
+      if (json.data.baixadoAgora) {
+        setDados((p) =>
+          p.map((n) => (n.id === item.id ? { ...n, xml_completo: true, schema_origem: 'procNFe' } : n)),
+        );
+      }
+    } catch (e) {
+      setErro(`Não consegui abrir o PDF da nota: ${e.message}`);
+    } finally {
+      setPdfCarregando(null);
+    }
+  };
+
   const novoSetor = async () => {
     const nome = window.prompt('Nome do novo setor:');
     if (!nome || !nome.trim()) return;
@@ -1664,7 +1690,28 @@ const ManifestacaoDestinatario = () => {
                         )}
                       </td>
                       <td className="text-left text-gray-500 px-2 py-2 font-mono text-[10px] break-all">
-                        {item.chave_acesso || '--'}
+                        <div className="flex items-start gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => abrirPdf(item)}
+                            disabled={pdfCarregando === item.id}
+                            title={item.xml_completo ? 'Abrir o DANFE (PDF) da nota' : 'Abrir o DANFE (PDF) — busca o XML completo na SEFAZ'}
+                            className={`shrink-0 p-1 rounded transition ${
+                              pdfCarregando === item.id
+                                ? 'text-gray-300'
+                                : item.xml_completo
+                                  ? 'text-red-600 hover:bg-red-50'
+                                  : 'text-gray-400 hover:text-red-600 hover:bg-red-50'
+                            }`}
+                          >
+                            {pdfCarregando === item.id ? (
+                              <Spinner size={14} className="animate-spin" />
+                            ) : (
+                              <FilePdf size={14} weight={item.xml_completo ? 'fill' : 'regular'} />
+                            )}
+                          </button>
+                          <span>{item.chave_acesso || '--'}</span>
+                        </div>
                       </td>
                     </tr>
                   ))}
