@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../components/AuthContext';
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -550,6 +550,7 @@ const ModalEscrituracao = ({
 
 const ManifestacaoDestinatario = () => {
   const { user } = useAuth();
+  const location = useLocation();
   const nomeUsuario =
     user?.user_metadata?.nome || user?.user_metadata?.full_name || user?.email || '';
   const [dados, setDados] = useState([]);
@@ -595,6 +596,22 @@ const ManifestacaoDestinatario = () => {
       console.error('Erro ao cruzar chamados:', e);
     }
   };
+  // Recarrega o cruzamento ao voltar para a tela (ex.: depois de abrir um
+  // chamado no Dryland) e ao focar a janela — no máximo a cada 20 s.
+  const ultimaCargaChamados = useRef(0);
+  useEffect(() => {
+    if (location.pathname !== '/manifestacao-destinatario') return undefined;
+    const atualizar = () => {
+      if (!dados.length) return;
+      if (Date.now() - ultimaCargaChamados.current < 20000) return;
+      ultimaCargaChamados.current = Date.now();
+      carregarChamadosNotas(true);
+    };
+    atualizar();
+    window.addEventListener('focus', atualizar);
+    return () => window.removeEventListener('focus', atualizar);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, dados.length]);
   const carregarSetores = async () => {
     try {
       const r = await fetch(`${API_BASE_URL}/api/sefaz/dfe/setores`);
@@ -1907,6 +1924,17 @@ const ManifestacaoDestinatario = () => {
                 className="border border-[#000638]/30 rounded-lg pl-7 pr-2 py-1.5 w-full sm:w-56 focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
               />
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                ultimaCargaChamados.current = Date.now();
+                carregarChamadosNotas(true);
+              }}
+              className="text-[10px] font-bold text-indigo-700 hover:underline whitespace-nowrap"
+              title={`Recruzar as notas com os chamados do Dryland agora${chamadosResumo?.atualizadoEm ? ` (último: ${new Date(chamadosResumo.atualizadoEm).toLocaleTimeString('pt-BR')})` : ''}`}
+            >
+              ↻ chamados
+            </button>
             {temFiltroColuna && (
               <button
                 type="button"
