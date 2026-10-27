@@ -79,6 +79,7 @@ const DashContasAReceber = lazy(() => import('./pages/DashContasAReceber'));
 const FluxoCaixa = lazy(() => import('./pages/FluxoCaixa'));
 const DashContasAPagar = lazy(() => import('./pages/DashContasAPagar'));
 const DashInadimplencia = lazy(() => import('./pages/DashInadimplencia'));
+const PrevisaoRecebimento = lazy(() => import('./pages/PrevisaoRecebimento'));
 const MetasInadimplencia = lazy(() => import('./pages/MetasInadimplencia'));
 const EsteiraProtesto = lazy(() => import('./pages/EsteiraProtesto'));
 const DashboardVarejo = lazy(() => import('./pages/DashboardVarejo'));
@@ -243,6 +244,7 @@ const protectedRoutes = [
   { path: '/dash-contas-a-receber', component: DashContasAReceber },
   { path: '/fluxo-caixa', component: FluxoCaixa },
   { path: '/dash-inadimplencia', component: DashInadimplencia },
+  { path: '/previsao-recebimento', component: PrevisaoRecebimento },
   { path: '/metas-inadimplencia', component: MetasInadimplencia },
   { path: '/esteira-protesto', component: EsteiraProtesto },
   { path: '/home', component: Home },

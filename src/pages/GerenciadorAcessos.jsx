@@ -200,6 +200,11 @@ const AVAILABLE_PAGES = [
     category: 'Financeiro — Contas a Receber',
   },
   {
+    path: '/previsao-recebimento',
+    name: 'Previsão de Recebimento',
+    category: 'Financeiro — Contas a Receber',
+  },
+  {
     path: '/metas-inadimplencia',
     name: 'Metas Inadimplência',
     category: 'Financeiro — Contas a Receber',

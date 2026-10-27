@@ -87,6 +87,11 @@ const TABBED_PAGES = {
     group: 'Contas a Receber',
     dot: 'bg-green-500',
   },
+  '/previsao-recebimento': {
+    label: 'Previsão de Recebimento',
+    group: 'Contas a Receber',
+    dot: 'bg-emerald-500',
+  },
   '/metas-inadimplencia': {
     label: 'Metas Inadimplência',
     group: 'Contas a Receber',

@@ -347,6 +347,13 @@ const financeiro = [
         roles: ['owner', 'admin', 'manager', 'user'],
       },
       {
+        name: 'Previsão de Recebimento',
+        href: '/previsao-recebimento',
+        icon: CalendarCheck,
+        color: 'text-emerald-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
         name: 'Metas Inadimplência',
         href: '/metas-inadimplencia',
         icon: Target,
