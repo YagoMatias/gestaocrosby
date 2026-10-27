@@ -132,7 +132,7 @@ const MultiSelect = ({ label, opcoes, valor, onChange, renderOpcao, placeholder 
         <CaretDown size={12} className={`shrink-0 transition-transform ${aberto ? 'rotate-180' : ''}`} />
       </button>
       {aberto && (
-        <div className="absolute z-40 mt-1 left-0 w-72 max-w-[90vw] bg-white border border-gray-200 rounded-lg shadow-lg p-2 text-xs">
+        <div className="absolute z-40 mt-1 left-0 w-72 max-w-[90vw] bg-white border border-gray-200 rounded-lg shadow-lg p-2 text-xs text-gray-800">
           {busca && (
             <input
               autoFocus
@@ -152,9 +152,9 @@ const MultiSelect = ({ label, opcoes, valor, onChange, renderOpcao, placeholder 
           </div>
           <div className="max-h-60 overflow-auto">
             {visiveis.map((o) => (
-              <label key={String(o.value)} className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-gray-50 cursor-pointer">
-                <input type="checkbox" checked={valor.includes(o.value)} onChange={() => toggle(o.value)} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
-                <span className="truncate flex-1">{renderOpcao ? renderOpcao(o) : o.label}</span>
+              <label key={String(o.value)} className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-gray-50 cursor-pointer text-gray-800">
+                <input type="checkbox" checked={valor.includes(o.value)} onChange={() => toggle(o.value)} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 shrink-0" />
+                <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-gray-800">{renderOpcao ? renderOpcao(o) : o.label}</span>
               </label>
             ))}
             {!visiveis.length && <p className="px-1.5 py-2 text-gray-400">Nada encontrado.</p>}
@@ -541,7 +541,7 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
             renderOpcao={(o) => (
               <span className="flex items-center gap-1.5 min-w-0">
                 <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${bancoCfg(o.banco).ponto}`} />
-                <span className="whitespace-nowrap">{o.label}</span>
+                <span className="whitespace-nowrap text-gray-800">{o.label}</span>
                 <span className="text-gray-400 truncate">{o.sub}</span>
               </span>
             )}
