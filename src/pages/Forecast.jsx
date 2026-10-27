@@ -103,42 +103,9 @@ export default function Forecast() {
             {base.cenario}
           </span>
         </div>
-        <div className="flex items-center gap-1">
-          <span className="text-[11px] font-bold uppercase text-gray-500 mr-1">Visão</span>
-          {VISOES.map((v) => (
-            <button
-              key={v.id}
-              type="button"
-              onClick={() => setVisao(v.id)}
-              className={
-                'text-xs px-2.5 py-1 rounded-full border transition ' +
-                (visao === v.id
-                  ? 'bg-[#000638] text-white border-[#000638]'
-                  : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50')
-              }
-            >
-              {v.label}
-            </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-1">
-          <span className="text-[11px] font-bold uppercase text-gray-500 mr-1">Bloco</span>
-          {BLOCOS.map((b) => (
-            <button
-              key={b.id}
-              type="button"
-              onClick={() => setBloco(b.id)}
-              className={
-                'text-xs px-2.5 py-1 rounded-full border transition ' +
-                (bloco === b.id
-                  ? 'bg-fuchsia-700 text-white border-fuchsia-700'
-                  : 'bg-white text-gray-700 border-gray-200 hover:bg-gray-50')
-              }
-            >
-              {b.label}
-            </button>
-          ))}
-        </div>
+        {/* Niziany (27/10/2026): deixar só esta tela (DRE Forecast mensal).
+            Os seletores de VISÃO e BLOCO foram retirados; os dados e blocos
+            seguem no JSON caso precise voltar. */}
         <div className="ml-auto flex items-center gap-2 text-[11px] text-gray-500">
           {Object.keys(TIPO_ROTULO)
             .filter((t) => t !== 'varpct')
