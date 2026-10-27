@@ -217,15 +217,23 @@ const ModalEscrituracao = ({
               notas.filter((n) => escrituracaoDaNota(n) === 'escriturada')
                 .length,
             ],
+            [
+              'outros',
+              'Outros',
+              notas.filter((n) => escrituracaoDaNota(n) === 'outros').length,
+            ],
           ].map(([id, rotulo, qtd]) => (
             <button
               key={id}
               onClick={() => setAba(id)}
+              title={id === 'outros' ? 'Tiradas de Pendentes com justificativa' : undefined}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
                 aba === id
                   ? id === 'pendente'
                     ? 'bg-orange-600 text-white'
-                    : 'bg-teal-600 text-white'
+                    : id === 'escriturada'
+                      ? 'bg-teal-600 text-white'
+                      : 'bg-slate-600 text-white'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
@@ -345,6 +353,14 @@ const ModalEscrituracao = ({
                             <th className="w-20 px-2 py-1.5 text-center">
                               Situação
                             </th>
+                            {aba === 'outros' && (
+                              <th className="px-2 py-1.5 text-left">
+                                Justificativa
+                                <span className="block normal-case font-normal text-[9px] text-gray-400">
+                                  quem tirou de pendentes · quando
+                                </span>
+                              </th>
+                            )}
                             <th className="w-28 px-2 py-1.5 text-center">
                               Manifestação
                             </th>
@@ -414,6 +430,17 @@ const ModalEscrituracao = ({
                                   {SITUACAO_LABEL[n.situacao] || '--'}
                                 </span>
                               </td>
+                              {aba === 'outros' && (
+                                <td className="px-2 py-1.5">
+                                  <div className="text-gray-800 whitespace-pre-wrap max-w-[320px]">
+                                    {n.outros_justificativa || '—'}
+                                  </div>
+                                  <div className="text-[10px] text-gray-400">
+                                    {n.outros_por || 'usuário não informado'}
+                                    {n.outros_em ? ` · ${new Date(n.outros_em).toLocaleString('pt-BR')}` : ''}
+                                  </div>
+                                </td>
+                              )}
                               <td className="px-2 py-1.5 text-center">
                                 <span
                                   className={`inline-block px-1.5 py-0.5 rounded-full text-[10px] font-medium whitespace-nowrap ${
@@ -1405,7 +1432,7 @@ const ManifestacaoDestinatario = () => {
                 ver notas →
               </span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span className="text-sm font-extrabold text-teal-600">
                 {totais.escrituradas}
               </span>
