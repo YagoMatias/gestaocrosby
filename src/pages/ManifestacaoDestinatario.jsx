@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import FiltroEmpresa from '../components/FiltroEmpresa';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -495,6 +496,9 @@ const ManifestacaoDestinatario = () => {
   const [pesquisa, setPesquisa] = useState('');
   // filtros por coluna na linha do cabeçalho da tabela (Niziany, 26/10/2026)
   const [filtrosColuna, setFiltrosColuna] = useState({});
+  // popover de filtro/ordenação aberto ao clicar no título da coluna
+  const [filtroAberto, setFiltroAberto] = useState(null); // { campo, label, left, top }
+  const popRef = useRef(null);
 
   const [paginaAtual, setPaginaAtual] = useState(1);
   const [itensPorPagina] = useState(20);
@@ -760,6 +764,80 @@ const ManifestacaoDestinatario = () => {
       ),
     [dados],
   );
+
+  // Definição do filtro de cada coluna (chave em filtrosColuna + tipo de campo).
+  // 'chave_acesso' é a coluna Nº NF (ordena pela chave, filtra pelo número);
+  // 'chave' é a última coluna, Chave de Acesso (só filtro).
+  const defFiltro = (campo) => {
+    switch (campo) {
+      case 'empresa_codigo':
+        return {
+          key: 'empresa_codigo',
+          tipo: 'select',
+          opts: opcoesFilial.map((c) => [String(c), `${c} - ${nomePorCodigo[c] || ''}`]),
+        };
+      case 'empresa_nome':
+        return { key: 'empresa_nome', tipo: 'text', ph: 'nome ou CNPJ' };
+      case 'data_emissao':
+        return { key: 'data_emissao', tipo: 'text', ph: 'dd/mm/aaaa' };
+      case 'chave_acesso':
+        return { key: 'nf', tipo: 'text', ph: 'número da NF' };
+      case 'emitente_nome':
+        return { key: 'emitente_nome', tipo: 'text', ph: 'nome ou CNPJ' };
+      case 'tipo_operacao':
+        return { key: 'tipo_operacao', tipo: 'select', opts: [['1', 'Saída'], ['0', 'Entrada']] };
+      case 'situacao':
+        return { key: 'situacao', tipo: 'select', opts: Object.entries(SITUACAO_LABEL) };
+      case 'manifestacao':
+        return { key: 'manifestacao', tipo: 'select', opts: [['sem', 'Pendente'], ['com', 'Manifestada']] };
+      case 'escriturada':
+        return { key: 'escriturada', tipo: 'select', opts: Object.entries(ESCRITURACAO_ROTULO) };
+      case 'schema_origem':
+        return { key: 'schema_origem', tipo: 'select', opts: [['SEFAZ', 'SEFAZ'], ['TOTVS', 'TOTVS']] };
+      case 'valor_total':
+        return { key: 'valor_total', tipo: 'text', ph: 'valor (ex.: 455,00)' };
+      case 'chave':
+        return { key: 'chave_acesso', tipo: 'text', ph: 'chave de acesso' };
+      default:
+        return null;
+    }
+  };
+  const filtroAtivo = (campo) => {
+    const d = defFiltro(campo);
+    return !!(d && filtrosColuna[d.key] != null && String(filtrosColuna[d.key]).trim() !== '');
+  };
+  const abrirFiltro = (campo, label, e) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    setFiltroAberto((p) =>
+      p && p.campo === campo
+        ? null
+        : {
+            campo,
+            label,
+            left: Math.max(8, Math.min(r.left, window.innerWidth - 248)),
+            top: r.bottom + 4,
+          },
+    );
+  };
+  // fecha ao clicar fora, ao rolar ou com Esc
+  useEffect(() => {
+    if (!filtroAberto) return undefined;
+    const onDown = (e) => {
+      if (popRef.current && !popRef.current.contains(e.target)) setFiltroAberto(null);
+    };
+    const onKey = (e) => {
+      if (e.key === 'Escape') setFiltroAberto(null);
+    };
+    const onScroll = () => setFiltroAberto(null);
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', onScroll, true);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', onScroll, true);
+    };
+  }, [filtroAberto]);
 
   const dadosProcessados = useMemo(() => {
     let filtrados = dados.filter((item) => passaPesquisa(item) && passaFiltrosColuna(item));
@@ -1179,6 +1257,92 @@ const ManifestacaoDestinatario = () => {
         </div>
       )}
 
+      {/* Popover de filtro/ordenação da coluna (abre ao clicar no título) */}
+      {filtroAberto &&
+        (() => {
+          const d = defFiltro(filtroAberto.campo);
+          if (!d) return null;
+          const ordenavel = filtroAberto.campo !== 'chave';
+          const valor = filtrosColuna[d.key] || '';
+          const cls =
+            'w-full mb-0 px-2 py-1.5 text-xs text-gray-800 bg-white border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#000638]';
+          return createPortal(
+            <div
+              ref={popRef}
+              style={{ position: 'fixed', left: filtroAberto.left, top: filtroAberto.top, width: 240 }}
+              className="z-[9999] bg-white rounded-xl shadow-2xl border border-[#000638]/20 p-3 text-left normal-case tracking-normal"
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div className="text-[10px] font-bold uppercase text-gray-500 mb-2 flex items-center justify-between">
+                {filtroAberto.label}
+                <button type="button" onClick={() => setFiltroAberto(null)} className="text-gray-400 hover:text-gray-700">
+                  <X size={12} weight="bold" />
+                </button>
+              </div>
+              {ordenavel && (
+                <div className="flex gap-1 mb-2">
+                  {[
+                    ['asc', '▲ Crescente'],
+                    ['desc', '▼ Decrescente'],
+                  ].map(([dir, rot]) => {
+                    const on = ordenacao.campo === filtroAberto.campo && ordenacao.direcao === dir;
+                    return (
+                      <button
+                        key={dir}
+                        type="button"
+                        onClick={() => setOrdenacao({ campo: filtroAberto.campo, direcao: dir })}
+                        className={`flex-1 text-[11px] font-semibold rounded-lg px-2 py-1 border transition ${
+                          on ? 'bg-[#000638] text-white border-[#000638]' : 'bg-white text-gray-600 border-gray-200 hover:border-[#000638]'
+                        }`}
+                      >
+                        {rot}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {d.tipo === 'select' ? (
+                <select value={valor} onChange={(e) => setFiltro(d.key, e.target.value)} className={cls} autoFocus>
+                  <option value="">Todas</option>
+                  {d.opts.map(([v, l]) => (
+                    <option key={v} value={v}>
+                      {l}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={valor}
+                  onChange={(e) => setFiltro(d.key, e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && setFiltroAberto(null)}
+                  placeholder={d.ph}
+                  className={cls}
+                  autoFocus
+                />
+              )}
+              <div className="flex items-center justify-between mt-2">
+                <button
+                  type="button"
+                  onClick={() => setFiltro(d.key, '')}
+                  disabled={!valor}
+                  className="text-[10px] font-bold text-red-600 hover:underline disabled:opacity-40"
+                >
+                  limpar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFiltroAberto(null)}
+                  className="text-[10px] font-bold text-[#000638] hover:underline"
+                >
+                  fechar
+                </button>
+              </div>
+            </div>,
+            document.body,
+          );
+        })()}
+
       {/* Tabela */}
       <div className="bg-white rounded-lg shadow-md border border-[#000638]/10 max-w-7xl mx-auto w-full">
         <div className="p-3 border-b border-[#000638]/10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
@@ -1277,66 +1441,40 @@ const ManifestacaoDestinatario = () => {
                     ].map(([campo, label, align]) => (
                       <th
                         key={campo}
-                        className="px-2 py-2 cursor-pointer hover:bg-[#000638]/80 transition-colors"
-                        onClick={() => handleSort(campo)}
+                        className={`px-2 py-2 cursor-pointer hover:bg-[#000638]/80 transition-colors ${
+                          filtroAberto?.campo === campo ? 'bg-[#000638]/70' : ''
+                        }`}
+                        onClick={(e) => abrirFiltro(campo, label, e)}
+                        title="Clique para filtrar e ordenar"
                       >
                         <div
-                          className={`flex items-center ${
+                          className={`flex items-center gap-1 ${
                             align === 'center' ? 'justify-center' : ''
                           }`}
                         >
                           {label}
+                          {filtroAtivo(campo) && (
+                            <Funnel size={11} weight="fill" className="text-amber-300" />
+                          )}
                           {getSortIcon(campo)}
                         </div>
                       </th>
                     ))}
-                    <th className="px-2 py-2 text-left">Chave de Acesso</th>
+                    <th
+                      className={`px-2 py-2 text-left cursor-pointer hover:bg-[#000638]/80 transition-colors ${
+                        filtroAberto?.campo === 'chave' ? 'bg-[#000638]/70' : ''
+                      }`}
+                      onClick={(e) => abrirFiltro('chave', 'Chave de Acesso', e)}
+                      title="Clique para filtrar"
+                    >
+                      <div className="flex items-center gap-1">
+                        Chave de Acesso
+                        {filtroAtivo('chave') && (
+                          <Funnel size={11} weight="fill" className="text-amber-300" />
+                        )}
+                      </div>
+                    </th>
                   </tr>
-                  {/* linha de filtros por coluna */}
-                  {(() => {
-                    const cls =
-                      'w-full mb-0 px-1 py-0.5 text-[10px] font-normal normal-case tracking-normal text-gray-800 bg-white border border-white/40 rounded focus:outline-none focus:ring-1 focus:ring-amber-300';
-                    const inp = (k, ph) => (
-                      <input
-                        type="text"
-                        value={filtrosColuna[k] || ''}
-                        onChange={(e) => setFiltro(k, e.target.value)}
-                        placeholder={ph}
-                        className={cls}
-                      />
-                    );
-                    const sel = (k, opts) => (
-                      <select value={filtrosColuna[k] || ''} onChange={(e) => setFiltro(k, e.target.value)} className={cls}>
-                        <option value="">Todas</option>
-                        {opts.map(([v, l]) => (
-                          <option key={v} value={v}>
-                            {l}
-                          </option>
-                        ))}
-                      </select>
-                    );
-                    return (
-                      <tr className="bg-[#000638]/90">
-                        <th className="px-1 py-1">
-                          {sel(
-                            'empresa_codigo',
-                            opcoesFilial.map((c) => [String(c), `${c} - ${nomePorCodigo[c] || ''}`]),
-                          )}
-                        </th>
-                        <th className="px-1 py-1">{inp('empresa_nome', 'filtrar…')}</th>
-                        <th className="px-1 py-1">{inp('data_emissao', 'dd/mm/aaaa')}</th>
-                        <th className="px-1 py-1">{inp('nf', 'nº')}</th>
-                        <th className="px-1 py-1">{inp('emitente_nome', 'filtrar…')}</th>
-                        <th className="px-1 py-1">{sel('tipo_operacao', [['1', 'Saída'], ['0', 'Entrada']])}</th>
-                        <th className="px-1 py-1">{sel('situacao', Object.entries(SITUACAO_LABEL))}</th>
-                        <th className="px-1 py-1">{sel('manifestacao', [['sem', 'Pendente'], ['com', 'Manifestada']])}</th>
-                        <th className="px-1 py-1">{sel('escriturada', Object.entries(ESCRITURACAO_ROTULO))}</th>
-                        <th className="px-1 py-1">{sel('schema_origem', [['SEFAZ', 'SEFAZ'], ['TOTVS', 'TOTVS']])}</th>
-                        <th className="px-1 py-1">{inp('valor_total', 'valor')}</th>
-                        <th className="px-1 py-1">{inp('chave_acesso', 'chave')}</th>
-                      </tr>
-                    );
-                  })()}
                 </thead>
                 <tbody className="bg-white">
                   {dadosPaginados.map((item, index) => (
