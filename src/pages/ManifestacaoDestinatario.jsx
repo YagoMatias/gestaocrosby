@@ -49,6 +49,28 @@ const origemDoRegistro = (schema) =>
 const modeloDaChave = (chave) => String(chave || '').slice(20, 22);
 const MODELO_LABEL = { 55: 'NF-e', 57: 'CT-e', 65: 'NFC-e' };
 
+// Status dos chamados do Dryland (mesmos rótulos do backend /api/dryland)
+const STATUS_CHAMADO = {
+  aberto: '🔵 Aberto',
+  em_andamento: '🟢 Em andamento',
+  aguardando_solicitante: '🟠 Aguardando solicitante',
+  aguardando_responsavel: '🟣 Aguardando responsável',
+  aguardando_diretoria: '🟡 Aguardando diretoria',
+  aguardando_prestador: '🔧 Aguardando prestador',
+  enviado_loja: '📦 Enviado para a loja',
+  pausado: '⏸️ Pausado',
+  concluido: '✅ Resolvido',
+  cancelado: '🚫 Cancelado',
+};
+const corChamado = (status) =>
+  status === 'concluido'
+    ? 'text-green-700 bg-green-50 border-green-200 hover:bg-green-100'
+    : status === 'em_andamento'
+      ? 'text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100'
+      : String(status || '').startsWith('aguardando') || status === 'pausado'
+        ? 'text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100'
+        : 'text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100';
+
 // Situação da escrituração. Não se escritura nota cancelada, denegada nem
 // de entrada — elas ficam fora dos dois lados e de qualquer contagem.
 // A exclusão vem ANTES de olhar a fatura: existem notas de entrada e uma
@@ -543,6 +565,7 @@ const ManifestacaoDestinatario = () => {
   const [situacao, setSituacao] = useState('');
   const [origem, setOrigem] = useState('');
   const [documento, setDocumento] = useState(''); // '' | '55' NF-e | '57' CT-e (Niziany, 27/10/2026)
+  const [filtroChamado, setFiltroChamado] = useState(''); // '' | 'com' | 'sem' (Niziany, 27/10/2026)
   const [escrituracao, setEscrituracao] = useState('');
   const [importando, setImportando] = useState('');
   const [modalEscrituracao, setModalEscrituracao] = useState(false);
@@ -692,6 +715,50 @@ const ManifestacaoDestinatario = () => {
       await aplicarOutros(item, { desfazer: true });
     } catch (e) {
       setErro(`Não consegui desfazer: ${e.message}`);
+    }
+  };
+
+  // Modal do chamado dentro da tela (acompanhar o retorno sem ir ao Dryland)
+  const [chamadoModal, setChamadoModal] = useState(null); // { nota, lista, idx, detalhe, carregando, erro }
+  const [respostaChamado, setRespostaChamado] = useState('');
+  const [enviandoResposta, setEnviandoResposta] = useState(false);
+  const carregarDetalheChamado = async (id) => {
+    const r = await fetch(`${API_BASE_URL}/api/dryland/chamados/${id}`);
+    const json = await r.json();
+    if (!r.ok || !json.success) throw new Error(json.message || json.error || `HTTP ${r.status}`);
+    return json.data;
+  };
+  const abrirChamadoNota = async (item, idx = 0) => {
+    const lista = chamadosPorNota[item.id] || [];
+    if (!lista.length) return;
+    setRespostaChamado('');
+    setChamadoModal({ nota: item, lista, idx, detalhe: null, carregando: true, erro: '' });
+    try {
+      const detalhe = await carregarDetalheChamado(lista[idx].id);
+      setChamadoModal((m) => (m ? { ...m, detalhe, carregando: false } : m));
+    } catch (e) {
+      setChamadoModal((m) => (m ? { ...m, carregando: false, erro: e.message } : m));
+    }
+  };
+  const responderChamado = async () => {
+    if (!chamadoModal || !respostaChamado.trim()) return;
+    const id = chamadoModal.lista[chamadoModal.idx].id;
+    setEnviandoResposta(true);
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/dryland/chamados/${id}/mensagem`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ texto: respostaChamado.trim(), por: nomeUsuario || 'headcoach', lado: 'setor' }),
+      });
+      const json = await r.json();
+      if (!r.ok || !json.success) throw new Error(json.message || json.error || `HTTP ${r.status}`);
+      setRespostaChamado('');
+      const detalhe = await carregarDetalheChamado(id);
+      setChamadoModal((m) => (m ? { ...m, detalhe } : m));
+    } catch (e) {
+      setErro(`Não consegui responder o chamado: ${e.message}`);
+    } finally {
+      setEnviandoResposta(false);
     }
   };
 
@@ -1062,7 +1129,8 @@ const ManifestacaoDestinatario = () => {
       (item) =>
         passaPesquisa(item) &&
         passaFiltrosColuna(item) &&
-        (!documento || modeloDaChave(item.chave_acesso) === documento),
+        (!documento || modeloDaChave(item.chave_acesso) === documento) &&
+        (!filtroChamado || (filtroChamado === 'com') === (chamadosPorNota[item.id] || []).length > 0),
     );
 
     if (ordenacao.campo) {
@@ -1088,7 +1156,7 @@ const ManifestacaoDestinatario = () => {
 
     return filtrados;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dados, ordenacao, pesquisa, filtrosColuna, documento, nomePorCodigo]);
+  }, [dados, ordenacao, pesquisa, filtrosColuna, documento, filtroChamado, chamadosPorNota, nomePorCodigo]);
 
   const totalPages = Math.ceil(dadosProcessados.length / itensPorPagina);
 
@@ -1099,7 +1167,7 @@ const ManifestacaoDestinatario = () => {
 
   useEffect(() => {
     setPaginaAtual(1);
-  }, [dados, ordenacao, pesquisa, filtrosColuna, documento]);
+  }, [dados, ordenacao, pesquisa, filtrosColuna, documento, filtroChamado]);
 
   const totais = useMemo(() => {
     return dadosProcessados.reduce(
@@ -1377,6 +1445,21 @@ const ManifestacaoDestinatario = () => {
             </div>
             <div>
               <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                Chamado
+              </label>
+              <select
+                value={filtroChamado}
+                onChange={(e) => setFiltroChamado(e.target.value)}
+                className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+                title="Notas que já têm chamado no Dryland (cruzado por fornecedor + nº da NF/valor)"
+              >
+                <option value="">Todas</option>
+                <option value="com">Com chamado</option>
+                <option value="sem">Sem chamado</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
                 Escrituração
               </label>
               <select
@@ -1484,9 +1567,18 @@ const ManifestacaoDestinatario = () => {
               )}
             </div>
             {totais.comChamado > 0 && (
-              <div className="text-[9px] text-indigo-700 mt-0.5" title="Pendentes que já têm chamado aberto no Dryland (cruzado por fornecedor + nº da NF/valor)">
-                🎫 {totais.comChamado} pendente{totais.comChamado === 1 ? '' : 's'} já com chamado aberto
-              </div>
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setFiltroChamado('com');
+                }}
+                className="block text-[9px] text-indigo-700 mt-0.5 hover:underline"
+                title="Clique para ver só as notas com chamado (cruzado por fornecedor + nº da NF/valor)"
+              >
+                🎫 {totais.comChamado} pendente{totais.comChamado === 1 ? '' : 's'} com chamado → ver
+              </span>
             )}
             {totais.naoAplica > 0 && (
               <div className="text-[9px] text-gray-400 mt-0.5">
@@ -1665,6 +1757,133 @@ const ManifestacaoDestinatario = () => {
               </div>
             </div>
           </div>,
+          document.body,
+        )}
+
+      {/* Modal: chamado do Dryland dentro da tela (Niziany, 27/10/2026) */}
+      {chamadoModal &&
+        createPortal(
+          (() => {
+            const atual = chamadoModal.lista[chamadoModal.idx];
+            const d = chamadoModal.detalhe;
+            const ch = d?.chamado || {};
+            const msgs = d?.mensagens || [];
+            const fmtDH = (v) => (v ? new Date(v).toLocaleString('pt-BR') : '—');
+            return (
+              <div
+                className="fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4"
+                onMouseDown={(e) => {
+                  if (e.target === e.currentTarget) setChamadoModal(null);
+                }}
+              >
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col" onMouseDown={(e) => e.stopPropagation()}>
+                  <div className="bg-[#000638] text-white px-4 py-3 rounded-t-xl flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-sm font-bold truncate">🎫 Chamado #{atual.numero} · {STATUS_CHAMADO[ch.status || atual.status] || ch.status || atual.status}</div>
+                      <div className="text-[11px] text-white/80 truncate">{ch.assunto || atual.assunto}</div>
+                    </div>
+                    <button type="button" onClick={() => setChamadoModal(null)} className="text-white/80 hover:text-white shrink-0">
+                      <X size={16} weight="bold" />
+                    </button>
+                  </div>
+                  {chamadoModal.lista.length > 1 && (
+                    <div className="px-4 pt-2 flex flex-wrap gap-1">
+                      {chamadoModal.lista.map((c, i) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => abrirChamadoNota(chamadoModal.nota, i)}
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${i === chamadoModal.idx ? 'bg-[#000638] text-white border-[#000638]' : 'bg-white text-gray-600 border-gray-200'}`}
+                        >
+                          #{c.numero}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div className="p-4 space-y-3 overflow-y-auto">
+                    <div className="text-[11px] text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                      <b className="text-[#000638]">Nota:</b> NF {nfDaChave(chamadoModal.nota.chave_acesso)} · {chamadoModal.nota.emitente_nome || '—'} ·{' '}
+                      {(parseFloat(chamadoModal.nota.valor_total) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      <span className="text-gray-400"> · casou por {atual.motivo}</span>
+                    </div>
+                    {chamadoModal.carregando ? (
+                      <div className="text-xs text-gray-500 py-6 text-center">Carregando chamado…</div>
+                    ) : chamadoModal.erro ? (
+                      <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{chamadoModal.erro}</div>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-[11px]">
+                          <div className="border border-gray-200 rounded-lg px-2 py-1.5"><div className="text-[9px] uppercase text-gray-400">Setor</div><div className="font-semibold">{ch.setor || atual.setor}</div></div>
+                          <div className="border border-gray-200 rounded-lg px-2 py-1.5"><div className="text-[9px] uppercase text-gray-400">Loja / Empresa</div><div className="font-semibold">{ch.loja_nome || atual.loja_nome || ch.loja_cd || '—'}</div></div>
+                          <div className="border border-gray-200 rounded-lg px-2 py-1.5"><div className="text-[9px] uppercase text-gray-400">Responsável</div><div className="font-semibold">{ch.responsavel_nome || ch.responsavel_sugerido || '—'}</div></div>
+                          <div className="border border-gray-200 rounded-lg px-2 py-1.5"><div className="text-[9px] uppercase text-gray-400">Aberto em</div><div className="font-semibold">{fmtDH(ch.criado_em)}{ch.aberto_por ? ` · ${ch.aberto_por}` : ''}</div></div>
+                          <div className="border border-gray-200 rounded-lg px-2 py-1.5"><div className="text-[9px] uppercase text-gray-400">Prazo</div><div className={`font-semibold ${ch.atrasado ? 'text-red-600' : ''}`}>{fmtDH(ch.prazo)}{ch.atrasado ? ' · atrasado' : ''}</div></div>
+                          <div className="border border-gray-200 rounded-lg px-2 py-1.5"><div className="text-[9px] uppercase text-gray-400">Concluído em</div><div className="font-semibold">{fmtDH(ch.concluido_em)}</div></div>
+                        </div>
+                        {ch.texto && (
+                          <div className="text-xs text-gray-700 whitespace-pre-wrap border border-gray-200 rounded-lg px-3 py-2 bg-white">{ch.texto}</div>
+                        )}
+                        {ch.nota_resolucao && (
+                          <div className="text-xs text-green-800 whitespace-pre-wrap border border-green-200 rounded-lg px-3 py-2 bg-green-50"><b>Resolução:</b> {ch.nota_resolucao}</div>
+                        )}
+                        <div>
+                          <div className="text-[10px] font-bold uppercase text-gray-500 mb-1">Conversa ({msgs.length})</div>
+                          {msgs.length === 0 ? (
+                            <div className="text-[11px] text-gray-400 italic">Sem mensagens ainda.</div>
+                          ) : (
+                            <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+                              {msgs.map((m, i) => (
+                                <div key={m.id || i} className={`text-[11px] rounded-lg px-3 py-1.5 border ${m.lado === 'setor' ? 'bg-indigo-50 border-indigo-100' : 'bg-gray-50 border-gray-200'}`}>
+                                  <div className="text-[9px] text-gray-400">{m.por || (m.lado === 'setor' ? 'setor' : 'loja')} · {fmtDH(m.criado_em || m.em)}</div>
+                                  <div className="whitespace-pre-wrap text-gray-800">{m.texto}</div>
+                                  {m.anexo_url && (
+                                    <a href={m.anexo_url} target="_blank" rel="noreferrer" className="text-[10px] text-blue-700 underline">anexo</a>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {ch.status !== 'concluido' && ch.status !== 'cancelado' && (
+                          <div>
+                            <textarea
+                              value={respostaChamado}
+                              onChange={(e) => setRespostaChamado(e.target.value)}
+                              rows={2}
+                              placeholder="Responder no chamado (a loja/setor recebe no WhatsApp)…"
+                              className="w-full mb-0 border border-gray-300 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#000638]"
+                            />
+                            <div className="flex justify-end mt-1">
+                              <button
+                                type="button"
+                                onClick={responderChamado}
+                                disabled={enviandoResposta || !respostaChamado.trim()}
+                                className="px-3 py-1.5 text-xs font-bold text-white bg-[#000638] hover:bg-[#000638]/90 rounded-lg disabled:opacity-50"
+                              >
+                                {enviandoResposta ? 'Enviando…' : 'Enviar resposta'}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                  <div className="px-4 py-2 border-t border-gray-100 flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => navigate('/tecnologia/chamados-dryland')}
+                      className="text-[10px] text-gray-500 hover:underline"
+                    >
+                      Abrir a tela de chamados →
+                    </button>
+                    <button type="button" onClick={() => setChamadoModal(null)} className="px-3 py-1.5 text-xs font-bold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg">
+                      Fechar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })(),
           document.body,
         )}
 
@@ -1918,14 +2137,14 @@ const ManifestacaoDestinatario = () => {
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
-                              navigate('/tecnologia/chamados-dryland');
+                              abrirChamadoNota(item);
                             }}
                             title={(chamadosPorNota[item.id] || [])
                               .map((c) => `#${c.numero} · ${c.setor} · ${c.status}\n${c.assunto}\n(casou por ${c.motivo})`)
                               .join('\n\n')}
-                            className="block mx-auto mt-0.5 text-[9px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-1 py-0.5 hover:bg-indigo-100 whitespace-nowrap"
+                            className={`block mx-auto mt-0.5 text-[9px] font-bold border rounded px-1 py-0.5 whitespace-nowrap ${corChamado(chamadosPorNota[item.id][0].status)}`}
                           >
-                            🎫 #{chamadosPorNota[item.id][0].numero} · {chamadosPorNota[item.id][0].setor}
+                            🎫 #{chamadosPorNota[item.id][0].numero} · {STATUS_CHAMADO[chamadosPorNota[item.id][0].status] || chamadosPorNota[item.id][0].status}
                             {chamadosPorNota[item.id].length > 1 ? ` +${chamadosPorNota[item.id].length - 1}` : ''}
                           </button>
                         )}
