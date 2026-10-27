@@ -79,7 +79,11 @@ export default function Forecast() {
   const [visao, setVisao] = useState('mensal');
   const [bloco, setBloco] = useState('dre');
 
-  const colunas = useMemo(() => base.colunas.filter((c) => c.grupo === visao), [visao]);
+  // Niziany (27/10/2026): analisar só 2026 — meses de 2025 retirados da visão.
+  const colunas = useMemo(
+    () => base.colunas.filter((c) => c.grupo === visao && c.ano !== 2025),
+    [visao],
+  );
   const grupos = useMemo(() => agruparColunas(colunas), [colunas]);
   const linhas = base.blocos[bloco] || [];
 
