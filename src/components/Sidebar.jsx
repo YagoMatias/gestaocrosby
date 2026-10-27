@@ -11,6 +11,7 @@ import {
   Receipt,
   FileText,
   Calendar,
+  CalendarCheck,
   ChartLineUp,
   CheckCircle,
   Megaphone,
