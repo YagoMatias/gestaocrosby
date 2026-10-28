@@ -262,18 +262,37 @@ export default function Forecast() {
     (async () => {
       const resultados = await Promise.all(
         alvos.map(async ({ col, mes }) => {
-          try {
-            const r = await fetch(
-              `${API_BASE_URL}/api/forecast-dre/receita-canais?mes=${mes}`,
-            );
-            if (!r.ok) return null;
-            const j = await r.json();
-            const d = j?.data || j;
-            if (!d || typeof d.varejo !== 'number') return null;
-            return [col, d];
-          } catch {
-            return null; // falha → mantém o número da planilha
-          }
+          // Receita por canal + CREDEV, e em paralelo a folha (Pessoal Fixo)
+          const [recOk, pf] = await Promise.all([
+            (async () => {
+              try {
+                const r = await fetch(
+                  `${API_BASE_URL}/api/forecast-dre/receita-canais?mes=${mes}`,
+                );
+                if (!r.ok) return null;
+                const j = await r.json();
+                const d = j?.data || j;
+                return d && typeof d.varejo === 'number' ? d : null;
+              } catch {
+                return null;
+              }
+            })(),
+            (async () => {
+              try {
+                const r = await fetch(
+                  `${API_BASE_URL}/api/forecast-dre/pessoal-fixo?mes=${mes}`,
+                );
+                if (!r.ok) return null;
+                const j = await r.json();
+                const d = j?.data || j;
+                return d && typeof d.pessoal_fixo === 'number' ? d.pessoal_fixo : null;
+              } catch {
+                return null;
+              }
+            })(),
+          ]);
+          if (!recOk && pf == null) return null;
+          return [col, recOk, pf];
         }),
       );
       if (cancelado) return;
@@ -281,17 +300,21 @@ export default function Forecast() {
       const novoCredevCanais = {};
       for (const item of resultados) {
         if (!item) continue;
-        const [col, d] = item;
+        const [col, d, pf] = item;
         novo[col] = {};
-        for (const [linha, chave] of Object.entries(CANAL_POR_LINHA)) {
-          if (typeof d[chave] === 'number') novo[col][linha] = d[chave];
+        if (d) {
+          for (const [linha, chave] of Object.entries(CANAL_POR_LINHA)) {
+            if (typeof d[chave] === 'number') novo[col][linha] = d[chave];
+          }
+          // CREDEV vem do Contas a Receber (já negativo).
+          if (typeof d.credev === 'number') novo[col].CREDEV = d.credev;
+          // CREDEV por canal (só visualização)
+          if (d.credev_canais && typeof d.credev_canais === 'object') {
+            novoCredevCanais[col] = d.credev_canais;
+          }
         }
-        // CREDEV vem do Contas a Receber (já negativo).
-        if (typeof d.credev === 'number') novo[col].CREDEV = d.credev;
-        // CREDEV por canal (só visualização)
-        if (d.credev_canais && typeof d.credev_canais === 'object') {
-          novoCredevCanais[col] = d.credev_canais;
-        }
+        // Pessoal Fixo vem da folha do Dryland (já negativo).
+        if (typeof pf === 'number') novo[col]['PESSOAL FIXO'] = pf;
       }
       setOverrides(novo);
       setCredevCanais(novoCredevCanais);
