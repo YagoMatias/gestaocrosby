@@ -4,10 +4,24 @@
 // Layout no padrão das demais páginas do HeadCoach (azul #000638, cabeçalho
 // cinza, cards com borda). Os valores vêm de src/data/forecastBase.json; as
 // visões e blocos extras seguem no JSON caso precise voltar.
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ChartLineUp } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import base from '../data/forecastBase.json';
+import { API_BASE_URL } from '../config/constants';
+
+// Automação da receita bruta (Niziany, 27/10/2026): a partir de setembro/2026
+// os canais vêm do New Forecast (GET /api/forecast-dre/receita-canais), já com
+// o showroom separado por cliente. Jan–ago seguem com os números da planilha.
+// Mapa: coluna da tela (key do forecastBase) → mês YYYY-MM a puxar.
+const MESES_AUTOMATICOS = [{ col: 'V', mes: '2026-09' }];
+const CANAL_POR_LINHA = {
+  VAREJO: 'varejo',
+  MULTIMARCAS: 'multimarcas',
+  FRANQUIA: 'franquia',
+  REVENDA: 'revenda',
+  BAZAR: 'bazar',
+};
 
 const TIPO_ROTULO = { realizado: 'Realizado', forecast: 'Previsão' };
 
@@ -59,6 +73,45 @@ export default function Forecast() {
   const grupos = useMemo(() => agruparColunas(colunas), [colunas]);
   const linhas = base.blocos.dre || [];
 
+  // Overrides ao vivo por coluna: { [colKey]: { VAREJO: v, MULTIMARCAS: v, ... } }
+  const [overrides, setOverrides] = useState({});
+
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      const resultados = await Promise.all(
+        MESES_AUTOMATICOS.map(async ({ col, mes }) => {
+          try {
+            const r = await fetch(
+              `${API_BASE_URL}/api/forecast-dre/receita-canais?mes=${mes}`,
+            );
+            if (!r.ok) return null;
+            const j = await r.json();
+            const d = j?.data || j;
+            if (!d || typeof d.varejo !== 'number') return null;
+            return [col, d];
+          } catch {
+            return null; // falha → mantém o número da planilha
+          }
+        }),
+      );
+      if (cancelado) return;
+      const novo = {};
+      for (const item of resultados) {
+        if (!item) continue;
+        const [col, d] = item;
+        novo[col] = {};
+        for (const [linha, chave] of Object.entries(CANAL_POR_LINHA)) {
+          if (typeof d[chave] === 'number') novo[col][linha] = d[chave];
+        }
+      }
+      setOverrides(novo);
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, []);
+
   return (
     <div className="w-full max-w-7xl mx-auto px-2 sm:px-4 py-4">
       <PageTitle
@@ -83,6 +136,9 @@ export default function Forecast() {
             </span>
             <span className="inline-flex items-center gap-1.5 text-gray-600">
               <span className="w-2.5 h-2.5 rounded-sm bg-blue-600" /> Previsão
+            </span>
+            <span className="inline-flex items-center gap-1.5 text-gray-600">
+              <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> New Forecast
             </span>
           </div>
         </div>
@@ -142,20 +198,26 @@ export default function Forecast() {
                       {l.label}
                     </td>
                     {colunas.map((c) => {
-                      const v = l.valores[c.key];
+                      const ovr = overrides[c.key]?.[l.label];
+                      const auto = ovr !== undefined;
+                      const v = auto ? ovr : l.valores[c.key];
                       const negativo = typeof v === 'number' && v < 0;
                       return (
                         <td
                           key={c.key}
+                          title={auto ? 'Puxado do New Forecast' : undefined}
                           className={
                             'border-b border-gray-100 px-2 py-1.5 text-right tabular-nums whitespace-nowrap ' +
                             TIPO_CELULA[c.tipo] +
                             (destaque ? ' font-semibold' : '') +
+                            (auto ? ' bg-emerald-50 text-emerald-800 font-semibold' : '') +
                             (negativo
                               ? ' text-red-600'
                               : v == null
                                 ? ' text-gray-300'
-                                : ' text-gray-800')
+                                : auto
+                                  ? ''
+                                  : ' text-gray-800')
                           }
                         >
                           {formatar(v, l.fmt)}
@@ -171,7 +233,9 @@ export default function Forecast() {
       </div>
 
       <p className="text-[11px] text-gray-400 px-1 mt-3">
-        Base: {base.origem}. Valores negativos em vermelho; coluna de Previsão destacada em azul.
+        Base: {base.origem}. A partir de setembro/2026 a receita bruta por canal (células em
+        verde) é puxada do New Forecast, com o showroom/fábricas separado por cliente
+        (franquia × multimarcas). Jan–ago seguem com os números da planilha.
       </p>
     </div>
   );
