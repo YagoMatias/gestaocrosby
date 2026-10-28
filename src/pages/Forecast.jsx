@@ -137,6 +137,7 @@ export default function Forecast() {
   // Proventos dos empregados (sem pró-labore) e pró-labore editável por coluna
   const [pfEmpregados, setPfEmpregados] = useState({});
   const [prolabore, setProlabore] = useState({});
+  const [editandoProl, setEditandoProl] = useState(null); // col sendo editada
   const salvarProlabore = (col, mes, valor) => {
     setProlabore((p) => ({ ...p, [col]: valor }));
     fetch(`${API_BASE_URL}/api/forecast-dre/prolabore`, {
@@ -352,8 +353,10 @@ export default function Forecast() {
           novoPfEmp[col] = pf.proventos_empregados || 0;
           novoProlabore[col] = typeof pf.prolabore === 'number' ? pf.prolabore : 80000;
           if (Array.isArray(pf.rubricas)) {
-            // pró-labore é tratado à parte (editável); fica fora da lista fixa
-            novoRubricas[col] = pf.rubricas.filter((r) => !r.editavel);
+            // pró-labore é tratado à parte (editável); e tira o que não entra na DRE
+            novoRubricas[col] = pf.rubricas.filter(
+              (r) => !r.editavel && r.entra !== false,
+            );
           }
         }
       }
@@ -627,37 +630,49 @@ export default function Forecast() {
                     </tr>
                   )}
                   {ehFolha && folhaAberta && (
-                    <tr className="bg-amber-50/50">
-                      <td className="sticky left-0 z-10 border-b border-r border-gray-100 pl-12 pr-3 py-1 whitespace-nowrap bg-amber-50 text-[10px] font-semibold text-amber-800">
+                    <tr className="bg-slate-50/50">
+                      <td className="sticky left-0 z-10 border-b border-r border-gray-100 pl-12 pr-3 py-1 whitespace-nowrap bg-slate-50 text-[10px] text-emerald-700">
                         <span className="inline-flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                          PRÓ-LABORE (DIRETORES) · editável
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          PRÓ-LABORE (DIRETORES)
                         </span>
                       </td>
                       {colunas.map((c) => {
                         const temFolha = pfEmpregados[c.key] !== undefined;
+                        const editando = editandoProl === c.key;
+                        const val = prolabore[c.key] ?? 80000;
                         return (
                           <td
                             key={c.key}
-                            className="border-b border-gray-100 px-1.5 py-1 text-right tabular-nums whitespace-nowrap bg-amber-50/40"
+                            onClick={() => temFolha && !editando && setEditandoProl(c.key)}
+                            title={temFolha ? 'Clique para editar o pró-labore' : undefined}
+                            className={
+                              'border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] bg-slate-50/40 text-emerald-700 ' +
+                              (temFolha && !editando ? 'cursor-pointer hover:underline' : '')
+                            }
                           >
                             {temFolha ? (
-                              <input
-                                type="number"
-                                defaultValue={prolabore[c.key] ?? 80000}
-                                onBlur={(e) => {
-                                  const n = Math.max(0, Number(e.target.value) || 0);
-                                  if (n !== (prolabore[c.key] ?? 80000))
-                                    salvarProlabore(c.key, colParaMes(c), n);
-                                }}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') e.target.blur();
-                                }}
-                                className="w-24 text-right text-[10px] text-amber-800 bg-white border border-amber-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-amber-400"
-                                title="Pró-labore dos diretores (editável). Entra no Pessoal Fixo."
-                              />
+                              editando ? (
+                                <input
+                                  type="number"
+                                  autoFocus
+                                  defaultValue={val}
+                                  onBlur={(e) => {
+                                    const n = Math.max(0, Number(e.target.value) || 0);
+                                    if (n !== val) salvarProlabore(c.key, colParaMes(c), n);
+                                    setEditandoProl(null);
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') e.target.blur();
+                                    if (e.key === 'Escape') setEditandoProl(null);
+                                  }}
+                                  className="w-20 text-right text-[10px] text-emerald-800 bg-white border border-emerald-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                                />
+                              ) : (
+                                formatar(val, 'moeda')
+                              )
                             ) : (
-                              <span className="text-[10px] text-gray-300">–</span>
+                              <span className="text-gray-300">–</span>
                             )}
                           </td>
                         );
