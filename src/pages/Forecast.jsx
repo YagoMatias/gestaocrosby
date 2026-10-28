@@ -190,6 +190,7 @@ export default function Forecast() {
 
   const [recolhidos, setRecolhidos] = useState(() => new Set());
   const [telaCheia, setTelaCheia] = useState(false);
+  const [carregandoAuto, setCarregandoAuto] = useState(false);
   const toggleRecolher = (id) =>
     setRecolhidos((prev) => {
       const n = new Set(prev);
@@ -238,6 +239,7 @@ export default function Forecast() {
     let cancelado = false;
     const alvos = mesesAutomaticos(colunas);
     if (alvos.length === 0) return undefined;
+    setCarregandoAuto(true);
     (async () => {
       const resultados = await Promise.all(
         alvos.map(async ({ col, mes }) => {
@@ -268,6 +270,7 @@ export default function Forecast() {
         if (typeof d.credev === 'number') novo[col].CREDEV = d.credev;
       }
       setOverrides(novo);
+      setCarregandoAuto(false);
     })();
     return () => {
       cancelado = true;
@@ -303,6 +306,12 @@ export default function Forecast() {
             <span className="text-[10px] text-gray-400 hidden sm:inline">
               Clique no mês para Realizado / Previsão · clique na seção para expandir
             </span>
+            {carregandoAuto && (
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-emerald-700">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                Atualizando do New Forecast…
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 text-[10px] font-semibold">
