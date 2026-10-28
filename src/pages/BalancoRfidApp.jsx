@@ -7,6 +7,8 @@
 //
 // Fluxo: escolher a loja → conectar o leitor → INICIAR → PAUSAR → FINALIZAR
 // (salva "ARQUIVO BALANÇO LOJA X DATA HORA" em /balanco-rfid/arquivos).
+// PROCURAR EPC (components/ProcurarEpcModal) localiza uma etiqueta pela
+// força do sinal, em %, sem mexer na contagem.
 // A contagem em andamento fica guardada no aparelho (localStorage) e sobrevive
 // a fechar o app ou cair a internet.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -26,10 +28,12 @@ import {
   Trash,
   DownloadSimple,
   Storefront,
+  MagnifyingGlass,
 } from '@phosphor-icons/react';
 import { API_BASE_URL } from '../config/constants';
 import { useAuth } from '../components/AuthContext';
 import { getUserCompanies } from '../services/userCompaniesService';
+import ProcurarEpcModal from '../components/ProcurarEpcModal';
 
 const URL_APK = 'https://dorztqiunewggydvkjnf.supabase.co/storage/v1/object/public/pdv-updates/balanco-rfid/Balanco-RFID.apk';
 const MODULO = { 0: 'encaixada', 1: 'separada', 2: 'ligando', 3: 'desligada' };
@@ -104,6 +108,13 @@ export default function BalancoRfidApp() {
   const [salvo, setSalvo] = useState(null);
   const [msg, setMsg] = useState(null);
   const ultimoBip = useRef(0);
+
+  // PROCURAR EPC: enquanto a busca está aberta (ou a leitura dela não parou),
+  // as etiquetas lidas vão para o medidor e NÃO entram no balanço
+  const [procurar, setProcurar] = useState(null); // { epc } | null
+  const buscaRef = useRef(false);
+  const procurarAberto = useRef(false);
+  procurarAberto.current = !!procurar;
 
   const lendo = !!leitor.lendo;
   const tempoMs = acumuladoMs + (lendo && inicioTrecho.current ? agora - inicioTrecho.current : 0);
@@ -233,11 +244,18 @@ export default function BalancoRfidApp() {
   useEffect(() => {
     const ouvir = (ev) => {
       const d = ev.detail || {};
-      if (d.tipo === 'tags') receberTags(d.tags || []);
-      else if (d.tipo === 'status' || d.tipo === 'potencia') {
+      if (d.tipo === 'tags') {
+        if (!buscaRef.current) receberTags(d.tags || []);
+      } else if (d.tipo === 'status' || d.tipo === 'potencia') {
+        // busca fechada e leitura parada → as próximas leituras voltam ao balanço
+        if (d.lendo === false && buscaRef.current && !procurarAberto.current) {
+          setTimeout(() => {
+            if (!procurarAberto.current) buscaRef.current = false;
+          }, 600);
+        }
         setLeitor((prev) => {
-          // início/fim de um trecho de leitura → cronômetro
-          if (d.lendo && !prev.lendo) inicioTrecho.current = Date.now();
+          // início/fim de um trecho de leitura → cronômetro (a busca não conta)
+          if (d.lendo && !prev.lendo && !buscaRef.current) inicioTrecho.current = Date.now();
           if (!d.lendo && prev.lendo && inicioTrecho.current) {
             const trecho = Date.now() - inicioTrecho.current;
             inicioTrecho.current = null;
@@ -247,7 +265,7 @@ export default function BalancoRfidApp() {
         });
         if (d.potencia != null) setPotencia({ atual: d.potencia, max: d.potenciaMax ?? null });
       } else if (d.tipo === 'gatilho') {
-        if (d.apertado) {
+        if (d.apertado && !buscaRef.current) {
           // gatilho alterna iniciar / pausar
           if (leitorRef.current.lendo) ponte()?.pausar();
           else iniciarRef.current();
@@ -358,6 +376,19 @@ export default function BalancoRfidApp() {
     return null;
   };
 
+  const abrirProcurar = (epc = '') => {
+    if (lendo) return;
+    buscaRef.current = true;
+    setProcurar({ epc });
+  };
+
+  const fecharProcurar = () => {
+    setProcurar(null);
+    procurarAberto.current = false;
+    if (leitorRef.current.lendo) ponte()?.pausar(); // o status "parou" libera o balanço
+    else buscaRef.current = false;
+  };
+
   const descartar = () => {
     if (lendo || !qtd) return;
     if (!window.confirm(`Descartar a contagem atual (${qtd} peça(s))? Isso não pode ser desfeito.`)) return;
@@ -455,6 +486,7 @@ export default function BalancoRfidApp() {
           </div>
           {temPonte && (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600">
+              {leitor.marca && <span className="font-bold text-[#000638]">{leitor.marca === 'bluebird' ? 'Bluebird' : 'Urovo'}</span>}
               {leitor.modo && <span>{leitor.modo === 'bluetooth' ? 'via Bluetooth' : 'pistola encaixada'}</span>}
               {leitor.moduloStatus >= 0 && <span>pistola {MODULO[leitor.moduloStatus] || leitor.moduloStatus}</span>}
               {leitor.bateria >= 0 && (
@@ -479,10 +511,12 @@ export default function BalancoRfidApp() {
           {bt && !leitor.conectado && (
             <div className="rounded-lg ring-1 ring-gray-200 divide-y divide-gray-100">
               {bt.erro && <p className="p-2 text-xs text-rose-700">{bt.erro}</p>}
-              {!bt.erro && bt.dispositivos.length === 0 && <p className="p-2 text-xs text-gray-500">Nenhum aparelho pareado. Pareie a pistola nas configurações de Bluetooth do coletor.</p>}
+              {!bt.erro && bt.dispositivos.length === 0 && <p className="p-2 text-xs text-gray-500">Nenhum aparelho pareado. Pareie a pistola (Urovo ou Bluebird RFR900) nas configurações de Bluetooth do celular.</p>}
               {bt.dispositivos.map((d) => (
                 <button key={d.mac} onClick={() => ponte()?.conectarBluetooth(d.mac)} className="w-full text-left p-2.5 text-sm hover:bg-gray-50">
-                  <span className="font-semibold text-[#000638]">{d.nome}</span> <span className="text-xs text-gray-400 font-mono">{d.mac}</span>
+                  <span className="font-semibold text-[#000638]">{d.nome}</span>
+                  {d.marca === 'bluebird' && <span className="ml-1.5 inline-flex px-1.5 rounded-full bg-sky-50 text-sky-700 ring-1 ring-sky-200 text-[10px] font-bold align-middle">Bluebird</span>}{' '}
+                  <span className="text-xs text-gray-400 font-mono">{d.mac}</span>
                 </button>
               ))}
             </div>
@@ -545,6 +579,14 @@ export default function BalancoRfidApp() {
             </>
           )}
         </div>
+        {!lendo && (
+          <button
+            onClick={() => abrirProcurar()}
+            className="w-full h-12 rounded-xl bg-white ring-2 ring-[#000638] text-[#000638] text-base font-black inline-flex items-center justify-center gap-2 active:scale-[0.99]"
+          >
+            <MagnifyingGlass size={20} weight="bold" /> PROCURAR EPC
+          </button>
+        )}
         {temPonte && <p className="text-center text-[11px] text-gray-400">O gatilho da pistola também inicia e pausa.</p>}
         {modoTeste && !temPonte && (
           <button onClick={simular} className="w-full h-10 rounded-lg ring-1 ring-dashed ring-gray-400 text-xs text-gray-600">
@@ -571,11 +613,13 @@ export default function BalancoRfidApp() {
         {/* últimas peças */}
         {ultimas.length > 0 && (
           <div className="bg-white rounded-xl ring-1 ring-gray-200 p-3">
-            <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500 mb-1">Últimas peças</p>
+            <p className="text-[11px] font-bold uppercase tracking-wide text-gray-500 mb-1">Últimas peças{!lendo && <span className="normal-case font-normal text-gray-400"> · toque para procurar</span>}</p>
             <ul className="space-y-0.5">
               {ultimas.map((e) => (
-                <li key={e} className="font-mono text-[11px] text-gray-600 truncate">
-                  {e}
+                <li key={e}>
+                  <button onClick={() => abrirProcurar(e)} disabled={lendo} className="w-full text-left font-mono text-[11px] text-gray-600 truncate disabled:cursor-default">
+                    {e}
+                  </button>
                 </li>
               ))}
             </ul>
@@ -586,6 +630,18 @@ export default function BalancoRfidApp() {
           <button onClick={descartar} className="w-full text-xs text-rose-600 inline-flex items-center justify-center gap-1 py-2">
             <Trash size={13} /> Descartar contagem
           </button>
+        )}
+
+        {procurar && (
+          <ProcurarEpcModal
+            epcInicial={procurar.epc}
+            leitor={leitor}
+            potencia={potencia}
+            opcoesPotencia={opcoesPotencia}
+            temPonte={temPonte}
+            modoTeste={modoTeste}
+            onFechar={fecharProcurar}
+          />
         )}
 
         {modalSetor && (
