@@ -231,7 +231,9 @@ export default function Forecast() {
     for (const [col, lista] of Object.entries(rubricasFolha)) {
       for (const r of lista || []) {
         const key = r.tipo + '|' + r.desc;
-        const e = map.get(key) || { desc: r.desc, tipo: r.tipo, porCol: {}, max: 0 };
+        const e =
+          map.get(key) ||
+          { desc: r.desc, tipo: r.tipo, entra: r.entra !== false, porCol: {}, max: 0 };
         e.porCol[col] = r.valor;
         e.max = Math.max(e.max, Math.abs(Number(r.valor) || 0));
         map.set(key, e);
@@ -666,22 +668,34 @@ export default function Forecast() {
                     folhaAberta &&
                     rubricasUnidas.map((ru) => {
                       const prov = ru.tipo === 'provento';
+                      const entra = ru.entra !== false;
+                      const corLabel = !entra
+                        ? 'text-gray-400 line-through'
+                        : prov
+                          ? 'text-emerald-700'
+                          : 'text-red-700';
+                      const corVal = !entra
+                        ? 'text-gray-400 line-through'
+                        : prov
+                          ? 'text-emerald-700'
+                          : 'text-red-600';
+                      const dot = !entra ? 'bg-gray-300' : prov ? 'bg-emerald-500' : 'bg-red-500';
                       return (
                         <tr key={'rub-' + ru.tipo + ru.desc} className="bg-slate-50/50">
                           <td
                             className={
                               'sticky left-0 z-10 border-b border-r border-gray-100 pl-12 pr-3 py-1 whitespace-nowrap bg-slate-50 text-[10px] ' +
-                              (prov ? 'text-emerald-700' : 'text-red-700')
+                              corLabel
                             }
                           >
                             <span className="inline-flex items-center gap-1.5">
-                              <span
-                                className={
-                                  'w-1.5 h-1.5 rounded-full ' +
-                                  (prov ? 'bg-emerald-500' : 'bg-red-500')
-                                }
-                              />
+                              <span className={'w-1.5 h-1.5 rounded-full ' + dot} />
                               {ru.desc}
+                              {!entra && (
+                                <span className="ml-1 text-[9px] font-semibold text-gray-400 no-underline">
+                                  (não entra na DRE)
+                                </span>
+                              )}
                             </span>
                           </td>
                           {colunas.map((c) => {
@@ -689,10 +703,16 @@ export default function Forecast() {
                             return (
                               <td
                                 key={c.key}
-                                title={prov ? 'Provento' : 'Desconto'}
+                                title={
+                                  entra
+                                    ? prov
+                                      ? 'Provento (entra na DRE)'
+                                      : 'Desconto'
+                                    : 'Não entra na DRE'
+                                }
                                 className={
                                   'border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] bg-slate-50/40 ' +
-                                  (prov ? 'text-emerald-700' : 'text-red-600')
+                                  corVal
                                 }
                               >
                                 {typeof rv === 'number' && rv !== 0 ? formatar(rv, 'moeda') : '–'}
