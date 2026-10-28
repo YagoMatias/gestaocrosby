@@ -816,6 +816,7 @@ const ContasAReceber = () => {
             return tipo || '';
           })(),
           Empresa: item.cd_empresa || '',
+          'Grupo Empresa': item.grupo_empresa || '',
           Parcela: item.nr_parcela || '',
           Cancelamento:
             formatDateBR(item.dt_cancelamento) === '--'
@@ -1788,6 +1789,15 @@ const ContasAReceber = () => {
                     </th>
                     <th
                       className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
+                      onClick={() => handleSort('grupo_empresa')}
+                    >
+                      <div className="flex items-center justify-center">
+                        Grupo
+                        {getSortIcon('grupo_empresa')}
+                      </div>
+                    </th>
+                    <th
+                      className="px-1 py-0.5 text-center text-[8px] cursor-pointer hover:bg-[#000638]/80 transition-colors"
                       onClick={() => handleSort('nr_parcela')}
                     >
                       <div className="flex items-center justify-center">
@@ -2032,6 +2042,9 @@ const ContasAReceber = () => {
                       </td>
                       <td className="text-center text-gray-900 px-0.5 py-0.5">
                         {item.cd_empresa || '--'}
+                      </td>
+                      <td className="text-center text-gray-900 px-0.5 py-0.5 whitespace-nowrap">
+                        {item.grupo_empresa || '--'}
                       </td>
                       <td className="text-center text-gray-900 px-0.5 py-0.5">
                         {item.nr_parcela || '--'}

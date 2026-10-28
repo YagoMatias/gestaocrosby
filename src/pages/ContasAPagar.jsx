@@ -744,6 +744,7 @@ const ContasAPagar = (props) => {
         '% Rateio': parseFloat(grupo.item.perc_rateio || 0),
         'Vl Rateio': parseFloat(grupo.item.vl_rateio || 0),
         Empresa: grupo.item.cd_empresa || '',
+        'Grupo Empresa': grupo.item.grupo_empresa || '',
         Duplicata: grupo.item.nr_duplicata || '',
         Parcela: grupo.item.nr_parcela || '',
         Portador: grupo.item.nr_portador || '',
