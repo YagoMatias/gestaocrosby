@@ -131,6 +131,9 @@ export default function Forecast() {
   const [overrides, setOverrides] = useState({});
   // CREDEV por canal (só visualização): { [colKey]: { varejo, multimarcas, ... } }
   const [credevCanais, setCredevCanais] = useState({});
+  // Rubricas da folha por coluna (abrir Pessoal Fixo): { [colKey]: [{desc,tipo,qtd,valor}] }
+  const [rubricasFolha, setRubricasFolha] = useState({});
+  const [folhaAberta, setFolhaAberta] = useState(false);
   // Canais abertos para mostrar o CREDEV do canal (por label)
   const [canaisAbertos, setCanaisAbertos] = useState(() => new Set());
   const toggleCanal = (label) =>
@@ -210,6 +213,21 @@ export default function Forecast() {
   const [recolhidos, setRecolhidos] = useState(() => new Set());
   const [telaCheia, setTelaCheia] = useState(false);
   const [carregandoAuto, setCarregandoAuto] = useState(false);
+
+  // Rubricas da folha unidas por coluna (para abrir sob Pessoal Fixo).
+  const rubricasUnidas = useMemo(() => {
+    const map = new Map();
+    for (const [col, lista] of Object.entries(rubricasFolha)) {
+      for (const r of lista || []) {
+        const key = r.tipo + '|' + r.desc;
+        const e = map.get(key) || { desc: r.desc, tipo: r.tipo, porCol: {}, max: 0 };
+        e.porCol[col] = r.valor;
+        e.max = Math.max(e.max, Math.abs(Number(r.valor) || 0));
+        map.set(key, e);
+      }
+    }
+    return [...map.values()].sort((a, b) => b.max - a.max);
+  }, [rubricasFolha]);
   const toggleRecolher = (id) =>
     setRecolhidos((prev) => {
       const n = new Set(prev);
@@ -285,19 +303,20 @@ export default function Forecast() {
                 if (!r.ok) return null;
                 const j = await r.json();
                 const d = j?.data || j;
-                return d && typeof d.pessoal_fixo === 'number' ? d.pessoal_fixo : null;
+                return d && typeof d.pessoal_fixo === 'number' ? d : null;
               } catch {
                 return null;
               }
             })(),
           ]);
-          if (!recOk && pf == null) return null;
+          if (!recOk && !pf) return null;
           return [col, recOk, pf];
         }),
       );
       if (cancelado) return;
       const novo = {};
       const novoCredevCanais = {};
+      const novoRubricas = {};
       for (const item of resultados) {
         if (!item) continue;
         const [col, d, pf] = item;
@@ -314,10 +333,14 @@ export default function Forecast() {
           }
         }
         // Pessoal Fixo vem da folha do Dryland (já negativo).
-        if (typeof pf === 'number') novo[col]['PESSOAL FIXO'] = pf;
+        if (pf && typeof pf.pessoal_fixo === 'number') {
+          novo[col]['PESSOAL FIXO'] = pf.pessoal_fixo;
+          if (Array.isArray(pf.rubricas)) novoRubricas[col] = pf.rubricas;
+        }
       }
       setOverrides(novo);
       setCredevCanais(novoCredevCanais);
+      setRubricasFolha(novoRubricas);
       setCarregandoAuto(false);
     })();
     return () => {
@@ -466,12 +489,16 @@ export default function Forecast() {
                     (cc) => cc && typeof cc[canalKey] === 'number' && cc[canalKey] !== 0,
                   );
                 const canalAberto = temCredevCanal && canaisAbertos.has(l.label);
-                const clicavel = ehPai || temCredevCanal;
+                // Linha Pessoal Fixo abre as rubricas da folha (como no Dryland)
+                const ehFolha = l.label === 'PESSOAL FIXO' && rubricasUnidas.length > 0;
+                const clicavel = ehPai || temCredevCanal || ehFolha;
                 const onClickLabel = ehPai
                   ? () => toggleRecolher(l.id)
                   : temCredevCanal
                     ? () => toggleCanal(l.label)
-                    : undefined;
+                    : ehFolha
+                      ? () => setFolhaAberta((v) => !v)
+                      : undefined;
                 return (
                   <React.Fragment key={l.id}>
                   <tr className={trBg}>
@@ -490,8 +517,8 @@ export default function Forecast() {
                           ) : (
                             <CaretDown size={11} weight="bold" className="text-gray-400 shrink-0" />
                           )
-                        ) : temCredevCanal ? (
-                          canalAberto ? (
+                        ) : temCredevCanal || ehFolha ? (
+                          (ehFolha ? folhaAberta : canalAberto) ? (
                             <CaretDown size={10} weight="bold" className="text-gray-300 shrink-0" />
                           ) : (
                             <CaretRight size={10} weight="bold" className="text-gray-300 shrink-0" />
@@ -564,6 +591,46 @@ export default function Forecast() {
                       })}
                     </tr>
                   )}
+                  {ehFolha &&
+                    folhaAberta &&
+                    rubricasUnidas.map((ru) => {
+                      const prov = ru.tipo === 'provento';
+                      return (
+                        <tr key={'rub-' + ru.tipo + ru.desc} className="bg-slate-50/50">
+                          <td
+                            className={
+                              'sticky left-0 z-10 border-b border-r border-gray-100 pl-12 pr-3 py-1 whitespace-nowrap bg-slate-50 text-[10px] ' +
+                              (prov ? 'text-emerald-700' : 'text-red-700')
+                            }
+                          >
+                            <span className="inline-flex items-center gap-1.5">
+                              <span
+                                className={
+                                  'w-1.5 h-1.5 rounded-full ' +
+                                  (prov ? 'bg-emerald-500' : 'bg-red-500')
+                                }
+                              />
+                              {ru.desc}
+                            </span>
+                          </td>
+                          {colunas.map((c) => {
+                            const rv = ru.porCol[c.key];
+                            return (
+                              <td
+                                key={c.key}
+                                title={prov ? 'Provento' : 'Desconto'}
+                                className={
+                                  'border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] bg-slate-50/40 ' +
+                                  (prov ? 'text-emerald-700' : 'text-red-600')
+                                }
+                              >
+                                {typeof rv === 'number' && rv !== 0 ? formatar(rv, 'moeda') : '–'}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
                   </React.Fragment>
                 );
               })}
