@@ -4,6 +4,7 @@ import { useAuth } from '../components/AuthContext';
 import { useSetoresUsuario } from '../hooks/useSetoresUsuario';
 import { supabaseAdmin } from '../lib/supabase';
 import { API_BASE_URL } from '../config/constants';
+import { apiJson } from '../utils/apiAuth';
 import CadastrarFornecedorModal from '../components/CadastrarFornecedorModal';
 import PageTitle from '../components/ui/PageTitle';
 import Notification from '../components/ui/Notification';
@@ -38,6 +39,8 @@ import {
   Image as ImageIcon,
   LinkSimple,
   IdentificationBadge,
+  Bank,
+  Package,
 } from '@phosphor-icons/react';
 
 import DESPESAS_JSON from '../config/despesas.json';
@@ -132,6 +135,19 @@ const STATUS_CONFIG = {
     color: 'bg-purple-100 text-purple-800',
     icon: Receipt,
   },
+  // Setor PATRIMONIO / PRODUTO: o Jesus já pagou no cartão. Em vez da
+  // aprovação, a solicitação é CONCILIADA com o extrato bancário
+  // (aguardando_conciliacao → conciliado) e só então lançada no TOTVS.
+  aguardando_conciliacao: {
+    label: 'Aguardando conciliação',
+    color: 'bg-cyan-100 text-cyan-800',
+    icon: Bank,
+  },
+  conciliado: {
+    label: 'Conciliado · pago',
+    color: 'bg-teal-100 text-teal-800',
+    icon: CheckCircle,
+  },
   erro_envio: {
     label: 'Erro no envio',
     color: 'bg-red-100 text-red-800',
@@ -179,11 +195,22 @@ const SETOR_DRYLAND = {
   MARKETING: 'marketing',
   'TRÁFEGO': 'marketing',
   TECNOLOGIA: 'tecnologia',
+  PATRIMONIO: 'tecnologia',
   VAREJO: 'gerente-varejo',
 };
 const setorDryland = (setor) =>
   SETOR_DRYLAND[String(setor || '').trim().toUpperCase()] ||
   SETOR_DRYLAND_PADRAO;
+
+// Setor PATRIMONIO (Jesus): PRODUTO já pago no cartão → conciliação com o
+// extrato (status aguardando_conciliacao/conciliado) e lançamento no TOTVS sem
+// Liberação de Pagamento; SERVICO → fluxo normal.
+const ehPatrimonio = (sol) =>
+  String(sol?.setor || '').trim().toUpperCase() === 'PATRIMONIO';
+const ehPatrimonioProduto = (sol) =>
+  ehPatrimonio(sol) &&
+  String(sol?.produto_servico || '').toUpperCase() === 'PRODUTO';
+const PRODUTO_SERVICO_LABEL = { PRODUTO: 'Produto', SERVICO: 'Serviço' };
 
 const TIPO_CONFIG = {
   pagamento: {
@@ -771,6 +798,11 @@ const SolicitacoesCrosby = () => {
       ).length,
       nota_fiscal: solicitacoesGerais.filter((s) => s.status === 'nota_fiscal')
         .length,
+      aguardando_conciliacao: solicitacoesGerais.filter(
+        (s) => s.status === 'aguardando_conciliacao',
+      ).length,
+      conciliado: solicitacoesGerais.filter((s) => s.status === 'conciliado')
+        .length,
       erro_envio: solicitacoesGerais.filter((s) => s.status === 'erro_envio')
         .length,
       rejeitado: solicitacoesGerais.filter((s) => s.status === 'rejeitado')
@@ -1097,6 +1129,25 @@ const SolicitacoesCrosby = () => {
     } catch (err) {
       console.error(err);
       notify('error', 'Erro ao salvar edição.');
+      return false;
+    }
+  };
+
+  // Campo "Patrimônio" (nº/plaqueta do bem) — editável a qualquer momento
+  // pelo gestor/financeiro nas solicitações do setor PATRIMONIO.
+  const salvarPatrimonio = async (sol, valor) => {
+    try {
+      const { error } = await supabaseAdmin
+        .from('solicitacoes_crosby')
+        .update({ patrimonio: String(valor || '').trim() || null })
+        .eq('id', sol.id);
+      if (error) throw error;
+      await carregarSolicitacoes();
+      notify('success', 'Patrimônio atualizado.');
+      return true;
+    } catch (err) {
+      console.error(err);
+      notify('error', 'Erro ao salvar o patrimônio.');
       return false;
     }
   };
@@ -1840,7 +1891,7 @@ const SolicitacoesCrosby = () => {
       </div>
 
       {/* Cards resumo */}
-      <div className="grid grid-cols-2 md:grid-cols-7 gap-2 mb-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 xl:grid-cols-10 gap-2 mb-4">
         {[
           {
             label: 'Total',
@@ -1877,6 +1928,18 @@ const SolicitacoesCrosby = () => {
             value: totais.nota_fiscal,
             color: 'text-purple-700',
             filter: 'nota_fiscal',
+          },
+          {
+            label: 'Aguard. conciliação',
+            value: totais.aguardando_conciliacao,
+            color: 'text-cyan-700',
+            filter: 'aguardando_conciliacao',
+          },
+          {
+            label: 'Conciliadas',
+            value: totais.conciliado,
+            color: 'text-teal-700',
+            filter: 'conciliado',
           },
           {
             label: 'Erro envio',
@@ -1972,6 +2035,7 @@ const SolicitacoesCrosby = () => {
               'MARKETING',
               'TRÁFEGO',
               'TECNOLOGIA',
+              'PATRIMONIO',
               'CENTRAL DE FRANQUIAS',
             ].map((s) => (
               <option key={s} value={s}>
@@ -2286,6 +2350,15 @@ const SolicitacoesCrosby = () => {
                           );
                         return <span className="text-gray-400">--</span>;
                       })()}
+                      {ehPatrimonio(sol) && (
+                        <div
+                          className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200 max-w-[140px] truncate"
+                          title={`Patrimônio: ${sol.patrimonio || 'não informado'}${sol.produto_servico ? ` · ${PRODUTO_SERVICO_LABEL[sol.produto_servico] || sol.produto_servico}` : ''}`}
+                        >
+                          <Package size={10} weight="bold" />
+                          {sol.patrimonio || 'Patr. --'}
+                        </div>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-right font-semibold">
                       {formatarMoeda(sol.valor_total)}
@@ -2353,6 +2426,8 @@ const SolicitacoesCrosby = () => {
           onAbrirChamadoNF={abrirChamadoNF}
           chamadoNF={chamadosNF[modalDetalhe.nf_chamado_dryland_id] || null}
           onRecarregar={carregarSolicitacoes}
+          onSalvarPatrimonio={salvarPatrimonio}
+          notify={notify}
         />
       )}
 
@@ -2536,6 +2611,8 @@ const ModalDetalhe = ({
   onAbrirChamadoNF,
   chamadoNF,
   onRecarregar,
+  onSalvarPatrimonio,
+  notify,
 }) => {
   const tipoCfg = TIPO_CONFIG[sol.tipo_solicitacao] || TIPO_CONFIG.compra;
   const TipoIcon = tipoCfg.icon;
@@ -2545,25 +2622,112 @@ const ModalDetalhe = ({
   const [parcelaSelecionada, setParcelaSelecionada] = React.useState(0);
   const [editando, setEditando] = React.useState(false);
 
+  // PATRIMONIO/PRODUTO: já pago no cartão — sem aprovação do gestor, sem
+  // Liberação de Pagamento; concilia com o extrato e lança no TOTVS.
+  const produtoPatrimonio = ehPatrimonioProduto(sol);
+  const [patrimonioEdit, setPatrimonioEdit] = React.useState(
+    sol.patrimonio || '',
+  );
+  const [salvandoPatrimonio, setSalvandoPatrimonio] = React.useState(false);
+  const [candidatos, setCandidatos] = React.useState(null);
+  const [janelaCand, setJanelaCand] = React.useState(null);
+  const [buscandoCand, setBuscandoCand] = React.useState(false);
+  const [conciliandoId, setConciliandoId] = React.useState(null);
+
   const podeAprovarGestor = sol.status === 'pendente' && isGestor;
   const podeAprovarFinanceiro =
-    sol.status === 'aprovado_gestor' && isFinanceiro;
+    (sol.status === 'aprovado_gestor' ||
+      (sol.status === 'conciliado' && produtoPatrimonio)) &&
+    isFinanceiro;
   const podeReenviar = sol.status === 'erro_envio' && isFinanceiro;
   const podeRejeitar =
     (sol.status === 'pendente' && isGestor) ||
+    (sol.status === 'aguardando_conciliacao' && (isGestor || isFinanceiro)) ||
     (sol.status === 'aprovado_gestor' && isFinanceiro) ||
     (sol.status === 'nota_fiscal' && isFinanceiro);
   const podeEditar =
     (sol.status === 'pendente' && isGestor) ||
+    (sol.status === 'aguardando_conciliacao' && (isGestor || isFinanceiro)) ||
+    (sol.status === 'conciliado' && isFinanceiro) ||
     (sol.status === 'aprovado_gestor' && isFinanceiro) ||
     (sol.status === 'nota_fiscal' && isFinanceiro) ||
     (sol.status === 'erro_envio' && isFinanceiro);
   const podeDevolver = sol.status === 'aprovado_gestor' && isFinanceiro;
-  // Nota fiscal não passa pelo TOTVS: libera direto do status 'nota_fiscal'
+  // Nota fiscal não passa pelo TOTVS: libera direto do status 'nota_fiscal'.
+  // Produto de patrimônio já está pago: nunca vai para a Liberação.
   const podeLiberarPagamento =
     (sol.status === 'enviado_totvs' || sol.status === 'nota_fiscal') &&
     !sol.pagamento_liberacao_id &&
+    !produtoPatrimonio &&
     isFinanceiro;
+  const podeConciliar =
+    produtoPatrimonio &&
+    sol.status === 'aguardando_conciliacao' &&
+    (isGestor || isFinanceiro);
+  const podeDesfazerConciliacao =
+    produtoPatrimonio && sol.status === 'conciliado' && isFinanceiro;
+  const podeEditarPatrimonio =
+    ehPatrimonio(sol) && (isGestor || isFinanceiro) && !!onSalvarPatrimonio;
+
+  const buscarCandidatos = async () => {
+    setBuscandoCand(true);
+    try {
+      const r = await apiJson(`/api/solicitacoes-patrimonio/${sol.id}/candidatos`);
+      setCandidatos(r?.data?.candidatos || []);
+      setJanelaCand(r?.data?.janela || null);
+    } catch (e) {
+      console.error(e);
+      notify?.('error', e?.message || 'Erro ao buscar no extrato.');
+    } finally {
+      setBuscandoCand(false);
+    }
+  };
+  const conciliarCom = async (c) => {
+    if (
+      !window.confirm(
+        `Conciliar esta solicitação (R$ ${Number(sol.valor_total || 0).toFixed(2)}) com a saída de ${formatarData(c.data)} em ${c.conta} (${c.contraparte || c.descricao || '--'})?`,
+      )
+    )
+      return;
+    setConciliandoId(c.lancamentoId);
+    try {
+      await apiJson(`/api/solicitacoes-patrimonio/${sol.id}/conciliar`, {
+        method: 'POST',
+        body: { lancamentoId: c.lancamentoId },
+      });
+      notify?.('success', 'Solicitação conciliada com o extrato (paga).');
+      await onRecarregar?.();
+      onClose();
+    } catch (e) {
+      console.error(e);
+      notify?.('error', e?.message || 'Erro ao conciliar.');
+    } finally {
+      setConciliandoId(null);
+    }
+  };
+  const desfazerConciliacao = async () => {
+    if (
+      !window.confirm(
+        'Desfazer a conciliação? A solicitação volta para "Aguardando conciliação" e a saída do extrato fica livre.',
+      )
+    )
+      return;
+    setConciliandoId('desfazer');
+    try {
+      await apiJson(
+        `/api/solicitacoes-patrimonio/${sol.id}/desfazer-conciliacao`,
+        { method: 'POST', body: {} },
+      );
+      notify?.('success', 'Conciliação desfeita.');
+      await onRecarregar?.();
+      onClose();
+    } catch (e) {
+      console.error(e);
+      notify?.('error', e?.message || 'Erro ao desfazer a conciliação.');
+    } finally {
+      setConciliandoId(null);
+    }
+  };
   const jaLiberadoPagamento = !!sol.pagamento_liberacao_id;
   const nf = nfSituacao(sol);
   const podeAbrirChamadoNF =
@@ -2777,6 +2941,73 @@ const ModalDetalhe = ({
                   </DocField>
                 </div>
 
+                {/* Linha 5 — PATRIMÔNIO: Nota Fiscal · Patrimônio · Produto/Serviço */}
+                {ehPatrimonio(sol) && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 divide-x divide-gray-100 bg-amber-50/40">
+                    <DocField label="Nota Fiscal">
+                      <span className="font-semibold text-sm">
+                        {sol.tem_nota_fiscal === true
+                          ? `Sim${nf ? ` · ${nf.label}` : ''}`
+                          : sol.tem_nota_fiscal === false
+                            ? 'Não'
+                            : '--'}
+                      </span>
+                    </DocField>
+                    <DocField label="Patrimônio">
+                      {podeEditarPatrimonio ? (
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            value={patrimonioEdit}
+                            onChange={(e) => setPatrimonioEdit(e.target.value)}
+                            placeholder="Nº / plaqueta do bem"
+                            className="flex-1 min-w-0 border-2 border-gray-200 rounded-lg px-2 py-1 text-sm focus:outline-none focus:border-[#000638]"
+                          />
+                          <button
+                            type="button"
+                            disabled={
+                              salvandoPatrimonio ||
+                              (patrimonioEdit || '').trim() ===
+                                (sol.patrimonio || '')
+                            }
+                            onClick={async () => {
+                              setSalvandoPatrimonio(true);
+                              try {
+                                await onSalvarPatrimonio(sol, patrimonioEdit);
+                              } finally {
+                                setSalvandoPatrimonio(false);
+                              }
+                            }}
+                            className="shrink-0 px-2.5 py-1 rounded-lg text-xs font-bold bg-[#000638] text-white hover:bg-[#fe0000] disabled:opacity-40 transition-colors"
+                          >
+                            {salvandoPatrimonio ? (
+                              <Spinner size={12} className="animate-spin" />
+                            ) : (
+                              'Salvar'
+                            )}
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="font-mono text-sm font-semibold">
+                          {sol.patrimonio || '--'}
+                        </span>
+                      )}
+                    </DocField>
+                    <DocField label="Produto / Serviço">
+                      <span className="font-semibold text-sm">
+                        {PRODUTO_SERVICO_LABEL[sol.produto_servico] ||
+                          sol.produto_servico ||
+                          '--'}
+                      </span>
+                      {produtoPatrimonio && (
+                        <span className="block text-[10px] text-gray-500">
+                          pago no cartão · conciliação com o extrato
+                        </span>
+                      )}
+                    </DocField>
+                  </div>
+                )}
+
                 {/* Descrição */}
                 {sol.descricao && (
                   <div className="grid grid-cols-1">
@@ -2798,6 +3029,163 @@ const ModalDetalhe = ({
                 )}
               </div>
             </div>
+
+            {/* ── CONCILIAÇÃO COM O EXTRATO (PATRIMÔNIO / PRODUTO) ── */}
+            {produtoPatrimonio && sol.status === 'conciliado' && (
+              <div className="border-2 border-teal-500 rounded-xl p-4 bg-teal-50/40 space-y-1">
+                <div className="flex items-center gap-2 text-teal-800 font-bold text-sm">
+                  <Bank size={16} weight="bold" />
+                  Conciliado com o extrato bancário
+                </div>
+                <p className="text-xs text-teal-900">
+                  Saída encontrada em{' '}
+                  <strong>{sol.conciliacao_banco || '--'}</strong> em{' '}
+                  <strong>{formatarData(sol.conciliacao_data)}</strong>
+                  {sol.conciliado_por_nome
+                    ? ` · por ${sol.conciliado_por_nome}`
+                    : ''}
+                  {sol.conciliado_em
+                    ? ` · ${formatarDataHora(sol.conciliado_em)}`
+                    : ''}
+                  . A solicitação está paga; falta só o lançamento no TOTVS
+                  (não passa pela Liberação de Pagamento).
+                </p>
+              </div>
+            )}
+            {produtoPatrimonio && sol.status === 'aguardando_conciliacao' && (
+              <div className="border-2 border-cyan-500 rounded-xl p-4 bg-cyan-50/40 space-y-3">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2 text-cyan-900 font-bold text-sm">
+                    <Bank size={16} weight="bold" />
+                    Conciliação com o extrato bancário
+                  </div>
+                  {podeConciliar && (
+                    <button
+                      type="button"
+                      onClick={buscarCandidatos}
+                      disabled={buscandoCand}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-cyan-700 text-white hover:bg-cyan-800 disabled:opacity-60 transition-colors"
+                    >
+                      {buscandoCand ? (
+                        <Spinner size={14} className="animate-spin" />
+                      ) : (
+                        <MagnifyingGlass size={14} weight="bold" />
+                      )}
+                      Buscar no extrato
+                    </button>
+                  )}
+                </div>
+                <p className="text-xs text-cyan-900">
+                  Produto pago no cartão pelo solicitante. Confirme a saída de{' '}
+                  <strong>{formatarMoeda(sol.valor_total)}</strong> no extrato
+                  (Stone, Sicredi, PagBank…) para marcar como paga; o job das
+                  09:50 também tenta casar sozinho quando nome e conta batem.
+                </p>
+                {candidatos && (
+                  <div className="space-y-1.5">
+                    {janelaCand && (
+                      <p className="text-[10px] text-gray-500">
+                        Saídas de {formatarData(janelaCand.de)} a{' '}
+                        {formatarData(janelaCand.ate)} com o mesmo valor
+                        {sol.comprovante_url ? ' · ' : ''}
+                        {sol.comprovante_url && (
+                          <a
+                            href={sol.comprovante_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="underline text-[#000638]"
+                          >
+                            ver comprovante anexado
+                          </a>
+                        )}
+                      </p>
+                    )}
+                    {candidatos.length === 0 ? (
+                      <p className="text-xs text-gray-600 italic">
+                        Nenhuma saída com esse valor no período. O extrato da
+                        conta pode ainda não ter sido importado (PagBank entra
+                        por planilha) — tente de novo mais tarde.
+                      </p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-[10px] uppercase text-gray-500 text-left">
+                              <th className="py-1 pr-2">Data</th>
+                              <th className="py-1 pr-2">Conta</th>
+                              <th className="py-1 pr-2">Lançamento</th>
+                              <th className="py-1 pr-2">Motivos</th>
+                              <th className="py-1 pr-2 text-right">Valor</th>
+                              <th className="py-1"></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {candidatos.map((c) => (
+                              <tr
+                                key={c.lancamentoId}
+                                className={`border-t border-cyan-100 ${
+                                  c.confiavel ? 'bg-emerald-50/60' : ''
+                                } ${c.jaConciliado ? 'opacity-50' : ''}`}
+                              >
+                                <td className="py-1.5 pr-2 whitespace-nowrap font-mono">
+                                  {formatarData(c.data)}
+                                </td>
+                                <td className="py-1.5 pr-2 whitespace-nowrap">
+                                  {c.conta}
+                                </td>
+                                <td
+                                  className="py-1.5 pr-2 max-w-[220px] truncate"
+                                  title={[c.contraparte, c.descricao, c.memo]
+                                    .filter(Boolean)
+                                    .join(' · ')}
+                                >
+                                  {c.contraparte || c.descricao || c.memo || '--'}
+                                </td>
+                                <td className="py-1.5 pr-2 text-[10px] text-gray-600">
+                                  {(c.motivos || []).join(', ')}
+                                  {c.jaConciliado ? ' · já conciliada' : ''}
+                                </td>
+                                <td className="py-1.5 pr-2 text-right font-semibold whitespace-nowrap">
+                                  {formatarMoeda(c.valor)}
+                                </td>
+                                <td className="py-1.5 text-right">
+                                  {podeConciliar && !c.jaConciliado && (
+                                    <button
+                                      type="button"
+                                      onClick={() => conciliarCom(c)}
+                                      disabled={!!conciliandoId}
+                                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold text-white disabled:opacity-60 transition-colors ${
+                                        c.confiavel
+                                          ? 'bg-emerald-600 hover:bg-emerald-700'
+                                          : 'bg-gray-500 hover:bg-gray-600'
+                                      }`}
+                                      title={
+                                        c.confiavel
+                                          ? 'Nome/CNPJ e conta batem'
+                                          : 'Só o valor bate — confira antes'
+                                      }
+                                    >
+                                      {conciliandoId === c.lancamentoId ? (
+                                        <Spinner
+                                          size={12}
+                                          className="animate-spin"
+                                        />
+                                      ) : (
+                                        'Conciliar'
+                                      )}
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* ── PARCELAS ── */}
             {parcelas.length > 0 &&
@@ -3534,7 +3922,34 @@ const ModalDetalhe = ({
                 ) : (
                   <CloudArrowUp size={14} weight="bold" />
                 )}
-                Aprovar Financeiro & Enviar ao TOTVS
+                {sol.status === 'conciliado'
+                  ? 'Lançar no TOTVS (aprovar financeiro)'
+                  : 'Aprovar Financeiro & Enviar ao TOTVS'}
+              </button>
+            )}
+            {podeConciliar && !candidatos && (
+              <button
+                onClick={buscarCandidatos}
+                disabled={buscandoCand}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold bg-cyan-700 text-white hover:bg-cyan-800 disabled:opacity-60 transition-colors"
+                title="Procura no extrato bancário uma saída com o valor desta solicitação"
+              >
+                {buscandoCand ? (
+                  <Spinner size={14} className="animate-spin" />
+                ) : (
+                  <Bank size={14} weight="bold" />
+                )}
+                Conciliar com o extrato
+              </button>
+            )}
+            {podeDesfazerConciliacao && (
+              <button
+                onClick={desfazerConciliacao}
+                disabled={conciliandoId === 'desfazer'}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold bg-yellow-100 text-yellow-800 hover:bg-yellow-200 disabled:opacity-60 transition-colors"
+              >
+                <ArrowUUpLeft size={14} weight="bold" />
+                Desfazer conciliação
               </button>
             )}
             {podeDevolver && (
@@ -3612,6 +4027,8 @@ const ModalDetalhe = ({
               !podeDevolver &&
               !podeLiberarPagamento &&
               !podeAbrirChamadoNF &&
+              !podeConciliar &&
+              !podeDesfazerConciliacao &&
               !jaLiberadoPagamento && (
                 <p className="text-xs text-gray-400 italic">
                   Nenhuma ação disponível para o status atual ou para o seu
@@ -3873,6 +4290,12 @@ const ModalEdicao = ({
   const [tipo, setTipo] = React.useState(sol.tipo_solicitacao || '');
   const [solicitante, setSolicitante] = React.useState(sol.solicitante || '');
   const [setor, setSetor] = React.useState(sol.setor || '');
+  // Setor PATRIMONIO: Produto (pago no cartão → conciliação) ou Serviço, e o
+  // nº do patrimônio (ao lado da nota fiscal)
+  const [produtoServico, setProdutoServico] = React.useState(
+    sol.produto_servico || '',
+  );
+  const [patrimonio, setPatrimonio] = React.useState(sol.patrimonio || '');
   const [solicitanteEmail, setSolicitanteEmail] = React.useState(
     sol.solicitante_email || '',
   );
@@ -3989,6 +4412,7 @@ const ModalEdicao = ({
     'MARKETING',
     'TRÁFEGO',
     'TECNOLOGIA',
+    'PATRIMONIO',
     'CENTRAL DE FRANQUIAS',
   ];
   const TIPOS = [
@@ -4245,6 +4669,27 @@ const ModalEdicao = ({
         tipo_solicitacao: tipo || sol.tipo_solicitacao,
         solicitante: solicitante.trim() || sol.solicitante,
         setor: setor || sol.setor,
+        ...(() => {
+          const pat = (setor || sol.setor) === 'PATRIMONIO';
+          const ps = pat ? produtoServico || null : null;
+          const out = {
+            produto_servico: ps,
+            patrimonio: pat ? patrimonio.trim() || null : null,
+          };
+          // PRODUTO (pago no cartão) não passa pela aprovação: vai para a
+          // conciliação com o extrato; o contrário volta para pendente.
+          const tipoFin = ['pagamento', 'reembolso'].includes(
+            tipo || sol.tipo_solicitacao,
+          );
+          if (pat && ps === 'PRODUTO' && tipoFin && sol.status === 'pendente')
+            out.status = 'aguardando_conciliacao';
+          if (
+            (!pat || ps !== 'PRODUTO') &&
+            sol.status === 'aguardando_conciliacao'
+          )
+            out.status = 'pendente';
+          return out;
+        })(),
         solicitante_email: solicitanteEmail.trim() || null,
         descricao: descricao.trim() || sol.descricao,
         observacao: observacao.trim() || null,
@@ -4496,6 +4941,35 @@ const ModalEdicao = ({
                     Nota Fiscal (sem TOTVS) e abre o chamado de escrituração.
                   </p>
                 </div>
+              )}
+              {setor === 'PATRIMONIO' && (
+                <>
+                  <div>
+                    <ELabel>Patrimônio</ELabel>
+                    <input
+                      className={inpCls}
+                      value={patrimonio}
+                      onChange={(e) => setPatrimonio(e.target.value)}
+                      placeholder="Nº / plaqueta do bem"
+                    />
+                  </div>
+                  <div>
+                    <ELabel>Produto ou Serviço</ELabel>
+                    <select
+                      className={inpCls}
+                      value={produtoServico}
+                      onChange={(e) => setProdutoServico(e.target.value)}
+                    >
+                      <option value="">Não informado</option>
+                      <option value="PRODUTO">Produto (pago no cartão)</option>
+                      <option value="SERVICO">Serviço (fluxo normal)</option>
+                    </select>
+                    <p className="mt-1 text-[10px] text-gray-500">
+                      Produto não passa pela aprovação: vai para a conciliação
+                      com o extrato e, conciliado, é lançado no TOTVS.
+                    </p>
+                  </div>
+                </>
               )}
               <div>
                 <ELabel>Data de Emissão</ELabel>

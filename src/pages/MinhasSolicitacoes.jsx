@@ -100,6 +100,18 @@ const ETAPA_NF = {
 };
 const ETAPA_NF_IDX = 3;
 
+// Setor PATRIMONIO / PRODUTO (pago no cartão pelo solicitante): não passa pela
+// aprovação — fica em 'aguardando_conciliacao' até o financeiro casar a saída
+// no extrato bancário; 'conciliado' = pago, pronto para o lançamento no TOTVS.
+const ETAPA_CONCILIACAO = {
+  key: 'aguardando_conciliacao',
+  label: 'Aguardando conciliação com o extrato',
+  short: 'Conciliação',
+  color: 'bg-cyan-100 text-cyan-800',
+  dot: 'bg-cyan-500',
+  icon: Clock,
+};
+
 // Situações terminais fora do fluxo normal
 const ETAPAS_FORA = {
   rejeitado: {
@@ -303,6 +315,21 @@ const derivarEtapa = (sol, pg, filaDup = [], totvs = null) => {
           : 'NF pendente de escrituração',
       },
       idx: ETAPA_NF_IDX,
+      pago,
+      pagoEm,
+    };
+  } else if (sol.status === 'aguardando_conciliacao') {
+    return { ...base, etapa: ETAPA_CONCILIACAO, idx: 0, pago, pagoEm };
+  } else if (sol.status === 'conciliado') {
+    return {
+      ...base,
+      etapa: {
+        ...ETAPA_CONCILIACAO,
+        key: 'conciliado',
+        label: 'Conciliado com o extrato (pago no cartão)',
+        short: 'Conciliado',
+      },
+      idx: 2,
       pago,
       pagoEm,
     };

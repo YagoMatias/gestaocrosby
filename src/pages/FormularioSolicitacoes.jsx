@@ -137,6 +137,17 @@ const LOTE_PRESET = {
   valores: ['177.25', '177.25', '126.25', '126.25', '126.25', '126.25', '126.25'],
 };
 
+// Setor PATRIMONIO (Jesus, 28/10/2026): o formulário não pede filial nem
+// centro de custo. A solicitação sai sempre como matriz; o financeiro ajusta
+// na tela de Solicitações Crosby se o bem for de outra loja.
+//   PRODUTO → já pago no cartão/PagBank: nasce em 'aguardando_conciliacao'
+//             (casa com o extrato bancário) e só depois é lançada no TOTVS.
+//   SERVICO → fluxo normal: pendente → gestor → TOTVS → Liberação.
+const PATRIMONIO_PADRAO = {
+  cdEmpresa: 1, // 1 - CROSBY MATRIZ
+  centroCusto: '10', // MATRIZ
+};
+
 // Tipos de documento — enum TOTVS DocumentType
 const DOCUMENT_TYPES = [
   { value: 'Duplicate', label: 'Duplicata' },
@@ -430,8 +441,12 @@ const FormularioSolicitacoes = () => {
     'MARKETING',
     'TRÁFEGO',
     'TECNOLOGIA',
+    'PATRIMONIO',
     'CENTRAL DE FRANQUIAS',
   ];
+  // Só para PATRIMONIO: 'PRODUTO' (já pago no cartão → conciliação com o
+  // extrato) ou 'SERVICO' (fluxo normal de aprovação). Ver PATRIMONIO_PADRAO.
+  const [produtoServico, setProdutoServico] = useState('');
   const [tipo, setTipo] = useState('');
 
   const [fornecedorCpfCnpj, setFornecedorCpfCnpj] = useState('');
@@ -610,6 +625,18 @@ const FormularioSolicitacoes = () => {
     tipo === 'pagamento' || tipo === 'reembolso';
   const exigeProdutosServicos = tipo === 'compra' || tipo === 'manutencao';
   const exigeRecomendacao = tipo === 'manutencao';
+  // PATRIMONIO: sem filial/centro de custo no formulário; PRODUTO vai para a
+  // conciliação com o extrato em vez da aprovação.
+  const isPatrimonio = setor === 'PATRIMONIO';
+  const isPatrimonioProduto = isPatrimonio && produtoServico === 'PRODUTO';
+
+  useEffect(() => {
+    if (!isPatrimonio || !empresas.length) return;
+    const matriz = empresas.find(
+      (e) => parseInt(e.cd_empresa) === PATRIMONIO_PADRAO.cdEmpresa,
+    );
+    if (matriz) setEmpresaSelecionada(matriz);
+  }, [isPatrimonio, empresas]);
 
   const updateParcela = (idx, patch) => {
     setParcelas((prev) =>
@@ -1071,12 +1098,17 @@ const FormularioSolicitacoes = () => {
 
   const validar = () => {
     if (!tipo) return 'Selecione o tipo de solicitação.';
-    if (!empresaSelecionada) return 'Selecione a loja.';
+    if (!empresaSelecionada)
+      return isPatrimonio
+        ? 'A filial padrão (matriz) não carregou. Recarregue a página.'
+        : 'Selecione a loja.';
     if (!empresaSelecionada.cnpj)
       return 'A loja selecionada não possui CNPJ cadastrado.';
     if (!user?.id || !solicitante)
       return 'Sessão expirada. Faça login novamente para enviar a solicitação.';
     if (!setor) return 'Selecione o setor do solicitante.';
+    if (isPatrimonio && !produtoServico)
+      return 'Informe se a solicitação de PATRIMÔNIO é de Produto ou Serviço.';
     if (!descricao.trim()) {
       if (tipo === 'compra') return 'Descreva os produtos que deseja comprar.';
       if (tipo === 'manutencao') return 'Descreva o serviço a ser contratado.';
@@ -1113,11 +1145,17 @@ const FormularioSolicitacoes = () => {
     // ====== Fluxo simplificado: pagamento / reembolso ======
     if (exigeFluxoPagamentoSimples) {
       if (!dtVencimentoUnica) return 'Informe a data de vencimento.';
-      if (dtVencimentoUnica <= todayISO())
+      if (isPatrimonioProduto) {
+        if (dtVencimentoUnica > todayISO())
+          return 'A data do pagamento não pode ser futura.';
+      } else if (dtVencimentoUnica <= todayISO())
         return 'A data de vencimento deve ser posterior a hoje.';
       if (!despesaUnicaCode || isNaN(parseInt(despesaUnicaCode)))
         return 'Selecione a despesa.';
-      if (!centroCustoUnico || isNaN(parseInt(centroCustoUnico)))
+      if (
+        !isPatrimonio &&
+        (!centroCustoUnico || isNaN(parseInt(centroCustoUnico)))
+      )
         return 'Selecione o centro de custo.';
       const rateioNum = parseFloat(rateioUnico);
       if (isNaN(rateioNum) || rateioNum <= 0 || rateioNum > 100)
@@ -1129,7 +1167,7 @@ const FormularioSolicitacoes = () => {
           const p = parcelasSimples[i];
           const prefixo = `Parcela ${i + 1}: `;
           if (!p.dueDate) return prefixo + 'informe a data de vencimento.';
-          if (p.dueDate <= todayISO())
+          if (!isPatrimonioProduto && p.dueDate <= todayISO())
             return prefixo + 'a data de vencimento deve ser posterior a hoje.';
           if (!p.valor || parseFloat(p.valor) <= 0)
             return prefixo + 'informe um valor maior que zero.';
@@ -1137,10 +1175,14 @@ const FormularioSolicitacoes = () => {
         if (Math.abs(somaParcelasSimples - parseFloat(valorUnico)) > 0.01)
           return `A soma das parcelas (R$ ${somaParcelasSimples.toFixed(2)}) deve ser igual ao valor total (R$ ${parseFloat(valorUnico).toFixed(2)}).`;
       }
-      if (!comprovanteGestorFile)
+      // PATRIMÔNIO/PRODUTO já foi pago no cartão: não há aprovação prévia,
+      // o que precisa é o comprovante do pagamento (para a conciliação).
+      if (!isPatrimonioProduto && !comprovanteGestorFile)
         return 'Anexe o comprovante de aprovação do gestor.';
-      if (!comprovanteFabioFile)
+      if (!isPatrimonioProduto && !comprovanteFabioFile)
         return 'Anexe o comprovante de aprovação do Fábio.';
+      if (isPatrimonioProduto && !comprovanteFile)
+        return 'Anexe o comprovante do pagamento do produto.';
       if (tipo === 'reembolso' && !comprovanteFile)
         return 'Anexe o comprovante de pagamento do reembolso.';
     }
@@ -1293,11 +1335,18 @@ const FormularioSolicitacoes = () => {
         solicitante,
         solicitante_email: solicitanteEmail || null,
         setor: setor || null,
+        produto_servico: isPatrimonio ? produtoServico || null : null,
+        patrimonio: null,
         tipo_solicitacao: tipo,
         nivel_urgencia: 'normal',
         descricao: descricao.trim(),
         observacao: observacao.trim() || null,
-        status: 'pendente',
+        // PRODUTO de patrimônio já está pago: entra na conciliação com o
+        // extrato bancário em vez do fluxo de aprovação.
+        status:
+          isPatrimonioProduto && exigeFluxoPagamentoSimples
+            ? 'aguardando_conciliacao'
+            : 'pendente',
         data_solicitacao: new Date().toISOString(),
         branch_cnpj: onlyDigits(empresaSelecionada.cnpj),
         supplier_cpf_cnpj: exigeFornecedor
@@ -1333,7 +1382,9 @@ const FormularioSolicitacoes = () => {
           ? toIsoDateTime(dtEmissaoUnica)
           : null;
         insertData.despesa_code = parseInt(despesaUnicaCode) || null;
-        insertData.cost_center_code = parseInt(centroCustoUnico) || null;
+        insertData.cost_center_code = isPatrimonio
+          ? parseInt(PATRIMONIO_PADRAO.centroCusto)
+          : parseInt(centroCustoUnico) || null;
         insertData.rateio_percentual = parseFloat(rateioUnico) || null;
         insertData.valor_total = parseFloat(valorUnico) || null;
         if (tipo === 'pagamento' && imagensUrls.length) {
@@ -1347,7 +1398,9 @@ const FormularioSolicitacoes = () => {
               ? [
                   {
                     expenseCode: parseInt(despesaUnicaCode),
-                    costCenterCode: parseInt(centroCustoUnico) || null,
+                    costCenterCode: isPatrimonio
+                      ? parseInt(PATRIMONIO_PADRAO.centroCusto)
+                      : parseInt(centroCustoUnico) || null,
                     proratedPercentage: parseFloat(rateioUnico) || 100,
                   },
                 ]
@@ -1779,6 +1832,7 @@ const FormularioSolicitacoes = () => {
               2 · Dados da Loja e Solicitante
             </h2>
 
+            {!isPatrimonio && (
             <div ref={empresaRef} className="relative">
               <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
                 <Storefront size={14} weight="bold" />
@@ -1868,6 +1922,7 @@ const FormularioSolicitacoes = () => {
                 </div>
               )}
             </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
@@ -1905,6 +1960,59 @@ const FormularioSolicitacoes = () => {
                 </select>
               </div>
             </div>
+
+            {/* PATRIMÔNIO: Produto ou Serviço (obrigatório) */}
+            {isPatrimonio && (
+              <div className="rounded-xl border-2 border-[#000638]/20 bg-[#000638]/[0.03] p-3 space-y-2">
+                <label className="text-xs font-bold text-[#000638] block">
+                  Produto ou Serviço *
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    {
+                      id: 'PRODUTO',
+                      label: 'Produto',
+                      desc: 'Já pago no cartão/PagBank — a solicitação é conciliada com o extrato bancário',
+                    },
+                    {
+                      id: 'SERVICO',
+                      label: 'Serviço',
+                      desc: 'Pagamento pelo financeiro — fluxo normal de aprovação',
+                    },
+                  ].map((o) => {
+                    const sel = produtoServico === o.id;
+                    return (
+                      <button
+                        key={o.id}
+                        type="button"
+                        onClick={() => setProdutoServico(o.id)}
+                        className={`text-left rounded-lg border-2 px-3 py-2 transition-all ${
+                          sel
+                            ? 'bg-[#000638] text-white border-transparent shadow-md'
+                            : 'bg-white text-[#000638] border-gray-200 hover:border-[#000638]/40'
+                        }`}
+                      >
+                        <span className="block text-sm font-bold">
+                          {o.label}
+                        </span>
+                        <span
+                          className={`block text-[10px] leading-tight ${
+                            sel ? 'text-white/80' : 'text-gray-500'
+                          }`}
+                        >
+                          {o.desc}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] text-gray-500">
+                  No setor PATRIMÔNIO a filial e o centro de custo não são
+                  pedidos: a solicitação sai como matriz e o financeiro ajusta
+                  na gestão, se precisar.
+                </p>
+              </div>
+            )}
           </section>
 
           {/* MODAL CADASTRO DE FORNECEDOR (PF/PJ) */}
@@ -2135,12 +2243,15 @@ const FormularioSolicitacoes = () => {
                 <div>
                   <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
                     <CalendarBlank size={14} weight="bold" />
-                    Data de Vencimento *
+                    {isPatrimonioProduto
+                      ? 'Data do Pagamento *'
+                      : 'Data de Vencimento *'}
                   </label>
                   <input
                     type="date"
                     value={dtVencimentoUnica}
-                    min={todayISO()}
+                    min={isPatrimonioProduto ? undefined : todayISO()}
+                    max={isPatrimonioProduto ? todayISO() : undefined}
                     onChange={(e) => setDtVencimentoUnica(e.target.value)}
                     className="w-full border-2 border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-[#000638] transition-colors"
                   />
@@ -2157,6 +2268,7 @@ const FormularioSolicitacoes = () => {
                 </div>
               </div>
 
+              {!isPatrimonio && (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="sm:col-span-2">
                   <label className="text-xs font-bold text-[#000638] mb-1.5 block">
@@ -2176,6 +2288,7 @@ const FormularioSolicitacoes = () => {
                   </select>
                 </div>
               </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
@@ -2373,7 +2486,9 @@ const FormularioSolicitacoes = () => {
                 })()}
               </div>
 
-              {/* Comprovantes de aprovação obrigatórios */}
+              {/* Comprovantes de aprovação obrigatórios (PATRIMÔNIO/PRODUTO
+                  já foi pago no cartão: não há aprovação prévia) */}
+              {!isPatrimonioProduto && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
@@ -2437,9 +2552,10 @@ const FormularioSolicitacoes = () => {
                   )}
                 </div>
               </div>
+              )}
 
-              {/* Reembolso: comprovante de pagamento adicional */}
-              {tipo === 'reembolso' && (
+              {/* Reembolso / PATRIMÔNIO-PRODUTO: comprovante de pagamento */}
+              {(tipo === 'reembolso' || isPatrimonioProduto) && (
                 <div>
                   <label className="text-xs font-bold text-[#000638] flex items-center gap-1.5 mb-1.5">
                     <Receipt size={14} weight="bold" />
