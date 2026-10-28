@@ -14,9 +14,12 @@ import {
   Warning,
   MagnifyingGlass,
   DeviceMobile,
+  Lock,
+  Key,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
+import { useAuth } from '../components/AuthContext';
 
 const URL_APK = 'https://dorztqiunewggydvkjnf.supabase.co/storage/v1/object/public/pdv-updates/balanco-rfid/Balanco-RFID.apk';
 const fmtDataHora = (d) => (d ? new Date(d).toLocaleString('pt-BR', { timeZone: 'America/Recife' }) : '—');
@@ -29,6 +32,22 @@ const fmtDur = (s) => {
 const isoDia = (d) => d.toLocaleDateString('sv-SE', { timeZone: 'America/Recife' });
 const inputCls = 'h-9 px-2 mb-0 rounded-lg border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#000638]/30';
 
+// salva a resposta CSV como arquivo (nome vem do Content-Disposition)
+async function salvarResposta(r, nomePadrao) {
+  const cd = r.headers.get('content-disposition') || '';
+  const m = /filename\*=UTF-8''([^;]+)/i.exec(cd);
+  const nome = m ? decodeURIComponent(m[1]) : nomePadrao;
+  const blob = await r.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nome;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
 function Card({ label, valor, sub }) {
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3">
@@ -40,6 +59,7 @@ function Card({ label, valor, sub }) {
 }
 
 export default function BalancoRfidArquivos() {
+  const { user } = useAuth();
   const [lojas, setLojas] = useState([]);
   const [empresa, setEmpresa] = useState('');
   const [de, setDe] = useState(() => isoDia(new Date(Date.now() - 30 * 86400000)));
@@ -56,6 +76,13 @@ export default function BalancoRfidArquivos() {
   const [produtos, setProdutos] = useState(null);
   const [gerando, setGerando] = useState(false);
   const [filtroEpc, setFiltroEpc] = useState('');
+  // download bloqueado (passou de 48 h): pede e-mail + senha de gerente/admin/owner
+  const [liberar, setLiberar] = useState(null); // { arquivo, tipo }
+  const [credEmail, setCredEmail] = useState('');
+  const [credSenha, setCredSenha] = useState('');
+  const [liberando, setLiberando] = useState(false);
+  const [erroLiberar, setErroLiberar] = useState(null);
+  const [baixando, setBaixando] = useState(null);
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/totvs/branches`)
@@ -141,6 +168,59 @@ export default function BalancoRfidArquivos() {
     return (f ? l.filter((e) => e.includes(f)) : l).slice(0, 2000);
   }, [aberto?.epcs, filtroEpc]);
 
+  const baixar = async (a, tipo = 'epcs') => {
+    if (!a.download_liberado) {
+      setLiberar({ arquivo: a, tipo });
+      setErroLiberar(null);
+      return;
+    }
+    setBaixando(`${a.id}-${tipo}`);
+    try {
+      const qs = new URLSearchParams({ tipo, por: user?.email || user?.name || '' });
+      const r = await fetch(`${API_BASE_URL}/api/balanco-rfid/${a.id}/csv?${qs}`);
+      if (r.status === 403) {
+        setLiberar({ arquivo: { ...a, download_liberado: false }, tipo });
+        setErroLiberar(null);
+        return;
+      }
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j?.message || `HTTP ${r.status}`);
+      }
+      await salvarResposta(r, `${a.nome}.csv`);
+      carregar();
+    } catch (e) {
+      setAviso(e.message);
+    } finally {
+      setBaixando(null);
+    }
+  };
+
+  const confirmarLiberacao = async () => {
+    if (!liberar) return;
+    setLiberando(true);
+    setErroLiberar(null);
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/balanco-rfid/${liberar.arquivo.id}/csv-autorizado`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: credEmail, senha: credSenha, tipo: liberar.tipo, por: user?.email || user?.name || null }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j?.message || `HTTP ${r.status}`);
+      }
+      await salvarResposta(r, `${liberar.arquivo.nome}.csv`);
+      setLiberar(null);
+      setCredSenha('');
+      carregar();
+    } catch (e) {
+      setErroLiberar(e.message);
+    } finally {
+      setLiberando(false);
+    }
+  };
+
   const semProduto = (produtos || []).filter((p) => !p.nome || p.ean === null).reduce((s, p) => s + p.qtd, 0);
 
   return (
@@ -206,25 +286,27 @@ export default function BalancoRfidArquivos() {
               <thead className="bg-gray-50 text-[10px] uppercase tracking-wide text-gray-500">
                 <tr>
                   <th className="px-3 py-2 text-left">Arquivo</th>
+                  <th className="px-2 py-2 text-left">Setor</th>
                   <th className="px-2 py-2 text-left">Usuário</th>
                   <th className="px-2 py-2 text-left">Finalizado em</th>
                   <th className="px-2 py-2 text-right">Duração</th>
                   <th className="px-2 py-2 text-right">Peças</th>
                   <th className="px-2 py-2 text-right">Leituras</th>
+                  <th className="px-2 py-2 text-left">Download</th>
                   <th className="px-2 py-2" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {loading && itens.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="py-10 text-center text-gray-400">
+                    <td colSpan={9} className="py-10 text-center text-gray-400">
                       <Spinner size={20} className="animate-spin mx-auto" />
                     </td>
                   </tr>
                 )}
                 {!loading && itens.length === 0 && !aviso && (
                   <tr>
-                    <td colSpan={7} className="py-10 text-center text-gray-400">
+                    <td colSpan={9} className="py-10 text-center text-gray-400">
                       <Package size={26} className="mx-auto mb-1.5 text-gray-300" />
                       Nenhum balanço no período.
                     </td>
@@ -233,18 +315,49 @@ export default function BalancoRfidArquivos() {
                 {itens.map((a) => (
                   <tr key={a.id} className="hover:bg-gray-50/60">
                     <td className="px-3 py-1.5 font-semibold text-[#000638]">{a.nome}</td>
+                    <td className="px-2 py-1.5">
+                      {a.setor ? (
+                        <span className="inline-flex px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 text-[10px] font-bold">{a.setor}</span>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
+                    </td>
                     <td className="px-2 py-1.5 truncate max-w-[180px]">{a.usuario_nome || a.usuario_email || '—'}</td>
                     <td className="px-2 py-1.5 whitespace-nowrap">{fmtDataHora(a.finalizado_em)}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums">{fmtDur(a.duracao_seg)}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums font-bold text-[#000638]">{a.qtd_epcs.toLocaleString('pt-BR')}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums text-gray-500">{a.qtd_leituras.toLocaleString('pt-BR')}</td>
+                    <td
+                      className="px-2 py-1.5 whitespace-nowrap"
+                      title={(a.downloads || [])
+                        .map((d) => `${fmtDataHora(d.em)} · ${d.por || '?'}${d.liberadoPor ? ` (liberado por ${d.liberadoPor})` : ''}`)
+                        .join('\n')}
+                    >
+                      {a.download_liberado ? (
+                        <span className="text-emerald-700">até {fmtDataHora(a.download_ate).slice(0, 17)}</span>
+                      ) : (
+                        <span className="inline-flex items-center gap-0.5 text-rose-600 font-semibold">
+                          <Lock size={11} weight="bold" /> expirado
+                        </span>
+                      )}
+                      {(a.downloads || []).length > 0 && (
+                        <span className="ml-1 inline-flex px-1.5 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200 text-[10px] font-bold">
+                          baixado {a.downloads.length}×
+                        </span>
+                      )}
+                    </td>
                     <td className="px-2 py-1.5 whitespace-nowrap text-right">
                       <button onClick={() => abrir(a)} className="px-2 py-0.5 rounded-lg text-[11px] font-bold text-white bg-[#000638] hover:bg-[#000638]/90 inline-flex items-center gap-1">
                         <ListMagnifyingGlass size={12} weight="bold" /> detalhar
                       </button>
-                      <a href={`${API_BASE_URL}/api/balanco-rfid/${a.id}/csv`} className="ml-1 p-1 inline-flex rounded hover:bg-gray-100 text-[#000638]" title="Baixar EPCs (CSV)">
-                        <DownloadSimple size={14} />
-                      </a>
+                      <button
+                        onClick={() => baixar(a, 'epcs')}
+                        disabled={baixando === `${a.id}-epcs`}
+                        className={`ml-1 p-1 inline-flex rounded hover:bg-gray-100 ${a.download_liberado ? 'text-[#000638]' : 'text-rose-600'}`}
+                        title={a.download_liberado ? 'Baixar EPCs (CSV)' : 'Passou de 48 h — precisa da senha de um gerente, admin ou owner'}
+                      >
+                        {baixando === `${a.id}-epcs` ? <Spinner size={14} className="animate-spin" /> : a.download_liberado ? <DownloadSimple size={14} /> : <Lock size={14} />}
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -259,7 +372,10 @@ export default function BalancoRfidArquivos() {
           <div className="bg-white rounded-2xl shadow-xl max-w-4xl w-full p-5 max-h-[92vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between gap-2 mb-3">
               <div>
-                <h3 className="text-base font-bold text-[#000638]">{aberto.nome}</h3>
+                <h3 className="text-base font-bold text-[#000638]">
+                  {aberto.nome}
+                  {aberto.setor && <span className="ml-2 align-middle inline-flex px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 text-[11px] font-bold">SETOR {aberto.setor}</span>}
+                </h3>
                 <p className="text-xs text-gray-500">
                   {aberto.usuario_nome || aberto.usuario_email || 'sem usuário'} · início {fmtDataHora(aberto.iniciado_em)} · fim {fmtDataHora(aberto.finalizado_em)} · {fmtDur(aberto.duracao_seg)}
                   {aberto.dispositivo?.modelo ? ` · ${aberto.dispositivo.modelo}` : ''}
@@ -294,17 +410,17 @@ export default function BalancoRfidArquivos() {
                   <button onClick={() => gerarResumo(true)} disabled={gerando} className="h-8 px-2.5 rounded-lg text-[11px] font-semibold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50 disabled:opacity-40 inline-flex items-center gap-1">
                     <ArrowsClockwise size={12} className={gerando ? 'animate-spin' : ''} /> refazer com o TOTVS
                   </button>
-                  <a href={`${API_BASE_URL}/api/balanco-rfid/${aberto.id}/csv?tipo=produtos`} className="h-8 px-2.5 rounded-lg text-[11px] font-semibold text-white bg-[#000638] inline-flex items-center gap-1">
-                    <DownloadSimple size={12} /> CSV por produto
-                  </a>
+                  <button onClick={() => baixar(aberto, 'produtos')} className={`h-8 px-2.5 rounded-lg text-[11px] font-semibold text-white inline-flex items-center gap-1 ${aberto.download_liberado ? 'bg-[#000638]' : 'bg-rose-600'}`}>
+                    {aberto.download_liberado ? <DownloadSimple size={12} /> : <Lock size={12} />} CSV por produto
+                  </button>
                 </>
               )}
               {aba === 'epcs' && (
                 <>
                   <input value={filtroEpc} onChange={(e) => setFiltroEpc(e.target.value)} placeholder="Filtrar EPC…" className={`${inputCls} h-8 w-56 font-mono text-xs`} />
-                  <a href={`${API_BASE_URL}/api/balanco-rfid/${aberto.id}/csv`} className="h-8 px-2.5 rounded-lg text-[11px] font-semibold text-white bg-[#000638] inline-flex items-center gap-1">
-                    <DownloadSimple size={12} /> CSV dos EPCs
-                  </a>
+                  <button onClick={() => baixar(aberto, 'epcs')} className={`h-8 px-2.5 rounded-lg text-[11px] font-semibold text-white inline-flex items-center gap-1 ${aberto.download_liberado ? 'bg-[#000638]' : 'bg-rose-600'}`}>
+                    {aberto.download_liberado ? <DownloadSimple size={12} /> : <Lock size={12} />} CSV dos EPCs
+                  </button>
                 </>
               )}
             </div>
@@ -353,6 +469,45 @@ export default function BalancoRfidArquivos() {
               )}
             </div>
           </div>
+        </div>
+      )}
+      {liberar && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={() => !liberando && setLiberar(null)}>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              confirmarLiberacao();
+            }}
+            className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <Key size={20} weight="bold" className="text-rose-600" />
+              <h3 className="text-base font-bold text-[#000638]">Liberar download</h3>
+            </div>
+            <p className="text-xs text-gray-600 mb-3">
+              <b>{liberar.arquivo.nome}</b> passou de 48 h. Para evitar importar o mesmo balanço duas vezes no TOTVS, só um gerente, admin ou owner libera — com o
+              e-mail e a senha dele no HeadCoach.
+              {(liberar.arquivo.downloads || []).length > 0 && (
+                <span className="block mt-1 text-amber-700 font-semibold">
+                  Já foi baixado {liberar.arquivo.downloads.length}× (último em {fmtDataHora(liberar.arquivo.downloads[liberar.arquivo.downloads.length - 1].em)}).
+                </span>
+              )}
+            </p>
+            <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">E-mail do gerente / admin / owner</label>
+            <input type="email" autoFocus value={credEmail} onChange={(e) => setCredEmail(e.target.value)} className={`${inputCls} w-full mb-2`} autoComplete="off" />
+            <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Senha</label>
+            <input type="password" value={credSenha} onChange={(e) => setCredSenha(e.target.value)} className={`${inputCls} w-full`} autoComplete="new-password" />
+            {erroLiberar && <p className="mt-2 text-xs text-rose-700 bg-rose-50 rounded-lg px-2 py-1.5 ring-1 ring-rose-200">{erroLiberar}</p>}
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setLiberar(null)} disabled={liberando} className="h-10 rounded-lg ring-1 ring-gray-300 text-xs font-semibold text-gray-600">
+                Cancelar
+              </button>
+              <button type="submit" disabled={liberando || !credEmail || !credSenha} className="h-10 rounded-lg bg-[#000638] text-white text-xs font-bold disabled:opacity-40 inline-flex items-center justify-center gap-1.5">
+                {liberando ? <Spinner size={14} className="animate-spin" /> : <DownloadSimple size={14} weight="bold" />} Liberar e baixar
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </div>

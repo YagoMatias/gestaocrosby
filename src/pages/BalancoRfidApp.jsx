@@ -33,6 +33,9 @@ import { getUserCompanies } from '../services/userCompaniesService';
 
 const URL_APK = 'https://dorztqiunewggydvkjnf.supabase.co/storage/v1/object/public/pdv-updates/balanco-rfid/Balanco-RFID.apk';
 const MODULO = { 0: 'encaixada', 1: 'separada', 2: 'ligando', 3: 'desligada' };
+// Empresas cujo estoque é dividido por setor: pede o SETOR ao finalizar
+const EMPRESAS_COM_SETOR = [99];
+const SETORES_SUGERIDOS = ['CREDEV', 'SITE', 'EXPEDIÇÃO'];
 
 const ponte = () => (typeof window !== 'undefined' ? window.HeadcoachRfid : null);
 const fmtTempo = (ms) => {
@@ -89,6 +92,15 @@ export default function BalancoRfidApp() {
   const clientId = useRef(null);
 
   const [salvando, setSalvando] = useState(false);
+  const [modalSetor, setModalSetor] = useState(false);
+  const [setor, setSetor] = useState('');
+  const [setoresRecentes, setSetoresRecentes] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('balanco_rfid_setores') || '[]');
+    } catch {
+      return [];
+    }
+  });
   const [salvo, setSalvo] = useState(null);
   const [msg, setMsg] = useState(null);
   const ultimoBip = useRef(0);
@@ -268,10 +280,35 @@ export default function BalancoRfidApp() {
   }, [lendo, qtd, salvarRascunho]);
 
   // ─── finalizar ─────────────────────────────────────────────────────────
-  const finalizar = async () => {
-    if (lendo) return;
+  const precisaSetor = EMPRESAS_COM_SETOR.includes(Number(empresa));
+
+  const finalizar = () => {
+    if (lendo) return null;
     if (!qtd) return setMsg({ tipo: 'erro', texto: 'Nenhuma peça lida.' });
+    if (precisaSetor) {
+      setModalSetor(true);
+      return null;
+    }
     if (!window.confirm(`Finalizar o balanço da loja ${empresa} com ${qtd} peça(s)?`)) return null;
+    enviar(null);
+    return null;
+  };
+
+  const confirmarSetor = () => {
+    const s2 = setor.trim().toUpperCase().replace(/\s+/g, ' ');
+    if (!s2) return;
+    const recentes = [s2, ...setoresRecentes.filter((x) => x !== s2)].slice(0, 8);
+    setSetoresRecentes(recentes);
+    try {
+      localStorage.setItem('balanco_rfid_setores', JSON.stringify(recentes));
+    } catch {
+      /* sem armazenamento */
+    }
+    setModalSetor(false);
+    enviar(s2);
+  };
+
+  const enviar = async (setorFinal) => {
     setSalvando(true);
     setMsg(null);
     try {
@@ -279,6 +316,7 @@ export default function BalancoRfidApp() {
         clientId: clientId.current || novoId(),
         empresa: Number(empresa),
         empresaNome: lojaSel?.nm_grupoempresa || null,
+        setor: setorFinal || null,
         usuario: { id: user?.id || null, nome: user?.name || null, email: user?.email || null },
         iniciadoEm,
         finalizadoEm: new Date().toISOString(),
@@ -311,6 +349,7 @@ export default function BalancoRfidApp() {
       setUltimas([]);
       setIniciadoEm(null);
       setAcumuladoMs(0);
+      setSetor('');
     } catch (e) {
       setMsg({ tipo: 'erro', texto: `Não salvou (${e.message}). A contagem continua guardada no aparelho — tente de novo.` });
     } finally {
@@ -547,6 +586,41 @@ export default function BalancoRfidApp() {
           <button onClick={descartar} className="w-full text-xs text-rose-600 inline-flex items-center justify-center gap-1 py-2">
             <Trash size={13} /> Descartar contagem
           </button>
+        )}
+
+        {modalSetor && (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-3">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-4">
+              <p className="text-lg font-black text-[#000638]">Setor do estoque</p>
+              <p className="text-xs text-gray-500 mb-3">
+                Loja {empresa} · {qtd.toLocaleString('pt-BR')} peça(s). Digite o setor contado (ex.: CREDEV, SITE, EXPEDIÇÃO).
+              </p>
+              <input
+                autoFocus
+                value={setor}
+                onChange={(e) => setSetor(e.target.value.toUpperCase())}
+                onKeyDown={(e) => e.key === 'Enter' && confirmarSetor()}
+                placeholder="SETOR"
+                maxLength={60}
+                className="w-full h-14 px-3 mb-0 rounded-xl border-2 border-[#000638]/30 text-xl font-bold uppercase tracking-wide focus:outline-none focus:border-[#000638]"
+              />
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {[...new Set([...setoresRecentes, ...SETORES_SUGERIDOS])].slice(0, 10).map((x) => (
+                  <button key={x} onClick={() => setSetor(x)} className={`h-8 px-3 rounded-full text-xs font-bold ring-1 ${setor === x ? 'bg-[#000638] text-white ring-[#000638]' : 'bg-gray-50 text-[#000638] ring-gray-300'}`}>
+                    {x}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <button onClick={() => setModalSetor(false)} className="h-12 rounded-xl ring-1 ring-gray-300 text-sm font-semibold text-gray-600">
+                  Cancelar
+                </button>
+                <button onClick={confirmarSetor} disabled={!setor.trim()} className="h-12 rounded-xl bg-[#000638] text-white text-sm font-black disabled:opacity-40">
+                  FINALIZAR
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         <div className="flex items-center justify-center gap-3 text-[11px] text-gray-400 pt-2">
