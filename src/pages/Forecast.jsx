@@ -26,6 +26,12 @@ const MES_ABREV = {
   jan: 1, fev: 2, mar: 3, abr: 4, mai: 5, jun: 6,
   jul: 7, ago: 8, set: 9, out: 10, nov: 11, dez: 12,
 };
+// Coluna mensal → 'YYYY-MM' (usa o label 'Set/26' + o ano da coluna).
+const colParaMes = (c) => {
+  if (c.grupo !== 'mensal' || !c.ano) return null;
+  const m = MES_ABREV[String(c.label || '').slice(0, 3).toLowerCase()];
+  return m ? `${c.ano}-${String(m).padStart(2, '0')}` : null;
+};
 // Meses a puxar do New Forecast: colunas mensais de 2026, realizado, mês >= 9.
 function mesesAutomaticos(colunas) {
   const out = [];
@@ -110,13 +116,61 @@ const tipoLinha = (l) => {
 };
 
 export default function Forecast() {
-  // Só 2026 (jan–set Realizado, out–dez Previsão), visão mensal.
+  // Realizado × Previsão por mês: a Niziany marca na tela (salvo no backend).
+  // Mescla por cima do tipo padrão da planilha.
+  const [tipoOverrides, setTipoOverrides] = useState({});
+
+  // Só 2026, visão mensal. Aplica o tipo (realizado/previsão) salvo.
   const colunas = useMemo(
-    () => base.colunas.filter((c) => c.grupo === 'mensal' && c.ano !== 2025),
-    [],
+    () =>
+      base.colunas
+        .filter((c) => c.grupo === 'mensal' && c.ano !== 2025)
+        .map((c) => {
+          const mes = colParaMes(c);
+          const ov = mes && tipoOverrides[mes];
+          if (!ov) return c;
+          return { ...c, tipo: ov === 'previsao' ? 'forecast' : 'realizado' };
+        }),
+    [tipoOverrides],
   );
   const grupos = useMemo(() => agruparColunas(colunas), [colunas]);
   const linhas = base.blocos.dre || [];
+
+  // Carrega a config de meses (realizado/previsão) salva.
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      try {
+        const r = await fetch(`${API_BASE_URL}/api/forecast-dre/config`);
+        if (!r.ok) return;
+        const j = await r.json();
+        const ov = (j?.data || j)?.overrides;
+        if (!cancelado && ov && typeof ov === 'object') setTipoOverrides(ov);
+      } catch {
+        /* sem config → usa o padrão da planilha */
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, []);
+
+  // Alterna um mês entre Realizado e Previsão (clique no cabeçalho do mês).
+  const alternarTipoMes = async (c) => {
+    const mes = colParaMes(c);
+    if (!mes) return;
+    const novo = c.tipo === 'realizado' ? 'previsao' : 'realizado';
+    setTipoOverrides((p) => ({ ...p, [mes]: novo }));
+    try {
+      await fetch(`${API_BASE_URL}/api/forecast-dre/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mes, tipo: novo }),
+      });
+    } catch {
+      /* falha ao salvar: fica só na sessão */
+    }
+  };
 
   // Overrides ao vivo por coluna: { [colKey]: { VAREJO: v, MULTIMARCAS: v, ... } }
   const [overrides, setOverrides] = useState({});
@@ -174,10 +228,15 @@ export default function Forecast() {
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         {/* Barra de topo: cenário + legenda */}
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-gray-100 bg-gray-50">
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-bold uppercase text-gray-500">Cenário</span>
-            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-200">
-              {base.cenario}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-bold uppercase text-gray-500">Cenário</span>
+              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-200">
+                {base.cenario}
+              </span>
+            </div>
+            <span className="text-[10px] text-gray-400 hidden sm:inline">
+              Clique no mês para alternar Realizado / Previsão
             </span>
           </div>
           <div className="flex items-center gap-2 text-[10px] font-semibold">
@@ -221,8 +280,10 @@ export default function Forecast() {
                 {colunas.map((c) => (
                   <th
                     key={c.key}
+                    onClick={() => alternarTipoMes(c)}
+                    title="Clique para alternar entre Realizado e Previsão"
                     className={
-                      'border-b border-gray-200 px-2 py-1.5 text-right font-semibold text-gray-600 whitespace-nowrap bg-gray-100 ' +
+                      'border-b border-gray-200 px-3 py-1.5 text-right font-semibold text-gray-600 whitespace-nowrap bg-gray-100 cursor-pointer select-none hover:bg-blue-100 hover:text-[#000638] ' +
                       TIPO_CELULA[c.tipo]
                     }
                   >
