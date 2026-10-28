@@ -41,8 +41,65 @@ export const formatarCpfCnpj = (doc) => {
   return digitos;
 };
 
+// ─── Ocultar faturas de banco emitidas antes do corte ───
+// Pedido do Yago (28/10/2026): o Contas a Pagar não deve mostrar nada ligado a
+// banco (empréstimo, financiamento, cartão de crédito, juros financeiros,
+// consórcio, FGI, capital de giro, nomes de bancos) com EMISSÃO anterior a
+// 20/10/2026. É só ocultação de tela: nada é alterado/cancelado no TOTVS, e
+// faturas de banco emitidas a partir do corte continuam aparecendo.
+export const OCULTAR_BANCO_EMISSAO_ANTES = '2026-10-20';
+
+const normalizarTexto = (s) =>
+  String(s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '');
+
+// Termos longos casam como substring (seguros contra falso positivo).
+const BANCO_TERMOS = [
+  'emprestimo',
+  'financiamento',
+  'cartao de credito',
+  'cartao credito',
+  'juros financeir',
+  'consorcio',
+  'capital de giro',
+  'banco',
+  'itau',
+  'santander',
+  'bradesco',
+  'sicredi',
+  'banco do nordeste',
+  'caixa economica',
+];
+// Abreviações curtas só casam como palavra inteira (evita pegar "abbott" etc.).
+const BANCO_PALAVRAS = /\b(bb|bnb|fgi)\b/;
+
+// Identifica se a fatura é de banco/crédito pelo nome do fornecedor + despesa.
+export const isFaturaBanco = (item) => {
+  const texto = normalizarTexto(
+    `${item?.nm_fornecedor || ''} ${item?.ds_despesaitem || ''} ${item?.nm_razaosocial_fornecedor || ''}`,
+  );
+  if (!texto.trim()) return false;
+  if (BANCO_PALAVRAS.test(texto)) return true;
+  return BANCO_TERMOS.some((t) => texto.includes(t));
+};
+
+// true = esconder o item (é de banco E emitido antes do corte).
+export const deveOcultarFaturaBanco = (item) => {
+  if (!isFaturaBanco(item)) return false;
+  const emissao = item?.dt_emissao ? String(item.dt_emissao).split('T')[0] : '';
+  if (!emissao) return false; // sem data de emissão: não oculta (conservador)
+  return emissao < OCULTAR_BANCO_EMISSAO_ANTES;
+};
+
 // Determinar status da conta baseado nos dados
 export const getStatusFromData = (item) => {
+  // Conciliado como PAGO na Liberação de Pagamento, mesmo que o TOTVS ainda
+  // não tenha a baixa (dt_liq vazio). Ver cruzamento em ContasAPagar.jsx.
+  if (item._pagoLiberacao) {
+    return 'Pago';
+  }
   if (item.dt_liq) {
     return 'Pago';
   }

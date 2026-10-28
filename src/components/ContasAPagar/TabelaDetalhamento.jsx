@@ -154,7 +154,8 @@ const TabelaDetalhamento = React.memo(
       if (filtroPagamento && filtroPagamento !== 'TODOS') {
         filtrados = filtrados.filter((grupo) => {
           const contaPaga =
-            grupo.item.dt_liq && grupo.item.dt_liq.trim() !== '';
+            (grupo.item.dt_liq && grupo.item.dt_liq.trim() !== '') ||
+            grupo.item._pagoLiberacao;
           if (filtroPagamento === 'PAGO') return contaPaga;
           if (filtroPagamento === 'ABERTO') return !contaPaga;
           return true;
@@ -544,7 +545,25 @@ const TabelaDetalhamento = React.memo(
                               />
                             </td>
                             <td className="px-1 py-1 text-center whitespace-nowrap">
-                              {contaPaga ? (
+                              {grupo.item._pagoLiberacao ? (
+                                <span
+                                  className="inline-flex items-center gap-1 text-[10px]"
+                                  title="Conciliado como pago na Liberação de Pagamento (o TOTVS ainda não baixou)"
+                                >
+                                  <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
+                                  <span className="text-green-700 font-semibold">
+                                    (PAGO - LIBERAÇÃO DE PAGAMENTO)
+                                  </span>
+                                  {grupo.item._pagoLiberacaoData && (
+                                    <span className="text-gray-500">
+                                      em{' '}
+                                      {formatarData(
+                                        grupo.item._pagoLiberacaoData,
+                                      )}
+                                    </span>
+                                  )}
+                                </span>
+                              ) : contaPaga ? (
                                 <span className="inline-flex items-center gap-1 text-[10px]">
                                   <span className="w-2 h-2 rounded-full bg-red-500 inline-block" />
                                   <span className="text-red-700 font-semibold">

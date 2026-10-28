@@ -58,7 +58,7 @@ const CardsResumo = React.memo(
           totalContasAVencer++;
           valorContasAVencer += vlDuplicata;
         }
-        if (item.dt_vencimento && !item.dt_liq) {
+        if (item.dt_vencimento && !item.dt_liq && !item._pagoLiberacao) {
           const dataVencimento = criarDataSemFusoHorario(item.dt_vencimento);
           const diasParaVencer = Math.ceil(
             (dataVencimento - hoje) / (1000 * 60 * 60 * 24),
@@ -70,7 +70,10 @@ const CardsResumo = React.memo(
         }
         if (status === 'Pago') {
           totalPagas++;
-          valorPagas += parseFloat(item.vl_pago || 0);
+          // Pago via Liberação ainda não tem vl_pago no TOTVS → usa a duplicata.
+          valorPagas += item._pagoLiberacao
+            ? parseFloat(item.vl_pago || 0) || vlDuplicata
+            : parseFloat(item.vl_pago || 0);
         }
         if (vlDesconto > 0) {
           totalDescontos += vlDesconto;

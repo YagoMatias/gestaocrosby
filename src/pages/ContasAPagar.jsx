@@ -26,7 +26,81 @@ import {
   aplicarFiltroMensal,
   agruparDadosIdenticos,
   formatarCpfCnpj,
+  deveOcultarFaturaBanco,
 } from '../components/ContasAPagar';
+
+// ─── Cruzamento com a Liberação de Pagamento ───
+// Pedido do Yago (28/10/2026): o TOTVS recebe a baixa com atraso, mas o
+// pagamento já é conciliado na Liberação quase em D+1. Então, para cada título
+// que o TOTVS ainda mostra em aberto (sem dt_liq), se ele estiver como PAGO na
+// Liberação, marcamos como pago aqui também — com a data do pagamento e o
+// rótulo "(PAGO - LIBERAÇÃO DE PAGAMENTO)" na coluna de status.
+const anotarPagosNaLiberacao = async (itens) => {
+  const emAberto = itens.filter((i) => !i.dt_liq && i.nr_duplicata);
+  if (emAberto.length === 0) return itens;
+
+  const duplicatas = [...new Set(emAberto.map((i) => String(i.nr_duplicata)))];
+  const pagos = [];
+  const LOTE = 200;
+  try {
+    for (let i = 0; i < duplicatas.length; i += LOTE) {
+      const fatia = duplicatas.slice(i, i + LOTE);
+      const { data, error } = await supabase
+        .from('pagamentos_liberacao')
+        .select(
+          'nr_duplicata, cd_empresa, nr_parcela, cd_fornecedor, dt_vencimento, vl_duplicata, dt_pagamento, pago_em',
+        )
+        .eq('status', 'PAGO')
+        .in('nr_duplicata', fatia);
+      if (error) throw error;
+      pagos.push(...(data || []));
+    }
+  } catch (err) {
+    // Se a Liberação não responder, segue sem o cruzamento (não quebra a tela).
+    console.error('Cruzamento Liberação de Pagamento falhou:', err);
+    return itens;
+  }
+  if (pagos.length === 0) return itens;
+
+  const porDuplicata = new Map();
+  for (const p of pagos) {
+    const k = String(p.nr_duplicata);
+    if (!porDuplicata.has(k)) porDuplicata.set(k, []);
+    porDuplicata.get(k).push(p);
+  }
+
+  // null = campo ausente em um dos lados (compatível); true/false = igual/difere.
+  const mesmo = (a, b) =>
+    a == null || b == null || a === '' || b === ''
+      ? null
+      : String(a) === String(b);
+  const casa = (item, p) => {
+    if (mesmo(item.cd_empresa, p.cd_empresa) === false) return false;
+    const forn = mesmo(item.cd_fornecedor, p.cd_fornecedor);
+    const parc = mesmo(item.nr_parcela, p.nr_parcela);
+    if (forn === false || parc === false) return false;
+    // Precisa de ao menos um identificador forte igual; senão, confere o valor.
+    if (forn === true || parc === true) return true;
+    return (
+      Math.abs(Number(item.vl_duplicata || 0) - Number(p.vl_duplicata || 0)) <
+      0.005
+    );
+  };
+
+  return itens.map((item) => {
+    if (item.dt_liq || !item.nr_duplicata) return item;
+    const candidatos = porDuplicata.get(String(item.nr_duplicata));
+    if (!candidatos) return item;
+    const match = candidatos.find((p) => casa(item, p));
+    if (!match) return item;
+    const dataPg = match.dt_pagamento
+      ? String(match.dt_pagamento).split('T')[0]
+      : match.pago_em
+        ? String(match.pago_em).split('T')[0]
+        : '';
+    return { ...item, _pagoLiberacao: true, _pagoLiberacaoData: dataPg };
+  });
+};
 
 const ContasAPagar = (props) => {
   const { user, hasRole } = useAuth?.() || { user: null, hasRole: () => false };
@@ -238,7 +312,10 @@ const ContasAPagar = (props) => {
       if (status === 'Vencido') contasVencidas++;
       if (status === 'Pago') {
         contasPagas++;
-        valorPago += parseFloat(grupo.item.vl_pago || 0);
+        // Pago via Liberação ainda não tem vl_pago no TOTVS → usa a duplicata.
+        valorPago += grupo.item._pagoLiberacao
+          ? parseFloat(grupo.item.vl_pago || 0) || vl
+          : parseFloat(grupo.item.vl_pago || 0);
       }
     }
 
@@ -840,6 +917,12 @@ const ContasAPagar = (props) => {
           despesasFixas.includes(parseInt(item.cd_despesaitem) || 0),
         );
       }
+
+      // Ocultar faturas de banco emitidas antes do corte (só tela; Yago 28/10/2026)
+      filtrados = filtrados.filter((item) => !deveOcultarFaturaBanco(item));
+
+      // Marcar como PAGO o que já foi conciliado na Liberação de Pagamento
+      filtrados = await anotarPagosNaLiberacao(filtrados);
 
       setDados(filtrados);
 
