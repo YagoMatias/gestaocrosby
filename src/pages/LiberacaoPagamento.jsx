@@ -3199,18 +3199,29 @@ const LiberacaoPagamento = () => {
     return Array.from(set).sort();
   }, [titulos]);
 
+  // antecipável da STONE (por conta) — entra no total; a Pagar.me NÃO soma o "a receber"
+  const stoneAntecipavel = useMemo(
+    () =>
+      saldosDetalhe.linhas
+        .filter((l) => (l.banco || 'STONE') === 'STONE')
+        .reduce((s, l) => s + parseFloat(l.saldo_antecipavel || 0), 0),
+    [saldosDetalhe],
+  );
+
   const { totalSaldo, bancosSaldoCount } = useMemo(
     () => ({
-      totalSaldo: BANCOS_SALDO.reduce((s, b) => {
-        const row = saldos.find((r) => r.banco === b);
-        return s + parseFloat(row?.valor || 0);
-      }, 0),
+      // STONE entra com disponível + antecipável; os demais só o disponível
+      totalSaldo:
+        BANCOS_SALDO.reduce((s, b) => {
+          const row = saldos.find((r) => r.banco === b);
+          return s + parseFloat(row?.valor || 0);
+        }, 0) + stoneAntecipavel,
       bancosSaldoCount: BANCOS_SALDO.filter((b) => {
         const row = saldos.find((r) => r.banco === b);
         return parseFloat(row?.valor || 0) > 0;
       }).length,
     }),
-    [saldos],
+    [saldos, stoneAntecipavel],
   );
 
   const temFiltroExtra =
@@ -4033,7 +4044,8 @@ const LiberacaoPagamento = () => {
           <div className="flex flex-wrap gap-1.5">
             {BANCOS_SALDO.map((b) => {
               const s = saldos.find((r) => r.banco === b);
-              const v = parseFloat(s?.valor || 0);
+              // STONE: o chip já mostra disponível + antecipável (igual ao total)
+              const v = parseFloat(s?.valor || 0) + (b === 'STONE' ? stoneAntecipavel : 0);
               const detalhe = BANCOS_COM_DETALHE[b];
               const aberto = detalhe && bancoAberto === detalhe;
               return (
