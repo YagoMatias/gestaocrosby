@@ -154,6 +154,37 @@ export default function Forecast() {
     return info;
   }, [linhas]);
 
+  // Totais calculados (Niziany, 28/10/2026):
+  //   RECEITA LÍQUIDA = soma de todas as receitas por canal de venda
+  //   RECEITA BRUTA   = soma dos canais + CREDEV (CREDEV é negativo)
+  // Só recalcula a coluna que tem dados de canal; previsão sem canais (out–dez)
+  // mantém o alvo da planilha.
+  const totaisCalculados = useMemo(() => {
+    const LINHAS_CANAIS = [
+      'VAREJO', 'MULTIMARCAS', 'FRANQUIA', 'REVENDA', 'BAZAR',
+      'FARDAMENTO', 'IMOBILIZADO', 'BLUECRED',
+    ];
+    const porLabel = {};
+    for (const l of linhas) porLabel[l.label] = l;
+    const valor = (label, col) => {
+      const ov = overrides[col]?.[label];
+      if (ov !== undefined) return ov;
+      const l = porLabel[label];
+      return l ? (l.valores[col] ?? 0) : 0;
+    };
+    const out = {};
+    for (const c of colunas) {
+      const soma = LINHAS_CANAIS.reduce((a, lab) => a + (valor(lab, c.key) || 0), 0);
+      if (!soma) continue; // sem canais → mantém o estático (previsão)
+      const credev = valor('CREDEV', c.key) || 0;
+      out[c.key] = {
+        'RECEITA LÍQUIDA': Math.round(soma * 100) / 100,
+        'RECEITA BRUTA': Math.round((soma + credev) * 100) / 100,
+      };
+    }
+    return out;
+  }, [colunas, overrides, linhas]);
+
   const [recolhidos, setRecolhidos] = useState(() => new Set());
   const [telaCheia, setTelaCheia] = useState(false);
   const toggleRecolher = (id) =>
@@ -393,8 +424,9 @@ export default function Forecast() {
                     </td>
                     {colunas.map((c) => {
                       const ovr = overrides[c.key]?.[l.label];
+                      const calc = totaisCalculados[c.key]?.[l.label];
                       const auto = ovr !== undefined;
-                      const v = auto ? ovr : l.valores[c.key];
+                      const v = calc !== undefined ? calc : auto ? ovr : l.valores[c.key];
                       const negativo = typeof v === 'number' && v < 0;
                       const corTexto = negativo
                         ? 'text-red-600'
@@ -412,7 +444,15 @@ export default function Forecast() {
                       return (
                         <td
                           key={c.key}
-                          title={auto ? 'Puxado do New Forecast' : undefined}
+                          title={
+                            calc !== undefined
+                              ? l.label === 'RECEITA BRUTA'
+                                ? 'Calculado: soma dos canais + CREDEV'
+                                : 'Calculado: soma dos canais de venda'
+                              : auto
+                                ? 'Puxado do New Forecast'
+                                : undefined
+                          }
                           className={
                             'border-b border-gray-100 px-3 py-2 text-right tabular-nums whitespace-nowrap ' +
                             bordaTopo + ' ' +
