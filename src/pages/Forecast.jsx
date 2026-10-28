@@ -80,6 +80,35 @@ function agruparColunas(colunas) {
   return grupos;
 }
 
+// Linhas de total/resultado com destaque forte (banda azul do HeadCoach).
+const TOTAIS_FORTES = new Set([
+  'RECEITA BRUTA',
+  'RECEITA LÍQUIDA',
+  'RECEITA OPERACIONAL LÍQUIDA',
+  'LUCRO BRUTO',
+  'LUCRO OPERACIONAL',
+  'EBITDA',
+  'LUCRO ANTES DO IR E CS',
+  'LUCRO LÍQUIDO',
+  'RESULTADO FINAL',
+]);
+// Linhas que abrem uma nova seção (ganham um traço superior mais marcado).
+const INICIO_SECAO = new Set([
+  'RECEITA LÍQUIDA',
+  'CUSTO DAS MERCADORIAS VENDIDAS',
+  'RECEITAS (DESPESAS) OPERACIONAIS',
+  'LUCRO OPERACIONAL',
+  'RECEITAS NÃO OPERACIONAIS',
+  'INVESTIMENTOS',
+]);
+
+const tipoLinha = (l) => {
+  if (l.fmt === 'pct') return 'pct';
+  if (TOTAIS_FORTES.has(l.label)) return 'forte';
+  if (l.nivel === 1) return 'sub';
+  return 'normal';
+};
+
 export default function Forecast() {
   // Só 2026 (jan–set Realizado, out–dez Previsão), visão mensal.
   const colunas = useMemo(
@@ -201,17 +230,33 @@ export default function Forecast() {
               </tr>
             </thead>
             <tbody>
-              {linhas.map((l) => {
-                const destaque = l.bold && l.nivel === 0;
+              {linhas.map((l, idx) => {
+                const tipo = tipoLinha(l);
+                const forte = tipo === 'forte';
+                const pct = tipo === 'pct';
+                const sub = tipo === 'sub';
+                const secao = INICIO_SECAO.has(l.label);
+                const zebra = sub && idx % 2 === 1;
+                const trBg = forte
+                  ? 'bg-[#000638]/[0.04]'
+                  : zebra
+                    ? 'bg-gray-50/50'
+                    : 'hover:bg-blue-50/40';
+                const bordaTopo = secao ? 'border-t-2 border-[#000638]/15' : '';
+                const labelCls = forte
+                  ? 'font-bold text-[#000638]'
+                  : pct
+                    ? 'pl-8 text-gray-400 italic font-normal text-[10px]'
+                    : sub
+                      ? 'pl-8 text-gray-500 font-normal'
+                      : 'font-semibold text-gray-700';
+                const labelBg = forte ? 'bg-[#eef0f6]' : zebra ? 'bg-gray-50' : 'bg-white';
                 return (
-                  <tr key={l.id} className={destaque ? 'bg-gray-50' : 'hover:bg-blue-50/40'}>
+                  <tr key={l.id} className={trBg}>
                     <td
                       className={
-                        'sticky left-0 z-10 border-b border-r border-gray-100 px-3 py-1.5 whitespace-nowrap ' +
-                        (destaque
-                          ? 'bg-gray-50 font-bold text-[#000638]'
-                          : 'bg-white text-gray-700') +
-                        (l.nivel === 1 ? ' pl-7 text-gray-500' : '')
+                        'sticky left-0 z-10 border-b border-r border-gray-100 px-3 py-2 whitespace-nowrap ' +
+                        bordaTopo + ' ' + labelBg + ' ' + labelCls
                       }
                     >
                       {l.label}
@@ -221,22 +266,30 @@ export default function Forecast() {
                       const auto = ovr !== undefined;
                       const v = auto ? ovr : l.valores[c.key];
                       const negativo = typeof v === 'number' && v < 0;
+                      const corTexto = negativo
+                        ? 'text-red-600'
+                        : v == null
+                          ? 'text-gray-300'
+                          : auto
+                            ? 'text-emerald-700'
+                            : forte
+                              ? 'text-[#000638]'
+                              : pct
+                                ? 'text-gray-400 italic'
+                                : sub
+                                  ? 'text-gray-600'
+                                  : 'text-gray-800';
                       return (
                         <td
                           key={c.key}
                           title={auto ? 'Puxado do New Forecast' : undefined}
                           className={
-                            'border-b border-gray-100 px-2 py-1.5 text-right tabular-nums whitespace-nowrap ' +
-                            TIPO_CELULA[c.tipo] +
-                            (destaque ? ' font-semibold' : '') +
-                            (auto ? ' bg-emerald-50 text-emerald-800 font-semibold' : '') +
-                            (negativo
-                              ? ' text-red-600'
-                              : v == null
-                                ? ' text-gray-300'
-                                : auto
-                                  ? ''
-                                  : ' text-gray-800')
+                            'border-b border-gray-100 px-3 py-2 text-right tabular-nums whitespace-nowrap ' +
+                            bordaTopo + ' ' +
+                            (auto ? 'bg-emerald-50 font-semibold ' : TIPO_CELULA[c.tipo] + ' ') +
+                            (forte && !auto ? 'font-bold ' : '') +
+                            (pct ? 'text-[10px] ' : '') +
+                            corTexto
                           }
                         >
                           {formatar(v, l.fmt)}
