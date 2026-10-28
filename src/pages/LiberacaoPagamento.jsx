@@ -7,6 +7,7 @@ import React, {
 } from 'react';
 import * as XLSX from 'xlsx';
 import { exportarPDF } from '../utils/exportarPDF';
+import { apiJson } from '../utils/apiAuth';
 import { supabase } from '../lib/supabase';
 import { API_BASE_URL } from '../config/constants';
 import CENTROS_CUSTO from '../config/centrosCusto.json';
@@ -50,6 +51,7 @@ import {
   Storefront,
   Sparkle,
   ListChecks,
+  ArrowsClockwise,
 } from '@phosphor-icons/react';
 
 const BANCOS = [
@@ -2881,6 +2883,9 @@ const LiberacaoPagamento = () => {
   // Execução manual do job de provisão automática (admin/owner)
   const [rodandoProvisao, setRodandoProvisao] = useState(false);
   const [showProvisaoMenu, setShowProvisaoMenu] = useState(false);
+  // Botão "Rodar baixa" dos aprovados (puxa Stone + importa + concilia)
+  const [rodandoBaixa, setRodandoBaixa] = useState(false);
+  const [baixaMsg, setBaixaMsg] = useState(null);
   // Duplicatas específicas que a provisão automática deve incluir (admin/owner)
   const [showModalSelecionarDup, setShowModalSelecionarDup] = useState(false);
 
@@ -2978,6 +2983,66 @@ const LiberacaoPagamento = () => {
     },
     [carregar],
   );
+
+  // Botão "Rodar baixa": o agente puxa os extratos atuais da Stone, importa e,
+  // ao concluir, o backend concilia os APROVADOS e marca PAGO. Aqui a gente só
+  // dispara e fica acompanhando a execução até terminar.
+  const rodarBaixaAprovados = useCallback(async () => {
+    if (rodandoBaixa) return;
+    setRodandoBaixa(true);
+    setBaixaMsg('Disparando o bot da Stone...');
+    try {
+      const resp = await apiJson('/api/stone-bot/aprovados/rodar-baixa', { method: 'POST', body: {} });
+      const id = resp?.data?.execucao?.id;
+      if (!id) throw new Error('Não consegui enfileirar a execução.');
+      const inicio = Date.now();
+      for (;;) {
+        await new Promise((ok) => setTimeout(ok, 5000));
+        if (Date.now() - inicio > 10 * 60 * 1000) {
+          setBaixaMsg('Está demorando — acompanhe na aba "Bot Stone" do Extrato Bancário.');
+          break;
+        }
+        let ex;
+        try {
+          ex = (await apiJson(`/api/stone-bot/execucoes/${id}`))?.data;
+        } catch {
+          continue;
+        }
+        const st = ex?.status;
+        if (st === 'pendente') {
+          setBaixaMsg('Na fila — ligue o agente no PC se ele estiver desligado.');
+          continue;
+        }
+        if (st === 'rodando') {
+          setBaixaMsg('Importando os extratos da Stone...');
+          continue;
+        }
+        if (st === 'concluido') {
+          const b = ex?.resumo?.baixaAprovados;
+          if (b) {
+            setBaixaMsg(`✅ Baixa concluída: ${b.pagos} título(s) marcados PAGO (${fmtBRL(b.total)}).`);
+            break;
+          }
+          setBaixaMsg('Extratos importados — dando baixa nos aprovados...');
+          continue; // aguarda o resumo.baixaAprovados aparecer (hook async no backend)
+        }
+        if (st === 'erro') {
+          setBaixaMsg(`Execução com erro: ${ex?.erro || 'ver aba Bot Stone'}`);
+          break;
+        }
+        if (st === 'cancelado') {
+          setBaixaMsg('Execução cancelada.');
+          break;
+        }
+      }
+    } catch (e) {
+      setBaixaMsg(`Erro: ${e.message}`);
+    } finally {
+      setRodandoBaixa(false);
+      carregar();
+      carregarSaldos();
+    }
+  }, [rodandoBaixa, carregar, carregarSaldos]);
 
   useEffect(() => {
     carregar();
@@ -4158,6 +4223,23 @@ const LiberacaoPagamento = () => {
           <p className="text-[11px] text-gray-400 font-medium">
             {qtdAprovados} título(s) aguardando pagamento
           </p>
+          <button
+            type="button"
+            onClick={rodarBaixaAprovados}
+            disabled={rodandoBaixa}
+            title="Puxa os extratos atuais da Stone, importa no HeadCoach e dá baixa nos aprovados que já saíram (banco + data)"
+            className={`mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg border transition-colors ${
+              rodandoBaixa
+                ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-wait'
+                : 'bg-blue-600 text-white border-blue-600 hover:bg-blue-700'
+            }`}
+          >
+            <ArrowsClockwise size={12} weight="bold" className={rodandoBaixa ? 'animate-spin' : ''} />
+            {rodandoBaixa ? 'Rodando baixa...' : 'Rodar baixa'}
+          </button>
+          {baixaMsg && (
+            <p className="mt-1.5 text-[11px] text-gray-600 leading-snug">{baixaMsg}</p>
+          )}
         </div>
 
         {/* Títulos Selecionados */}
