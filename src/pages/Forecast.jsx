@@ -226,6 +226,15 @@ export default function Forecast() {
   const [telaCheia, setTelaCheia] = useState(false);
   const [carregandoAuto, setCarregandoAuto] = useState(false);
 
+  const [rubricasAbertas, setRubricasAbertas] = useState(() => new Set());
+  const toggleRubrica = (key) =>
+    setRubricasAbertas((prev) => {
+      const n = new Set(prev);
+      if (n.has(key)) n.delete(key);
+      else n.add(key);
+      return n;
+    });
+
   // Rubricas da folha unidas por coluna (para abrir sob Pessoal Fixo).
   const rubricasUnidas = useMemo(() => {
     const map = new Map();
@@ -234,8 +243,17 @@ export default function Forecast() {
         const key = r.tipo + '|' + r.desc;
         const e =
           map.get(key) ||
-          { desc: r.desc, tipo: r.tipo, entra: r.entra !== false, porCol: {}, max: 0 };
+          {
+            key,
+            desc: r.desc,
+            tipo: r.tipo,
+            entra: r.entra !== false,
+            porCol: {},
+            funcPorCol: {},
+            max: 0,
+          };
         e.porCol[col] = r.valor;
+        if (Array.isArray(r.funcionarios)) e.funcPorCol[col] = r.funcionarios;
         e.max = Math.max(e.max, Math.abs(Number(r.valor) || 0));
         map.set(key, e);
       }
@@ -683,58 +701,93 @@ export default function Forecast() {
                     folhaAberta &&
                     rubricasUnidas.map((ru) => {
                       const prov = ru.tipo === 'provento';
-                      const entra = ru.entra !== false;
-                      const corLabel = !entra
-                        ? 'text-gray-400 line-through'
-                        : prov
-                          ? 'text-emerald-700'
-                          : 'text-red-700';
-                      const corVal = !entra
-                        ? 'text-gray-400 line-through'
-                        : prov
-                          ? 'text-emerald-700'
-                          : 'text-red-600';
-                      const dot = !entra ? 'bg-gray-300' : prov ? 'bg-emerald-500' : 'bg-red-500';
+                      const corVal = prov ? 'text-emerald-700' : 'text-red-600';
+                      const dot = prov ? 'bg-emerald-500' : 'bg-red-500';
+                      const temFunc = Object.keys(ru.funcPorCol).length > 0;
+                      const rubAberta = temFunc && rubricasAbertas.has(ru.key);
+                      // União dos funcionários desta rubrica (por chapa/nome)
+                      let funcs = [];
+                      if (rubAberta) {
+                        const m = new Map();
+                        for (const [col, lista] of Object.entries(ru.funcPorCol)) {
+                          for (const f of lista || []) {
+                            const fk = (f.chapa || '') + '|' + f.nome;
+                            const e =
+                              m.get(fk) ||
+                              { nome: f.nome, chapa: f.chapa, funcao: f.funcao, empresa: f.empresa, porCol: {}, max: 0 };
+                            e.porCol[col] = f.valor;
+                            e.max = Math.max(e.max, Math.abs(Number(f.valor) || 0));
+                            m.set(fk, e);
+                          }
+                        }
+                        funcs = [...m.values()].sort((a, b) => b.max - a.max);
+                      }
                       return (
-                        <tr key={'rub-' + ru.tipo + ru.desc} className="bg-slate-50/50">
-                          <td
-                            className={
-                              'sticky left-0 z-10 border-b border-r border-gray-100 pl-12 pr-3 py-1 whitespace-nowrap bg-slate-50 text-[10px] ' +
-                              corLabel
-                            }
-                          >
-                            <span className="inline-flex items-center gap-1.5">
-                              <span className={'w-1.5 h-1.5 rounded-full ' + dot} />
-                              {ru.desc}
-                              {!entra && (
-                                <span className="ml-1 text-[9px] font-semibold text-gray-400 no-underline">
-                                  (não entra na DRE)
-                                </span>
-                              )}
-                            </span>
-                          </td>
-                          {colunas.map((c) => {
-                            const rv = ru.porCol[c.key];
-                            return (
-                              <td
-                                key={c.key}
-                                title={
-                                  entra
-                                    ? prov
-                                      ? 'Provento (entra na DRE)'
-                                      : 'Desconto'
-                                    : 'Não entra na DRE'
-                                }
-                                className={
-                                  'border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] bg-slate-50/40 ' +
-                                  corVal
-                                }
-                              >
-                                {typeof rv === 'number' && rv !== 0 ? formatar(rv, 'moeda') : '–'}
-                              </td>
-                            );
-                          })}
-                        </tr>
+                        <React.Fragment key={'rub-' + ru.key}>
+                          <tr className="bg-slate-50/50">
+                            <td
+                              onClick={temFunc ? () => toggleRubrica(ru.key) : undefined}
+                              className={
+                                'sticky left-0 z-10 border-b border-r border-gray-100 pl-12 pr-3 py-1 whitespace-nowrap bg-slate-50 text-[10px] ' +
+                                corVal +
+                                (temFunc ? ' cursor-pointer hover:underline' : '')
+                              }
+                            >
+                              <span className="inline-flex items-center gap-1">
+                                {temFunc ? (
+                                  rubAberta ? (
+                                    <CaretDown size={9} weight="bold" className="text-gray-300 shrink-0" />
+                                  ) : (
+                                    <CaretRight size={9} weight="bold" className="text-gray-300 shrink-0" />
+                                  )
+                                ) : (
+                                  <span className={'w-1.5 h-1.5 rounded-full ' + dot} />
+                                )}
+                                {ru.desc}
+                              </span>
+                            </td>
+                            {colunas.map((c) => {
+                              const rv = ru.porCol[c.key];
+                              return (
+                                <td
+                                  key={c.key}
+                                  className={
+                                    'border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] bg-slate-50/40 ' +
+                                    corVal
+                                  }
+                                >
+                                  {typeof rv === 'number' && rv !== 0 ? formatar(rv, 'moeda') : '–'}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                          {rubAberta &&
+                            funcs.map((f, fi) => (
+                              <tr key={'f-' + ru.key + '-' + fi} className="bg-white">
+                                <td className="sticky left-0 z-10 border-b border-r border-gray-100 pl-[4.5rem] pr-3 py-0.5 whitespace-nowrap bg-white text-[9px] text-gray-500">
+                                  {f.nome}
+                                  {f.funcao ? <span className="text-gray-400"> · {f.funcao}</span> : null}
+                                  {f.empresa ? (
+                                    <span className="text-gray-300"> · {f.empresa}</span>
+                                  ) : null}
+                                </td>
+                                {colunas.map((c) => {
+                                  const fv = f.porCol[c.key];
+                                  return (
+                                    <td
+                                      key={c.key}
+                                      className={
+                                        'border-b border-gray-100 px-3 py-0.5 text-right tabular-nums whitespace-nowrap text-[9px] ' +
+                                        corVal
+                                      }
+                                    >
+                                      {typeof fv === 'number' && fv !== 0 ? formatar(fv, 'moeda') : '–'}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                        </React.Fragment>
                       );
                     })}
                   </React.Fragment>
