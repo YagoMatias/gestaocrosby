@@ -10,11 +10,11 @@ import PageTitle from '../components/ui/PageTitle';
 import base from '../data/forecastBase.json';
 import { API_BASE_URL } from '../config/constants';
 
-// Automação da receita bruta (Niziany, 27/10/2026): a partir de setembro/2026
+// Automação da receita bruta (Niziany, 27–28/10/2026): a partir de setembro/2026
 // os canais vêm do New Forecast (GET /api/forecast-dre/receita-canais), já com
 // o showroom separado por cliente. Jan–ago seguem com os números da planilha.
-// Mapa: coluna da tela (key do forecastBase) → mês YYYY-MM a puxar.
-const MESES_AUTOMATICOS = [{ col: 'V', mes: '2026-09' }];
+// É automático para os próximos meses: puxa todo mês de 2026 marcado como
+// "realizado" a partir de setembro — não precisa ligar mês a mês.
 const CANAL_POR_LINHA = {
   VAREJO: 'varejo',
   MULTIMARCAS: 'multimarcas',
@@ -22,6 +22,22 @@ const CANAL_POR_LINHA = {
   REVENDA: 'revenda',
   BAZAR: 'bazar',
 };
+const MES_ABREV = {
+  jan: 1, fev: 2, mar: 3, abr: 4, mai: 5, jun: 6,
+  jul: 7, ago: 8, set: 9, out: 10, nov: 11, dez: 12,
+};
+// Meses a puxar do New Forecast: colunas mensais de 2026, realizado, mês >= 9.
+function mesesAutomaticos(colunas) {
+  const out = [];
+  for (const c of colunas) {
+    if (c.grupo !== 'mensal' || c.ano !== 2026 || c.tipo !== 'realizado') continue;
+    const abrev = String(c.label || '').slice(0, 3).toLowerCase();
+    const m = MES_ABREV[abrev];
+    if (!m || m < 9) continue;
+    out.push({ col: c.key, mes: `2026-${String(m).padStart(2, '0')}` });
+  }
+  return out;
+}
 
 const TIPO_ROTULO = { realizado: 'Realizado', forecast: 'Previsão' };
 
@@ -78,9 +94,11 @@ export default function Forecast() {
 
   useEffect(() => {
     let cancelado = false;
+    const alvos = mesesAutomaticos(colunas);
+    if (alvos.length === 0) return undefined;
     (async () => {
       const resultados = await Promise.all(
-        MESES_AUTOMATICOS.map(async ({ col, mes }) => {
+        alvos.map(async ({ col, mes }) => {
           try {
             const r = await fetch(
               `${API_BASE_URL}/api/forecast-dre/receita-canais?mes=${mes}`,
@@ -110,7 +128,8 @@ export default function Forecast() {
     return () => {
       cancelado = true;
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [colunas]);
 
   return (
     <div className="w-full max-w-7xl mx-auto px-2 sm:px-4 py-4">
