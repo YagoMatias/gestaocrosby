@@ -22,6 +22,14 @@ const CANAL_POR_LINHA = {
   REVENDA: 'revenda',
   BAZAR: 'bazar',
 };
+// Linhas de canal que podem abrir para mostrar o CREDEV do canal (só visual).
+const CREDEV_CANAL_POR_LINHA = {
+  VAREJO: 'varejo',
+  MULTIMARCAS: 'multimarcas',
+  FRANQUIA: 'franquia',
+  REVENDA: 'revenda',
+  BAZAR: 'bazar',
+};
 const MES_ABREV = {
   jan: 1, fev: 2, mar: 3, abr: 4, mai: 5, jun: 6,
   jul: 7, ago: 8, set: 9, out: 10, nov: 11, dez: 12,
@@ -121,6 +129,17 @@ export default function Forecast() {
   const [tipoOverrides, setTipoOverrides] = useState({});
   // Overrides ao vivo por coluna: { [colKey]: { VAREJO: v, MULTIMARCAS: v, ... } }
   const [overrides, setOverrides] = useState({});
+  // CREDEV por canal (só visualização): { [colKey]: { varejo, multimarcas, ... } }
+  const [credevCanais, setCredevCanais] = useState({});
+  // Canais abertos para mostrar o CREDEV do canal (por label)
+  const [canaisAbertos, setCanaisAbertos] = useState(() => new Set());
+  const toggleCanal = (label) =>
+    setCanaisAbertos((prev) => {
+      const n = new Set(prev);
+      if (n.has(label)) n.delete(label);
+      else n.add(label);
+      return n;
+    });
 
   // Só 2026, visão mensal. Aplica o tipo (realizado/previsão) salvo.
   const colunas = useMemo(
@@ -259,6 +278,7 @@ export default function Forecast() {
       );
       if (cancelado) return;
       const novo = {};
+      const novoCredevCanais = {};
       for (const item of resultados) {
         if (!item) continue;
         const [col, d] = item;
@@ -268,8 +288,13 @@ export default function Forecast() {
         }
         // CREDEV vem do Contas a Receber (já negativo).
         if (typeof d.credev === 'number') novo[col].CREDEV = d.credev;
+        // CREDEV por canal (só visualização)
+        if (d.credev_canais && typeof d.credev_canais === 'object') {
+          novoCredevCanais[col] = d.credev_canais;
+        }
       }
       setOverrides(novo);
+      setCredevCanais(novoCredevCanais);
       setCarregandoAuto(false);
     })();
     return () => {
@@ -410,14 +435,29 @@ export default function Forecast() {
                       ? 'pl-8 text-gray-500 font-normal'
                       : 'font-semibold text-gray-700';
                 const labelBg = forte ? 'bg-[#eef0f6]' : zebra ? 'bg-gray-50' : 'bg-white';
+                // Linha de canal que abre pra mostrar o CREDEV do canal (só visual)
+                const canalKey = CREDEV_CANAL_POR_LINHA[l.label];
+                const temCredevCanal =
+                  canalKey &&
+                  Object.values(credevCanais).some(
+                    (cc) => cc && typeof cc[canalKey] === 'number' && cc[canalKey] !== 0,
+                  );
+                const canalAberto = temCredevCanal && canaisAbertos.has(l.label);
+                const clicavel = ehPai || temCredevCanal;
+                const onClickLabel = ehPai
+                  ? () => toggleRecolher(l.id)
+                  : temCredevCanal
+                    ? () => toggleCanal(l.label)
+                    : undefined;
                 return (
-                  <tr key={l.id} className={trBg}>
+                  <React.Fragment key={l.id}>
+                  <tr className={trBg}>
                     <td
-                      onClick={ehPai ? () => toggleRecolher(l.id) : undefined}
+                      onClick={onClickLabel}
                       className={
                         'sticky left-0 z-10 border-b border-r border-gray-100 px-3 py-2 whitespace-nowrap ' +
                         bordaTopo + ' ' + labelBg + ' ' + labelCls +
-                        (ehPai ? ' cursor-pointer hover:text-blue-700' : '')
+                        (clicavel ? ' cursor-pointer hover:text-blue-700' : '')
                       }
                     >
                       <span className="inline-flex items-center gap-1">
@@ -426,6 +466,12 @@ export default function Forecast() {
                             <CaretRight size={11} weight="bold" className="text-gray-400 shrink-0" />
                           ) : (
                             <CaretDown size={11} weight="bold" className="text-gray-400 shrink-0" />
+                          )
+                        ) : temCredevCanal ? (
+                          canalAberto ? (
+                            <CaretDown size={10} weight="bold" className="text-gray-300 shrink-0" />
+                          ) : (
+                            <CaretRight size={10} weight="bold" className="text-gray-300 shrink-0" />
                           )
                         ) : null}
                         {l.label}
@@ -476,6 +522,26 @@ export default function Forecast() {
                       );
                     })}
                   </tr>
+                  {canalAberto && (
+                    <tr className="bg-red-50/40">
+                      <td className="sticky left-0 z-10 border-b border-r border-gray-100 pl-12 pr-3 py-1.5 whitespace-nowrap bg-red-50/60 text-[10px] font-semibold text-red-700">
+                        ↳ CREDEV {l.label}
+                      </td>
+                      {colunas.map((c) => {
+                        const cv = credevCanais[c.key]?.[canalKey];
+                        return (
+                          <td
+                            key={c.key}
+                            title="CREDEV do canal (apenas visualização, não entra no cálculo)"
+                            className="border-b border-gray-100 px-3 py-1.5 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-red-50/40"
+                          >
+                            {typeof cv === 'number' && cv !== 0 ? formatar(cv, 'moeda') : '–'}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  )}
+                  </React.Fragment>
                 );
               })}
             </tbody>
