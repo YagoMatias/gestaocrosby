@@ -5,7 +5,7 @@
 // cinza, cards com borda). Os valores vêm de src/data/forecastBase.json; as
 // visões e blocos extras seguem no JSON caso precise voltar.
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChartLineUp } from '@phosphor-icons/react';
+import { ChartLineUp, CaretRight, CaretDown, CornersOut, CornersIn } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import base from '../data/forecastBase.json';
 import { API_BASE_URL } from '../config/constants';
@@ -136,6 +136,34 @@ export default function Forecast() {
   const grupos = useMemo(() => agruparColunas(colunas), [colunas]);
   const linhas = base.blocos.dre || [];
 
+  // Estrutura pai → filhos: uma linha de nível 0 seguida de linhas de nível 1
+  // é "pai" (expansível). Clicar nela recolhe/mostra os detalhes.
+  const estrutura = useMemo(() => {
+    const info = linhas.map(() => ({ isPai: false, paiId: null }));
+    let ultimoPai = null;
+    linhas.forEach((l, i) => {
+      if (l.nivel === 1 && l.fmt !== 'pct') {
+        if (ultimoPai != null) {
+          info[i].paiId = linhas[ultimoPai].id;
+          info[ultimoPai].isPai = true;
+        }
+      } else if (l.fmt !== 'pct') {
+        ultimoPai = i;
+      }
+    });
+    return info;
+  }, [linhas]);
+
+  const [recolhidos, setRecolhidos] = useState(() => new Set());
+  const [telaCheia, setTelaCheia] = useState(false);
+  const toggleRecolher = (id) =>
+    setRecolhidos((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+
   // Carrega a config de meses (realizado/previsão) salva.
   useEffect(() => {
     let cancelado = false;
@@ -225,8 +253,14 @@ export default function Forecast() {
         iconColor="text-[#000638]"
       />
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        {/* Barra de topo: cenário + legenda */}
+      <div
+        className={
+          telaCheia
+            ? 'fixed inset-0 z-50 bg-white flex flex-col overflow-hidden'
+            : 'bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden'
+        }
+      >
+        {/* Barra de topo: cenário + legenda + tela cheia */}
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-gray-100 bg-gray-50">
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
@@ -236,24 +270,41 @@ export default function Forecast() {
               </span>
             </div>
             <span className="text-[10px] text-gray-400 hidden sm:inline">
-              Clique no mês para alternar Realizado / Previsão
+              Clique no mês para Realizado / Previsão · clique na seção para expandir
             </span>
           </div>
-          <div className="flex items-center gap-2 text-[10px] font-semibold">
-            <span className="inline-flex items-center gap-1.5 text-gray-600">
-              <span className="w-2.5 h-2.5 rounded-sm bg-[#000638]" /> Realizado
-            </span>
-            <span className="inline-flex items-center gap-1.5 text-gray-600">
-              <span className="w-2.5 h-2.5 rounded-sm bg-blue-600" /> Previsão
-            </span>
-            <span className="inline-flex items-center gap-1.5 text-gray-600">
-              <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> New Forecast
-            </span>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 text-[10px] font-semibold">
+              <span className="inline-flex items-center gap-1.5 text-gray-600">
+                <span className="w-2.5 h-2.5 rounded-sm bg-[#000638]" /> Realizado
+              </span>
+              <span className="inline-flex items-center gap-1.5 text-gray-600">
+                <span className="w-2.5 h-2.5 rounded-sm bg-blue-600" /> Previsão
+              </span>
+              <span className="inline-flex items-center gap-1.5 text-gray-600">
+                <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> New Forecast
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setTelaCheia((v) => !v)}
+              className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+              title={telaCheia ? 'Sair da tela cheia' : 'Tela cheia'}
+            >
+              {telaCheia ? <CornersIn size={14} /> : <CornersOut size={14} />}
+              {telaCheia ? 'Sair' : 'Tela cheia'}
+            </button>
           </div>
         </div>
 
         {/* Tabela */}
-        <div className="overflow-auto max-h-[calc(100vh-250px)]">
+        <div
+          className={
+            telaCheia
+              ? 'overflow-auto flex-1 min-h-0'
+              : 'overflow-auto max-h-[calc(100vh-250px)]'
+          }
+        >
           <table className="min-w-full text-[11px] border-separate border-spacing-0">
             <thead className="sticky top-0 z-20">
               <tr>
@@ -294,10 +345,15 @@ export default function Forecast() {
             </thead>
             <tbody>
               {linhas.map((l, idx) => {
+                const info = estrutura[idx];
+                // Esconde filhos de uma seção recolhida
+                if (info.paiId && recolhidos.has(info.paiId)) return null;
                 const tipo = tipoLinha(l);
                 const forte = tipo === 'forte';
                 const pct = tipo === 'pct';
                 const sub = tipo === 'sub';
+                const ehPai = info.isPai;
+                const recolhido = recolhidos.has(l.id);
                 const secao = INICIO_SECAO.has(l.label);
                 const zebra = sub && idx % 2 === 1;
                 const trBg = forte
@@ -317,12 +373,23 @@ export default function Forecast() {
                 return (
                   <tr key={l.id} className={trBg}>
                     <td
+                      onClick={ehPai ? () => toggleRecolher(l.id) : undefined}
                       className={
                         'sticky left-0 z-10 border-b border-r border-gray-100 px-3 py-2 whitespace-nowrap ' +
-                        bordaTopo + ' ' + labelBg + ' ' + labelCls
+                        bordaTopo + ' ' + labelBg + ' ' + labelCls +
+                        (ehPai ? ' cursor-pointer hover:text-blue-700' : '')
                       }
                     >
-                      {l.label}
+                      <span className="inline-flex items-center gap-1">
+                        {ehPai ? (
+                          recolhido ? (
+                            <CaretRight size={11} weight="bold" className="text-gray-400 shrink-0" />
+                          ) : (
+                            <CaretDown size={11} weight="bold" className="text-gray-400 shrink-0" />
+                          )
+                        ) : null}
+                        {l.label}
+                      </span>
                     </td>
                     {colunas.map((c) => {
                       const ovr = overrides[c.key]?.[l.label];
