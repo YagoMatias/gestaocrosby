@@ -747,7 +747,7 @@ export default function Forecast() {
                         const em = new Map();
                         for (const [col, lista] of Object.entries(ru.funcPorCol)) {
                           for (const f of lista || []) {
-                            const emp = f.empresa || '(sem empresa)';
+                            const emp = f.loja || '— sem seção —';
                             const e =
                               em.get(emp) ||
                               { empresa: emp, porCol: {}, max: 0, funcs: new Map() };
