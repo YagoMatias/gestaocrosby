@@ -634,8 +634,8 @@
    {
     "id": "r10",
     "label": "IMOBILIZADO",
-    "nivel": 0,
-    "bold": true,
+    "nivel": 1,
+    "bold": false,
     "fmt": "moeda",
     "valores": {
      "N": 0.0,
@@ -653,8 +653,8 @@
    {
     "id": "r11",
     "label": "BLUECRED",
-    "nivel": 0,
-    "bold": true,
+    "nivel": 1,
+    "bold": false,
     "fmt": "moeda",
     "valores": {
      "Q": 0.0,
