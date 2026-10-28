@@ -599,6 +599,7 @@ export default function RemessaBoletos() {
             <FiltroEmpresa
               empresasSelecionadas={empresasSelecionadas}
               onSelectEmpresas={setEmpresasSelecionadas}
+              presets={[{ nome: 'Crosby', codigos: [1, 99, 100, 101] }]}
             />
           </div>
           <div>

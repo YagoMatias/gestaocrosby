@@ -1308,7 +1308,13 @@ const SolicitacaoBaixa = () => {
                             : sol.origem === 'pagarme_boleto'
                               ? 'automático · boleto Pagar.me'
                               : sol.origem === 'pix_pagarme_tadeu'
-                                ? 'automático · Pix do Tadeu (Pagar.me)'
+                                ? (() => {
+                                    const m = /—\s*R\$\s*([\d.]+)/.exec(sol.observacao || '');
+                                    const rec = m
+                                      ? ` · Pix recebido R$ ${Number(m[1]).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                      : '';
+                                    return `automático · Pix do Tadeu (Pagar.me)${rec}`;
+                                  })()
                                 : sol.user_email}
                       </div>
                     </td>
