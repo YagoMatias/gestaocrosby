@@ -119,6 +119,8 @@ export default function Forecast() {
   // Realizado × Previsão por mês: a Niziany marca na tela (salvo no backend).
   // Mescla por cima do tipo padrão da planilha.
   const [tipoOverrides, setTipoOverrides] = useState({});
+  // Overrides ao vivo por coluna: { [colKey]: { VAREJO: v, MULTIMARCAS: v, ... } }
+  const [overrides, setOverrides] = useState({});
 
   // Só 2026, visão mensal. Aplica o tipo (realizado/previsão) salvo.
   const colunas = useMemo(
@@ -231,9 +233,6 @@ export default function Forecast() {
       /* falha ao salvar: fica só na sessão */
     }
   };
-
-  // Overrides ao vivo por coluna: { [colKey]: { VAREJO: v, MULTIMARCAS: v, ... } }
-  const [overrides, setOverrides] = useState({});
 
   useEffect(() => {
     let cancelado = false;
