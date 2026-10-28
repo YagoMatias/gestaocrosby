@@ -156,7 +156,8 @@ export default function Forecast() {
 
   // Totais calculados (Niziany, 28/10/2026):
   //   RECEITA LÍQUIDA = soma de todas as receitas por canal de venda
-  //   RECEITA BRUTA   = soma dos canais + CREDEV (CREDEV é negativo)
+  //   RECEITA BRUTA   = soma dos canais + CREDEV (somado pelo valor ABSOLUTO,
+  //                     independente do sinal — o CREDEV soma, não diminui)
   // Só recalcula a coluna que tem dados de canal; previsão sem canais (out–dez)
   // mantém o alvo da planilha.
   const totaisCalculados = useMemo(() => {
@@ -179,7 +180,7 @@ export default function Forecast() {
       const credev = valor('CREDEV', c.key) || 0;
       out[c.key] = {
         'RECEITA LÍQUIDA': Math.round(soma * 100) / 100,
-        'RECEITA BRUTA': Math.round((soma + credev) * 100) / 100,
+        'RECEITA BRUTA': Math.round((soma + Math.abs(credev)) * 100) / 100,
       };
     }
     return out;
