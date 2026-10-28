@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import {
   Storefront,
   ArrowUUpLeft,
@@ -24,9 +24,13 @@ const Home = () => {
   const { user } = useAuth();
   const [showNoticesModal, setShowNoticesModal] = useState(true);
   const noApp = typeof window !== 'undefined' && !!window.pdv;
+  // app Android "Balanço RFID": a Home é a própria tela de contagem
+  const noAppBalanco = typeof window !== 'undefined' && !!window.HeadcoachRfid;
   const podeVer = (href) =>
     user?.allowedPages === '*' ||
     (Array.isArray(user?.allowedPages) && user.allowedPages.includes(href));
+
+  if (noAppBalanco) return <Navigate to="/balanco-rfid" replace />;
 
   return (
     <>

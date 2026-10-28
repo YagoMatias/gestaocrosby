@@ -150,6 +150,8 @@ const DevolucoesMercadoria = lazy(() => import('./pages/DevolucoesMercadoria'));
 const DevolucaoPublica = lazy(() => import('./pages/DevolucaoPublica'));
 const PDVCrosby = lazy(() => import('./pages/PDVCrosby'));
 const PDVPerifericos = lazy(() => import('./pages/PDVPerifericos'));
+const BalancoRfidApp = lazy(() => import('./pages/BalancoRfidApp'));
+const BalancoRfidArquivos = lazy(() => import('./pages/BalancoRfidArquivos'));
 const VendasPDV = lazy(() => import('./pages/VendasPDV'));
 const FiscalPDV = lazy(() => import('./pages/FiscalPDV'));
 const IntegracaoERP = lazy(() => import('./pages/IntegracaoERP'));
@@ -231,6 +233,7 @@ const protectedRoutes = [
   { path: '/devolucoes-mercadoria', component: DevolucoesMercadoria },
   { path: '/tecnologia/pdv-crosby', component: PDVCrosby },
   { path: '/tecnologia/pdv-perifericos', component: PDVPerifericos },
+  { path: '/balanco-rfid/arquivos', component: BalancoRfidArquivos },
   { path: '/varejo/vendas-pdv', component: VendasPDV },
   { path: '/admin/fiscal-pdv', component: FiscalPDV },
   { path: '/admin/integracao-erp', component: IntegracaoERP },
@@ -513,6 +516,18 @@ function App() {
             <Suspense fallback={<PageLoadingFallback />}>
               <DevolucaoPublica />
             </Suspense>
+          }
+        />
+        {/* App Android "Balanço RFID" (coletor Urovo): tela cheia, sem menu,
+            com login e permissão normais do HeadCoach */}
+        <Route
+          path="/balanco-rfid"
+          element={
+            <PrivateRoute>
+              <Suspense fallback={<PageLoadingFallback />}>
+                <BalancoRfidApp />
+              </Suspense>
+            </PrivateRoute>
           }
         />
         {/* Pública: LP de vaga — Banco de Talentos (link exclusivo por vaga) */}

@@ -39,6 +39,8 @@ const LoginForm = () => {
       // caem na primeira página liberada.
       const pages = result?.user?.allowedPages;
       let destino = '/home';
+      // dentro do app Android "Balanço RFID" vai direto para a contagem
+      const noAppBalanco = typeof window !== 'undefined' && !!window.HeadcoachRfid;
       if (
         Array.isArray(pages) &&
         pages.length > 0 &&
@@ -46,6 +48,7 @@ const LoginForm = () => {
       ) {
         destino = pages[0];
       }
+      if (noAppBalanco) destino = '/balanco-rfid';
       console.log('🧭 Redirecionando para', destino);
       navigate(destino);
       console.log('✅ Redirecionamento concluído');

@@ -596,6 +596,16 @@ const AVAILABLE_PAGES = [
     category: 'Tecnologia',
   },
   {
+    path: '/balanco-rfid/arquivos',
+    name: 'Balanço RFID — Arquivos',
+    category: 'Tecnologia',
+  },
+  {
+    path: '/balanco-rfid',
+    name: 'Balanço RFID — tela do app Android (contagem)',
+    category: 'Tecnologia',
+  },
+  {
     path: '/tecnologia/orcamento-rfid',
     name: 'Orçamento RFID',
     category: 'Tecnologia',

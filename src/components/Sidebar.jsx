@@ -954,6 +954,23 @@ const tecnologiaItems = [
     color: 'text-slate-600',
   },
   {
+    // arquivos de contagem do app Android (coletor Urovo + pistola RFID)
+    name: 'Balanço RFID',
+    href: '/balanco-rfid/arquivos',
+    icon: Broadcast,
+    color: 'text-indigo-600',
+  },
+  {
+    // APK do app Balanço RFID: sempre a última versão publicada por
+    // `npm run release` no balanco-rfid-app (bucket pdv-updates/balanco-rfid)
+    name: 'Baixar Balanço RFID (Android)',
+    href: 'https://dorztqiunewggydvkjnf.supabase.co/storage/v1/object/public/pdv-updates/balanco-rfid/Balanco-RFID.apk',
+    external: true,
+    permissao: '/balanco-rfid/arquivos',
+    icon: DeviceMobile,
+    color: 'text-indigo-600',
+  },
+  {
     name: 'Etiquetas de Preço',
     href: '/tecnologia/etiquetas-preco',
     icon: Tag,
