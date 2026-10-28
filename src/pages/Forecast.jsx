@@ -134,6 +134,17 @@ export default function Forecast() {
   // Rubricas da folha por coluna (abrir Pessoal Fixo): { [colKey]: [{desc,tipo,qtd,valor}] }
   const [rubricasFolha, setRubricasFolha] = useState({});
   const [folhaAberta, setFolhaAberta] = useState(false);
+  // Proventos dos empregados (sem pró-labore) e pró-labore editável por coluna
+  const [pfEmpregados, setPfEmpregados] = useState({});
+  const [prolabore, setProlabore] = useState({});
+  const salvarProlabore = (col, mes, valor) => {
+    setProlabore((p) => ({ ...p, [col]: valor }));
+    fetch(`${API_BASE_URL}/api/forecast-dre/prolabore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mes, valor }),
+    }).catch(() => {});
+  };
   // Canais abertos para mostrar o CREDEV do canal (por label)
   const [canaisAbertos, setCanaisAbertos] = useState(() => new Set());
   const toggleCanal = (label) =>
@@ -317,6 +328,8 @@ export default function Forecast() {
       const novo = {};
       const novoCredevCanais = {};
       const novoRubricas = {};
+      const novoPfEmp = {};
+      const novoProlabore = {};
       for (const item of resultados) {
         if (!item) continue;
         const [col, d, pf] = item;
@@ -332,15 +345,21 @@ export default function Forecast() {
             novoCredevCanais[col] = d.credev_canais;
           }
         }
-        // Pessoal Fixo vem da folha do Dryland (já negativo).
+        // Pessoal Fixo = proventos dos empregados (folha) + pró-labore editável.
         if (pf && typeof pf.pessoal_fixo === 'number') {
-          novo[col]['PESSOAL FIXO'] = pf.pessoal_fixo;
-          if (Array.isArray(pf.rubricas)) novoRubricas[col] = pf.rubricas;
+          novoPfEmp[col] = pf.proventos_empregados || 0;
+          novoProlabore[col] = typeof pf.prolabore === 'number' ? pf.prolabore : 80000;
+          if (Array.isArray(pf.rubricas)) {
+            // pró-labore é tratado à parte (editável); fica fora da lista fixa
+            novoRubricas[col] = pf.rubricas.filter((r) => !r.editavel);
+          }
         }
       }
       setOverrides(novo);
       setCredevCanais(novoCredevCanais);
       setRubricasFolha(novoRubricas);
+      setPfEmpregados(novoPfEmp);
+      setProlabore(novoProlabore);
       setCarregandoAuto(false);
     })();
     return () => {
@@ -528,10 +547,24 @@ export default function Forecast() {
                       </span>
                     </td>
                     {colunas.map((c) => {
+                      // Pessoal Fixo = proventos dos empregados + pró-labore editável
+                      const pfLine =
+                        l.label === 'PESSOAL FIXO' && pfEmpregados[c.key] !== undefined
+                          ? -Math.round(
+                              ((pfEmpregados[c.key] || 0) + (prolabore[c.key] || 0)) * 100,
+                            ) / 100
+                          : undefined;
                       const ovr = overrides[c.key]?.[l.label];
                       const calc = totaisCalculados[c.key]?.[l.label];
-                      const auto = ovr !== undefined;
-                      const v = calc !== undefined ? calc : auto ? ovr : l.valores[c.key];
+                      const auto = pfLine !== undefined || ovr !== undefined;
+                      const v =
+                        pfLine !== undefined
+                          ? pfLine
+                          : calc !== undefined
+                            ? calc
+                            : ovr !== undefined
+                              ? ovr
+                              : l.valores[c.key];
                       const negativo = typeof v === 'number' && v < 0;
                       const corTexto = negativo
                         ? 'text-red-600'
@@ -586,6 +619,44 @@ export default function Forecast() {
                             className="border-b border-gray-100 px-3 py-1.5 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-red-50/40"
                           >
                             {typeof cv === 'number' && cv !== 0 ? formatar(cv, 'moeda') : '–'}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  )}
+                  {ehFolha && folhaAberta && (
+                    <tr className="bg-amber-50/50">
+                      <td className="sticky left-0 z-10 border-b border-r border-gray-100 pl-12 pr-3 py-1 whitespace-nowrap bg-amber-50 text-[10px] font-semibold text-amber-800">
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                          PRÓ-LABORE (DIRETORES) · editável
+                        </span>
+                      </td>
+                      {colunas.map((c) => {
+                        const temFolha = pfEmpregados[c.key] !== undefined;
+                        return (
+                          <td
+                            key={c.key}
+                            className="border-b border-gray-100 px-1.5 py-1 text-right tabular-nums whitespace-nowrap bg-amber-50/40"
+                          >
+                            {temFolha ? (
+                              <input
+                                type="number"
+                                defaultValue={prolabore[c.key] ?? 80000}
+                                onBlur={(e) => {
+                                  const n = Math.max(0, Number(e.target.value) || 0);
+                                  if (n !== (prolabore[c.key] ?? 80000))
+                                    salvarProlabore(c.key, colParaMes(c), n);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') e.target.blur();
+                                }}
+                                className="w-24 text-right text-[10px] text-amber-800 bg-white border border-amber-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                                title="Pró-labore dos diretores (editável). Entra no Pessoal Fixo."
+                              />
+                            ) : (
+                              <span className="text-[10px] text-gray-300">–</span>
+                            )}
                           </td>
                         );
                       })}
