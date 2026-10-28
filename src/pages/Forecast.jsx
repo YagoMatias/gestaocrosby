@@ -151,6 +151,8 @@ export default function Forecast() {
         for (const [linha, chave] of Object.entries(CANAL_POR_LINHA)) {
           if (typeof d[chave] === 'number') novo[col][linha] = d[chave];
         }
+        // CREDEV vem do Contas a Receber (já negativo).
+        if (typeof d.credev === 'number') novo[col].CREDEV = d.credev;
       }
       setOverrides(novo);
     })();
@@ -305,9 +307,10 @@ export default function Forecast() {
       </div>
 
       <p className="text-[11px] text-gray-400 px-1 mt-3">
-        Base: {base.origem}. A partir de setembro/2026 a receita bruta por canal (células em
-        verde) é puxada do New Forecast, com o showroom/fábricas separado por cliente
-        (franquia × multimarcas). Jan–ago seguem com os números da planilha.
+        Base: {base.origem}. A partir de setembro/2026 (células em verde): a receita bruta por
+        canal vem do New Forecast (showroom separado por cliente) e o CREDEV vem do Contas a
+        Receber (faturas CREDEV das filiais, por emissão do mês). Jan–ago e os totais seguem
+        com os números da planilha.
       </p>
     </div>
   );
