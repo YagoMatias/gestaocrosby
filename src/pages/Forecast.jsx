@@ -133,11 +133,19 @@ export default function Forecast() {
   const [credevCanais, setCredevCanais] = useState({});
   // Rubricas da folha por coluna (abrir Pessoal Fixo): { [colKey]: [{desc,tipo,qtd,valor}] }
   const [rubricasFolha, setRubricasFolha] = useState({});
-  const [folhaAberta, setFolhaAberta] = useState(false);
   // Proventos dos empregados (sem pró-labore) e pró-labore editável por coluna
-  const [pfEmpregados, setPfEmpregados] = useState({});
+  const [pfFixo, setPfFixo] = useState({}); // proventos fixos por coluna
+  const [pfVariavel, setPfVariavel] = useState({}); // proventos variáveis (comissão)
   const [prolabore, setProlabore] = useState({});
   const [editandoProl, setEditandoProl] = useState(null); // col sendo editada
+  const [folhasAbertas, setFolhasAbertas] = useState(() => new Set());
+  const toggleFolha = (label) =>
+    setFolhasAbertas((prev) => {
+      const n = new Set(prev);
+      if (n.has(label)) n.delete(label);
+      else n.add(label);
+      return n;
+    });
   const salvarProlabore = (col, mes, valor) => {
     setProlabore((p) => ({ ...p, [col]: valor }));
     fetch(`${API_BASE_URL}/api/forecast-dre/prolabore`, {
@@ -248,6 +256,7 @@ export default function Forecast() {
             desc: r.desc,
             tipo: r.tipo,
             entra: r.entra !== false,
+            grupo: r.grupo || 'fixo',
             porCol: {},
             funcPorCol: {},
             max: 0,
@@ -349,7 +358,8 @@ export default function Forecast() {
       const novo = {};
       const novoCredevCanais = {};
       const novoRubricas = {};
-      const novoPfEmp = {};
+      const novoPfFixo = {};
+      const novoPfVar = {};
       const novoProlabore = {};
       for (const item of resultados) {
         if (!item) continue;
@@ -366,9 +376,10 @@ export default function Forecast() {
             novoCredevCanais[col] = d.credev_canais;
           }
         }
-        // Pessoal Fixo = proventos dos empregados (folha) + pró-labore editável.
+        // Pessoal Fixo (fixos + pró-labore) e Pessoal Variável (comissão).
         if (pf && typeof pf.pessoal_fixo === 'number') {
-          novoPfEmp[col] = pf.proventos_empregados || 0;
+          novoPfFixo[col] = pf.proventos_fixo || 0;
+          novoPfVar[col] = pf.proventos_variavel || 0;
           novoProlabore[col] = typeof pf.prolabore === 'number' ? pf.prolabore : 80000;
           if (Array.isArray(pf.rubricas)) {
             // pró-labore é tratado à parte (editável); e tira o que não entra na DRE
@@ -381,7 +392,8 @@ export default function Forecast() {
       setOverrides(novo);
       setCredevCanais(novoCredevCanais);
       setRubricasFolha(novoRubricas);
-      setPfEmpregados(novoPfEmp);
+      setPfFixo(novoPfFixo);
+      setPfVariavel(novoPfVar);
       setProlabore(novoProlabore);
       setCarregandoAuto(false);
     })();
@@ -531,15 +543,25 @@ export default function Forecast() {
                     (cc) => cc && typeof cc[canalKey] === 'number' && cc[canalKey] !== 0,
                   );
                 const canalAberto = temCredevCanal && canaisAbertos.has(l.label);
-                // Linha Pessoal Fixo abre as rubricas da folha (como no Dryland)
-                const ehFolha = l.label === 'PESSOAL FIXO' && rubricasUnidas.length > 0;
+                // Linhas da folha (Pessoal Fixo / Variável) abrem as rubricas
+                const grupoFolha =
+                  l.label === 'PESSOAL FIXO'
+                    ? 'fixo'
+                    : l.label === 'PESSOAL VARIÁVEL'
+                      ? 'variavel'
+                      : null;
+                const rubsDaLinha = grupoFolha
+                  ? rubricasUnidas.filter((r) => r.grupo === grupoFolha)
+                  : [];
+                const ehFolha = grupoFolha !== null && rubsDaLinha.length > 0;
+                const folhaAberta = ehFolha && folhasAbertas.has(l.label);
                 const clicavel = ehPai || temCredevCanal || ehFolha;
                 const onClickLabel = ehPai
                   ? () => toggleRecolher(l.id)
                   : temCredevCanal
                     ? () => toggleCanal(l.label)
                     : ehFolha
-                      ? () => setFolhaAberta((v) => !v)
+                      ? () => toggleFolha(l.label)
                       : undefined;
                 return (
                   <React.Fragment key={l.id}>
@@ -570,13 +592,19 @@ export default function Forecast() {
                       </span>
                     </td>
                     {colunas.map((c) => {
-                      // Pessoal Fixo = proventos dos empregados + pró-labore editável
-                      const pfLine =
-                        l.label === 'PESSOAL FIXO' && pfEmpregados[c.key] !== undefined
-                          ? -Math.round(
-                              ((pfEmpregados[c.key] || 0) + (prolabore[c.key] || 0)) * 100,
-                            ) / 100
-                          : undefined;
+                      // Pessoal Fixo = fixos + pró-labore; Variável = comissão
+                      let pfLine;
+                      if (l.label === 'PESSOAL FIXO' && pfFixo[c.key] !== undefined) {
+                        pfLine =
+                          -Math.round(
+                            ((pfFixo[c.key] || 0) + (prolabore[c.key] || 0)) * 100,
+                          ) / 100;
+                      } else if (
+                        l.label === 'PESSOAL VARIÁVEL' &&
+                        pfVariavel[c.key] !== undefined
+                      ) {
+                        pfLine = -Math.round((pfVariavel[c.key] || 0) * 100) / 100;
+                      }
                       const ovr = overrides[c.key]?.[l.label];
                       const calc = totaisCalculados[c.key]?.[l.label];
                       const auto = pfLine !== undefined || ovr !== undefined;
@@ -647,7 +675,7 @@ export default function Forecast() {
                       })}
                     </tr>
                   )}
-                  {ehFolha && folhaAberta && (
+                  {ehFolha && folhaAberta && l.label === 'PESSOAL FIXO' && (
                     <tr className="bg-slate-50/50">
                       <td className="sticky left-0 z-10 border-b border-r border-gray-100 pl-12 pr-3 py-1 whitespace-nowrap bg-slate-50 text-[10px] text-emerald-700">
                         <span className="inline-flex items-center gap-1.5">
@@ -656,7 +684,7 @@ export default function Forecast() {
                         </span>
                       </td>
                       {colunas.map((c) => {
-                        const temFolha = pfEmpregados[c.key] !== undefined;
+                        const temFolha = pfFixo[c.key] !== undefined;
                         const editando = editandoProl === c.key;
                         const val = prolabore[c.key] ?? 80000;
                         return (
@@ -699,7 +727,7 @@ export default function Forecast() {
                   )}
                   {ehFolha &&
                     folhaAberta &&
-                    rubricasUnidas.map((ru) => {
+                    rubsDaLinha.map((ru) => {
                       const prov = ru.tipo === 'provento';
                       const corVal = prov ? 'text-emerald-700' : 'text-red-600';
                       const dot = prov ? 'bg-emerald-500' : 'bg-red-500';
