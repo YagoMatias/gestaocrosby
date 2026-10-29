@@ -162,6 +162,19 @@ export default function Forecast() {
   const [ocupLinha, setOcupLinha] = useState({}); // { [colKey]: total (negativo) }
   const [ocupFiliais, setOcupFiliais] = useState({}); // { [colKey]: [{nome, valor}] }
   const [ocupAberto, setOcupAberto] = useState(false);
+  // SERVIÇOS DE TERCEIROS FIXOS: lido do localStorage da DRE Analítica
+  // (despesas-gerais-2026:v2). Mesmos números que a Niziany vê lá, com as
+  // bonificações importadas manualmente — não dá pra reproduzir pelo backend.
+  const [dreLocal, setDreLocal] = useState(null);
+  const [servAberto, setServAberto] = useState(false);
+  const [servCatsAbertas, setServCatsAbertas] = useState(() => new Set());
+  const toggleServCat = (cat) =>
+    setServCatsAbertas((prev) => {
+      const n = new Set(prev);
+      if (n.has(cat)) n.delete(cat);
+      else n.add(cat);
+      return n;
+    });
   // Canais abertos para mostrar o CREDEV do canal (por label)
   const [canaisAbertos, setCanaisAbertos] = useState(() => new Set());
   const toggleCanal = (label) =>
@@ -285,6 +298,63 @@ export default function Forecast() {
     }
     return [...map.values()].sort((a, b) => b.max - a.max);
   }, [rubricasFolha]);
+
+  // Lê o estado da DRE Analítica (localStorage, mesmo do menu Despesas Gerais)
+  // uma vez — é de onde sai a linha SERVIÇOS DE TERCEIROS FIXOS.
+  useEffect(() => {
+    try {
+      const raw =
+        localStorage.getItem('despesas-gerais-2026:v2') ||
+        localStorage.getItem('despesas-gerais-2026:v1');
+      if (raw) setDreLocal(JSON.parse(raw));
+    } catch {
+      /* sem acesso ao localStorage: cai no número da planilha */
+    }
+  }, []);
+
+  // SERVIÇOS DE TERCEIROS FIXOS por coluna realizada = todas as despesas da DRE
+  // Analítica do mês, MENOS "Serviços Prestados por Terceiros" (já no PJ) e a
+  // "Bonificação Marketing" (a outra bonificação fica). Abre por despesa →
+  // lançamentos, igual à DRE Analítica.
+  const servTerc = useMemo(() => {
+    const out = {};
+    if (!dreLocal || !dreLocal.months) return out;
+    const norm = (s) =>
+      String(s || '')
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '')
+        .trim()
+        .toUpperCase();
+    for (const c of colunas) {
+      if (c.grupo !== 'mensal' || c.tipo !== 'realizado') continue;
+      const mk = String(c.label || '').slice(0, 3).toLowerCase();
+      const mes = dreLocal.months[mk];
+      if (!mes || !mes.details) continue;
+      const categorias = [];
+      let total = 0;
+      for (const [cat, rows] of Object.entries(mes.details)) {
+        const n = norm(cat);
+        if (n === 'SERVICOS PRESTADOS POR TERCEIROS') continue; // já está no PJ
+        if (/BONIFIC.*MARKETING/.test(n)) continue; // bonificação marketing fora
+        const lanc = (rows || []).map((r) => ({
+          forn: r.forn || '—',
+          venc: r.venc || '',
+          val: Number(r.val) || 0,
+        }));
+        const soma = lanc.reduce((a, x) => a + x.val, 0);
+        if (!lanc.length) continue;
+        total += soma;
+        categorias.push({
+          cat,
+          valor: Math.round(soma * 100) / 100,
+          lancamentos: lanc.sort((a, b) => b.val - a.val),
+        });
+      }
+      categorias.sort((a, b) => b.valor - a.valor);
+      out[c.key] = { total: Math.round(total * 100) / 100, categorias };
+    }
+    return out;
+  }, [dreLocal, colunas]);
   const toggleRecolher = (id) =>
     setRecolhidos((prev) => {
       const n = new Set(prev);
@@ -591,7 +661,12 @@ export default function Forecast() {
                 // Linha OCUPAÇÃO: abre por filial (um nível)
                 const ehOcup = l.label === 'OCUPAÇÃO' && Object.keys(ocupLinha).length > 0;
                 const ocupAbertoLinha = ehOcup && ocupAberto;
-                const clicavel = ehPai || temCredevCanal || ehFolha || ehPJ || ehOcup;
+                // Linha SERVIÇOS DE TERCEIROS FIXOS: abre por despesa → lançamentos
+                const ehServTerc =
+                  l.label === 'SERVIÇOS DE TERCEIROS FIXOS' && Object.keys(servTerc).length > 0;
+                const servAbertoLinha = ehServTerc && servAberto;
+                const clicavel =
+                  ehPai || temCredevCanal || ehFolha || ehPJ || ehOcup || ehServTerc;
                 const onClickLabel = ehPai
                   ? () => toggleRecolher(l.id)
                   : temCredevCanal
@@ -602,7 +677,9 @@ export default function Forecast() {
                         ? () => setPjAberto((v) => !v)
                         : ehOcup
                           ? () => setOcupAberto((v) => !v)
-                          : undefined;
+                          : ehServTerc
+                            ? () => setServAberto((v) => !v)
+                            : undefined;
                 return (
                   <React.Fragment key={l.id}>
                   <tr className={trBg}>
@@ -621,14 +698,16 @@ export default function Forecast() {
                           ) : (
                             <CaretDown size={11} weight="bold" className="text-gray-400 shrink-0" />
                           )
-                        ) : temCredevCanal || ehFolha || ehPJ || ehOcup ? (
+                        ) : temCredevCanal || ehFolha || ehPJ || ehOcup || ehServTerc ? (
                           (ehFolha
                             ? folhaAberta
                             : ehPJ
                               ? pjAbertoLinha
                               : ehOcup
                                 ? ocupAbertoLinha
-                                : canalAberto) ? (
+                                : ehServTerc
+                                  ? servAbertoLinha
+                                  : canalAberto) ? (
                             <CaretDown size={10} weight="bold" className="text-gray-300 shrink-0" />
                           ) : (
                             <CaretRight size={10} weight="bold" className="text-gray-300 shrink-0" />
@@ -657,6 +736,11 @@ export default function Forecast() {
                         ocupLinha[c.key] !== undefined
                       ) {
                         pfLine = ocupLinha[c.key];
+                      } else if (
+                        l.label === 'SERVIÇOS DE TERCEIROS FIXOS' &&
+                        servTerc[c.key] !== undefined
+                      ) {
+                        pfLine = -Math.round((servTerc[c.key].total || 0) * 100) / 100;
                       }
                       const ovr = overrides[c.key]?.[l.label];
                       const calc = totaisCalculados[c.key]?.[l.label];
@@ -799,6 +883,93 @@ export default function Forecast() {
                           })}
                         </tr>
                       ));
+                    })()}
+                  {servAbertoLinha &&
+                    (() => {
+                      // Despesas (categorias) da DRE Analítica, por coluna
+                      const catMap = new Map();
+                      for (const [col, d] of Object.entries(servTerc)) {
+                        for (const cg of d.categorias || []) {
+                          const e =
+                            catMap.get(cg.cat) ||
+                            { cat: cg.cat, porCol: {}, lancPorCol: {}, max: 0 };
+                          e.porCol[col] = -(Number(cg.valor) || 0);
+                          e.lancPorCol[col] = cg.lancamentos || [];
+                          e.max = Math.max(e.max, Math.abs(Number(cg.valor) || 0));
+                          catMap.set(cg.cat, e);
+                        }
+                      }
+                      const cats = [...catMap.values()].sort((a, b) => b.max - a.max);
+                      return cats.map((cg) => {
+                        const catAberta = servCatsAbertas.has(cg.cat);
+                        // lançamentos unidos por fornecedor+venc+valor
+                        let lancs = [];
+                        if (catAberta) {
+                          const lm = new Map();
+                          for (const [col, lista] of Object.entries(cg.lancPorCol)) {
+                            for (const x of lista || []) {
+                              const k = `${x.forn}|${x.venc}|${x.val}`;
+                              const e = lm.get(k) || { forn: x.forn, venc: x.venc, porCol: {}, max: 0 };
+                              e.porCol[col] = -(Number(x.val) || 0);
+                              e.max = Math.max(e.max, Math.abs(Number(x.val) || 0));
+                              lm.set(k, e);
+                            }
+                          }
+                          lancs = [...lm.values()].sort((a, b) => b.max - a.max);
+                        }
+                        return (
+                          <React.Fragment key={'serv-' + cg.cat}>
+                            <tr className="bg-slate-50/50">
+                              <td
+                                onClick={() => toggleServCat(cg.cat)}
+                                className="sticky left-0 z-10 border-b border-r border-gray-100 pl-12 pr-3 py-1 whitespace-nowrap bg-slate-50 text-[10px] text-red-600 cursor-pointer hover:underline"
+                              >
+                                <span className="inline-flex items-center gap-1">
+                                  {catAberta ? (
+                                    <CaretDown size={9} weight="bold" className="text-gray-300 shrink-0" />
+                                  ) : (
+                                    <CaretRight size={9} weight="bold" className="text-gray-300 shrink-0" />
+                                  )}
+                                  {cg.cat}
+                                </span>
+                              </td>
+                              {colunas.map((c) => {
+                                const pv = cg.porCol[c.key];
+                                return (
+                                  <td
+                                    key={c.key}
+                                    className="border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-slate-50/40"
+                                  >
+                                    {typeof pv === 'number' && pv !== 0 ? formatar(pv, 'moeda') : '–'}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                            {catAberta &&
+                              lancs.map((x, i) => (
+                                <tr key={'serv-' + cg.cat + '-' + i} className="bg-white">
+                                  <td className="sticky left-0 z-10 border-b border-r border-gray-100 pl-[4.5rem] pr-3 py-0.5 whitespace-nowrap bg-white text-[10px] text-gray-500">
+                                    {x.forn}
+                                    {x.venc ? (
+                                      <span className="text-gray-400"> · venc {x.venc}</span>
+                                    ) : null}
+                                  </td>
+                                  {colunas.map((c) => {
+                                    const pv = x.porCol[c.key];
+                                    return (
+                                      <td
+                                        key={c.key}
+                                        className="border-b border-gray-100 px-3 py-0.5 text-right tabular-nums whitespace-nowrap text-[10px] text-gray-500"
+                                      >
+                                        {typeof pv === 'number' && pv !== 0 ? formatar(pv, 'moeda') : '–'}
+                                      </td>
+                                    );
+                                  })}
+                                </tr>
+                              ))}
+                          </React.Fragment>
+                        );
+                      });
                     })()}
                   {ehFolha && folhaAberta && l.label === 'PESSOAL FIXO' && (
                     <tr className="bg-slate-50/50">
