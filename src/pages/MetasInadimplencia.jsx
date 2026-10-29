@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import PageTitle from '../components/ui/PageTitle';
 import { TotvsURL } from '../config/constants';
 import {
@@ -387,10 +387,9 @@ const MetasInadimplencia = () => {
     }
   }, [filtroDataInicial, filtroDataFinal]);
 
-  useEffect(() => {
-    fetchDados();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // João (29/10/2026): NÃO carrega ao entrar — abre com o período padrão
+  // (01/01 do ano até o último dia do mês atual) e só busca quando clicar em
+  // "Buscar Dados", pra ele poder trocar a data antes do carregamento.
 
   // Filtro de canal (aplica às duas séries)
   const vencendoCanal = useMemo(
