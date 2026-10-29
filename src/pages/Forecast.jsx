@@ -154,6 +154,10 @@ export default function Forecast() {
       body: JSON.stringify({ mes, valor }),
     }).catch(() => {});
   };
+  // Despesa de PJ (linha PJ): total por coluna e nomes dos contratados
+  const [pjLinha, setPjLinha] = useState({}); // { [colKey]: total (negativo) }
+  const [pjNomes, setPjNomes] = useState({}); // { [colKey]: [{nome, valor}] }
+  const [pjAberto, setPjAberto] = useState(false);
   // Canais abertos para mostrar o CREDEV do canal (por label)
   const [canaisAbertos, setCanaisAbertos] = useState(() => new Set());
   const toggleCanal = (label) =>
@@ -369,6 +373,8 @@ export default function Forecast() {
       const novoPfFixo = {};
       const novoPfVar = {};
       const novoProlabore = {};
+      const novoPjLinha = {};
+      const novoPjNomes = {};
       for (const item of resultados) {
         if (!item) continue;
         const [col, d, pf] = item;
@@ -395,6 +401,9 @@ export default function Forecast() {
               (r) => !r.editavel && r.entra !== false,
             );
           }
+          // Despesa de PJ (linha separada): total e nomes dos contratados
+          if (typeof pf.pj_total === 'number') novoPjLinha[col] = pf.pj_total;
+          if (Array.isArray(pf.pj_nomes)) novoPjNomes[col] = pf.pj_nomes;
         }
       }
       setOverrides(novo);
@@ -403,6 +412,8 @@ export default function Forecast() {
       setPfFixo(novoPfFixo);
       setPfVariavel(novoPfVar);
       setProlabore(novoProlabore);
+      setPjLinha(novoPjLinha);
+      setPjNomes(novoPjNomes);
       setCarregandoAuto(false);
     })();
     return () => {
@@ -563,14 +574,19 @@ export default function Forecast() {
                   : [];
                 const ehFolha = grupoFolha !== null && rubsDaLinha.length > 0;
                 const folhaAberta = ehFolha && folhasAbertas.has(l.label);
-                const clicavel = ehPai || temCredevCanal || ehFolha;
+                // Linha PJ: abre por nome dos contratados (um nível)
+                const ehPJ = l.label === 'PJ' && Object.keys(pjLinha).length > 0;
+                const pjAbertoLinha = ehPJ && pjAberto;
+                const clicavel = ehPai || temCredevCanal || ehFolha || ehPJ;
                 const onClickLabel = ehPai
                   ? () => toggleRecolher(l.id)
                   : temCredevCanal
                     ? () => toggleCanal(l.label)
                     : ehFolha
                       ? () => toggleFolha(l.label)
-                      : undefined;
+                      : ehPJ
+                        ? () => setPjAberto((v) => !v)
+                        : undefined;
                 return (
                   <React.Fragment key={l.id}>
                   <tr className={trBg}>
@@ -589,8 +605,8 @@ export default function Forecast() {
                           ) : (
                             <CaretDown size={11} weight="bold" className="text-gray-400 shrink-0" />
                           )
-                        ) : temCredevCanal || ehFolha ? (
-                          (ehFolha ? folhaAberta : canalAberto) ? (
+                        ) : temCredevCanal || ehFolha || ehPJ ? (
+                          (ehFolha ? folhaAberta : ehPJ ? pjAbertoLinha : canalAberto) ? (
                             <CaretDown size={10} weight="bold" className="text-gray-300 shrink-0" />
                           ) : (
                             <CaretRight size={10} weight="bold" className="text-gray-300 shrink-0" />
@@ -612,6 +628,8 @@ export default function Forecast() {
                         pfVariavel[c.key] !== undefined
                       ) {
                         pfLine = -Math.round((pfVariavel[c.key] || 0) * 100) / 100;
+                      } else if (l.label === 'PJ' && pjLinha[c.key] !== undefined) {
+                        pfLine = pjLinha[c.key];
                       }
                       const ovr = overrides[c.key]?.[l.label];
                       const calc = totaisCalculados[c.key]?.[l.label];
@@ -683,6 +701,42 @@ export default function Forecast() {
                       })}
                     </tr>
                   )}
+                  {pjAbertoLinha &&
+                    (() => {
+                      // União dos nomes dos contratados (por coluna realizada)
+                      const nomesSet = new Map();
+                      for (const [col, lista] of Object.entries(pjNomes)) {
+                        for (const it of lista || []) {
+                          const e =
+                            nomesSet.get(it.nome) || { nome: it.nome, porCol: {}, max: 0 };
+                          e.porCol[col] = -(Number(it.valor) || 0); // despesa (negativo)
+                          e.max = Math.max(e.max, Math.abs(Number(it.valor) || 0));
+                          nomesSet.set(it.nome, e);
+                        }
+                      }
+                      const linhasPj = [...nomesSet.values()].sort((a, b) => b.max - a.max);
+                      return linhasPj.map((p) => (
+                        <tr key={'pj-' + p.nome} className="bg-slate-50/50">
+                          <td className="sticky left-0 z-10 border-b border-r border-gray-100 pl-12 pr-3 py-1 whitespace-nowrap bg-slate-50 text-[10px] text-red-600">
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                              {p.nome}
+                            </span>
+                          </td>
+                          {colunas.map((c) => {
+                            const pv = p.porCol[c.key];
+                            return (
+                              <td
+                                key={c.key}
+                                className="border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-slate-50/40"
+                              >
+                                {typeof pv === 'number' && pv !== 0 ? formatar(pv, 'moeda') : '–'}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ));
+                    })()}
                   {ehFolha && folhaAberta && l.label === 'PESSOAL FIXO' && (
                     <tr className="bg-slate-50/50">
                       <td className="sticky left-0 z-10 border-b border-r border-gray-100 pl-12 pr-3 py-1 whitespace-nowrap bg-slate-50 text-[10px] text-emerald-700">
