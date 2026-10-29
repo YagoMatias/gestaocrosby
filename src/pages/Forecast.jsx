@@ -166,7 +166,9 @@ export default function Forecast() {
   // (despesas-gerais-2026:v2). Mesmos números que a Niziany vê lá, com as
   // bonificações importadas manualmente — não dá pra reproduzir pelo backend.
   const [dreLocal, setDreLocal] = useState(null);
-  const [servAberto, setServAberto] = useState(false);
+  // mês (coluna) aberto na linha de Serviços de Terceiros Fixos — abre as
+  // despesas só desse mês (clique na célula do mês). null = fechado.
+  const [servMesAberto, setServMesAberto] = useState(null);
   const [servCatsAbertas, setServCatsAbertas] = useState(() => new Set());
   const toggleServCat = (cat) =>
     setServCatsAbertas((prev) => {
@@ -661,12 +663,13 @@ export default function Forecast() {
                 // Linha OCUPAÇÃO: abre por filial (um nível)
                 const ehOcup = l.label === 'OCUPAÇÃO' && Object.keys(ocupLinha).length > 0;
                 const ocupAbertoLinha = ehOcup && ocupAberto;
-                // Linha SERVIÇOS DE TERCEIROS FIXOS: abre por despesa → lançamentos
+                // Linha SERVIÇOS DE TERCEIROS FIXOS: abre por MÊS (clique na
+                // célula do mês) → despesas só daquele mês → lançamentos.
                 const ehServTerc =
                   l.label === 'SERVIÇOS DE TERCEIROS FIXOS' && Object.keys(servTerc).length > 0;
-                const servAbertoLinha = ehServTerc && servAberto;
+                const servAbertoLinha = ehServTerc && servMesAberto && servTerc[servMesAberto];
                 const clicavel =
-                  ehPai || temCredevCanal || ehFolha || ehPJ || ehOcup || ehServTerc;
+                  ehPai || temCredevCanal || ehFolha || ehPJ || ehOcup;
                 const onClickLabel = ehPai
                   ? () => toggleRecolher(l.id)
                   : temCredevCanal
@@ -677,9 +680,7 @@ export default function Forecast() {
                         ? () => setPjAberto((v) => !v)
                         : ehOcup
                           ? () => setOcupAberto((v) => !v)
-                          : ehServTerc
-                            ? () => setServAberto((v) => !v)
-                            : undefined;
+                          : undefined;
                 return (
                   <React.Fragment key={l.id}>
                   <tr className={trBg}>
@@ -698,16 +699,14 @@ export default function Forecast() {
                           ) : (
                             <CaretDown size={11} weight="bold" className="text-gray-400 shrink-0" />
                           )
-                        ) : temCredevCanal || ehFolha || ehPJ || ehOcup || ehServTerc ? (
+                        ) : temCredevCanal || ehFolha || ehPJ || ehOcup ? (
                           (ehFolha
                             ? folhaAberta
                             : ehPJ
                               ? pjAbertoLinha
                               : ehOcup
                                 ? ocupAbertoLinha
-                                : ehServTerc
-                                  ? servAbertoLinha
-                                  : canalAberto) ? (
+                                : canalAberto) ? (
                             <CaretDown size={10} weight="bold" className="text-gray-300 shrink-0" />
                           ) : (
                             <CaretRight size={10} weight="bold" className="text-gray-300 shrink-0" />
@@ -767,17 +766,28 @@ export default function Forecast() {
                                 : sub
                                   ? 'text-gray-600'
                                   : 'text-gray-800';
+                      // Célula de mês clicável na linha de Serviços de Terceiros
+                      // Fixos: abre as despesas só daquele mês.
+                      const servCelula = ehServTerc && servTerc[c.key] !== undefined;
+                      const servCelAberta = servCelula && servMesAberto === c.key;
                       return (
                         <td
                           key={c.key}
+                          onClick={
+                            servCelula
+                              ? () => setServMesAberto((m) => (m === c.key ? null : c.key))
+                              : undefined
+                          }
                           title={
-                            calc !== undefined
-                              ? l.label === 'RECEITA BRUTA'
-                                ? 'Calculado: soma dos canais + CREDEV'
-                                : 'Calculado: soma dos canais de venda'
-                              : auto
-                                ? 'Puxado do New Forecast'
-                                : undefined
+                            servCelula
+                              ? 'Clique para ver as despesas deste mês'
+                              : calc !== undefined
+                                ? l.label === 'RECEITA BRUTA'
+                                  ? 'Calculado: soma dos canais + CREDEV'
+                                  : 'Calculado: soma dos canais de venda'
+                                : auto
+                                  ? 'Puxado do New Forecast'
+                                  : undefined
                           }
                           className={
                             'border-b border-gray-100 px-3 py-2 text-right tabular-nums whitespace-nowrap ' +
@@ -785,6 +795,8 @@ export default function Forecast() {
                             (auto ? 'bg-emerald-50 font-semibold ' : TIPO_CELULA[c.tipo] + ' ') +
                             (forte && !auto ? 'font-bold ' : '') +
                             (pct ? 'text-[10px] ' : '') +
+                            (servCelula ? 'cursor-pointer hover:underline ' : '') +
+                            (servCelAberta ? 'ring-1 ring-inset ring-emerald-400 ' : '') +
                             corTexto
                           }
                         >
@@ -886,37 +898,14 @@ export default function Forecast() {
                     })()}
                   {servAbertoLinha &&
                     (() => {
-                      // Despesas (categorias) da DRE Analítica, por coluna
-                      const catMap = new Map();
-                      for (const [col, d] of Object.entries(servTerc)) {
-                        for (const cg of d.categorias || []) {
-                          const e =
-                            catMap.get(cg.cat) ||
-                            { cat: cg.cat, porCol: {}, lancPorCol: {}, max: 0 };
-                          e.porCol[col] = -(Number(cg.valor) || 0);
-                          e.lancPorCol[col] = cg.lancamentos || [];
-                          e.max = Math.max(e.max, Math.abs(Number(cg.valor) || 0));
-                          catMap.set(cg.cat, e);
-                        }
-                      }
-                      const cats = [...catMap.values()].sort((a, b) => b.max - a.max);
+                      // Só o mês clicado (servMesAberto): despesas e lançamentos
+                      // daquele mês, nada dos outros.
+                      const mc = servMesAberto;
+                      const cats = (servTerc[mc]?.categorias || []).slice();
+                      const colMes = colunas.find((c) => c.key === mc);
+                      const rotuloMes = colMes ? colMes.label : '';
                       return cats.map((cg) => {
                         const catAberta = servCatsAbertas.has(cg.cat);
-                        // lançamentos unidos por fornecedor+venc+valor
-                        let lancs = [];
-                        if (catAberta) {
-                          const lm = new Map();
-                          for (const [col, lista] of Object.entries(cg.lancPorCol)) {
-                            for (const x of lista || []) {
-                              const k = `${x.forn}|${x.venc}|${x.val}`;
-                              const e = lm.get(k) || { forn: x.forn, venc: x.venc, porCol: {}, max: 0 };
-                              e.porCol[col] = -(Number(x.val) || 0);
-                              e.max = Math.max(e.max, Math.abs(Number(x.val) || 0));
-                              lm.set(k, e);
-                            }
-                          }
-                          lancs = [...lm.values()].sort((a, b) => b.max - a.max);
-                        }
                         return (
                           <React.Fragment key={'serv-' + cg.cat}>
                             <tr className="bg-slate-50/50">
@@ -931,22 +920,22 @@ export default function Forecast() {
                                     <CaretRight size={9} weight="bold" className="text-gray-300 shrink-0" />
                                   )}
                                   {cg.cat}
+                                  <span className="text-gray-400 font-normal"> · {rotuloMes}</span>
                                 </span>
                               </td>
-                              {colunas.map((c) => {
-                                const pv = cg.porCol[c.key];
-                                return (
-                                  <td
-                                    key={c.key}
-                                    className="border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-slate-50/40"
-                                  >
-                                    {typeof pv === 'number' && pv !== 0 ? formatar(pv, 'moeda') : '–'}
-                                  </td>
-                                );
-                              })}
+                              {colunas.map((c) => (
+                                <td
+                                  key={c.key}
+                                  className="border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-slate-50/40"
+                                >
+                                  {c.key === mc && cg.valor
+                                    ? formatar(-cg.valor, 'moeda')
+                                    : '–'}
+                                </td>
+                              ))}
                             </tr>
                             {catAberta &&
-                              lancs.map((x, i) => (
+                              (cg.lancamentos || []).map((x, i) => (
                                 <tr key={'serv-' + cg.cat + '-' + i} className="bg-white">
                                   <td className="sticky left-0 z-10 border-b border-r border-gray-100 pl-[4.5rem] pr-3 py-0.5 whitespace-nowrap bg-white text-[10px] text-gray-500">
                                     {x.forn}
@@ -954,17 +943,14 @@ export default function Forecast() {
                                       <span className="text-gray-400"> · venc {x.venc}</span>
                                     ) : null}
                                   </td>
-                                  {colunas.map((c) => {
-                                    const pv = x.porCol[c.key];
-                                    return (
-                                      <td
-                                        key={c.key}
-                                        className="border-b border-gray-100 px-3 py-0.5 text-right tabular-nums whitespace-nowrap text-[10px] text-gray-500"
-                                      >
-                                        {typeof pv === 'number' && pv !== 0 ? formatar(pv, 'moeda') : '–'}
-                                      </td>
-                                    );
-                                  })}
+                                  {colunas.map((c) => (
+                                    <td
+                                      key={c.key}
+                                      className="border-b border-gray-100 px-3 py-0.5 text-right tabular-nums whitespace-nowrap text-[10px] text-gray-500"
+                                    >
+                                      {c.key === mc && x.val ? formatar(-x.val, 'moeda') : '–'}
+                                    </td>
+                                  ))}
                                 </tr>
                               ))}
                           </React.Fragment>
