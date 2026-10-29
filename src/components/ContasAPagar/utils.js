@@ -93,6 +93,19 @@ export const deveOcultarFaturaBanco = (item) => {
   return emissao < OCULTAR_BANCO_EMISSAO_ANTES;
 };
 
+// ─── Ocultar despesas de PRODUÇÃO (só na Consulta do Contas a Pagar) ───
+// Pedido do Yago (29/10/2026): na tela Contas a Pagar - Consulta não mostrar as
+// despesas de produção — 1001 AVIAMENTOS, 1002 COMPRA DE MATERIA PRIMA, 1003
+// COMPRA DE PRODUTOS PRONTOS, 1005 SERVICO DE INDUSTRIALIZACAO, 1006 DEFEITOS DE
+// PRODUCAO — EXCETO 1004 FRETE DE PRODUCAO, que continua aparecendo. Só tela:
+// nada muda no TOTVS, e as Renegociações (tela própria) seguem mostrando tudo.
+export const DESPESAS_PRODUCAO_OCULTAR = new Set(['1001', '1002', '1003', '1005', '1006']);
+
+export const deveOcultarDespesaProducao = (item) => {
+  const cod = String(item?.cd_despesaitem ?? '').replace(/\D/g, '');
+  return DESPESAS_PRODUCAO_OCULTAR.has(cod);
+};
+
 // Determinar status da conta baseado nos dados
 export const getStatusFromData = (item) => {
   // Conciliado como PAGO na Liberação de Pagamento, mesmo que o TOTVS ainda

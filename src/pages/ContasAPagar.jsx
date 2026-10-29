@@ -27,6 +27,7 @@ import {
   agruparDadosIdenticos,
   formatarCpfCnpj,
   deveOcultarFaturaBanco,
+  deveOcultarDespesaProducao,
 } from '../components/ContasAPagar';
 
 // ─── Cruzamento com a Liberação de Pagamento ───
@@ -921,6 +922,9 @@ const ContasAPagar = (props) => {
 
       // Ocultar faturas de banco emitidas antes do corte (só tela; Yago 28/10/2026)
       filtrados = filtrados.filter((item) => !deveOcultarFaturaBanco(item));
+
+      // Ocultar despesas de produção (exceto 1004 FRETE); só na Consulta (Yago 29/10/2026)
+      filtrados = filtrados.filter((item) => !deveOcultarDespesaProducao(item));
 
       // Marcar como PAGO o que já foi conciliado na Liberação de Pagamento
       filtrados = await anotarPagosNaLiberacao(filtrados);
