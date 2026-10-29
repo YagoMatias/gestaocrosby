@@ -158,6 +158,10 @@ export default function Forecast() {
   const [pjLinha, setPjLinha] = useState({}); // { [colKey]: total (negativo) }
   const [pjNomes, setPjNomes] = useState({}); // { [colKey]: [{nome, valor}] }
   const [pjAberto, setPjAberto] = useState(false);
+  // Despesa de OCUPAÇÃO (linha OCUPAÇÃO): total por coluna e por filial
+  const [ocupLinha, setOcupLinha] = useState({}); // { [colKey]: total (negativo) }
+  const [ocupFiliais, setOcupFiliais] = useState({}); // { [colKey]: [{nome, valor}] }
+  const [ocupAberto, setOcupAberto] = useState(false);
   // Canais abertos para mostrar o CREDEV do canal (por label)
   const [canaisAbertos, setCanaisAbertos] = useState(() => new Set());
   const toggleCanal = (label) =>
@@ -375,6 +379,8 @@ export default function Forecast() {
       const novoProlabore = {};
       const novoPjLinha = {};
       const novoPjNomes = {};
+      const novoOcupLinha = {};
+      const novoOcupFiliais = {};
       for (const item of resultados) {
         if (!item) continue;
         const [col, d, pf] = item;
@@ -404,6 +410,9 @@ export default function Forecast() {
           // Despesa de PJ (linha separada): total e nomes dos contratados
           if (typeof pf.pj_total === 'number') novoPjLinha[col] = pf.pj_total;
           if (Array.isArray(pf.pj_nomes)) novoPjNomes[col] = pf.pj_nomes;
+          // Despesa de OCUPAÇÃO (aluguel): total e por filial
+          if (typeof pf.ocupacao_total === 'number') novoOcupLinha[col] = pf.ocupacao_total;
+          if (Array.isArray(pf.ocupacao_filiais)) novoOcupFiliais[col] = pf.ocupacao_filiais;
         }
       }
       setOverrides(novo);
@@ -414,6 +423,8 @@ export default function Forecast() {
       setProlabore(novoProlabore);
       setPjLinha(novoPjLinha);
       setPjNomes(novoPjNomes);
+      setOcupLinha(novoOcupLinha);
+      setOcupFiliais(novoOcupFiliais);
       setCarregandoAuto(false);
     })();
     return () => {
@@ -577,7 +588,10 @@ export default function Forecast() {
                 // Linha PJ: abre por nome dos contratados (um nível)
                 const ehPJ = l.label === 'PJ' && Object.keys(pjLinha).length > 0;
                 const pjAbertoLinha = ehPJ && pjAberto;
-                const clicavel = ehPai || temCredevCanal || ehFolha || ehPJ;
+                // Linha OCUPAÇÃO: abre por filial (um nível)
+                const ehOcup = l.label === 'OCUPAÇÃO' && Object.keys(ocupLinha).length > 0;
+                const ocupAbertoLinha = ehOcup && ocupAberto;
+                const clicavel = ehPai || temCredevCanal || ehFolha || ehPJ || ehOcup;
                 const onClickLabel = ehPai
                   ? () => toggleRecolher(l.id)
                   : temCredevCanal
@@ -586,7 +600,9 @@ export default function Forecast() {
                       ? () => toggleFolha(l.label)
                       : ehPJ
                         ? () => setPjAberto((v) => !v)
-                        : undefined;
+                        : ehOcup
+                          ? () => setOcupAberto((v) => !v)
+                          : undefined;
                 return (
                   <React.Fragment key={l.id}>
                   <tr className={trBg}>
@@ -605,8 +621,14 @@ export default function Forecast() {
                           ) : (
                             <CaretDown size={11} weight="bold" className="text-gray-400 shrink-0" />
                           )
-                        ) : temCredevCanal || ehFolha || ehPJ ? (
-                          (ehFolha ? folhaAberta : ehPJ ? pjAbertoLinha : canalAberto) ? (
+                        ) : temCredevCanal || ehFolha || ehPJ || ehOcup ? (
+                          (ehFolha
+                            ? folhaAberta
+                            : ehPJ
+                              ? pjAbertoLinha
+                              : ehOcup
+                                ? ocupAbertoLinha
+                                : canalAberto) ? (
                             <CaretDown size={10} weight="bold" className="text-gray-300 shrink-0" />
                           ) : (
                             <CaretRight size={10} weight="bold" className="text-gray-300 shrink-0" />
@@ -630,6 +652,11 @@ export default function Forecast() {
                         pfLine = -Math.round((pfVariavel[c.key] || 0) * 100) / 100;
                       } else if (l.label === 'PJ' && pjLinha[c.key] !== undefined) {
                         pfLine = pjLinha[c.key];
+                      } else if (
+                        l.label === 'OCUPAÇÃO' &&
+                        ocupLinha[c.key] !== undefined
+                      ) {
+                        pfLine = ocupLinha[c.key];
                       }
                       const ovr = overrides[c.key]?.[l.label];
                       const calc = totaisCalculados[c.key]?.[l.label];
@@ -717,6 +744,42 @@ export default function Forecast() {
                       const linhasPj = [...nomesSet.values()].sort((a, b) => b.max - a.max);
                       return linhasPj.map((p) => (
                         <tr key={'pj-' + p.nome} className="bg-slate-50/50">
+                          <td className="sticky left-0 z-10 border-b border-r border-gray-100 pl-12 pr-3 py-1 whitespace-nowrap bg-slate-50 text-[10px] text-red-600">
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                              {p.nome}
+                            </span>
+                          </td>
+                          {colunas.map((c) => {
+                            const pv = p.porCol[c.key];
+                            return (
+                              <td
+                                key={c.key}
+                                className="border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-slate-50/40"
+                              >
+                                {typeof pv === 'number' && pv !== 0 ? formatar(pv, 'moeda') : '–'}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ));
+                    })()}
+                  {ocupAbertoLinha &&
+                    (() => {
+                      // União das filiais (por coluna realizada)
+                      const filSet = new Map();
+                      for (const [col, lista] of Object.entries(ocupFiliais)) {
+                        for (const it of lista || []) {
+                          const e =
+                            filSet.get(it.nome) || { nome: it.nome, porCol: {}, max: 0 };
+                          e.porCol[col] = -(Number(it.valor) || 0); // despesa (negativo)
+                          e.max = Math.max(e.max, Math.abs(Number(it.valor) || 0));
+                          filSet.set(it.nome, e);
+                        }
+                      }
+                      const linhasOc = [...filSet.values()].sort((a, b) => b.max - a.max);
+                      return linhasOc.map((p) => (
+                        <tr key={'ocup-' + p.nome} className="bg-slate-50/50">
                           <td className="sticky left-0 z-10 border-b border-r border-gray-100 pl-12 pr-3 py-1 whitespace-nowrap bg-slate-50 text-[10px] text-red-600">
                             <span className="inline-flex items-center gap-1.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
