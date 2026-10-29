@@ -75,6 +75,10 @@ const BANCO_TERMOS = [
 // Abreviações curtas só casam como palavra inteira (evita pegar "abbott" etc.).
 const BANCO_PALAVRAS = /\b(bb|bnb|fgi)\b/;
 
+// Empréstimo / financiamento / consórcio: dívida bancária parcelada que o Yago
+// NUNCA quer ver no Contas a Pagar (não é conta a pagar do fluxo normal).
+const EMPRESTIMO_TERMOS = ['emprestimo', 'financiamento', 'consorcio'];
+
 // Identifica se a fatura é de banco/crédito pelo nome do fornecedor + despesa.
 export const isFaturaBanco = (item) => {
   const texto = normalizarTexto(
@@ -85,8 +89,19 @@ export const isFaturaBanco = (item) => {
   return BANCO_TERMOS.some((t) => texto.includes(t));
 };
 
-// true = esconder o item (é de banco E emitido antes do corte).
+// Empréstimo/financiamento/consórcio (pelo nome do fornecedor OU pela despesa).
+export const isEmprestimo = (item) => {
+  const texto = normalizarTexto(
+    `${item?.nm_fornecedor || ''} ${item?.ds_despesaitem || ''} ${item?.nm_razaosocial_fornecedor || ''}`,
+  );
+  return EMPRESTIMO_TERMOS.some((t) => texto.includes(t));
+};
+
+// true = esconder o item.
+// - Empréstimo/financiamento/consórcio: SEMPRE oculto (Yago 29/10/2026).
+// - Outras faturas de banco: ocultas só quando emitidas antes do corte (20/10).
 export const deveOcultarFaturaBanco = (item) => {
+  if (isEmprestimo(item)) return true;
   if (!isFaturaBanco(item)) return false;
   const emissao = item?.dt_emissao ? String(item.dt_emissao).split('T')[0] : '';
   if (!emissao) return false; // sem data de emissão: não oculta (conservador)
