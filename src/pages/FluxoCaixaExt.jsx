@@ -58,7 +58,6 @@ const fmtDoc = (d) => {
 };
 const hoje = () => new Date().toISOString().slice(0, 10);
 const primeiroDiaMes = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
-const ultimoDiaMes = (d = new Date()) => new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10);
 
 const BANCOS = {
   STONE: { label: 'Stone', cor: 'bg-emerald-100 text-emerald-800 border-emerald-300', ponto: 'bg-emerald-500' },
@@ -82,11 +81,18 @@ const TIPOS = {
   TRANSFERENCIA: { label: 'Transf.', cor: 'bg-amber-100 text-amber-800 border-amber-300', Icon: ArrowsLeftRight },
 };
 
-const Kpi = ({ label, value, sub, tone = 'text-gray-900' }) => (
+const Kpi = ({ label, value, sub, tone = 'text-gray-800', Icon, accent = 'bg-gray-100 text-gray-500' }) => (
   <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 md:p-4">
-    <p className="text-[10px] md:text-xs text-gray-500 uppercase tracking-wide">{label}</p>
-    <p className={`text-base md:text-xl font-bold mt-0.5 ${tone}`}>{value}</p>
-    {sub && <p className="text-[10px] md:text-xs text-gray-400 mt-0.5">{sub}</p>}
+    <div className="flex items-center gap-2 mb-1.5">
+      {Icon && (
+        <div className={`p-1.5 rounded-lg ${accent}`}>
+          <Icon size={16} weight="bold" />
+        </div>
+      )}
+      <p className="text-[10px] md:text-[11px] font-semibold text-gray-500 uppercase tracking-wide leading-tight">{label}</p>
+    </div>
+    <p className={`text-lg md:text-2xl font-bold ${tone}`}>{value}</p>
+    {sub && <p className="text-[10px] md:text-[11px] text-gray-400 mt-0.5">{sub}</p>}
   </div>
 );
 
@@ -122,11 +128,11 @@ const MultiSelect = ({ label, opcoes, valor, onChange, renderOpcao, placeholder 
       : `${valor.length} selecionados`;
   return (
     <div ref={ref} className={`relative ${larguraMin}`}>
-      <label className="block text-[11px] font-medium text-gray-500 mb-0.5">{label}</label>
+      <label className="block text-xs font-semibold mb-0.5 text-[#000638]">{label}</label>
       <button
         type="button"
         onClick={() => setAberto((v) => !v)}
-        className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 text-xs border rounded-lg bg-white hover:bg-gray-50 ${valor.length ? 'border-blue-400 text-blue-700 font-medium' : 'border-gray-300 text-gray-600'}`}
+        className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 text-xs border rounded-lg ${valor.length ? 'border-blue-400 bg-white text-blue-700 font-medium' : 'border-[#000638]/30 bg-[#f8f9fb] text-[#000638] hover:bg-white'}`}
       >
         <span className="truncate">{resumo}</span>
         <CaretDown size={12} className={`shrink-0 transition-transform ${aberto ? 'rotate-180' : ''}`} />
@@ -343,7 +349,6 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
   };
 
   // ─── helpers de filtro ─────────────────────────────────────
-  const toggle = (arr, set, v) => set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
   const limparFiltros = () => {
     setBancos([]);
     setContasSel([]);
@@ -351,25 +356,6 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
     setFormas([]);
     setContraparte('');
     setBusca('');
-  };
-  const preset = (qual) => {
-    const d = new Date();
-    if (qual === 'mes') {
-      setDe(primeiroDiaMes(d));
-      setAte(hoje());
-    } else if (qual === 'mes-anterior') {
-      const m = new Date(d.getFullYear(), d.getMonth() - 1, 1);
-      setDe(primeiroDiaMes(m));
-      setAte(ultimoDiaMes(m));
-    } else if (qual === '7') {
-      const x = new Date(d);
-      x.setDate(x.getDate() - 6);
-      setDe(x.toISOString().slice(0, 10));
-      setAte(hoje());
-    } else if (qual === 'hoje') {
-      setDe(hoje());
-      setAte(hoje());
-    }
   };
   const filtrosAtivos = bancos.length + contasSel.length + tipos.length + formas.length + (contraparte ? 1 : 0) + (busca ? 1 : 0);
 
@@ -461,19 +447,6 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
           <label className="block text-[11px] font-medium text-gray-500 mb-0.5">Até</label>
           <input type="date" value={ate} onChange={(e) => setAte(e.target.value)} className="px-2 py-1.5 text-sm border border-gray-300 rounded-lg" />
         </div>
-        <div className="flex gap-1">
-          {[
-            ['hoje', 'Hoje'],
-            ['7', '7 dias'],
-            ['mes', 'Este mês'],
-            ['mes-anterior', 'Mês anterior'],
-          ].map(([k, l]) => (
-            <button key={k} onClick={() => preset(k)} className="px-2.5 py-1.5 text-xs rounded-lg border border-gray-300 bg-white hover:bg-gray-50 text-gray-600 flex items-center gap-1">
-              {k === 'mes' && <CalendarBlank size={12} />}
-              {l}
-            </button>
-          ))}
-        </div>
         <div className="relative flex-1 min-w-[220px]">
           <MagnifyingGlass size={14} className="absolute left-2.5 top-2.5 text-gray-400" />
           <input
@@ -516,80 +489,87 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
 
       {/* Filtros */}
       {mostrarFiltros && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 mb-3 flex flex-wrap items-center justify-center gap-3 text-xs">
-          <MultiSelect
-            label="Banco"
-            opcoes={(bancosPresentes.length ? bancosPresentes : Object.keys(BANCOS)).map((b) => ({ value: b, label: bancoCfg(b).label, banco: b }))}
-            valor={bancos}
-            onChange={setBancos}
-            renderOpcao={(o) => (
-              <span className="flex items-center gap-1.5">
-                <span className={`inline-block w-2 h-2 rounded-full ${bancoCfg(o.banco).ponto}`} />
-                {o.label}
-              </span>
+        <div className="bg-white rounded-lg shadow-lg border border-[#000638]/10 p-3 mb-3">
+          <div className="flex items-center justify-between mb-2.5">
+            <span className="text-sm font-bold text-[#000638] flex items-center gap-1.5">
+              <FunnelSimple size={16} weight="bold" /> Filtros
+            </span>
+            {filtrosAtivos > 0 && (
+              <button onClick={limparFiltros} className="text-xs text-blue-600 hover:underline whitespace-nowrap">
+                Limpar filtros
+              </button>
             )}
-            larguraMin="min-w-[150px]"
-          />
-          <MultiSelect
-            label="Conta"
-            busca
-            opcoes={contas
-              .filter((c) => !bancos.length || bancos.includes(c.banco))
-              .map((c) => ({ value: c.id, label: c.apelido, banco: c.banco, sub: c.titular_nome }))}
-            valor={contasSel}
-            onChange={setContasSel}
-            renderOpcao={(o) => (
-              <span className="flex items-center gap-1.5 min-w-0">
-                <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${bancoCfg(o.banco).ponto}`} />
-                <span className="whitespace-nowrap text-gray-800">{o.label}</span>
-                <span className="text-gray-400 truncate">{o.sub}</span>
-              </span>
-            )}
-            placeholder={contas.length ? 'Todas as contas' : 'Nenhuma conta importada'}
-            larguraMin="min-w-[210px]"
-          />
-          <MultiSelect
-            label="Tipo"
-            opcoes={[
-              { value: 'ENTRADA', label: 'Entradas' },
-              { value: 'SAIDA', label: 'Saídas' },
-              { value: 'TRANSFERENCIA', label: 'Transferências' },
-            ]}
-            valor={tipos}
-            onChange={setTipos}
-            larguraMin="min-w-[150px]"
-          />
-          <MultiSelect
-            label="Forma de pagamento"
-            busca
-            opcoes={(dados?.opcoes?.formas?.length ? dados.opcoes.formas : dados?.opcoes?.todasFormas || []).map((f) => ({ value: f, label: f }))}
-            valor={formas}
-            onChange={setFormas}
-            placeholder="Todas as formas"
-            larguraMin="min-w-[190px]"
-          />
-          <div className="min-w-[230px]">
-            <label className="block text-[11px] font-medium text-gray-500 mb-0.5">Fornecedor / contraparte</label>
-            <input
-              list="fc-contrapartes"
-              value={contraparte}
-              onChange={(e) => setContraparte(e.target.value)}
-              placeholder="Digite para escolher…"
-              className="w-full px-2.5 py-1.5 text-xs border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
-            <datalist id="fc-contrapartes">
-              {(dados?.opcoes?.contrapartes || []).map((c) => (
-                <option key={c.chave} value={c.nome}>
-                  {c.doc ? fmtDoc(c.doc) : ''}
-                </option>
-              ))}
-            </datalist>
           </div>
-          {filtrosAtivos > 0 && (
-            <button onClick={limparFiltros} className="self-end px-2.5 py-1.5 text-xs text-blue-600 hover:underline whitespace-nowrap">
-              Limpar filtros
-            </button>
-          )}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+            <MultiSelect
+              label="Banco"
+              opcoes={(bancosPresentes.length ? bancosPresentes : Object.keys(BANCOS)).map((b) => ({ value: b, label: bancoCfg(b).label, banco: b }))}
+              valor={bancos}
+              onChange={setBancos}
+              renderOpcao={(o) => (
+                <span className="flex items-center gap-1.5">
+                  <span className={`inline-block w-2 h-2 rounded-full ${bancoCfg(o.banco).ponto}`} />
+                  {o.label}
+                </span>
+              )}
+              larguraMin="w-full"
+            />
+            <MultiSelect
+              label="Conta"
+              busca
+              opcoes={contas
+                .filter((c) => !bancos.length || bancos.includes(c.banco))
+                .map((c) => ({ value: c.id, label: c.apelido, banco: c.banco, sub: c.titular_nome }))}
+              valor={contasSel}
+              onChange={setContasSel}
+              renderOpcao={(o) => (
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${bancoCfg(o.banco).ponto}`} />
+                  <span className="whitespace-nowrap text-gray-800">{o.label}</span>
+                  <span className="text-gray-400 truncate">{o.sub}</span>
+                </span>
+              )}
+              placeholder={contas.length ? 'Todas as contas' : 'Nenhuma conta importada'}
+              larguraMin="w-full"
+            />
+            <MultiSelect
+              label="Tipo"
+              opcoes={[
+                { value: 'ENTRADA', label: 'Entradas' },
+                { value: 'SAIDA', label: 'Saídas' },
+                { value: 'TRANSFERENCIA', label: 'Transferências' },
+              ]}
+              valor={tipos}
+              onChange={setTipos}
+              larguraMin="w-full"
+            />
+            <MultiSelect
+              label="Forma de pagamento"
+              busca
+              opcoes={(dados?.opcoes?.formas?.length ? dados.opcoes.formas : dados?.opcoes?.todasFormas || []).map((f) => ({ value: f, label: f }))}
+              valor={formas}
+              onChange={setFormas}
+              placeholder="Todas as formas"
+              larguraMin="w-full"
+            />
+            <div className="w-full">
+              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Fornecedor / contraparte</label>
+              <input
+                list="fc-contrapartes"
+                value={contraparte}
+                onChange={(e) => setContraparte(e.target.value)}
+                placeholder="Digite para escolher…"
+                className="w-full px-2 py-1.5 text-xs border border-[#000638]/30 rounded-lg bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#000638]"
+              />
+              <datalist id="fc-contrapartes">
+                {(dados?.opcoes?.contrapartes || []).map((c) => (
+                  <option key={c.chave} value={c.nome}>
+                    {c.doc ? fmtDoc(c.doc) : ''}
+                  </option>
+                ))}
+              </datalist>
+            </div>
+          </div>
         </div>
       )}
 
@@ -614,26 +594,12 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
       {/* KPIs */}
       {resumo && (
         <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-6 md:gap-3 mb-4">
-          <Kpi label="Recebido (entradas)" value={fmt(resumo.entradas)} sub={`${resumo.qtdEntradas} lançamentos`} tone="text-green-600" />
-          <Kpi label="Pago (saídas)" value={fmt(resumo.saidas)} sub={`${resumo.qtdSaidas} lançamentos`} tone="text-red-600" />
-          <Kpi label="Resultado" value={fmt(resumo.resultado)} sub="entradas − saídas (sem transferências)" tone={resumo.resultado >= 0 ? 'text-blue-700' : 'text-red-700'} />
-          <Kpi label="Transferido entre contas" value={fmt(resumo.transfSaidas)} sub={`${dados.transferencias.length} transferência(s) casada(s)`} tone="text-amber-700" />
-          <Kpi label="Saldo final (contas)" value={fmt(saldoFinalTotal)} sub={`${dados.porConta.length} conta(s) com movimento`} />
-          <Kpi label="Período" value={`${fmtData(de)} – ${fmtData(ate)}`} sub={`${resumo.qtd} lançamentos · ${contas.length} contas`} />
-        </div>
-      )}
-
-      {/* Resumo por banco (chips) */}
-      {dados?.porBanco?.length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-4">
-          {dados.porBanco.map((b) => {
-            const cfg = bancoCfg(b.banco);
-            return (
-              <button key={b.banco} onClick={() => toggle(bancos, setBancos, b.banco)} className={`px-3 py-1.5 rounded-full text-xs font-medium border ${cfg.cor} ${bancos.includes(b.banco) ? 'ring-2 ring-offset-1 ring-blue-400' : ''}`} title={`Transferências: +${fmt(b.transfEntradas)} / −${fmt(b.transfSaidas)}`}>
-                {cfg.label} ({b.qtd}) <span className="text-green-700">+{fmt(b.entradas)}</span> <span className="text-red-600">−{fmt(b.saidas)}</span>
-              </button>
-            );
-          })}
+          <Kpi label="Recebido (entradas)" value={fmt(resumo.entradas)} sub={`${resumo.qtdEntradas} lançamentos`} tone="text-green-600" Icon={ArrowDown} accent="bg-green-50 text-green-600" />
+          <Kpi label="Pago (saídas)" value={fmt(resumo.saidas)} sub={`${resumo.qtdSaidas} lançamentos`} tone="text-red-600" Icon={ArrowUp} accent="bg-red-50 text-red-600" />
+          <Kpi label="Resultado" value={fmt(resumo.resultado)} sub="entradas − saídas (sem transferências)" tone={resumo.resultado >= 0 ? 'text-blue-700' : 'text-red-700'} Icon={Receipt} accent="bg-blue-50 text-blue-600" />
+          <Kpi label="Transferido entre contas" value={fmt(resumo.transfSaidas)} sub={`${dados.transferencias.length} transferência(s) casada(s)`} tone="text-amber-700" Icon={ArrowsLeftRight} accent="bg-amber-50 text-amber-600" />
+          <Kpi label="Saldo final (contas)" value={fmt(saldoFinalTotal)} sub={`${dados.porConta.length} conta(s) com movimento`} Icon={Bank} accent="bg-slate-100 text-slate-600" />
+          <Kpi label="Período" value={`${fmtData(de)} – ${fmtData(ate)}`} sub={`${resumo.qtd} lançamentos · ${contas.length} contas`} Icon={CalendarBlank} accent="bg-gray-100 text-gray-500" />
         </div>
       )}
 
