@@ -93,17 +93,29 @@ export const deveOcultarFaturaBanco = (item) => {
   return emissao < OCULTAR_BANCO_EMISSAO_ANTES;
 };
 
-// ─── Ocultar despesas de PRODUÇÃO (só na Consulta do Contas a Pagar) ───
-// Pedido do Yago (29/10/2026): na tela Contas a Pagar - Consulta não mostrar as
-// despesas de produção — 1001 AVIAMENTOS, 1002 COMPRA DE MATERIA PRIMA, 1003
+// ─── Ocultar despesas de PRODUÇÃO na Consulta (Yago 29/10/2026) ───
+// As despesas de produção — 1001 AVIAMENTOS, 1002 COMPRA DE MATERIA PRIMA, 1003
 // COMPRA DE PRODUTOS PRONTOS, 1005 SERVICO DE INDUSTRIALIZACAO, 1006 DEFEITOS DE
-// PRODUCAO — EXCETO 1004 FRETE DE PRODUCAO, que continua aparecendo. Só tela:
-// nada muda no TOTVS, e as Renegociações (tela própria) seguem mostrando tudo.
-export const DESPESAS_PRODUCAO_OCULTAR = new Set(['1001', '1002', '1003', '1005', '1006']);
+// PRODUCAO — só continuam na tela Contas a Pagar - Consulta quando:
+//   1) têm Solicitação Crosby (item._temSolicitacaoCrosby), OU
+//   2) emissão a partir de 01/10/2026, OU
+//   3) estão pagas (dt_liq do TOTVS ou conciliadas na Liberação).
+// Caso contrário, somem. 1004 FRETE DE PRODUCAO NÃO entra na regra (sempre
+// aparece). Só ocultação de tela; nada muda no TOTVS e as Renegociações (tela
+// própria) seguem mostrando tudo.
+export const DESPESAS_PRODUCAO = new Set(['1001', '1002', '1003', '1005', '1006']);
+export const DESPESA_PRODUCAO_EMISSAO_MINIMA = '2026-10-01';
+
+export const ehDespesaProducao = (item) =>
+  DESPESAS_PRODUCAO.has(String(item?.cd_despesaitem ?? '').replace(/\D/g, ''));
 
 export const deveOcultarDespesaProducao = (item) => {
-  const cod = String(item?.cd_despesaitem ?? '').replace(/\D/g, '');
-  return DESPESAS_PRODUCAO_OCULTAR.has(cod);
+  if (!ehDespesaProducao(item)) return false; // não é despesa de produção alvo (1004 FRETE sempre aparece)
+  if (item?._temSolicitacaoCrosby) return false; // (1) tem solicitação crosby
+  const emissao = item?.dt_emissao ? String(item.dt_emissao).split('T')[0] : '';
+  if (emissao && emissao >= DESPESA_PRODUCAO_EMISSAO_MINIMA) return false; // (2) emitida a partir de 01/10/2026
+  if (getStatusFromData(item) === 'Pago') return false; // (3) está paga
+  return true; // senão, oculta
 };
 
 // Determinar status da conta baseado nos dados

@@ -28,6 +28,7 @@ import {
   formatarCpfCnpj,
   deveOcultarFaturaBanco,
   deveOcultarDespesaProducao,
+  ehDespesaProducao,
 } from '../components/ContasAPagar';
 
 // ─── Cruzamento com a Liberação de Pagamento ───
@@ -101,6 +102,43 @@ const anotarPagosNaLiberacao = async (itens) => {
         : '';
     return { ...item, _pagoLiberacao: true, _pagoLiberacaoData: dataPg };
   });
+};
+
+// ─── "Tem Solicitação Crosby?" (p/ a regra das despesas de produção) ───
+// Casa o título do TOTVS com solicitacoes_crosby por duplicate_code (= nr_duplicata)
+// + cd_empresa. Só olha as despesas de produção (é onde a flag é usada). Marca
+// item._temSolicitacaoCrosby. Ver deveOcultarDespesaProducao em utils.js.
+const anotarSolicitacoesCrosby = async (itens) => {
+  const alvo = itens.filter((i) => i.nr_duplicata && ehDespesaProducao(i));
+  if (alvo.length === 0) return itens;
+
+  const duplicatas = [...new Set(alvo.map((i) => String(i.nr_duplicata)))];
+  const chaves = new Set();
+  const LOTE = 200;
+  try {
+    for (let i = 0; i < duplicatas.length; i += LOTE) {
+      const fatia = duplicatas.slice(i, i + LOTE);
+      const { data, error } = await supabase
+        .from('solicitacoes_crosby')
+        .select('duplicate_code, cd_empresa')
+        .in('duplicate_code', fatia);
+      if (error) throw error;
+      for (const sol of data || [])
+        chaves.add(`${sol.cd_empresa ?? ''}|${String(sol.duplicate_code)}`);
+    }
+  } catch (err) {
+    // Se a consulta falhar, segue sem o cruzamento (não quebra a tela).
+    console.error('Cruzamento Solicitações Crosby falhou:', err);
+    return itens;
+  }
+  if (chaves.size === 0) return itens;
+
+  return itens.map((item) =>
+    item.nr_duplicata &&
+    chaves.has(`${item.cd_empresa ?? ''}|${String(item.nr_duplicata)}`)
+      ? { ...item, _temSolicitacaoCrosby: true }
+      : item,
+  );
 };
 
 const ContasAPagar = (props) => {
@@ -923,11 +961,14 @@ const ContasAPagar = (props) => {
       // Ocultar faturas de banco emitidas antes do corte (só tela; Yago 28/10/2026)
       filtrados = filtrados.filter((item) => !deveOcultarFaturaBanco(item));
 
-      // Ocultar despesas de produção (exceto 1004 FRETE); só na Consulta (Yago 29/10/2026)
-      filtrados = filtrados.filter((item) => !deveOcultarDespesaProducao(item));
-
       // Marcar como PAGO o que já foi conciliado na Liberação de Pagamento
       filtrados = await anotarPagosNaLiberacao(filtrados);
+      // Marcar quais têm Solicitação Crosby (usado na regra das despesas de produção)
+      filtrados = await anotarSolicitacoesCrosby(filtrados);
+
+      // Ocultar despesas de produção (exceto 1004 FRETE) que não têm solicitação,
+      // não foram emitidas a partir de 01/10/2026 e não estão pagas (Yago 29/10/2026)
+      filtrados = filtrados.filter((item) => !deveOcultarDespesaProducao(item));
 
       setDados(filtrados);
 
