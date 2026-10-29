@@ -138,14 +138,12 @@ export default function Forecast() {
   const [pfVariavel, setPfVariavel] = useState({}); // proventos variáveis (comissão)
   const [prolabore, setProlabore] = useState({});
   const [editandoProl, setEditandoProl] = useState(null); // col sendo editada
-  const [folhasAbertas, setFolhasAbertas] = useState(() => new Set());
-  const toggleFolha = (label) =>
-    setFolhasAbertas((prev) => {
-      const n = new Set(prev);
-      if (n.has(label)) n.delete(label);
-      else n.add(label);
-      return n;
-    });
+  // Qual MÊS (coluna) está aberto em cada linha de despesa expansível
+  // (Pessoal Fixo/Variável, PJ, Ocupação, Serviços de Terceiros Fixos).
+  // Clica na célula do mês → abre só aquele mês. { [label]: colKey | null }
+  const [mesAberto, setMesAberto] = useState({});
+  const abrirMes = (label, col) =>
+    setMesAberto((p) => ({ ...p, [label]: p[label] === col ? null : col }));
   const salvarProlabore = (col, mes, valor) => {
     setProlabore((p) => ({ ...p, [col]: valor }));
     fetch(`${API_BASE_URL}/api/forecast-dre/prolabore`, {
@@ -157,18 +155,13 @@ export default function Forecast() {
   // Despesa de PJ (linha PJ): total por coluna e nomes dos contratados
   const [pjLinha, setPjLinha] = useState({}); // { [colKey]: total (negativo) }
   const [pjNomes, setPjNomes] = useState({}); // { [colKey]: [{nome, valor}] }
-  const [pjAberto, setPjAberto] = useState(false);
   // Despesa de OCUPAÇÃO (linha OCUPAÇÃO): total por coluna e por filial
   const [ocupLinha, setOcupLinha] = useState({}); // { [colKey]: total (negativo) }
   const [ocupFiliais, setOcupFiliais] = useState({}); // { [colKey]: [{nome, valor}] }
-  const [ocupAberto, setOcupAberto] = useState(false);
   // SERVIÇOS DE TERCEIROS FIXOS: lido do localStorage da DRE Analítica
   // (despesas-gerais-2026:v2). Mesmos números que a Niziany vê lá, com as
   // bonificações importadas manualmente — não dá pra reproduzir pelo backend.
   const [dreLocal, setDreLocal] = useState(null);
-  // mês (coluna) aberto na linha de Serviços de Terceiros Fixos — abre as
-  // despesas só desse mês (clique na célula do mês). null = fechado.
-  const [servMesAberto, setServMesAberto] = useState(null);
   const [servCatsAbertas, setServCatsAbertas] = useState(() => new Set());
   const toggleServCat = (cat) =>
     setServCatsAbertas((prev) => {
@@ -330,6 +323,8 @@ export default function Forecast() {
     for (const c of colunas) {
       if (c.grupo !== 'mensal' || c.tipo !== 'realizado') continue;
       const mk = String(c.label || '').slice(0, 3).toLowerCase();
+      // Só set/2026 em diante — jan–ago ficam com o número da planilha.
+      if (c.ano !== 2026 || (MES_ABREV[mk] || 0) < 9) continue;
       const mes = dreLocal.months[mk];
       if (!mes || !mes.details) continue;
       const categorias = [];
@@ -656,31 +651,33 @@ export default function Forecast() {
                   ? rubricasUnidas.filter((r) => r.grupo === grupoFolha)
                   : [];
                 const ehFolha = grupoFolha !== null && rubsDaLinha.length > 0;
-                const folhaAberta = ehFolha && folhasAbertas.has(l.label);
-                // Linha PJ: abre por nome dos contratados (um nível)
+                // Todas as despesas expansíveis abrem por MÊS: clica na célula
+                // do mês e abre só aquele mês (folha, PJ, Ocupação, Serviços).
                 const ehPJ = l.label === 'PJ' && Object.keys(pjLinha).length > 0;
-                const pjAbertoLinha = ehPJ && pjAberto;
-                // Linha OCUPAÇÃO: abre por filial (um nível)
                 const ehOcup = l.label === 'OCUPAÇÃO' && Object.keys(ocupLinha).length > 0;
-                const ocupAbertoLinha = ehOcup && ocupAberto;
-                // Linha SERVIÇOS DE TERCEIROS FIXOS: abre por MÊS (clique na
-                // célula do mês) → despesas só daquele mês → lançamentos.
                 const ehServTerc =
                   l.label === 'SERVIÇOS DE TERCEIROS FIXOS' && Object.keys(servTerc).length > 0;
-                const servAbertoLinha = ehServTerc && servMesAberto && servTerc[servMesAberto];
-                const clicavel =
-                  ehPai || temCredevCanal || ehFolha || ehPJ || ehOcup;
+                // Coluna (mês) aberta nesta linha, se houver dado nela
+                const temDadoMes = (col) =>
+                  (ehFolha && (pfFixo[col] !== undefined || pfVariavel[col] !== undefined)) ||
+                  (ehPJ && pjLinha[col] !== undefined) ||
+                  (ehOcup && ocupLinha[col] !== undefined) ||
+                  (ehServTerc && servTerc[col] !== undefined);
+                const colMesLinha =
+                  mesAberto[l.label] && temDadoMes(mesAberto[l.label]) ? mesAberto[l.label] : null;
+                const folhaAberta = ehFolha && !!colMesLinha;
+                const pjAbertoLinha = ehPJ && !!colMesLinha;
+                const ocupAbertoLinha = ehOcup && !!colMesLinha;
+                const servAbertoLinha = ehServTerc && !!colMesLinha;
+                const ehDespesaMes = ehFolha || ehPJ || ehOcup || ehServTerc;
+                // Só a label de seção (pai) e de canal (CREDEV) abrem pela label;
+                // as despesas abrem clicando na célula do mês.
+                const clicavel = ehPai || temCredevCanal;
                 const onClickLabel = ehPai
                   ? () => toggleRecolher(l.id)
                   : temCredevCanal
                     ? () => toggleCanal(l.label)
-                    : ehFolha
-                      ? () => toggleFolha(l.label)
-                      : ehPJ
-                        ? () => setPjAberto((v) => !v)
-                        : ehOcup
-                          ? () => setOcupAberto((v) => !v)
-                          : undefined;
+                    : undefined;
                 return (
                   <React.Fragment key={l.id}>
                   <tr className={trBg}>
@@ -699,14 +696,8 @@ export default function Forecast() {
                           ) : (
                             <CaretDown size={11} weight="bold" className="text-gray-400 shrink-0" />
                           )
-                        ) : temCredevCanal || ehFolha || ehPJ || ehOcup ? (
-                          (ehFolha
-                            ? folhaAberta
-                            : ehPJ
-                              ? pjAbertoLinha
-                              : ehOcup
-                                ? ocupAbertoLinha
-                                : canalAberto) ? (
+                        ) : temCredevCanal ? (
+                          canalAberto ? (
                             <CaretDown size={10} weight="bold" className="text-gray-300 shrink-0" />
                           ) : (
                             <CaretRight size={10} weight="bold" className="text-gray-300 shrink-0" />
@@ -766,21 +757,17 @@ export default function Forecast() {
                                 : sub
                                   ? 'text-gray-600'
                                   : 'text-gray-800';
-                      // Célula de mês clicável na linha de Serviços de Terceiros
-                      // Fixos: abre as despesas só daquele mês.
-                      const servCelula = ehServTerc && servTerc[c.key] !== undefined;
-                      const servCelAberta = servCelula && servMesAberto === c.key;
+                      // Célula de mês clicável nas linhas de despesa: abre só
+                      // aquele mês (folha, PJ, Ocupação, Serviços).
+                      const celulaMes = ehDespesaMes && temDadoMes(c.key);
+                      const celulaMesAberta = celulaMes && colMesLinha === c.key;
                       return (
                         <td
                           key={c.key}
-                          onClick={
-                            servCelula
-                              ? () => setServMesAberto((m) => (m === c.key ? null : c.key))
-                              : undefined
-                          }
+                          onClick={celulaMes ? () => abrirMes(l.label, c.key) : undefined}
                           title={
-                            servCelula
-                              ? 'Clique para ver as despesas deste mês'
+                            celulaMes
+                              ? 'Clique para abrir as despesas deste mês'
                               : calc !== undefined
                                 ? l.label === 'RECEITA BRUTA'
                                   ? 'Calculado: soma dos canais + CREDEV'
@@ -795,8 +782,8 @@ export default function Forecast() {
                             (auto ? 'bg-emerald-50 font-semibold ' : TIPO_CELULA[c.tipo] + ' ') +
                             (forte && !auto ? 'font-bold ' : '') +
                             (pct ? 'text-[10px] ' : '') +
-                            (servCelula ? 'cursor-pointer hover:underline ' : '') +
-                            (servCelAberta ? 'ring-1 ring-inset ring-emerald-400 ' : '') +
+                            (celulaMes ? 'cursor-pointer hover:underline ' : '') +
+                            (celulaMesAberta ? 'ring-1 ring-inset ring-emerald-400 ' : '') +
                             corTexto
                           }
                         >
@@ -826,19 +813,12 @@ export default function Forecast() {
                   )}
                   {pjAbertoLinha &&
                     (() => {
-                      // União dos nomes dos contratados (por coluna realizada)
-                      const nomesSet = new Map();
-                      for (const [col, lista] of Object.entries(pjNomes)) {
-                        for (const it of lista || []) {
-                          const e =
-                            nomesSet.get(it.nome) || { nome: it.nome, porCol: {}, max: 0 };
-                          e.porCol[col] = -(Number(it.valor) || 0); // despesa (negativo)
-                          e.max = Math.max(e.max, Math.abs(Number(it.valor) || 0));
-                          nomesSet.set(it.nome, e);
-                        }
-                      }
-                      const linhasPj = [...nomesSet.values()].sort((a, b) => b.max - a.max);
-                      return linhasPj.map((p) => (
+                      // Só o mês clicado: contratados daquele mês.
+                      const mc = colMesLinha;
+                      const lista = (pjNomes[mc] || [])
+                        .slice()
+                        .sort((a, b) => (b.valor || 0) - (a.valor || 0));
+                      return lista.map((p) => (
                         <tr key={'pj-' + p.nome} className="bg-slate-50/50">
                           <td className="sticky left-0 z-10 border-b border-r border-gray-100 pl-12 pr-3 py-1 whitespace-nowrap bg-slate-50 text-[10px] text-red-600">
                             <span className="inline-flex items-center gap-1.5">
@@ -846,35 +826,25 @@ export default function Forecast() {
                               {p.nome}
                             </span>
                           </td>
-                          {colunas.map((c) => {
-                            const pv = p.porCol[c.key];
-                            return (
-                              <td
-                                key={c.key}
-                                className="border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-slate-50/40"
-                              >
-                                {typeof pv === 'number' && pv !== 0 ? formatar(pv, 'moeda') : '–'}
-                              </td>
-                            );
-                          })}
+                          {colunas.map((c) => (
+                            <td
+                              key={c.key}
+                              className="border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-slate-50/40"
+                            >
+                              {c.key === mc && p.valor ? formatar(-p.valor, 'moeda') : '–'}
+                            </td>
+                          ))}
                         </tr>
                       ));
                     })()}
                   {ocupAbertoLinha &&
                     (() => {
-                      // União das filiais (por coluna realizada)
-                      const filSet = new Map();
-                      for (const [col, lista] of Object.entries(ocupFiliais)) {
-                        for (const it of lista || []) {
-                          const e =
-                            filSet.get(it.nome) || { nome: it.nome, porCol: {}, max: 0 };
-                          e.porCol[col] = -(Number(it.valor) || 0); // despesa (negativo)
-                          e.max = Math.max(e.max, Math.abs(Number(it.valor) || 0));
-                          filSet.set(it.nome, e);
-                        }
-                      }
-                      const linhasOc = [...filSet.values()].sort((a, b) => b.max - a.max);
-                      return linhasOc.map((p) => (
+                      // Só o mês clicado: filiais daquele mês.
+                      const mc = colMesLinha;
+                      const lista = (ocupFiliais[mc] || [])
+                        .slice()
+                        .sort((a, b) => (b.valor || 0) - (a.valor || 0));
+                      return lista.map((p) => (
                         <tr key={'ocup-' + p.nome} className="bg-slate-50/50">
                           <td className="sticky left-0 z-10 border-b border-r border-gray-100 pl-12 pr-3 py-1 whitespace-nowrap bg-slate-50 text-[10px] text-red-600">
                             <span className="inline-flex items-center gap-1.5">
@@ -882,25 +852,21 @@ export default function Forecast() {
                               {p.nome}
                             </span>
                           </td>
-                          {colunas.map((c) => {
-                            const pv = p.porCol[c.key];
-                            return (
-                              <td
-                                key={c.key}
-                                className="border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-slate-50/40"
-                              >
-                                {typeof pv === 'number' && pv !== 0 ? formatar(pv, 'moeda') : '–'}
-                              </td>
-                            );
-                          })}
+                          {colunas.map((c) => (
+                            <td
+                              key={c.key}
+                              className="border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-slate-50/40"
+                            >
+                              {c.key === mc && p.valor ? formatar(-p.valor, 'moeda') : '–'}
+                            </td>
+                          ))}
                         </tr>
                       ));
                     })()}
                   {servAbertoLinha &&
                     (() => {
-                      // Só o mês clicado (servMesAberto): despesas e lançamentos
-                      // daquele mês, nada dos outros.
-                      const mc = servMesAberto;
+                      // Só o mês clicado: despesas e lançamentos daquele mês.
+                      const mc = colMesLinha;
                       const cats = (servTerc[mc]?.categorias || []).slice();
                       const colMes = colunas.find((c) => c.key === mc);
                       const rotuloMes = colMes ? colMes.label : '';
@@ -1015,27 +981,27 @@ export default function Forecast() {
                       const dot = prov ? 'bg-emerald-500' : 'bg-red-500';
                       const temFunc = Object.keys(ru.funcPorCol).length > 0;
                       const rubAberta = temFunc && rubricasAbertas.has(ru.key);
-                      // Agrupa por EMPRESA e, dentro, por funcionário (3 níveis)
+                      // Agrupa por EMPRESA e, dentro, por funcionário — só o mês
+                      // aberto (colMesLinha), pra não misturar meses.
                       let empresas = [];
                       if (rubAberta) {
+                        const col = colMesLinha;
                         const em = new Map();
-                        for (const [col, lista] of Object.entries(ru.funcPorCol)) {
-                          for (const f of lista || []) {
-                            const emp = f.loja || '— sem seção —';
-                            const e =
-                              em.get(emp) ||
-                              { empresa: emp, porCol: {}, max: 0, funcs: new Map() };
-                            e.porCol[col] = (e.porCol[col] || 0) + (Number(f.valor) || 0);
-                            e.max = Math.max(e.max, Math.abs(e.porCol[col]));
-                            const fk = (f.chapa || '') + '|' + f.nome;
-                            const fe =
-                              e.funcs.get(fk) ||
-                              { nome: f.nome, chapa: f.chapa, funcao: f.funcao, porCol: {}, max: 0 };
-                            fe.porCol[col] = f.valor;
-                            fe.max = Math.max(fe.max, Math.abs(Number(f.valor) || 0));
-                            e.funcs.set(fk, fe);
-                            em.set(emp, e);
-                          }
+                        for (const f of ru.funcPorCol[col] || []) {
+                          const emp = f.loja || '— sem seção —';
+                          const e =
+                            em.get(emp) ||
+                            { empresa: emp, porCol: {}, max: 0, funcs: new Map() };
+                          e.porCol[col] = (e.porCol[col] || 0) + (Number(f.valor) || 0);
+                          e.max = Math.max(e.max, Math.abs(e.porCol[col]));
+                          const fk = (f.chapa || '') + '|' + f.nome;
+                          const fe =
+                            e.funcs.get(fk) ||
+                            { nome: f.nome, chapa: f.chapa, funcao: f.funcao, porCol: {}, max: 0 };
+                          fe.porCol[col] = f.valor;
+                          fe.max = Math.max(fe.max, Math.abs(Number(f.valor) || 0));
+                          e.funcs.set(fk, fe);
+                          em.set(emp, e);
                         }
                         empresas = [...em.values()]
                           .map((e) => ({
