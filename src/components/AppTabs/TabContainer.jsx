@@ -124,6 +124,7 @@ const PAGE_COMPONENTS = {
   ),
   '/voucher-varejo': lazy(() => import('../../pages/VoucherVarejo')),
   '/promocoes': lazy(() => import('../../pages/Promocoes')),
+  '/promocoes/valores': lazy(() => import('../../pages/PromocaoValores')),
   '/credev-varejo': lazy(() => import('../../pages/CredevVarejo')),
 
   // ---- Varejo › BlueCred ----

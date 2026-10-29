@@ -359,6 +359,11 @@ const AVAILABLE_PAGES = [
   },
   { path: '/voucher-varejo', name: 'Voucher Varejo', category: 'Varejo' },
   { path: '/promocoes', name: 'Promoções', category: 'Varejo' },
+  {
+    path: '/promocoes/valores',
+    name: 'Preço Promocional (Excel) — TOTVS',
+    category: 'Varejo',
+  },
   { path: '/credev-varejo', name: 'CREDEV Varejo', category: 'Varejo' },
   {
     path: '/aniversariantes-varejo',

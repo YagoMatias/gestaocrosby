@@ -372,6 +372,11 @@ const TABBED_PAGES = {
     group: 'Varejo',
     dot: 'bg-green-500',
   },
+  '/promocoes/valores': {
+    label: 'Preço Promocional (Excel)',
+    group: 'Varejo',
+    dot: 'bg-green-500',
+  },
   '/credev-varejo': {
     label: 'CREDEV Varejo',
     group: 'Varejo',

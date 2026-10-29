@@ -170,6 +170,7 @@ const PainelCompeticao = lazy(() => import('./pages/PainelCompeticao'));
 const VoucherUsage = lazy(() => import('./pages/VoucherUsage'));
 const VoucherVarejo = lazy(() => import('./pages/VoucherVarejo'));
 const Promocoes = lazy(() => import('./pages/Promocoes'));
+const PromocaoValores = lazy(() => import('./pages/PromocaoValores'));
 const CrosbyManage = lazy(() => import('./pages/CrosbyManage'));
 const TopClientes = lazy(() => import('./pages/TopClientes'));
 const DocumentoBluecred = lazy(() => import('./pages/DocumentoBluecred'));
@@ -354,6 +355,7 @@ const protectedRoutes = [
   { path: '/voucher-usage', component: VoucherUsage },
   { path: '/voucher-varejo', component: VoucherVarejo },
   { path: '/promocoes', component: Promocoes },
+  { path: '/promocoes/valores', component: PromocaoValores },
   { path: '/crosby-manage', component: CrosbyManage },
   { path: '/solicitacoes-crosby', component: SolicitacoesCrosby },
   {

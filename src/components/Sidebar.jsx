@@ -613,6 +613,12 @@ const varejo = [
     color: 'text-pink-600',
   },
   {
+    name: 'Preço Promocional (Excel)',
+    href: '/promocoes/valores',
+    icon: Tag,
+    color: 'text-rose-600',
+  },
+  {
     name: 'CREDEV VAREJO',
     href: '/credev-varejo',
     icon: Buildings,
