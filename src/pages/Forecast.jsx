@@ -158,6 +158,9 @@ export default function Forecast() {
   // Despesa de OCUPAÇÃO (linha OCUPAÇÃO): total por coluna e por filial
   const [ocupLinha, setOcupLinha] = useState({}); // { [colKey]: total (negativo) }
   const [ocupFiliais, setOcupFiliais] = useState({}); // { [colKey]: [{nome, valor}] }
+  // Despesa de MARKETING (Propaganda e Anúncios do Contas a Pagar)
+  const [mktLinha, setMktLinha] = useState({}); // { [colKey]: total (negativo) }
+  const [mktLanc, setMktLanc] = useState({}); // { [colKey]: [{forn, venc, valor}] }
   // SERVIÇOS DE TERCEIROS FIXOS: lido do localStorage da DRE Analítica
   // (despesas-gerais-2026:v2). Mesmos números que a Niziany vê lá, com as
   // bonificações importadas manualmente — não dá pra reproduzir pelo backend.
@@ -333,6 +336,7 @@ export default function Forecast() {
         const n = norm(cat);
         if (n === 'SERVICOS PRESTADOS POR TERCEIROS') continue; // já está no PJ
         if (/BONIFIC.*MARKETING/.test(n)) continue; // bonificação marketing fora
+        if (/FRETE/.test(n)) continue; // frete fora (Niziany 29/10)
         const lanc = (rows || []).map((r) => ({
           forn: r.forn || '—',
           venc: r.venc || '',
@@ -448,6 +452,8 @@ export default function Forecast() {
       const novoPjNomes = {};
       const novoOcupLinha = {};
       const novoOcupFiliais = {};
+      const novoMktLinha = {};
+      const novoMktLanc = {};
       for (const item of resultados) {
         if (!item) continue;
         const [col, d, pf] = item;
@@ -480,6 +486,9 @@ export default function Forecast() {
           // Despesa de OCUPAÇÃO (aluguel): total e por filial
           if (typeof pf.ocupacao_total === 'number') novoOcupLinha[col] = pf.ocupacao_total;
           if (Array.isArray(pf.ocupacao_filiais)) novoOcupFiliais[col] = pf.ocupacao_filiais;
+          // Despesa de MARKETING (propaganda): total e lançamentos
+          if (typeof pf.marketing_total === 'number') novoMktLinha[col] = pf.marketing_total;
+          if (Array.isArray(pf.marketing_lanc)) novoMktLanc[col] = pf.marketing_lanc;
         }
       }
       setOverrides(novo);
@@ -492,6 +501,8 @@ export default function Forecast() {
       setPjNomes(novoPjNomes);
       setOcupLinha(novoOcupLinha);
       setOcupFiliais(novoOcupFiliais);
+      setMktLinha(novoMktLinha);
+      setMktLanc(novoMktLanc);
       setCarregandoAuto(false);
     })();
     return () => {
@@ -655,6 +666,7 @@ export default function Forecast() {
                 // do mês e abre só aquele mês (folha, PJ, Ocupação, Serviços).
                 const ehPJ = l.label === 'PJ' && Object.keys(pjLinha).length > 0;
                 const ehOcup = l.label === 'OCUPAÇÃO' && Object.keys(ocupLinha).length > 0;
+                const ehMkt = l.label === 'MARKETING' && Object.keys(mktLinha).length > 0;
                 const ehServTerc =
                   l.label === 'SERVIÇOS DE TERCEIROS FIXOS' && Object.keys(servTerc).length > 0;
                 // Coluna (mês) aberta nesta linha, se houver dado nela
@@ -662,14 +674,16 @@ export default function Forecast() {
                   (ehFolha && (pfFixo[col] !== undefined || pfVariavel[col] !== undefined)) ||
                   (ehPJ && pjLinha[col] !== undefined) ||
                   (ehOcup && ocupLinha[col] !== undefined) ||
+                  (ehMkt && mktLinha[col] !== undefined) ||
                   (ehServTerc && servTerc[col] !== undefined);
                 const colMesLinha =
                   mesAberto[l.label] && temDadoMes(mesAberto[l.label]) ? mesAberto[l.label] : null;
                 const folhaAberta = ehFolha && !!colMesLinha;
                 const pjAbertoLinha = ehPJ && !!colMesLinha;
                 const ocupAbertoLinha = ehOcup && !!colMesLinha;
+                const mktAbertoLinha = ehMkt && !!colMesLinha;
                 const servAbertoLinha = ehServTerc && !!colMesLinha;
-                const ehDespesaMes = ehFolha || ehPJ || ehOcup || ehServTerc;
+                const ehDespesaMes = ehFolha || ehPJ || ehOcup || ehMkt || ehServTerc;
                 // Só a label de seção (pai) e de canal (CREDEV) abrem pela label;
                 // as despesas abrem clicando na célula do mês.
                 const clicavel = ehPai || temCredevCanal;
@@ -726,6 +740,11 @@ export default function Forecast() {
                         ocupLinha[c.key] !== undefined
                       ) {
                         pfLine = ocupLinha[c.key];
+                      } else if (
+                        l.label === 'MARKETING' &&
+                        mktLinha[c.key] !== undefined
+                      ) {
+                        pfLine = mktLinha[c.key];
                       } else if (
                         l.label === 'SERVIÇOS DE TERCEIROS FIXOS' &&
                         servTerc[c.key] !== undefined
@@ -858,6 +877,35 @@ export default function Forecast() {
                               className="border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-slate-50/40"
                             >
                               {c.key === mc && p.valor ? formatar(-p.valor, 'moeda') : '–'}
+                            </td>
+                          ))}
+                        </tr>
+                      ));
+                    })()}
+                  {mktAbertoLinha &&
+                    (() => {
+                      // Só o mês clicado: lançamentos de propaganda daquele mês.
+                      const mc = colMesLinha;
+                      const lista = (mktLanc[mc] || [])
+                        .slice()
+                        .sort((a, b) => (b.valor || 0) - (a.valor || 0));
+                      return lista.map((x, i) => (
+                        <tr key={'mkt-' + i} className="bg-slate-50/50">
+                          <td className="sticky left-0 z-10 border-b border-r border-gray-100 pl-12 pr-3 py-1 whitespace-nowrap bg-slate-50 text-[10px] text-red-600">
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                              {x.forn}
+                              {x.venc ? (
+                                <span className="text-gray-400 font-normal"> · venc {x.venc}</span>
+                              ) : null}
+                            </span>
+                          </td>
+                          {colunas.map((c) => (
+                            <td
+                              key={c.key}
+                              className="border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-slate-50/40"
+                            >
+                              {c.key === mc && x.valor ? formatar(-x.valor, 'moeda') : '–'}
                             </td>
                           ))}
                         </tr>
