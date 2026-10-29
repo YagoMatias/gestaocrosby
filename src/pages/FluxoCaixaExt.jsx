@@ -138,32 +138,32 @@ const MultiSelect = ({ label, opcoes, valor, onChange, renderOpcao, placeholder 
         <CaretDown size={12} className={`shrink-0 transition-transform ${aberto ? 'rotate-180' : ''}`} />
       </button>
       {aberto && (
-        <div className="absolute z-40 mt-1 left-0 w-72 max-w-[90vw] bg-white border border-gray-200 rounded-lg shadow-lg p-2 text-xs text-gray-800">
+        <div className="absolute z-40 mt-1 left-0 w-72 max-w-[90vw] bg-white border border-gray-200 rounded-lg shadow-xl p-2 text-[13px] text-gray-800">
           {busca && (
             <input
               autoFocus
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Buscar…"
-              className="w-full mb-2 px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500"
+              className="w-full mb-2 px-2.5 py-1.5 text-[13px] border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#000638]"
             />
           )}
-          <div className="flex justify-between mb-1 px-1 text-[11px]">
-            <button type="button" onClick={() => onChange([...new Set([...valor, ...visiveis.map((o) => o.value)])])} className="text-blue-600 hover:underline">
+          <div className="flex justify-between mb-1.5 px-1 text-xs">
+            <button type="button" onClick={() => onChange([...new Set([...valor, ...visiveis.map((o) => o.value)])])} className="text-blue-600 font-medium hover:underline">
               Marcar todos
             </button>
             <button type="button" onClick={() => onChange([])} className="text-gray-500 hover:underline">
               Limpar
             </button>
           </div>
-          <div className="max-h-60 overflow-auto">
+          <div className="max-h-64 overflow-auto -mx-1 px-1">
             {visiveis.map((o) => (
-              <label key={String(o.value)} className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-gray-50 cursor-pointer text-gray-800">
-                <input type="checkbox" checked={valor.includes(o.value)} onChange={() => toggle(o.value)} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 shrink-0" />
-                <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-gray-800">{renderOpcao ? renderOpcao(o) : o.label}</span>
+              <label key={String(o.value)} className="flex items-center gap-2.5 px-2 py-2 rounded-md hover:bg-blue-50 cursor-pointer text-gray-800 border-b border-gray-50 last:border-0">
+                <input type="checkbox" checked={valor.includes(o.value)} onChange={() => toggle(o.value)} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 shrink-0 w-4 h-4" />
+                <span className="min-w-0 flex-1">{renderOpcao ? renderOpcao(o) : o.label}</span>
               </label>
             ))}
-            {!visiveis.length && <p className="px-1.5 py-2 text-gray-400">Nada encontrado.</p>}
+            {!visiveis.length && <p className="px-2 py-3 text-gray-400">Nada encontrado.</p>}
           </div>
         </div>
       )}
@@ -183,7 +183,6 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
   const [contraparte, setContraparte] = useState('');
   const [busca, setBusca] = useState('');
   const [buscaDeb, setBuscaDeb] = useState('');
-  const [mostrarFiltros, setMostrarFiltros] = useState(true);
 
   const [dados, setDados] = useState(null);
   const [carregando, setCarregando] = useState(false);
@@ -437,141 +436,134 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
     <div className="min-h-screen bg-gray-50 px-3 py-4 md:p-6 pb-24 md:pb-6">
       <PageTitle title={titulo} subtitle={subtitulo} icon={Wallet} />
 
-      {/* Barra: período + ações */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 mb-3 flex flex-wrap items-center gap-2">
-        <div>
-          <label className="block text-[11px] font-medium text-gray-500 mb-0.5">De</label>
-          <input type="date" value={de} onChange={(e) => setDe(e.target.value)} className="px-2 py-1.5 text-sm border border-gray-300 rounded-lg" />
+      {/* Filtros — tudo num card só */}
+      <div className="bg-white rounded-lg shadow-lg border border-[#000638]/10 p-3 md:p-4 mb-4">
+        {/* título + ações */}
+        <div className="flex flex-wrap items-center gap-2 mb-3">
+          <span className="text-sm font-bold text-[#000638] flex items-center gap-1.5 mr-auto">
+            <FunnelSimple size={16} weight="bold" /> Filtros
+            {filtrosAtivos > 0 && (
+              <button onClick={limparFiltros} className="ml-2 text-xs font-normal text-blue-600 hover:underline">
+                limpar ({filtrosAtivos})
+              </button>
+            )}
+          </span>
+          <button onClick={carregar} disabled={carregando} className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 flex items-center gap-1">
+            <ArrowsClockwise size={14} className={carregando ? 'animate-spin' : ''} /> Atualizar
+          </button>
+          <button onClick={exportarExcel} disabled={!dados} className="px-3 py-1.5 text-xs rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 flex items-center gap-1">
+            <Export size={14} /> Excel
+          </button>
+          <button onClick={() => setModalImport(true)} className="px-3 py-1.5 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-1 font-medium">
+            <UploadSimple size={14} weight="bold" /> Importar extratos
+          </button>
+          {mostrarBot && (
+            <button
+              onClick={() => setAba('bot')}
+              className={`px-3 py-1.5 text-xs rounded-lg flex items-center gap-1 font-medium ${aba === 'bot' ? 'bg-emerald-700 text-white' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}
+              title="Bot que baixa os extratos das contas Stone, importa aqui e atualiza o saldo na Liberação de Pagamento"
+            >
+              <Robot size={14} weight="bold" /> Bot Stone
+            </button>
+          )}
         </div>
-        <div>
-          <label className="block text-[11px] font-medium text-gray-500 mb-0.5">Até</label>
-          <input type="date" value={ate} onChange={(e) => setAte(e.target.value)} className="px-2 py-1.5 text-sm border border-gray-300 rounded-lg" />
-        </div>
-        <div className="relative flex-1 min-w-[220px]">
-          <MagnifyingGlass size={14} className="absolute left-2.5 top-2.5 text-gray-400" />
+
+        {/* busca */}
+        <div className="relative mb-3">
+          <MagnifyingGlass size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
             placeholder="Pesquisar nome, CNPJ/CPF, histórico, documento ou valor…"
-            className="w-full pl-8 pr-8 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            className="w-full pl-8 pr-8 py-2 text-sm border border-[#000638]/30 rounded-lg bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#000638]"
           />
           {busca && (
-            <button onClick={() => setBusca('')} className="absolute right-2 top-2 text-gray-400 hover:text-gray-600">
+            <button onClick={() => setBusca('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
               <X size={14} />
             </button>
           )}
         </div>
-        <button
-          onClick={() => setMostrarFiltros((v) => !v)}
-          className={`px-3 py-1.5 text-xs rounded-lg border flex items-center gap-1 ${filtrosAtivos ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-300 text-gray-600'}`}
-        >
-          <FunnelSimple size={14} /> Filtros {filtrosAtivos ? `(${filtrosAtivos})` : ''}
-        </button>
-        <button onClick={carregar} disabled={carregando} className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 flex items-center gap-1">
-          <ArrowsClockwise size={14} className={carregando ? 'animate-spin' : ''} /> Atualizar
-        </button>
-        <button onClick={exportarExcel} disabled={!dados} className="px-3 py-1.5 text-xs rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 flex items-center gap-1">
-          <Export size={14} /> Excel
-        </button>
-        <button onClick={() => setModalImport(true)} className="px-3 py-1.5 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-1 font-medium">
-          <UploadSimple size={14} weight="bold" /> Importar extratos
-        </button>
-        {mostrarBot && (
-          <button
-            onClick={() => setAba('bot')}
-            className={`px-3 py-1.5 text-xs rounded-lg flex items-center gap-1 font-medium ${aba === 'bot' ? 'bg-emerald-700 text-white' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}
-            title="Bot que baixa os extratos das contas Stone, importa aqui e atualiza o saldo na Liberação de Pagamento"
-          >
-            <Robot size={14} weight="bold" /> Bot Stone
-          </button>
-        )}
-      </div>
 
-      {/* Filtros */}
-      {mostrarFiltros && (
-        <div className="bg-white rounded-lg shadow-lg border border-[#000638]/10 p-3 mb-3">
-          <div className="flex items-center justify-between mb-2.5">
-            <span className="text-sm font-bold text-[#000638] flex items-center gap-1.5">
-              <FunnelSimple size={16} weight="bold" /> Filtros
-            </span>
-            {filtrosAtivos > 0 && (
-              <button onClick={limparFiltros} className="text-xs text-blue-600 hover:underline whitespace-nowrap">
-                Limpar filtros
-              </button>
-            )}
+        {/* campos */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-3 gap-y-2.5">
+          <div>
+            <label className="block text-xs font-semibold mb-0.5 text-[#000638]">De</label>
+            <input type="date" value={de} onChange={(e) => setDe(e.target.value)} className="w-full px-2 py-1.5 text-xs border border-[#000638]/30 rounded-lg bg-[#f8f9fb] text-[#000638] focus:outline-none focus:ring-2 focus:ring-[#000638]" />
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
-            <MultiSelect
-              label="Banco"
-              opcoes={(bancosPresentes.length ? bancosPresentes : Object.keys(BANCOS)).map((b) => ({ value: b, label: bancoCfg(b).label, banco: b }))}
-              valor={bancos}
-              onChange={setBancos}
-              renderOpcao={(o) => (
-                <span className="flex items-center gap-1.5">
-                  <span className={`inline-block w-2 h-2 rounded-full ${bancoCfg(o.banco).ponto}`} />
-                  {o.label}
-                </span>
-              )}
-              larguraMin="w-full"
+          <div>
+            <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Até</label>
+            <input type="date" value={ate} onChange={(e) => setAte(e.target.value)} className="w-full px-2 py-1.5 text-xs border border-[#000638]/30 rounded-lg bg-[#f8f9fb] text-[#000638] focus:outline-none focus:ring-2 focus:ring-[#000638]" />
+          </div>
+          <MultiSelect
+            label="Banco"
+            opcoes={(bancosPresentes.length ? bancosPresentes : Object.keys(BANCOS)).map((b) => ({ value: b, label: bancoCfg(b).label, banco: b }))}
+            valor={bancos}
+            onChange={setBancos}
+            renderOpcao={(o) => (
+              <span className="flex items-center gap-2">
+                <span className={`inline-block w-2.5 h-2.5 rounded-full shrink-0 ${bancoCfg(o.banco).ponto}`} />
+                <span className="truncate">{o.label}</span>
+              </span>
+            )}
+            larguraMin="w-full"
+          />
+          <MultiSelect
+            label="Conta"
+            busca
+            opcoes={contas
+              .filter((c) => !bancos.length || bancos.includes(c.banco))
+              .map((c) => ({ value: c.id, label: c.apelido, banco: c.banco, sub: c.titular_nome }))}
+            valor={contasSel}
+            onChange={setContasSel}
+            renderOpcao={(o) => (
+              <span className="flex items-center gap-2 min-w-0">
+                <span className={`inline-block w-2.5 h-2.5 rounded-full shrink-0 ${bancoCfg(o.banco).ponto}`} />
+                <span className="font-medium text-gray-800 shrink-0">{o.label}</span>
+                {o.sub && <span className="text-gray-400 truncate">· {o.sub}</span>}
+              </span>
+            )}
+            placeholder={contas.length ? 'Todas as contas' : 'Nenhuma conta importada'}
+            larguraMin="w-full"
+          />
+          <MultiSelect
+            label="Tipo"
+            opcoes={[
+              { value: 'ENTRADA', label: 'Entradas' },
+              { value: 'SAIDA', label: 'Saídas' },
+              { value: 'TRANSFERENCIA', label: 'Transferências' },
+            ]}
+            valor={tipos}
+            onChange={setTipos}
+            larguraMin="w-full"
+          />
+          <MultiSelect
+            label="Forma de pagamento"
+            busca
+            opcoes={(dados?.opcoes?.formas?.length ? dados.opcoes.formas : dados?.opcoes?.todasFormas || []).map((f) => ({ value: f, label: f }))}
+            valor={formas}
+            onChange={setFormas}
+            placeholder="Todas as formas"
+            larguraMin="w-full"
+          />
+          <div className="col-span-2 sm:col-span-3 lg:col-span-6">
+            <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Fornecedor / contraparte</label>
+            <input
+              list="fc-contrapartes"
+              value={contraparte}
+              onChange={(e) => setContraparte(e.target.value)}
+              placeholder="Digite para escolher…"
+              className="w-full px-2 py-1.5 text-xs border border-[#000638]/30 rounded-lg bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#000638]"
             />
-            <MultiSelect
-              label="Conta"
-              busca
-              opcoes={contas
-                .filter((c) => !bancos.length || bancos.includes(c.banco))
-                .map((c) => ({ value: c.id, label: c.apelido, banco: c.banco, sub: c.titular_nome }))}
-              valor={contasSel}
-              onChange={setContasSel}
-              renderOpcao={(o) => (
-                <span className="flex items-center gap-1.5 min-w-0">
-                  <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${bancoCfg(o.banco).ponto}`} />
-                  <span className="whitespace-nowrap text-gray-800">{o.label}</span>
-                  <span className="text-gray-400 truncate">{o.sub}</span>
-                </span>
-              )}
-              placeholder={contas.length ? 'Todas as contas' : 'Nenhuma conta importada'}
-              larguraMin="w-full"
-            />
-            <MultiSelect
-              label="Tipo"
-              opcoes={[
-                { value: 'ENTRADA', label: 'Entradas' },
-                { value: 'SAIDA', label: 'Saídas' },
-                { value: 'TRANSFERENCIA', label: 'Transferências' },
-              ]}
-              valor={tipos}
-              onChange={setTipos}
-              larguraMin="w-full"
-            />
-            <MultiSelect
-              label="Forma de pagamento"
-              busca
-              opcoes={(dados?.opcoes?.formas?.length ? dados.opcoes.formas : dados?.opcoes?.todasFormas || []).map((f) => ({ value: f, label: f }))}
-              valor={formas}
-              onChange={setFormas}
-              placeholder="Todas as formas"
-              larguraMin="w-full"
-            />
-            <div className="w-full">
-              <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Fornecedor / contraparte</label>
-              <input
-                list="fc-contrapartes"
-                value={contraparte}
-                onChange={(e) => setContraparte(e.target.value)}
-                placeholder="Digite para escolher…"
-                className="w-full px-2 py-1.5 text-xs border border-[#000638]/30 rounded-lg bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#000638]"
-              />
-              <datalist id="fc-contrapartes">
-                {(dados?.opcoes?.contrapartes || []).map((c) => (
-                  <option key={c.chave} value={c.nome}>
-                    {c.doc ? fmtDoc(c.doc) : ''}
-                  </option>
-                ))}
-              </datalist>
-            </div>
+            <datalist id="fc-contrapartes">
+              {(dados?.opcoes?.contrapartes || []).map((c) => (
+                <option key={c.chave} value={c.nome}>
+                  {c.doc ? fmtDoc(c.doc) : ''}
+                </option>
+              ))}
+            </datalist>
           </div>
         </div>
-      )}
+      </div>
 
       {migrationPendente && (
         <div className="flex items-start gap-2 px-4 py-3 mb-4 bg-amber-50 border border-amber-300 rounded-lg text-sm text-amber-800">
