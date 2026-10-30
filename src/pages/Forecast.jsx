@@ -645,6 +645,12 @@ export default function Forecast() {
     recFinLinha[col] !== undefined ? recFinLinha[col] : estatico('RECEITA FINANCEIRA', col);
   const valJuros = (col) =>
     jurosLinha[col] !== undefined ? jurosLinha[col] : estatico('JUROS E MULTA POR ATRASO', col);
+  // Linhas calculadas só onde a planilha está vazia: Resultado Financeiro =
+  // Receita + Despesa financeira; Resultado Final = Lucro Líquido + Investimentos
+  // + Distribuição de Lucros (fórmula da própria planilha).
+  const valResultadoFinanceiro = (col) => valRecFin(col) + valAntecip(col) + valJuros(col);
+  const valResultadoFinal = (col) =>
+    estatico('LUCRO LÍQUIDO', col) + estatico('INVESTIMENTOS', col) + estatico('DISTRIBUIÇÃO LUCROS', col);
 
   // ── Importar planilha de taxas de cartão (Niziany 30/10) ──────────────────
   // Arquivo mensal "PAINEL DRE — TAXAS DE CARTÃO": o mês vem do título da aba
@@ -1307,9 +1313,23 @@ export default function Forecast() {
                       ) {
                         pfLine = -Math.round((servTerc[c.key].total || 0) * 100) / 100;
                       }
+                      // Linhas calculadas (só célula vazia na planilha, colunas mensais)
+                      const resultadoCalc =
+                        c.grupo === 'mensal' &&
+                        l.valores[c.key] == null &&
+                        (l.label === 'RESULTADO FINANCEIRO' || l.label === 'RESULTADO FINAL');
+                      if (resultadoCalc) {
+                        const bruto =
+                          l.label === 'RESULTADO FINANCEIRO'
+                            ? valResultadoFinanceiro(c.key)
+                            : valResultadoFinal(c.key);
+                        pfLine = Math.round(bruto * 100) / 100;
+                      }
                       const ovr = overrides[c.key]?.[l.label];
                       const calc = totaisCalculados[c.key]?.[l.label];
                       const auto = pfLine !== undefined || ovr !== undefined;
+                      // Marcação verde só nos meses de previsão (Niziany 30/10).
+                      const autoVisual = auto && c.tipo === 'forecast' && !resultadoCalc;
                       // Faturamento por canal: mesma fonte das outras células (só o fundo marca o automático)
                       const ehFat = CANAL_POR_LINHA[l.label] !== undefined;
                       const v =
@@ -1325,7 +1345,7 @@ export default function Forecast() {
                         ? 'text-red-600'
                         : v == null
                           ? 'text-gray-300'
-                          : auto && !ehFat
+                          : autoVisual && !ehFat
                             ? 'text-emerald-700'
                             : forte
                               ? 'text-[#000638]'
@@ -1368,8 +1388,8 @@ export default function Forecast() {
                           className={
                             'border-b border-gray-100 px-3 py-2 text-right tabular-nums whitespace-nowrap ' +
                             bordaTopo + ' ' +
-                            (auto ? (ehFat ? 'bg-emerald-50 ' : 'bg-emerald-50 font-semibold ') : TIPO_CELULA[c.tipo] + ' ') +
-                            (forte && !auto ? 'font-bold ' : '') +
+                            (autoVisual ? (ehFat ? 'bg-emerald-50 ' : 'bg-emerald-50 font-semibold ') : TIPO_CELULA[c.tipo] + ' ') +
+                            (forte && !autoVisual ? 'font-bold ' : '') +
                             (pct || sub2 ? 'text-[10px] ' : '') +
                             (celulaMes || cmvEditavel ? 'cursor-pointer hover:underline ' : '') +
                             (celulaMesAberta ? 'ring-1 ring-inset ring-emerald-400 ' : '') +
