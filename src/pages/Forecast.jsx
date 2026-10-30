@@ -189,6 +189,8 @@ export default function Forecast() {
   const [trafegoLinha, setTrafegoLinha] = useState({}); // { [colKey]: total (negativo) }
   const [trafegoItens, setTrafegoItens] = useState({}); // { [colKey]: [{canal, nome, valor}] }
   // PERDAS COM INADIMPLÊNCIA (Dashboard Inadimplência, mês específico)
+  // RECEITA FINANCEIRA (tela Receita Financeira do Contas a Receber)
+  const [recFinLinha, setRecFinLinha] = useState({}); // { [colKey]: valor (positivo) }
   // FRETES (custo do Financeiro/Frete do Dryland)
   const [freteLinha, setFreteLinha] = useState({}); // { [colKey]: total (negativo) }
   const [freteCanais, setFreteCanais] = useState({}); // { [colKey]: [{nome, valor, envios}] }
@@ -586,7 +588,7 @@ export default function Forecast() {
     }
     if (
       !window.confirm(
-        `Atualizar ${alvos.map((a) => a.mes).join(', ')} nas fontes originais (New Forecast, Dryland, Contas a Pagar…)? Pode levar alguns minutos.`,
+        `Atualizar ${alvos.map((a) => a.mes).join(', ')} nas fontes originais (vendas, Dryland, Contas a Pagar…)? Pode levar alguns minutos.`,
       )
     )
       return;
@@ -620,7 +622,7 @@ export default function Forecast() {
       setRefetchTick((t) => t + 1);
       window.alert(
         prontos.size === alvos.length
-          ? 'Dados atualizados nas fontes originais. A receita (New Forecast) pode levar mais alguns minutos — a tela relê sozinha ao recarregar.'
+          ? 'Dados atualizados nas fontes originais. A receita de vendas pode levar mais alguns minutos — a tela relê sozinha ao recarregar.'
           : 'Atualização disparada; alguns meses ainda estão recalculando no servidor. Dá um Ctrl+Shift+R daqui a alguns minutos.',
       );
     } finally {
@@ -639,6 +641,8 @@ export default function Forecast() {
     impAntecip[col] !== undefined
       ? -(impAntecip[col].total || 0)
       : estatico('ANTECIPAÇÃO DE RECEBÍVEIS', col);
+  const valRecFin = (col) =>
+    recFinLinha[col] !== undefined ? recFinLinha[col] : estatico('RECEITA FINANCEIRA', col);
   const valJuros = (col) =>
     jurosLinha[col] !== undefined ? jurosLinha[col] : estatico('JUROS E MULTA POR ATRASO', col);
 
@@ -819,6 +823,7 @@ export default function Forecast() {
       const novoMktLanc = {};
       const novoTrafLinha = {};
       const novoTrafItens = {};
+      const novoRecFin = {};
       const novoFreteLinha = {};
       const novoFreteCanais = {};
       const novoJurosLinha = {};
@@ -865,6 +870,7 @@ export default function Forecast() {
           // Tráfego pago (Forecast de Mídia do Dryland)
           if (typeof pf.trafego_total === 'number') novoTrafLinha[col] = pf.trafego_total;
           if (Array.isArray(pf.trafego_itens)) novoTrafItens[col] = pf.trafego_itens;
+          if (typeof pf.receita_financeira === 'number') novoRecFin[col] = pf.receita_financeira;
           // Fretes (Dryland, valor de custo)
           if (typeof pf.frete_total === 'number') novoFreteLinha[col] = pf.frete_total;
           if (Array.isArray(pf.frete_canais)) novoFreteCanais[col] = pf.frete_canais;
@@ -895,6 +901,7 @@ export default function Forecast() {
       setMktLanc(novoMktLanc);
       setTrafegoLinha(novoTrafLinha);
       setTrafegoItens(novoTrafItens);
+      setRecFinLinha(novoRecFin);
       setFreteLinha(novoFreteLinha);
       setFreteCanais(novoFreteCanais);
       setJurosLinha(novoJurosLinha);
@@ -927,22 +934,16 @@ export default function Forecast() {
             : 'bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden'
         }
       >
-        {/* Barra de topo: cenário + legenda + tela cheia */}
+        {/* Barra de topo: legenda + ações */}
         <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-gray-100 bg-gray-50">
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-bold uppercase text-gray-500">Cenário</span>
-              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-200">
-                {base.cenario}
-              </span>
-            </div>
             <span className="text-[10px] text-gray-400 hidden sm:inline">
               Clique no mês para Realizado / Previsão · clique na seção para expandir
             </span>
             {carregandoAuto && (
               <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-emerald-700">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                Atualizando do New Forecast…
+                Atualizando dados…
               </span>
             )}
           </div>
@@ -954,16 +955,13 @@ export default function Forecast() {
               <span className="inline-flex items-center gap-1.5 text-gray-600">
                 <span className="w-2.5 h-2.5 rounded-sm bg-blue-600" /> Previsão
               </span>
-              <span className="inline-flex items-center gap-1.5 text-gray-600">
-                <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> New Forecast
-              </span>
             </div>
             <button
               type="button"
               disabled={atualizando}
               onClick={atualizarDados}
               className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100 disabled:opacity-60"
-              title="Recalcula os meses automáticos (não travados) nas fontes originais: New Forecast, Dryland, Contas a Pagar…"
+              title="Recalcula os meses automáticos (não travados) nas fontes originais: vendas, Dryland, Contas a Pagar…"
             >
               {atualizando ? 'Atualizando…' : 'Atualizar dados'}
             </button>
@@ -1260,6 +1258,11 @@ export default function Forecast() {
                         impAntecip[c.key] !== undefined
                       ) {
                         pfLine = -Math.round((impAntecip[c.key].total || 0) * 100) / 100;
+                      } else if (
+                        (l.label === 'RECEITA FINANCEIRA' || l.label === 'RECEITA FINANCEIRA COM JUROS') &&
+                        recFinLinha[c.key] !== undefined
+                      ) {
+                        pfLine = recFinLinha[c.key];
                       } else if (l.label === 'FRETES' && freteLinha[c.key] !== undefined) {
                         pfLine = freteLinha[c.key];
                       } else if (l.label === 'JUROS E MULTA POR ATRASO' && jurosLinha[c.key] !== undefined) {
@@ -1272,13 +1275,13 @@ export default function Forecast() {
                         pfLine = Math.round((valAntecip(c.key) + valJuros(c.key)) * 100) / 100;
                       } else if (
                         l.label === 'RECEITA (DESPESA) NÃO OPERACIONAL' &&
-                        (impAntecip[c.key] !== undefined || jurosLinha[c.key] !== undefined)
+                        (impAntecip[c.key] !== undefined ||
+                          jurosLinha[c.key] !== undefined ||
+                          recFinLinha[c.key] !== undefined)
                       ) {
-                        // = Receita financeira (planilha) + Despesa financeira recomposta
+                        // = Receita financeira + Despesa financeira recomposta
                         pfLine =
-                          Math.round(
-                            (estatico('RECEITA FINANCEIRA', c.key) + valAntecip(c.key) + valJuros(c.key)) * 100,
-                          ) / 100;
+                          Math.round((valRecFin(c.key) + valAntecip(c.key) + valJuros(c.key)) * 100) / 100;
                       } else if (
                         l.label === 'PERDAS COM INADIMPLÊNCIA' &&
                         perdasLinha[c.key] !== undefined
@@ -1307,6 +1310,8 @@ export default function Forecast() {
                       const ovr = overrides[c.key]?.[l.label];
                       const calc = totaisCalculados[c.key]?.[l.label];
                       const auto = pfLine !== undefined || ovr !== undefined;
+                      // Faturamento por canal: mesma fonte das outras células (só o fundo marca o automático)
+                      const ehFat = CANAL_POR_LINHA[l.label] !== undefined;
                       const v =
                         pfLine !== undefined
                           ? pfLine
@@ -1320,7 +1325,7 @@ export default function Forecast() {
                         ? 'text-red-600'
                         : v == null
                           ? 'text-gray-300'
-                          : auto
+                          : auto && !ehFat
                             ? 'text-emerald-700'
                             : forte
                               ? 'text-[#000638]'
@@ -1357,13 +1362,13 @@ export default function Forecast() {
                                   ? 'Calculado: soma dos canais + CREDEV'
                                   : 'Calculado: soma dos canais de venda'
                                 : auto
-                                  ? 'Puxado do New Forecast'
+                                  ? 'Puxado automaticamente'
                                   : undefined
                           }
                           className={
                             'border-b border-gray-100 px-3 py-2 text-right tabular-nums whitespace-nowrap ' +
                             bordaTopo + ' ' +
-                            (auto ? 'bg-emerald-50 font-semibold ' : TIPO_CELULA[c.tipo] + ' ') +
+                            (auto ? (ehFat ? 'bg-emerald-50 ' : 'bg-emerald-50 font-semibold ') : TIPO_CELULA[c.tipo] + ' ') +
                             (forte && !auto ? 'font-bold ' : '') +
                             (pct || sub2 ? 'text-[10px] ' : '') +
                             (celulaMes || cmvEditavel ? 'cursor-pointer hover:underline ' : '') +
