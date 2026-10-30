@@ -189,6 +189,9 @@ export default function Forecast() {
   const [trafegoLinha, setTrafegoLinha] = useState({}); // { [colKey]: total (negativo) }
   const [trafegoItens, setTrafegoItens] = useState({}); // { [colKey]: [{canal, nome, valor}] }
   // PERDAS COM INADIMPLÊNCIA (Dashboard Inadimplência, mês específico)
+  // FRETES (custo do Financeiro/Frete do Dryland)
+  const [freteLinha, setFreteLinha] = useState({}); // { [colKey]: total (negativo) }
+  const [freteCanais, setFreteCanais] = useState({}); // { [colKey]: [{nome, valor, envios}] }
   // JUROS E MULTA POR ATRASO (natureza 7005 paga no mês)
   const [jurosLinha, setJurosLinha] = useState({}); // { [colKey]: total (negativo) }
   const [jurosLanc, setJurosLanc] = useState({}); // { [colKey]: [{forn, venc, valor}] }
@@ -816,6 +819,8 @@ export default function Forecast() {
       const novoMktLanc = {};
       const novoTrafLinha = {};
       const novoTrafItens = {};
+      const novoFreteLinha = {};
+      const novoFreteCanais = {};
       const novoJurosLinha = {};
       const novoJurosLanc = {};
       const novoPerdasLinha = {};
@@ -860,6 +865,9 @@ export default function Forecast() {
           // Tráfego pago (Forecast de Mídia do Dryland)
           if (typeof pf.trafego_total === 'number') novoTrafLinha[col] = pf.trafego_total;
           if (Array.isArray(pf.trafego_itens)) novoTrafItens[col] = pf.trafego_itens;
+          // Fretes (Dryland, valor de custo)
+          if (typeof pf.frete_total === 'number') novoFreteLinha[col] = pf.frete_total;
+          if (Array.isArray(pf.frete_canais)) novoFreteCanais[col] = pf.frete_canais;
           // Juros e multa por atraso (Contas a Pagar)
           if (typeof pf.juros_total === 'number') novoJurosLinha[col] = pf.juros_total;
           if (Array.isArray(pf.juros_lanc)) novoJurosLanc[col] = pf.juros_lanc;
@@ -887,6 +895,8 @@ export default function Forecast() {
       setMktLanc(novoMktLanc);
       setTrafegoLinha(novoTrafLinha);
       setTrafegoItens(novoTrafItens);
+      setFreteLinha(novoFreteLinha);
+      setFreteCanais(novoFreteCanais);
       setJurosLinha(novoJurosLinha);
       setJurosLanc(novoJurosLanc);
       setPerdasLinha(novoPerdasLinha);
@@ -1120,6 +1130,7 @@ export default function Forecast() {
                 const ehBonif = l.label === 'BONIFICAÇÕES MARKETING' && Object.keys(bonifMkt).length > 0;
                 const ehPerdas =
                   l.label === 'PERDAS COM INADIMPLÊNCIA' && Object.keys(perdasLinha).length > 0;
+                const ehFrete = l.label === 'FRETES' && Object.keys(freteLinha).length > 0;
                 const ehJuros =
                   l.label === 'JUROS E MULTA POR ATRASO' && Object.keys(jurosLinha).length > 0;
                 const ehImpAnt =
@@ -1136,6 +1147,7 @@ export default function Forecast() {
                   (ehTraf && trafegoLinha[col] !== undefined) ||
                   (ehBonif && bonifMkt[col] !== undefined) ||
                   (ehPerdas && perdasLinha[col] !== undefined) ||
+                  (ehFrete && freteLinha[col] !== undefined) ||
                   (ehJuros && jurosLinha[col] !== undefined) ||
                   (ehImpAnt && impAntecip[col] !== undefined) ||
                   (ehImpCar && impCartao[col] !== undefined) ||
@@ -1149,12 +1161,13 @@ export default function Forecast() {
                 const trafAbertoLinha = ehTraf && !!colMesLinha;
                 const bonifAbertoLinha = ehBonif && !!colMesLinha;
                 const perdasAbertoLinha = ehPerdas && !!colMesLinha;
+                const freteAberto = ehFrete && !!colMesLinha;
                 const jurosAberto = ehJuros && !!colMesLinha;
                 const impAntAberto = ehImpAnt && !!colMesLinha;
                 const impCarAberto = ehImpCar && !!colMesLinha;
                 const servAbertoLinha = ehServTerc && !!colMesLinha;
                 const ehDespesaMes =
-                  ehFolha || ehPJ || ehOcup || ehMkt || ehTraf || ehBonif || ehPerdas || ehJuros || ehImpAnt || ehImpCar || ehServTerc;
+                  ehFolha || ehPJ || ehOcup || ehMkt || ehTraf || ehBonif || ehPerdas || ehFrete || ehJuros || ehImpAnt || ehImpCar || ehServTerc;
                 // Só a label de seção (pai) e de canal (CREDEV) abrem pela label;
                 // as despesas abrem clicando na célula do mês.
                 const clicavel = ehPai || temCredevCanal;
@@ -1247,6 +1260,8 @@ export default function Forecast() {
                         impAntecip[c.key] !== undefined
                       ) {
                         pfLine = -Math.round((impAntecip[c.key].total || 0) * 100) / 100;
+                      } else if (l.label === 'FRETES' && freteLinha[c.key] !== undefined) {
+                        pfLine = freteLinha[c.key];
                       } else if (l.label === 'JUROS E MULTA POR ATRASO' && jurosLinha[c.key] !== undefined) {
                         pfLine = jurosLinha[c.key];
                       } else if (
@@ -1565,6 +1580,26 @@ export default function Forecast() {
                         </tr>
                       ));
                     })()}
+                  {freteAberto &&
+                    (freteCanais[colMesLinha] || []).map((x, i) => (
+                      <tr key={'frete-' + i} className="bg-slate-50/50">
+                        <td className="sticky left-0 z-10 border-b border-r border-gray-100 pl-12 pr-3 py-1 whitespace-nowrap bg-slate-50 text-[10px] text-red-600">
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                            {x.nome}
+                            <span className="text-gray-400 font-normal"> · {x.envios} envios</span>
+                          </span>
+                        </td>
+                        {colunas.map((c) => (
+                          <td
+                            key={c.key}
+                            className="border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-slate-50/40"
+                          >
+                            {c.key === colMesLinha && x.valor ? formatar(-x.valor, 'moeda') : '–'}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
                   {jurosAberto &&
                     (jurosLanc[colMesLinha] || []).map((x, i) => (
                       <tr key={'juros-' + i} className="bg-slate-50/50">
