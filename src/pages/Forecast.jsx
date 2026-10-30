@@ -1704,6 +1704,40 @@ export default function Forecast({ modoCorte = false }) {
           </div>
         </div>
 
+        {modoSel &&
+          (() => {
+            const { soma, qtd, ignoradas } = resumoSel();
+            return (
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-violet-200 bg-violet-50 px-3 py-2 text-[11px] text-violet-900">
+                {selCel.size === 0 ? (
+                  <span>Clique ou arraste nas células. O nome da linha e o mês selecionam tudo.</span>
+                ) : (
+                  <>
+                    <span>
+                      Soma: <strong className="text-sm">R$ {fmtBRL2(soma)}</strong>
+                    </span>
+                    <span>
+                      Células: <strong>{qtd}</strong>
+                    </span>
+                    <span>
+                      Média: <strong>R$ {fmtBRL2(qtd ? soma / qtd : 0)}</strong>
+                    </span>
+                    {ignoradas > 0 && (
+                      <span className="text-violet-600">{ignoradas} em % fora da soma</span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setSelCel(new Set())}
+                      className="ml-auto font-semibold underline hover:text-violet-700"
+                    >
+                      Limpar seleção
+                    </button>
+                  </>
+                )}
+              </div>
+            );
+          })()}
+
         {/* Tabela */}
         <div
           className={
@@ -2604,39 +2638,6 @@ export default function Forecast({ modoCorte = false }) {
             </tbody>
           </table>
         </div>
-        {modoSel &&
-          (() => {
-            const { soma, qtd, ignoradas } = resumoSel();
-            return (
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-violet-200 bg-violet-50 px-3 py-2 text-[11px] text-violet-900">
-                {selCel.size === 0 ? (
-                  <span>Clique ou arraste nas células. O nome da linha e o mês selecionam tudo.</span>
-                ) : (
-                  <>
-                    <span>
-                      Soma: <strong className="text-sm">R$ {fmtBRL2(soma)}</strong>
-                    </span>
-                    <span>
-                      Células: <strong>{qtd}</strong>
-                    </span>
-                    <span>
-                      Média: <strong>R$ {fmtBRL2(qtd ? soma / qtd : 0)}</strong>
-                    </span>
-                    {ignoradas > 0 && (
-                      <span className="text-violet-600">{ignoradas} em % fora da soma</span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setSelCel(new Set())}
-                      className="ml-auto font-semibold underline hover:text-violet-700"
-                    >
-                      Limpar seleção
-                    </button>
-                  </>
-                )}
-              </div>
-            );
-          })()}
       </div>
 
       <p className="text-[11px] text-gray-400 px-1 mt-3">
