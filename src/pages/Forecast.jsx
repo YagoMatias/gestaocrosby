@@ -1895,7 +1895,6 @@ export default function Forecast({ modoCorte = false }) {
                             (forte && !autoVisual ? 'font-bold ' : '') +
                             (pct || sub2 ? 'text-[10px] ' : '') +
                             (celulaMes || cmvEditavel || prevEditavel ? 'cursor-pointer hover:underline ' : '') +
-                            (prevEditado ? 'ring-1 ring-inset ring-amber-400 ' : '') +
                             (celulaMesAberta ? 'ring-1 ring-inset ring-emerald-400 ' : '') +
                             corTexto
                           }
