@@ -72,8 +72,9 @@ const PCT_RAZAO = {
   'EBITDA %': ['EBITDA', 'RECEITA OPERACIONAL LÍQUIDA'],
   '% LUCRO LÍQUIDO': ['LUCRO LÍQUIDO', 'RECEITA OPERACIONAL LÍQUIDA'],
 };
-// Colunas anuais da previsão (Niziany 30/10): receita soma os meses de 2026,
-// impostos e CMV seguem o % do último realizado, o resto é esse mês × 12.
+// Colunas anuais da previsão (Niziany 30/10). 2026: soma de janeiro a dezembro.
+// 2027: receita soma os meses de 2026, impostos e CMV seguem o % do último
+// realizado, o resto é esse mês × 12.
 const COLUNAS_ANO = [
   { key: 'ANO2026', label: '2026', tipo: 'forecast', grupo: 'ano', ano: 2026 },
   { key: 'ANO2027', label: '2027', tipo: 'forecast', grupo: 'ano', ano: 2027 },
@@ -736,15 +737,17 @@ export default function Forecast({ modoCorte = false }) {
   const previsaoDe = (c) => {
     if (c.key in cachePrevisao) return cachePrevisao[c.key];
     const fonte = espelho[c.key];
-    const anual = c.grupo === 'ano';
-    if (!fonte && (anual || !modoCorte)) return (cachePrevisao[c.key] = null);
+    const ano = c.grupo === 'ano';
+    const soma2026 = c.key === 'ANO2026'; // soma dos meses, inclusive os totais
+    const anual = ano && !soma2026; // projeção × 12
+    if (!fonte && (ano || !modoCorte)) return (cachePrevisao[c.key] = null);
     const ed = {
       ...(edicoesPrev[c.key] || {}),
       ...(modoCorte ? edicoesCorte[c.key] || {} : {}),
     };
     const listaFacas = modoCorte ? facas[c.key] || [] : [];
     if (
-      !anual &&
+      !ano &&
       !Object.keys(ed).length &&
       !listaFacas.length &&
       ed['CMV %'] === undefined &&
@@ -765,6 +768,7 @@ export default function Forecast({ modoCorte = false }) {
       mesesAno.reduce((a, k) => a + num(valorCelula(porLabel[label], k).v), 0);
     const ehReceita = (label) => LINHAS_CANAIS_DRE.includes(label) || label === 'CREDEV';
     const base = (label) => {
+      if (soma2026) return somaMeses(label);
       if (!anual) return direto(label);
       return ehReceita(label) ? somaMeses(label) : num(direto(label)) * 12;
     };
@@ -832,7 +836,7 @@ export default function Forecast({ modoCorte = false }) {
             : baseImp;
       m['IMPOSTOS DIRETOS'] = imp;
       const mudouImposto = e['IMPOSTOS DIRETOS'] !== undefined || rl !== num(base('RECEITA LÍQUIDA'));
-      m['TAX %'] = taxa !== undefined ? taxa : mudouImposto && rl ? imp / rl : base('TAX %');
+      m['TAX %'] = taxa !== undefined ? taxa : (mudouImposto || soma2026) && rl ? imp / rl : base('TAX %');
       const rol = tot('RECEITA OPERACIONAL LÍQUIDA', rl + imp);
       const baseCmv = num(base('CUSTO DAS MERCADORIAS VENDIDAS'));
       const cmvCalc = pctCmv !== undefined ? pctCmv * rol : baseCmv;
@@ -870,6 +874,11 @@ export default function Forecast({ modoCorte = false }) {
       m[x.label] = r2(num(m[x.label]) + num(base(x.label)) - num(m0[x.label]));
     }
     const rol = num(m['RECEITA OPERACIONAL LÍQUIDA']);
+    if (soma2026) {
+      const rlAno = num(m['RECEITA LÍQUIDA']);
+      if (ed['TAX %'] === undefined && rlAno) m['TAX %'] = num(m['IMPOSTOS DIRETOS']) / rlAno;
+      if (ed['CMV %'] === undefined && rol) m['CMV %'] = num(m['CUSTO DAS MERCADORIAS VENDIDAS']) / rol;
+    }
     m['MARGEM %'] = rol ? num(m['LUCRO BRUTO']) / rol : base('MARGEM %');
     m['EBITDA %'] = rol ? num(m.EBITDA) / rol : base('EBITDA %');
     m['% LUCRO LÍQUIDO'] = rol ? num(m['LUCRO LÍQUIDO']) / rol : base('% LUCRO LÍQUIDO');
