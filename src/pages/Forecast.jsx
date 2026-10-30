@@ -140,6 +140,18 @@ export default function Forecast() {
   const [pfVariavel, setPfVariavel] = useState({}); // proventos variáveis (comissão)
   const [prolabore, setProlabore] = useState({});
   const [editandoProl, setEditandoProl] = useState(null); // col sendo editada
+  // CMV % editável por mês (Niziany 30/10): fração negativa (ex.: -0.335).
+  // Sem override usa o % da planilha (linha CMV %). Ao editar, CMV = % × ROL.
+  const [cmvPct, setCmvPct] = useState({}); // { [colKey]: pct }
+  const [editandoCmv, setEditandoCmv] = useState(null); // col sendo editada
+  const salvarCmvPct = (col, mes, pct) => {
+    setCmvPct((p) => ({ ...p, [col]: pct }));
+    fetch(`${API_BASE_URL}/api/forecast-dre/cmv-pct`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mes, pct }),
+    }).catch(() => {});
+  };
   // Qual MÊS (coluna) está aberto em cada linha de despesa expansível
   // (Pessoal Fixo/Variável, PJ, Ocupação, Serviços de Terceiros Fixos).
   // Clica na célula do mês → abre só aquele mês. { [label]: colKey | null }
@@ -326,6 +338,31 @@ export default function Forecast() {
     }
     return [...map.values()].sort((a, b) => b.max - a.max);
   }, [rubricasFolha]);
+
+  // CMV % salvo no backend por mês → coluna
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      try {
+        const r = await fetch(`${API_BASE_URL}/api/forecast-dre/cmv-pct`);
+        if (!r.ok) return;
+        const j = await r.json();
+        const ov = (j && j.data && j.data.overrides) || {};
+        if (cancelado) return;
+        const novo = {};
+        for (const c of colunas) {
+          const mes = colParaMes(c);
+          if (mes && typeof ov[mes] === 'number') novo[c.key] = ov[mes];
+        }
+        setCmvPct(novo);
+      } catch {
+        /* fica com o % da planilha */
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, [colunas]);
 
   // Lê o estado da DRE Analítica (localStorage, mesmo do menu Despesas Gerais)
   // uma vez — é de onde sai a linha SERVIÇOS DE TERCEIROS FIXOS.
@@ -1005,6 +1042,17 @@ export default function Forecast() {
                         bonifMkt[c.key] !== undefined
                       ) {
                         pfLine = -Math.round((bonifMkt[c.key].total || 0) * 100) / 100;
+                      } else if (l.label === 'CMV %' && cmvPct[c.key] !== undefined) {
+                        pfLine = cmvPct[c.key];
+                      } else if (
+                        l.label === 'CUSTO DAS MERCADORIAS VENDIDAS' &&
+                        cmvPct[c.key] !== undefined
+                      ) {
+                        // CMV = % editado × Receita Operacional Líquida (calculada ou da planilha)
+                        const rol =
+                          totaisCalculados[c.key]?.['RECEITA OPERACIONAL LÍQUIDA'] ??
+                          estatico('RECEITA OPERACIONAL LÍQUIDA', c.key);
+                        pfLine = Math.round(cmvPct[c.key] * rol * 100) / 100;
                       } else if (l.label === 'TAXA DE CARTÃO' && impCartao[c.key] !== undefined) {
                         pfLine = -Math.round((impCartao[c.key].total || 0) * 100) / 100;
                       } else if (
@@ -1089,13 +1137,24 @@ export default function Forecast() {
                       // Célula de mês clicável nas linhas de despesa: abre só
                       // aquele mês (folha, PJ, Ocupação, Serviços).
                       const celulaMes = ehDespesaMes && temDadoMes(c.key);
+                      // Linha CMV %: célula de mês editável (clique → digita o %)
+                      const cmvEditavel = l.label === 'CMV %' && c.grupo === 'mensal' && !!colParaMes(c);
+                      const cmvEditando = cmvEditavel && editandoCmv === c.key;
                       const celulaMesAberta = celulaMes && colMesLinha === c.key;
                       return (
                         <td
                           key={c.key}
-                          onClick={celulaMes ? () => abrirMes(l.label, c.key) : undefined}
+                          onClick={
+                            cmvEditavel
+                              ? () => !cmvEditando && setEditandoCmv(c.key)
+                              : celulaMes
+                                ? () => abrirMes(l.label, c.key)
+                                : undefined
+                          }
                           title={
-                            celulaMes
+                            cmvEditavel
+                              ? 'Clique para editar o % do CMV sobre a Receita Operacional Líquida'
+                              : celulaMes
                               ? 'Clique para abrir as despesas deste mês'
                               : calc !== undefined
                                 ? l.label === 'RECEITA BRUTA'
@@ -1111,12 +1170,35 @@ export default function Forecast() {
                             (auto ? 'bg-emerald-50 font-semibold ' : TIPO_CELULA[c.tipo] + ' ') +
                             (forte && !auto ? 'font-bold ' : '') +
                             (pct || sub2 ? 'text-[10px] ' : '') +
-                            (celulaMes ? 'cursor-pointer hover:underline ' : '') +
+                            (celulaMes || cmvEditavel ? 'cursor-pointer hover:underline ' : '') +
                             (celulaMesAberta ? 'ring-1 ring-inset ring-emerald-400 ' : '') +
                             corTexto
                           }
                         >
-                          {formatar(v, l.fmt)}
+                          {cmvEditando ? (
+                            <span className="inline-flex items-center gap-0.5">
+                              <input
+                                type="number"
+                                step="0.1"
+                                autoFocus
+                                defaultValue={Math.round(Math.abs((v || 0) * 100) * 10) / 10}
+                                onBlur={(e) => {
+                                  const n = Math.abs(Number(e.target.value) || 0);
+                                  const pct = -(n / 100);
+                                  if (Math.abs(pct - (v || 0)) > 1e-9) salvarCmvPct(c.key, colParaMes(c), pct);
+                                  setEditandoCmv(null);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') e.target.blur();
+                                  if (e.key === 'Escape') setEditandoCmv(null);
+                                }}
+                                className="w-14 text-right text-[10px] text-emerald-800 bg-white border border-emerald-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                              />
+                              <span className="text-[10px] text-gray-500">%</span>
+                            </span>
+                          ) : (
+                            formatar(v, l.fmt)
+                          )}
                         </td>
                       );
                     })}
