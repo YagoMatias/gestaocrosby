@@ -5,7 +5,7 @@
 // cinza, cards com borda). Os valores vêm de src/data/forecastBase.json; as
 // visões e blocos extras seguem no JSON caso precise voltar.
 import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { ChartLineUp, CaretRight, CaretDown, CornersOut, CornersIn, Knife } from '@phosphor-icons/react';
+import { ChartLineUp, CaretRight, CaretDown, CornersOut, CornersIn, Knife, Calculator } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import PageTitle from '../components/ui/PageTitle';
 import base from '../data/forecastBase.json';
@@ -208,7 +208,7 @@ export default function Forecast({ modoCorte = false }) {
   };
   // Botão da faca (só no Corte de custo). valor = como entra na DRE (despesa negativa).
   const faca = (col, linha, chave, nome, valor) => {
-    if (!modoCorte || !col) return null;
+    if (!modoCorte || !col || modoSel) return null;
     const cortado = estaCortado(col, linha, chave);
     return (
       <button
@@ -950,6 +950,80 @@ export default function Forecast({ modoCorte = false }) {
     return [];
   };
 
+  // Seleção de células com soma (Niziany 30/10): botão liga o modo; ligado, o
+  // clique seleciona em vez de editar ou abrir o detalhe.
+  const [modoSel, setModoSel] = useState(false);
+  const [selCel, setSelCel] = useState(() => new Set()); // 'indiceLinha|colKey'
+  const arrastoSel = useRef(null);
+  const chaveSel = (idx, col) => idx + '|' + col;
+  const linhaVisivel = (idx) => {
+    const info = estrutura[idx];
+    return !(
+      (info.paiId && recolhidos.has(info.paiId)) ||
+      (info.avoId && recolhidos.has(info.avoId))
+    );
+  };
+  const iniciarArrasto = (idx, i) => {
+    const chave = chaveSel(idx, colunas[i].key);
+    const base = new Set(selCel);
+    const adiciona = !base.has(chave);
+    arrastoSel.current = { idx, i, base, adiciona };
+    if (adiciona) base.add(chave);
+    else base.delete(chave);
+    setSelCel(new Set(base));
+  };
+  const continuarArrasto = (idx, i) => {
+    const a = arrastoSel.current;
+    if (!a) return;
+    const novo = new Set(a.base);
+    for (let r = Math.min(a.idx, idx); r <= Math.max(a.idx, idx); r++) {
+      if (!linhaVisivel(r)) continue;
+      for (let k = Math.min(a.i, i); k <= Math.max(a.i, i); k++) {
+        const chave = chaveSel(r, colunas[k].key);
+        if (a.adiciona) novo.add(chave);
+        else novo.delete(chave);
+      }
+    }
+    setSelCel(novo);
+  };
+  // Linha ou mês inteiro: clique marca; se já estava tudo marcado, desmarca.
+  const alternarGrupoSel = (chaves) => {
+    setSelCel((p) => {
+      const novo = new Set(p);
+      const todas = chaves.every((k) => novo.has(k));
+      chaves.forEach((k) => (todas ? novo.delete(k) : novo.add(k)));
+      return novo;
+    });
+  };
+  const selecionarLinha = (idx) => alternarGrupoSel(colunas.map((c) => chaveSel(idx, c.key)));
+  const selecionarMes = (col) =>
+    alternarGrupoSel(linhas.map((_, idx) => idx).filter(linhaVisivel).map((idx) => chaveSel(idx, col)));
+  useEffect(() => {
+    const soltar = () => {
+      arrastoSel.current = null;
+    };
+    window.addEventListener('mouseup', soltar);
+    return () => window.removeEventListener('mouseup', soltar);
+  }, []);
+  const resumoSel = () => {
+    let soma = 0;
+    let qtd = 0;
+    let ignoradas = 0;
+    for (const chave of selCel) {
+      const sep = chave.indexOf('|');
+      const l = linhas[Number(chave.slice(0, sep))];
+      const c = colunas.find((x) => x.key === chave.slice(sep + 1));
+      if (!l || !c) continue;
+      const v = valorCelula(l, c).v;
+      if (l.fmt === 'pct') ignoradas++;
+      else if (typeof v === 'number') {
+        soma += v;
+        qtd++;
+      }
+    }
+    return { soma, qtd, ignoradas };
+  };
+
   const [exportando, setExportando] = useState(false);
   const exportarExcel = async () => {
     try {
@@ -1577,6 +1651,20 @@ export default function Forecast({ modoCorte = false }) {
             </button>
             <button
               type="button"
+              onClick={() => setModoSel((v) => !v)}
+              className={
+                'inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg border ' +
+                (modoSel
+                  ? 'border-violet-400 bg-violet-600 text-white'
+                  : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50')
+              }
+              title="Selecione células e veja a soma em um painel"
+            >
+              <Calculator size={14} />
+              {modoSel ? 'Selecionando' : 'Selecionar células'}
+            </button>
+            <button
+              type="button"
               onClick={exportarExcel}
               disabled={exportando}
               className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-60"
@@ -1650,9 +1738,11 @@ export default function Forecast({ modoCorte = false }) {
                 {colunas.map((c) => (
                   <th
                     key={c.key}
-                    onClick={() => !mesTravado(c) && alternarTipoMes(c)}
+                    onClick={() => (modoSel ? selecionarMes(c.key) : !mesTravado(c) && alternarTipoMes(c))}
                     title={
-                      mesTravado(c)
+                      modoSel
+                        ? 'Clique para selecionar o mês inteiro'
+                        : mesTravado(c)
                         ? 'Mês travado — clique no cadeado para destravar'
                         : 'Clique para alternar entre Realizado e Previsão'
                     }
@@ -1801,7 +1891,7 @@ export default function Forecast({ modoCorte = false }) {
                   <React.Fragment key={l.id}>
                   <tr className={trBg}>
                     <td
-                      onClick={onClickLabel}
+                      onClick={modoSel ? () => selecionarLinha(idx) : onClickLabel}
                       className={
                         'sticky left-0 z-10 border-b border-r border-gray-100 px-3 py-2 whitespace-nowrap ' +
                         bordaTopo + ' ' + labelBg + ' ' + labelCls +
@@ -1825,8 +1915,9 @@ export default function Forecast({ modoCorte = false }) {
                         {l.label}
                       </span>
                     </td>
-                    {colunas.map((c) => {
+                    {colunas.map((c, colIdx) => {
                       const { v, auto, calc, resultadoCalc } = valorCelula(l, c);
+                      const selecionada = modoSel && selCel.has(chaveSel(idx, c.key));
                       // Marcação verde só nos meses de previsão (Niziany 30/10).
                       const autoVisual = auto && c.tipo === 'forecast' && !resultadoCalc;
                       // Faturamento por canal: mesma fonte das outras células (só o fundo marca o automático)
@@ -1864,8 +1955,20 @@ export default function Forecast({ modoCorte = false }) {
                       return (
                         <td
                           key={c.key}
+                          onMouseDown={
+                            modoSel
+                              ? (e) => {
+                                  e.preventDefault();
+                                  iniciarArrasto(idx, colIdx);
+                                }
+                              : undefined
+                          }
+                          onMouseEnter={modoSel ? () => continuarArrasto(idx, colIdx) : undefined}
+                          style={selecionada ? { backgroundColor: '#ddd6fe' } : undefined}
                           onClick={
-                            cmvEditavel
+                            modoSel
+                              ? undefined
+                              : cmvEditavel
                               ? () => !cmvEditando && setEditandoCmv(c.key)
                               : prevEditavel
                                 ? () => !prevEditando && setEditandoPrev(chavePrev)
@@ -1874,7 +1977,9 @@ export default function Forecast({ modoCorte = false }) {
                                 : undefined
                           }
                           title={
-                            cmvEditavel
+                            modoSel
+                              ? undefined
+                              : cmvEditavel
                               ? 'Clique para editar o % do CMV sobre a Receita Operacional Líquida'
                               : prevEditavel
                                 ? 'Clique para editar. Apague o valor para voltar ao espelho do último realizado'
@@ -1894,7 +1999,11 @@ export default function Forecast({ modoCorte = false }) {
                             (autoVisual ? (ehFat ? 'bg-emerald-50 ' : 'bg-emerald-50 font-semibold ') : TIPO_CELULA[c.tipo] + ' ') +
                             (forte && !autoVisual ? 'font-bold ' : '') +
                             (pct || sub2 ? 'text-[10px] ' : '') +
-                            (celulaMes || cmvEditavel || prevEditavel ? 'cursor-pointer hover:underline ' : '') +
+                            (modoSel
+                              ? 'cursor-cell select-none '
+                              : celulaMes || cmvEditavel || prevEditavel
+                                ? 'cursor-pointer hover:underline '
+                                : '') +
                             (celulaMesAberta ? 'ring-1 ring-inset ring-emerald-400 ' : '') +
                             corTexto
                           }
@@ -2495,6 +2604,39 @@ export default function Forecast({ modoCorte = false }) {
             </tbody>
           </table>
         </div>
+        {modoSel &&
+          (() => {
+            const { soma, qtd, ignoradas } = resumoSel();
+            return (
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-violet-200 bg-violet-50 px-3 py-2 text-[11px] text-violet-900">
+                {selCel.size === 0 ? (
+                  <span>Clique ou arraste nas células. O nome da linha e o mês selecionam tudo.</span>
+                ) : (
+                  <>
+                    <span>
+                      Soma: <strong className="text-sm">R$ {fmtBRL2(soma)}</strong>
+                    </span>
+                    <span>
+                      Células: <strong>{qtd}</strong>
+                    </span>
+                    <span>
+                      Média: <strong>R$ {fmtBRL2(qtd ? soma / qtd : 0)}</strong>
+                    </span>
+                    {ignoradas > 0 && (
+                      <span className="text-violet-600">{ignoradas} em % fora da soma</span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setSelCel(new Set())}
+                      className="ml-auto font-semibold underline hover:text-violet-700"
+                    >
+                      Limpar seleção
+                    </button>
+                  </>
+                )}
+              </div>
+            );
+          })()}
       </div>
 
       <p className="text-[11px] text-gray-400 px-1 mt-3">
