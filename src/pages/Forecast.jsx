@@ -59,6 +59,19 @@ function mesesAutomaticos(colunas) {
   return out;
 }
 
+// Despesas (nível 1) que somam em COMERCIAIS, GERAIS E ADMINISTRATIVAS.
+const LINHAS_SGA = [
+  'PESSOAL FIXO',
+  'PESSOAL VARIÁVEL',
+  'PJ',
+  'OCUPAÇÃO',
+  'SERVIÇOS DE TERCEIROS FIXOS',
+  'SERVIÇOS DE TERCEIROS VARIÁVEIS',
+  'MARKETING',
+  'FRETES',
+  'PERDAS COM INADIMPLÊNCIA',
+];
+
 const TIPO_ROTULO = { realizado: 'Realizado', forecast: 'Previsão' };
 
 // Cabeçalho superior agrupado por tipo (Realizado / Previsão)
@@ -651,6 +664,158 @@ export default function Forecast() {
   const valResultadoFinanceiro = (col) => valRecFin(col) + valAntecip(col) + valJuros(col);
   const valResultadoFinal = (col) =>
     estatico('LUCRO LÍQUIDO', col) + estatico('INVESTIMENTOS', col) + estatico('DISTRIBUIÇÃO LUCROS', col);
+  // Valor automático de uma linha numa coluna (undefined = usa a planilha).
+  const valorAuto = (label, col) => {
+    // Pessoal Fixo = fixos + pró-labore; Variável = comissão
+    let pfLine;
+    if (label === 'PESSOAL FIXO' && pfFixo[col] !== undefined) {
+      pfLine =
+        -Math.round(
+          ((pfFixo[col] || 0) + (prolabore[col] || 0)) * 100,
+        ) / 100;
+    } else if (
+      label === 'PESSOAL VARIÁVEL' &&
+      pfVariavel[col] !== undefined
+    ) {
+      pfLine = -Math.round((pfVariavel[col] || 0) * 100) / 100;
+    } else if (label === 'PJ' && pjLinha[col] !== undefined) {
+      pfLine = pjLinha[col];
+    } else if (
+      label === 'OCUPAÇÃO' &&
+      ocupLinha[col] !== undefined
+    ) {
+      pfLine = ocupLinha[col];
+    } else if (
+      label === 'PROPAGANDA E ANÚNCIO' &&
+      mktLinha[col] !== undefined
+    ) {
+      pfLine = mktLinha[col];
+    } else if (label === 'TRÁFEGO' && trafegoLinha[col] !== undefined) {
+      pfLine = trafegoLinha[col];
+    } else if (
+      label === 'BONIFICAÇÕES MARKETING' &&
+      bonifMkt[col] !== undefined
+    ) {
+      pfLine = -Math.round((bonifMkt[col].total || 0) * 100) / 100;
+    } else if (label === 'CMV %' && cmvPct[col] !== undefined) {
+      pfLine = cmvPct[col];
+    } else if (
+      label === 'CUSTO DAS MERCADORIAS VENDIDAS' &&
+      cmvPct[col] !== undefined
+    ) {
+      // CMV = % editado × Receita Operacional Líquida (calculada ou da planilha)
+      const rol =
+        totaisCalculados[col]?.['RECEITA OPERACIONAL LÍQUIDA'] ??
+        estatico('RECEITA OPERACIONAL LÍQUIDA', col);
+      pfLine = Math.round(cmvPct[col] * rol * 100) / 100;
+    } else if (label === 'TAXA DE CARTÃO' && impCartao[col] !== undefined) {
+      pfLine = -Math.round((impCartao[col].total || 0) * 100) / 100;
+    } else if (
+      label === 'SERVIÇOS DE TERCEIROS VARIÁVEIS' &&
+      impCartao[col] !== undefined
+    ) {
+      // = soma do subnível (só Taxa de cartão por enquanto)
+      pfLine = -Math.round((impCartao[col].total || 0) * 100) / 100;
+    } else if (
+      label === 'ANTECIPAÇÃO DE RECEBÍVEIS' &&
+      impAntecip[col] !== undefined
+    ) {
+      pfLine = -Math.round((impAntecip[col].total || 0) * 100) / 100;
+    } else if (
+      (label === 'RECEITA FINANCEIRA' || label === 'RECEITA FINANCEIRA COM JUROS') &&
+      recFinLinha[col] !== undefined
+    ) {
+      pfLine = recFinLinha[col];
+    } else if (label === 'FRETES' && freteLinha[col] !== undefined) {
+      pfLine = freteLinha[col];
+    } else if (label === 'JUROS E MULTA POR ATRASO' && jurosLinha[col] !== undefined) {
+      pfLine = jurosLinha[col];
+    } else if (
+      label === 'DESPESA FINANCEIRA' &&
+      (impAntecip[col] !== undefined || jurosLinha[col] !== undefined)
+    ) {
+      // = Antecipação de recebíveis + Juros e multa por atraso
+      pfLine = Math.round((valAntecip(col) + valJuros(col)) * 100) / 100;
+    } else if (
+      label === 'RECEITA (DESPESA) NÃO OPERACIONAL' &&
+      (impAntecip[col] !== undefined ||
+        jurosLinha[col] !== undefined ||
+        recFinLinha[col] !== undefined)
+    ) {
+      // = Receita financeira + Despesa financeira recomposta
+      pfLine =
+        Math.round((valRecFin(col) + valAntecip(col) + valJuros(col)) * 100) / 100;
+    } else if (
+      label === 'PERDAS COM INADIMPLÊNCIA' &&
+      perdasLinha[col] !== undefined
+    ) {
+      pfLine = perdasLinha[col];
+    } else if (
+      label === 'MARKETING' &&
+      (mktLinha[col] !== undefined ||
+        trafegoLinha[col] !== undefined ||
+        bonifMkt[col] !== undefined)
+    ) {
+      // Marketing = Propaganda e anúncio + Tráfego + Bonificações marketing
+      pfLine =
+        Math.round(
+          ((mktLinha[col] || 0) +
+            (trafegoLinha[col] || 0) -
+            (bonifMkt[col]?.total || 0)) *
+            100,
+        ) / 100;
+    } else if (
+      label === 'SERVIÇOS DE TERCEIROS FIXOS' &&
+      servTerc[col] !== undefined
+    ) {
+      pfLine = -Math.round((servTerc[col].total || 0) * 100) / 100;
+    }
+    return pfLine;
+  };
+
+  // Cadeia da DRE recalculada (Niziany 30/10), só nos meses automáticos realizados
+  // (set/2026 em diante): cada total parte das linhas de cima, sem o snapshot da
+  // planilha. Fórmulas conferidas com os valores estáticos dela.
+  const colsCadeia = useMemo(
+    () => new Set(mesesAutomaticos(colunas).map((a) => a.col)),
+    [colunas],
+  );
+  const valorLinha = (label, col) => {
+    const a = valorAuto(label, col);
+    return a !== undefined ? a : estatico(label, col);
+  };
+  const cadeiaDre = (col) => {
+    const r2 = (x) => Math.round(x * 100) / 100;
+    const rl = totaisCalculados[col]?.['RECEITA LÍQUIDA'] ?? estatico('RECEITA LÍQUIDA', col);
+    const rol = rl + estatico('IMPOSTOS DIRETOS', col);
+    const cmv =
+      cmvPct[col] !== undefined
+        ? cmvPct[col] * rol
+        : estatico('CUSTO DAS MERCADORIAS VENDIDAS', col);
+    const lb = rol + cmv;
+    const sga = LINHAS_SGA.reduce((a, label) => a + valorLinha(label, col), 0);
+    const lo = lb + sga + estatico('OUTRAS (DESPESAS) RECEITAS', col);
+    const lair = lo + valResultadoFinanceiro(col);
+    const ll = lair + estatico('IMPOSTO DE RENDA E CONTRIBUIÇÃO SOCIAL', col);
+    const pct = (x) => (rol ? x / rol : 0);
+    return {
+      'RECEITA OPERACIONAL LÍQUIDA': r2(rol),
+      'CUSTO DAS MERCADORIAS VENDIDAS': r2(cmv),
+      'LUCRO BRUTO': r2(lb),
+      'MARGEM %': pct(lb),
+      'RECEITAS (DESPESAS) OPERACIONAIS': r2(sga),
+      'COMERCIAIS, GERAIS E ADMINISTRATIVAS': r2(sga),
+      'LUCRO OPERACIONAL': r2(lo),
+      EBITDA: r2(lo),
+      'EBITDA %': pct(lo),
+      'LUCRO ANTES DO IR E CS': r2(lair),
+      'LUCRO LÍQUIDO': r2(ll),
+      '% LUCRO LÍQUIDO': pct(ll),
+      'RESULTADO FINAL': r2(
+        ll + estatico('INVESTIMENTOS', col) + estatico('DISTRIBUIÇÃO LUCROS', col),
+      ),
+    };
+  };
 
   // ── Importar planilha de taxas de cartão (Niziany 30/10) ──────────────────
   // Arquivo mensal "PAINEL DRE — TAXAS DE CARTÃO": o mês vem do título da aba
@@ -1209,110 +1374,7 @@ export default function Forecast() {
                       </span>
                     </td>
                     {colunas.map((c) => {
-                      // Pessoal Fixo = fixos + pró-labore; Variável = comissão
-                      let pfLine;
-                      if (l.label === 'PESSOAL FIXO' && pfFixo[c.key] !== undefined) {
-                        pfLine =
-                          -Math.round(
-                            ((pfFixo[c.key] || 0) + (prolabore[c.key] || 0)) * 100,
-                          ) / 100;
-                      } else if (
-                        l.label === 'PESSOAL VARIÁVEL' &&
-                        pfVariavel[c.key] !== undefined
-                      ) {
-                        pfLine = -Math.round((pfVariavel[c.key] || 0) * 100) / 100;
-                      } else if (l.label === 'PJ' && pjLinha[c.key] !== undefined) {
-                        pfLine = pjLinha[c.key];
-                      } else if (
-                        l.label === 'OCUPAÇÃO' &&
-                        ocupLinha[c.key] !== undefined
-                      ) {
-                        pfLine = ocupLinha[c.key];
-                      } else if (
-                        l.label === 'PROPAGANDA E ANÚNCIO' &&
-                        mktLinha[c.key] !== undefined
-                      ) {
-                        pfLine = mktLinha[c.key];
-                      } else if (l.label === 'TRÁFEGO' && trafegoLinha[c.key] !== undefined) {
-                        pfLine = trafegoLinha[c.key];
-                      } else if (
-                        l.label === 'BONIFICAÇÕES MARKETING' &&
-                        bonifMkt[c.key] !== undefined
-                      ) {
-                        pfLine = -Math.round((bonifMkt[c.key].total || 0) * 100) / 100;
-                      } else if (l.label === 'CMV %' && cmvPct[c.key] !== undefined) {
-                        pfLine = cmvPct[c.key];
-                      } else if (
-                        l.label === 'CUSTO DAS MERCADORIAS VENDIDAS' &&
-                        cmvPct[c.key] !== undefined
-                      ) {
-                        // CMV = % editado × Receita Operacional Líquida (calculada ou da planilha)
-                        const rol =
-                          totaisCalculados[c.key]?.['RECEITA OPERACIONAL LÍQUIDA'] ??
-                          estatico('RECEITA OPERACIONAL LÍQUIDA', c.key);
-                        pfLine = Math.round(cmvPct[c.key] * rol * 100) / 100;
-                      } else if (l.label === 'TAXA DE CARTÃO' && impCartao[c.key] !== undefined) {
-                        pfLine = -Math.round((impCartao[c.key].total || 0) * 100) / 100;
-                      } else if (
-                        l.label === 'SERVIÇOS DE TERCEIROS VARIÁVEIS' &&
-                        impCartao[c.key] !== undefined
-                      ) {
-                        // = soma do subnível (só Taxa de cartão por enquanto)
-                        pfLine = -Math.round((impCartao[c.key].total || 0) * 100) / 100;
-                      } else if (
-                        l.label === 'ANTECIPAÇÃO DE RECEBÍVEIS' &&
-                        impAntecip[c.key] !== undefined
-                      ) {
-                        pfLine = -Math.round((impAntecip[c.key].total || 0) * 100) / 100;
-                      } else if (
-                        (l.label === 'RECEITA FINANCEIRA' || l.label === 'RECEITA FINANCEIRA COM JUROS') &&
-                        recFinLinha[c.key] !== undefined
-                      ) {
-                        pfLine = recFinLinha[c.key];
-                      } else if (l.label === 'FRETES' && freteLinha[c.key] !== undefined) {
-                        pfLine = freteLinha[c.key];
-                      } else if (l.label === 'JUROS E MULTA POR ATRASO' && jurosLinha[c.key] !== undefined) {
-                        pfLine = jurosLinha[c.key];
-                      } else if (
-                        l.label === 'DESPESA FINANCEIRA' &&
-                        (impAntecip[c.key] !== undefined || jurosLinha[c.key] !== undefined)
-                      ) {
-                        // = Antecipação de recebíveis + Juros e multa por atraso
-                        pfLine = Math.round((valAntecip(c.key) + valJuros(c.key)) * 100) / 100;
-                      } else if (
-                        l.label === 'RECEITA (DESPESA) NÃO OPERACIONAL' &&
-                        (impAntecip[c.key] !== undefined ||
-                          jurosLinha[c.key] !== undefined ||
-                          recFinLinha[c.key] !== undefined)
-                      ) {
-                        // = Receita financeira + Despesa financeira recomposta
-                        pfLine =
-                          Math.round((valRecFin(c.key) + valAntecip(c.key) + valJuros(c.key)) * 100) / 100;
-                      } else if (
-                        l.label === 'PERDAS COM INADIMPLÊNCIA' &&
-                        perdasLinha[c.key] !== undefined
-                      ) {
-                        pfLine = perdasLinha[c.key];
-                      } else if (
-                        l.label === 'MARKETING' &&
-                        (mktLinha[c.key] !== undefined ||
-                          trafegoLinha[c.key] !== undefined ||
-                          bonifMkt[c.key] !== undefined)
-                      ) {
-                        // Marketing = Propaganda e anúncio + Tráfego + Bonificações marketing
-                        pfLine =
-                          Math.round(
-                            ((mktLinha[c.key] || 0) +
-                              (trafegoLinha[c.key] || 0) -
-                              (bonifMkt[c.key]?.total || 0)) *
-                              100,
-                          ) / 100;
-                      } else if (
-                        l.label === 'SERVIÇOS DE TERCEIROS FIXOS' &&
-                        servTerc[c.key] !== undefined
-                      ) {
-                        pfLine = -Math.round((servTerc[c.key].total || 0) * 100) / 100;
-                      }
+                      let pfLine = valorAuto(l.label, c.key);
                       // Linhas calculadas (só célula vazia na planilha, colunas mensais)
                       const resultadoCalc =
                         c.grupo === 'mensal' &&
@@ -1324,6 +1386,11 @@ export default function Forecast() {
                             ? valResultadoFinanceiro(c.key)
                             : valResultadoFinal(c.key);
                         pfLine = Math.round(bruto * 100) / 100;
+                      }
+                      // Mês automático realizado: totais recalculados a partir das linhas de cima
+                      if (colsCadeia.has(c.key)) {
+                        const recalculado = cadeiaDre(c.key)[l.label];
+                        if (recalculado !== undefined) pfLine = recalculado;
                       }
                       const ovr = overrides[c.key]?.[l.label];
                       const calc = totaisCalculados[c.key]?.[l.label];
