@@ -5,7 +5,7 @@
 // cinza, cards com borda). Os valores vêm de src/data/forecastBase.json; as
 // visões e blocos extras seguem no JSON caso precise voltar.
 import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { ChartLineUp, CaretRight, CaretDown, CornersOut, CornersIn, Knife, Calculator } from '@phosphor-icons/react';
+import { ChartLineUp, CaretRight, CaretDown, CornersOut, CornersIn, Knife, Calculator, Plus, X } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import PageTitle from '../components/ui/PageTitle';
 import base from '../data/forecastBase.json';
@@ -38,7 +38,7 @@ const MES_ABREV = {
 };
 // Coluna mensal → 'YYYY-MM' (usa o label 'Set/26' + o ano da coluna).
 const colParaMes = (c) => {
-  if (c.grupo === 'mes2027') return c.mes;
+  if (c.grupo === 'mes2027' || c.grupo === 'mes_extra') return c.mes;
   if (c.grupo === 'ano') return String(c.ano); // colunas anuais guardam edição pelo ano
   if (c.grupo !== 'mensal' || !c.ano) return null;
   const m = MES_ABREV[String(c.label || '').slice(0, 3).toLowerCase()];
@@ -50,7 +50,20 @@ const colParaMes = (c) => {
 const MES_AUTO_INICIO = '2026-09';
 // Tela Previsão 2027 (Niziany 30/10): cada mês parte do último realizado e é
 // editável; a última coluna soma os meses.
-const MESES_2027 = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'].map(
+const NOMES_MES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+// Mês a mais no Corte de custo: espelha o último realizado, como a previsão
+const colExtra = (mes) => {
+  const [ano, m] = mes.split('-');
+  return {
+    key: 'X' + mes,
+    label: `${NOMES_MES[Number(m) - 1]}/${ano.slice(2)}`,
+    tipo: 'forecast',
+    grupo: 'mes_extra',
+    ano: Number(ano),
+    mes,
+  };
+};
+const MESES_2027 = NOMES_MES.map(
   (nome, i) => ({
     key: 'P2027-' + (i + 1),
     label: `${nome}/27`,
@@ -269,6 +282,12 @@ export default function Forecast({ modoCorte = false }) {
   // Corte de custo: edições e facas próprias, separadas do Forecast
   const [edicoesCorte, setEdicoesCorte] = useState({});
   const [facas, setFacas] = useState({}); // { [colKey]: [{ linha, chave, nome, valor }] }
+  // Diferença digitada em item do drill: { [colKey]: { 'linha|chave': { linha, chave, valor } } }
+  const [ajustesDrill, setAjustesDrill] = useState({});
+  const [linhasAdd, setLinhasAdd] = useState([]); // [{ linha, chave, nome, pai }]
+  const [valoresAdd, setValoresAdd] = useState({}); // { [colKey]: { [chave]: valor } }
+  const [mesesExtra, setMesesExtra] = useState([]); // ['2027-01', ...]
+  const [drillAbertos, setDrillAbertos] = useState(() => new Set());
   const enviarCorte = (corpo) =>
     fetch(`${API_BASE_URL}/api/forecast-dre/corte`, {
       method: 'POST',
@@ -284,7 +303,68 @@ export default function Forecast({ modoCorte = false }) {
       if (ativo) lista.push({ linha, chave, nome, valor });
       return { ...p, [col]: lista };
     });
-    enviarCorte({ tipo: 'faca', mes: colParaMes(colunas.find((c) => c.key === col)), linha, chave, nome, valor, ativo });
+    enviarCorte({ tipo: 'faca', mes: mesDaCol(col), linha, chave, nome, valor, ativo });
+  };
+  const mesDaCol = (col) => colParaMes(colunasTela.find((c) => c.key === col) || {});
+  const salvarAjuste = (col, linha, chave, nome, valor) => {
+    const id = linha + '|' + chave;
+    setAjustesDrill((p) => {
+      const doMes = { ...(p[col] || {}) };
+      if (valor === null) delete doMes[id];
+      else doMes[id] = { linha, chave, valor };
+      return { ...p, [col]: doMes };
+    });
+    enviarCorte({ tipo: 'detalhe', mes: mesDaCol(col), linha, chave, nome, valor, ativo: valor !== null });
+  };
+  const salvarValorAdd = (col, add, valor) => {
+    setValoresAdd((p) => {
+      const doMes = { ...(p[col] || {}) };
+      if (valor === null) delete doMes[add.chave];
+      else doMes[add.chave] = valor;
+      return { ...p, [col]: doMes };
+    });
+    enviarCorte({ tipo: 'linha_valor', mes: mesDaCol(col), linha: add.linha, chave: add.chave, valor, ativo: valor !== null });
+  };
+  const adicionarLinha = (linha, pai) => {
+    const nome = (window.prompt('Nome da nova linha:') || '').trim();
+    if (!nome) return;
+    const chave = 'add:' + Date.now().toString(36);
+    setLinhasAdd((p) => [...p, { linha, chave, nome, pai }]);
+    enviarCorte({ tipo: 'linha', mes: '0000', linha, chave, nome, pai, valor: 0 });
+  };
+  const removerLinhaAdd = (add) => {
+    if (!window.confirm(`Tirar a linha "${add.nome}"?`)) return;
+    setLinhasAdd((p) => p.filter((x) => x.chave !== add.chave));
+    enviarCorte({ tipo: 'linha', mes: '0000', linha: add.linha, chave: add.chave, ativo: false });
+  };
+  const adicionarMes = () => {
+    const ultimo = mesesExtra[mesesExtra.length - 1] || '2026-12';
+    const [ano, m] = ultimo.split('-').map(Number);
+    const mes = m === 12 ? `${ano + 1}-01` : `${ano}-${String(m + 1).padStart(2, '0')}`;
+    setMesesExtra((p) => [...p, mes]);
+    enviarCorte({ tipo: 'mes', mes, linha: '__mes__', valor: 0 });
+  };
+  const removerMes = (mes) => {
+    if (!window.confirm(`Tirar a coluna ${colExtra(mes).label}?`)) return;
+    setMesesExtra((p) => p.filter((x) => x !== mes));
+    enviarCorte({ tipo: 'mes', mes, linha: '__mes__', ativo: false });
+  };
+  // Botão de nova linha (só no Corte de custo), ao lado da faca
+  const botaoPlus = (linha, pai) => {
+    if (!modoCorte || modoSel) return null;
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          adicionarLinha(linha, pai);
+        }}
+        title="Adicionar uma linha aqui"
+        className="inline-flex items-center justify-center rounded p-0.5 ml-1 align-middle text-gray-300 hover:text-emerald-600"
+      >
+        <Plus size={11} weight="bold" />
+      </button>
+    );
   };
   // Botão da faca (só no Corte de custo). valor = como entra na DRE (despesa negativa).
   const faca = (col, linha, chave, nome, valor) => {
@@ -425,7 +505,12 @@ export default function Forecast({ modoCorte = false }) {
     [tipoOverrides],
   );
   const [visao2027, setVisao2027] = useState(false);
-  const colunasTela = visao2027 ? COLUNAS_2027 : colunas;
+  const colunasExtra = useMemo(() => (modoCorte ? mesesExtra.map(colExtra) : []), [modoCorte, mesesExtra]);
+  const colunasTela = useMemo(() => {
+    if (visao2027) return COLUNAS_2027;
+    const fim = colunas.findIndex((c) => c.grupo === 'ano');
+    return [...colunas.slice(0, fim), ...colunasExtra, ...colunas.slice(fim)];
+  }, [visao2027, colunas, colunasExtra]);
   const grupos = useMemo(() => agruparColunas(colunasTela), [colunasTela]);
   const linhas = base.blocos.dre || [];
 
@@ -581,13 +666,24 @@ export default function Forecast({ modoCorte = false }) {
         if (cancelado) return;
         const ed = {};
         const fc = {};
-        for (const c of [...colunas, ...MESES_2027]) {
+        const aj = {};
+        const va = {};
+        for (const c of [...colunas, ...MESES_2027, ...(d.meses || []).map(colExtra)]) {
           const mes = colParaMes(c);
-          if (mes && d.edicoes && d.edicoes[mes]) ed[c.key] = d.edicoes[mes];
-          if (mes && d.facas && d.facas[mes]) fc[c.key] = d.facas[mes];
+          if (!mes) continue;
+          if (d.edicoes && d.edicoes[mes]) ed[c.key] = d.edicoes[mes];
+          if (d.facas && d.facas[mes]) fc[c.key] = d.facas[mes];
+          if (d.valores && d.valores[mes]) va[c.key] = d.valores[mes];
+          if (d.ajustes && d.ajustes[mes]) {
+            aj[c.key] = Object.fromEntries(d.ajustes[mes].map((a) => [a.linha + '|' + a.chave, a]));
+          }
         }
         setEdicoesCorte(ed);
         setFacas(fc);
+        setAjustesDrill(aj);
+        setValoresAdd(va);
+        setLinhasAdd(d.linhas || []);
+        setMesesExtra(d.meses || []);
       } catch {
         /* fica igual ao Forecast */
       }
@@ -781,9 +877,50 @@ export default function Forecast({ modoCorte = false }) {
       if (c.tipo === 'realizado') ultimo = c;
       else if (ultimo) out[c.key] = ultimo;
     }
-    if (ultimo) MESES_2027.forEach((c) => (out[c.key] = ultimo));
+    if (ultimo) [...MESES_2027, ...colunasExtra].forEach((c) => (out[c.key] = ultimo));
     return out;
-  }, [colunas]);
+  }, [colunas, colunasExtra]);
+
+  // ── Ajustes do Corte de custo ─────────────────────────────────────────────
+  // Linha nova: valor próprio do mês ou o que vem por herança (mesma regra da
+  // linha da DRE: previsão espelha, 2026 soma, 2027 × 12).
+  const cortadoOuPai = (col, linha, chave) => {
+    const lista = facas[col] || [];
+    const partes = String(chave).split('»');
+    return partes.some((_, i) =>
+      lista.some((f) => f.linha === linha && f.chave === partes.slice(0, i + 1).join('»')),
+    );
+  };
+  const herdadoAdd = (add, c) => {
+    if (c.key === 'ANO2026') {
+      return colunas
+        .filter((k) => k.grupo === 'mensal')
+        .reduce((a, k) => a + valorAdd(add, k), 0);
+    }
+    const fonte = espelho[c.key];
+    if (!fonte) return 0;
+    return valorAdd(add, fonte) * (c.grupo === 'ano' ? 12 : 1);
+  };
+  const valorAdd = (add, c) => {
+    if (c.grupo === 'total2027') return MESES_2027.reduce((a, m) => a + valorAdd(add, m), 0);
+    if ((facas[c.key] || []).some((f) => f.linha === add.linha && f.chave === add.chave)) return 0;
+    const proprio = valoresAdd[c.key]?.[add.chave];
+    return proprio !== undefined ? proprio : herdadoAdd(add, c);
+  };
+  // O que somar em cada linha da DRE nesta coluna: [{ linha, valor }]
+  const ajustesCorte = (c) => {
+    const out = [];
+    for (const a of Object.values(ajustesDrill[c.key] || {})) {
+      if (!cortadoOuPai(c.key, a.linha, a.chave)) out.push({ linha: a.linha, valor: a.valor });
+    }
+    for (const add of linhasAdd) {
+      const proprio = valoresAdd[c.key]?.[add.chave];
+      if (proprio === undefined) continue;
+      if (add.pai && cortadoOuPai(c.key, add.linha, add.pai)) continue;
+      out.push({ linha: add.linha, valor: proprio - herdadoAdd(add, c) });
+    }
+    return out;
+  };
 
   // Coluna com edições ou cortes: parte do valor normal, aplica o que mudou e
   // recalcula os totais. Sem mudança devolve null e a coluna fica como está.
@@ -801,11 +938,13 @@ export default function Forecast({ modoCorte = false }) {
       ...(modoCorte ? edicoesCorte[c.key] || {} : {}),
     };
     const listaFacas = modoCorte ? facas[c.key] || [] : [];
+    const ajustes = modoCorte ? ajustesCorte(c) : [];
     if (
       !ano &&
       !mes2027 &&
       !Object.keys(ed).length &&
       !listaFacas.length &&
+      !ajustes.length &&
       ed['CMV %'] === undefined &&
       cmvPct[c.key] === undefined
     ) {
@@ -855,6 +994,9 @@ export default function Forecast({ modoCorte = false }) {
     for (const f of listaFacas) {
       if (!f.chave || paiCortado(f)) continue;
       edicoes[f.linha] = (edicoes[f.linha] ?? num(base(f.linha))) - num(f.valor);
+    }
+    for (const a of ajustes) {
+      edicoes[a.linha] = (edicoes[a.linha] ?? num(base(a.linha))) + a.valor;
     }
     for (const f of listaFacas) if (!f.chave) edicoes[f.linha] = 0;
     if (mes2027) {
@@ -1102,31 +1244,27 @@ export default function Forecast({ modoCorte = false }) {
   const [selCel, setSelCel] = useState(() => new Set()); // 'indiceLinha|colKey'
   const arrastoSel = useRef(null);
   const chaveSel = (idx, col) => idx + '|' + col;
-  const linhaVisivel = (idx) => {
-    const info = estrutura[idx];
-    if (visao2027 && OCULTAS_2027.has(linhas[idx].label)) return false;
-    return !(
-      (info.paiId && recolhidos.has(info.paiId)) ||
-      (info.avoId && recolhidos.has(info.avoId))
-    );
-  };
-  const iniciarArrasto = (idx, i) => {
-    const chave = chaveSel(idx, colunasTela[i].key);
+  const ordemLinhas = () => [...linhasDaTela.current.keys()];
+  const iniciarArrasto = (rowId, i) => {
+    const chave = chaveSel(rowId, colunasTela[i].key);
     const base = new Set(selCel);
     const adiciona = !base.has(chave);
-    arrastoSel.current = { idx, i, base, adiciona };
+    arrastoSel.current = { rowId, i, base, adiciona };
     if (adiciona) base.add(chave);
     else base.delete(chave);
     setSelCel(new Set(base));
   };
-  const continuarArrasto = (idx, i) => {
+  const continuarArrasto = (rowId, i) => {
     const a = arrastoSel.current;
     if (!a) return;
+    const ordem = ordemLinhas();
+    const ini = ordem.indexOf(String(a.rowId));
+    const fim = ordem.indexOf(String(rowId));
+    if (ini < 0 || fim < 0) return;
     const novo = new Set(a.base);
-    for (let r = Math.min(a.idx, idx); r <= Math.max(a.idx, idx); r++) {
-      if (!linhaVisivel(r)) continue;
+    for (let r = Math.min(ini, fim); r <= Math.max(ini, fim); r++) {
       for (let k = Math.min(a.i, i); k <= Math.max(a.i, i); k++) {
-        const chave = chaveSel(r, colunasTela[k].key);
+        const chave = chaveSel(ordem[r], colunasTela[k].key);
         if (a.adiciona) novo.add(chave);
         else novo.delete(chave);
       }
@@ -1142,9 +1280,8 @@ export default function Forecast({ modoCorte = false }) {
       return novo;
     });
   };
-  const selecionarLinha = (idx) => alternarGrupoSel(colunasTela.map((c) => chaveSel(idx, c.key)));
-  const selecionarMes = (col) =>
-    alternarGrupoSel(linhas.map((_, idx) => idx).filter(linhaVisivel).map((idx) => chaveSel(idx, col)));
+  const selecionarLinha = (rowId) => alternarGrupoSel(colunasTela.map((c) => chaveSel(rowId, c.key)));
+  const selecionarMes = (col) => alternarGrupoSel(ordemLinhas().map((rowId) => chaveSel(rowId, col)));
   useEffect(() => {
     const soltar = () => {
       arrastoSel.current = null;
@@ -1157,18 +1294,299 @@ export default function Forecast({ modoCorte = false }) {
     let qtd = 0;
     let ignoradas = 0;
     for (const chave of selCel) {
-      const sep = chave.indexOf('|');
-      const l = linhas[Number(chave.slice(0, sep))];
+      const sep = chave.lastIndexOf('|');
+      const linha = linhasDaTela.current.get(chave.slice(0, sep));
       const c = colunasTela.find((x) => x.key === chave.slice(sep + 1));
-      if (!l || !c) continue;
-      const v = valorCelula(l, c).v;
-      if (l.fmt === 'pct') ignoradas++;
+      if (!linha || !c) continue;
+      const v = linha.valor(c);
+      if (linha.pct) ignoradas++;
       else if (typeof v === 'number') {
         soma += v;
         qtd++;
       }
     }
     return { soma, qtd, ignoradas };
+  };
+
+  // Drill do Corte de custo: árvore do mês aberto, com o valor como entra na DRE.
+  // Mesmas chaves em todos os níveis (caminho separado por »).
+  const detalhesCorte = (l, col) => {
+    const lista = (fonte, chaveDe, nomeDe, valorDe, infoDe) =>
+      (fonte || []).map((x, i) => ({
+        chave: chaveDe(x, i),
+        nome: nomeDe(x),
+        info: infoDe ? infoDe(x) : '',
+        valor: -(Number(valorDe(x)) || 0),
+        filhos: [],
+      }));
+    const porNome = (fonte) => lista(fonte, (x) => x.nome, (x) => x.nome, (x) => x.valor);
+    const porLanc = (fonte, sufixo) =>
+      lista(
+        fonte,
+        (x, i) => i + ' ' + x.forn,
+        (x) => x.forn,
+        (x) => x.valor,
+        (x) => (x.venc ? `${sufixo} ${x.venc}` : ''),
+      );
+    if (l.label === 'PESSOAL FIXO' || l.label === 'PESSOAL VARIÁVEL') {
+      const grupo = l.label === 'PESSOAL FIXO' ? 'fixo' : 'variavel';
+      const out = [];
+      if (grupo === 'fixo') {
+        out.push({
+          chave: 'PRÓ-LABORE',
+          nome: 'PRÓ-LABORE (DIRETORES)',
+          info: '',
+          valor: -(prolabore[col] ?? 80000),
+          filhos: [],
+        });
+      }
+      for (const ru of rubricasUnidas.filter((r) => r.grupo === grupo)) {
+        const valorRub = ru.porCol[col];
+        if (typeof valorRub !== 'number' || !valorRub) continue;
+        const sinal = ru.tipo === 'provento' ? -1 : 1;
+        const lojas = new Map();
+        for (const f of ru.funcPorCol[col] || []) {
+          const nomeLoja = f.loja || '— sem seção —';
+          const lj = lojas.get(nomeLoja) || { nome: nomeLoja, valor: 0, funcs: [] };
+          lj.valor += Number(f.valor) || 0;
+          lj.funcs.push(f);
+          lojas.set(nomeLoja, lj);
+        }
+        out.push({
+          chave: ru.key,
+          nome: ru.desc,
+          info: '',
+          valor: sinal * Math.abs(valorRub),
+          filhos: [...lojas.values()].map((lj) => {
+            const chaveLoja = ru.key + '»' + lj.nome;
+            return {
+              chave: chaveLoja,
+              nome: lj.nome,
+              info: `${lj.funcs.length} func.`,
+              valor: sinal * Math.abs(lj.valor),
+              filhos: lj.funcs.map((f) => ({
+                chave: chaveLoja + '»' + (f.chapa || f.nome),
+                nome: f.nome,
+                info: f.funcao || '',
+                valor: sinal * Math.abs(Number(f.valor) || 0),
+                filhos: [],
+              })),
+            };
+          }),
+        });
+      }
+      return out;
+    }
+    if (l.label === 'SERVIÇOS DE TERCEIROS FIXOS') {
+      return (servTerc[col]?.categorias || []).map((cg) => ({
+        chave: cg.cat,
+        nome: cg.cat,
+        info: '',
+        valor: -(Number(cg.valor) || 0),
+        filhos: (cg.lancamentos || []).map((x, i) => ({
+          chave: cg.cat + '»' + i,
+          nome: x.forn,
+          info: x.venc ? `venc ${x.venc}` : '',
+          valor: -(Number(x.val) || 0),
+          filhos: [],
+        })),
+      }));
+    }
+    if (l.label === 'PJ') return porNome(pjNomes[col]);
+    if (l.label === 'OCUPAÇÃO') return porNome(ocupFiliais[col]);
+    if (l.label === 'PERDAS COM INADIMPLÊNCIA') return porNome(perdasCanais[col]);
+    if (l.label === 'FRETES') return porNome(freteCanais[col]);
+    if (l.label === 'TRÁFEGO') return porNome(trafegoItens[col]);
+    if (l.label === 'PROPAGANDA E ANÚNCIO') return porLanc(mktLanc[col], 'venc');
+    if (l.label === 'BONIFICAÇÕES MARKETING') return porLanc(bonifMkt[col]?.lanc, 'venc');
+    if (l.label === 'JUROS E MULTA POR ATRASO') return porLanc(jurosLanc[col], 'pago');
+    if (l.label === 'ANTECIPAÇÃO DE RECEBÍVEIS') {
+      return lista(impAntecip[col]?.empresas, (x) => x.empresa, (x) => x.empresa, (x) => x.valor);
+    }
+    if (l.label === 'TAXA DE CARTÃO') {
+      return lista(impCartao[col]?.empresas, (x) => x.empresa, (x) => x.empresa, (x) => x.valor);
+    }
+    return [];
+  };
+  // Valor do item com edições, cortes dos filhos e linhas novas dentro dele
+  const totalItem = (linha, col, item) => {
+    if (estaCortado(col, linha, item.chave)) return 0;
+    const delta = ajustesDrill[col]?.[linha + '|' + item.chave]?.valor || 0;
+    const filhos = item.filhos.reduce((a, f) => a + totalItem(linha, col, f) - f.valor, 0);
+    const c = colunasTela.find((x) => x.key === col);
+    const novas = linhasAdd
+      .filter((a) => a.linha === linha && a.pai === item.chave)
+      .reduce((a, add) => a + (c ? valorAdd(add, c) : 0), 0);
+    return item.valor + delta + filhos + novas;
+  };
+
+  // Registro das linhas desenhadas, pra seleção alcançar também o drill
+  const linhasDaTela = useRef(new Map()); // rowId → { pct, valor(col) }
+  let linhasNovas = new Map();
+  const registrarLinha = (rowId, pct, valor) => linhasNovas.set(rowId, { pct, valor });
+  const eventosSel = (rowId, colIdx) =>
+    modoSel
+      ? {
+          onMouseDown: (e) => {
+            e.preventDefault();
+            iniciarArrasto(rowId, colIdx);
+          },
+          onMouseEnter: () => continuarArrasto(rowId, colIdx),
+        }
+      : {};
+  // Campo de digitação das células do drill e das linhas novas
+  const campoValor = (rowId, c, v, aoSalvar) => (
+    <input
+      type="number"
+      step="0.01"
+      autoFocus
+      defaultValue={Math.round((v || 0) * 100) / 100}
+      onBlur={(e) => {
+        const t = e.target.value.trim();
+        const n = Number(t) || 0;
+        if (t === '') aoSalvar(null);
+        else if (Math.abs(n - (Math.round((v || 0) * 100) / 100)) > 1e-9) aoSalvar(n);
+        setEditandoPrev(null);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.target.blur();
+        if (e.key === 'Escape') setEditandoPrev(null);
+      }}
+      className="w-24 text-right text-[10px] text-gray-800 bg-white border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
+    />
+  );
+  const classeCelulaDrill =
+    'border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] ';
+  const linhaAdd = (add, nivel) => {
+    const rowId = 'a|' + add.chave;
+    registrarLinha(rowId, false, (c) => valorAdd(add, c));
+    const cortada = colunasTela.some((c) =>
+      (facas[c.key] || []).some((f) => f.linha === add.linha && f.chave === add.chave),
+    );
+    return (
+      <tr key={rowId} className="bg-emerald-50/40">
+        <td
+          onClick={modoSel ? () => selecionarLinha(rowId) : undefined}
+          style={{ paddingLeft: 24 + nivel * 20 }}
+          className="sticky left-0 z-10 border-b border-r border-gray-100 pr-3 py-1 whitespace-nowrap bg-emerald-50 text-[10px] text-gray-700"
+        >
+          <span className={cortada ? 'line-through text-red-500' : ''}>{add.nome}</span>
+          {!modoSel && (
+            <button
+              type="button"
+              onClick={() => removerLinhaAdd(add)}
+              title="Tirar esta linha"
+              className="inline-flex items-center justify-center rounded p-0.5 ml-1 align-middle text-gray-300 hover:text-red-500"
+            >
+              <X size={10} weight="bold" />
+            </button>
+          )}
+        </td>
+        {colunasTela.map((c, colIdx) => {
+          const chaveCel = rowId + '|' + c.key;
+          const editavel = c.grupo !== 'total2027';
+          const editando = editandoPrev === chaveCel;
+          const corte = (facas[c.key] || []).find((f) => f.linha === add.linha && f.chave === add.chave);
+          const v = valorAdd(add, c);
+          return (
+            <td
+              key={c.key}
+              {...eventosSel(rowId, colIdx)}
+              onClick={!modoSel && editavel && !editando ? () => setEditandoPrev(chaveCel) : undefined}
+              style={selCel.has(chaveCel) && modoSel ? { backgroundColor: '#ddd6fe' } : undefined}
+              title={editavel && !modoSel ? 'Clique para digitar o valor' : undefined}
+              className={classeCelulaDrill + (modoSel ? 'cursor-cell select-none ' : editavel ? 'cursor-pointer ' : '')}
+            >
+              {editando ? (
+                campoValor(rowId, c, v, (n) => salvarValorAdd(c.key, add, n))
+              ) : corte ? (
+                <span className="line-through text-red-500">{formatar(corte.valor, 'moeda')}</span>
+              ) : v ? (
+                formatar(v, 'moeda')
+              ) : (
+                '–'
+              )}
+              {!editando && editavel && c.grupo !== 'ano' && faca(c.key, add.linha, add.chave, add.nome, v)}
+            </td>
+          );
+        })}
+      </tr>
+    );
+  };
+  const linhaDrill = (l, item, nivel, mc) => {
+    const rowId = `d|${l.label}|${item.chave}`;
+    const cortado = estaCortado(mc, l.label, item.chave);
+    const total = totalItem(l.label, mc, item);
+    registrarLinha(rowId, false, (c) => (c.key === mc ? total : undefined));
+    const novas = linhasAdd.filter((a) => a.linha === l.label && a.pai === item.chave);
+    const temFilhos = item.filhos.length > 0 || novas.length > 0;
+    const aberto = drillAbertos.has(rowId);
+    const alternar = () =>
+      setDrillAbertos((p) => {
+        const novo = new Set(p);
+        if (novo.has(rowId)) novo.delete(rowId);
+        else novo.add(rowId);
+        return novo;
+      });
+    const deltaProprio = ajustesDrill[mc]?.[l.label + '|' + item.chave]?.valor;
+    return (
+      <React.Fragment key={rowId}>
+        <tr className={cortado ? 'bg-red-50/40' : 'bg-slate-50/50'}>
+          <td
+            onClick={modoSel ? () => selecionarLinha(rowId) : temFilhos ? alternar : undefined}
+            style={{ paddingLeft: 24 + nivel * 20 }}
+            className={
+              'sticky left-0 z-10 border-b border-r border-gray-100 pr-3 py-1 whitespace-nowrap bg-slate-50 text-[10px] ' +
+              (cortado ? 'text-red-500 ' : 'text-gray-600 ') +
+              (temFilhos ? 'cursor-pointer' : '')
+            }
+          >
+            <span className="inline-flex items-center gap-1">
+              {temFilhos &&
+                (aberto ? (
+                  <CaretDown size={9} weight="bold" className="text-gray-300 shrink-0" />
+                ) : (
+                  <CaretRight size={9} weight="bold" className="text-gray-300 shrink-0" />
+                ))}
+              <span className={cortado ? 'line-through' : ''}>{item.nome}</span>
+              {item.info ? <span className="text-gray-400 font-normal"> · {item.info}</span> : null}
+              {faca(mc, l.label, item.chave, item.nome, item.valor)}
+              {botaoPlus(l.label, item.chave)}
+            </span>
+          </td>
+          {colunasTela.map((c, colIdx) => {
+            if (c.key !== mc) {
+              return <td key={c.key} className={classeCelulaDrill + 'text-gray-300'}>–</td>;
+            }
+            const chaveCel = rowId + '|' + c.key;
+            const editando = editandoPrev === chaveCel;
+            return (
+              <td
+                key={c.key}
+                {...eventosSel(rowId, colIdx)}
+                onClick={!modoSel && !cortado && !editando ? () => setEditandoPrev(chaveCel) : undefined}
+                style={selCel.has(chaveCel) && modoSel ? { backgroundColor: '#ddd6fe' } : undefined}
+                title={!modoSel && !cortado ? 'Clique para editar. Apague o valor para voltar ao original' : undefined}
+                className={
+                  classeCelulaDrill +
+                  (modoSel ? 'cursor-cell select-none ' : cortado ? '' : 'cursor-pointer ') +
+                  (cortado ? 'line-through text-red-500' : total < 0 ? 'text-red-600' : 'text-gray-700')
+                }
+              >
+                {editando
+                  ? campoValor(rowId, c, total, (n) => {
+                      if (n === null) salvarAjuste(mc, l.label, item.chave, item.nome, null);
+                      else salvarAjuste(mc, l.label, item.chave, item.nome, (deltaProprio || 0) + n - total);
+                    })
+                  : formatar(cortado ? item.valor : total, 'moeda')}
+              </td>
+            );
+          })}
+        </tr>
+        {aberto && item.filhos.map((f) => linhaDrill(l, f, nivel + 1, mc))}
+        {aberto && novas.map((a) => linhaAdd(a, nivel + 1))}
+      </React.Fragment>
+    );
   };
 
   const [exportando, setExportando] = useState(false);
@@ -1181,7 +1599,19 @@ export default function Forecast({ modoCorte = false }) {
         linhas: visao2027 ? linhas.filter((l) => !OCULTAS_2027.has(l.label)) : linhas,
         colunas: colunasTela,
         valorDe: (l) => Object.fromEntries(colunasTela.map((c) => [c.key, valorCelula(l, c).v])),
-        detalhesDe: modoCorte || visao2027 ? () => [] : detalhesLinha,
+        detalhesDe: modoCorte
+          ? (l) =>
+              linhasAdd
+                .filter((a) => a.linha === l.label)
+                .map((a) => ({
+                  label: a.nome,
+                  nivel: 1,
+                  peso: 0,
+                  valores: Object.fromEntries(colunasTela.map((c) => [c.key, valorAdd(a, c)])),
+                }))
+          : visao2027
+            ? () => []
+            : detalhesLinha,
         titulo: visao2027 ? 'Previsão 2027' : modoCorte ? 'Corte de custo' : 'DRE Forecast',
         tipoDe: tipoLinha,
         inicioSecao: INICIO_SECAO,
@@ -1828,6 +2258,17 @@ export default function Forecast({ modoCorte = false }) {
               </span>
               Previsão 2027
             </button>
+            {modoCorte && !visao2027 && (
+              <button
+                type="button"
+                onClick={adicionarMes}
+                className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                title="Adiciona o mês seguinte, antes das colunas anuais"
+              >
+                <Plus size={12} weight="bold" />
+                Adicionar mês
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setModoSel((v) => !v)}
@@ -1967,6 +2408,19 @@ export default function Forecast({ modoCorte = false }) {
                   >
                     <span className="inline-flex items-center gap-1">
                       {c.label}
+                      {c.grupo === 'mes_extra' && !modoSel && (
+                        <span
+                          role="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removerMes(c.mes);
+                          }}
+                          title="Tirar esta coluna"
+                          className="text-gray-300 hover:text-red-500"
+                        >
+                          <X size={10} weight="bold" />
+                        </span>
+                      )}
                       {podeTravar(c) && (
                         <span
                           role="button"
@@ -1989,6 +2443,7 @@ export default function Forecast({ modoCorte = false }) {
               </tr>
             </thead>
             <tbody>
+              {(linhasNovas = new Map()) && null}
               {linhas.map((l, idx) => {
                 const info = estrutura[idx];
                 if (visao2027 && OCULTAS_2027.has(l.label)) return null;
@@ -1998,6 +2453,7 @@ export default function Forecast({ modoCorte = false }) {
                   (info.avoId && recolhidos.has(info.avoId))
                 )
                   return null;
+                registrarLinha(String(idx), l.fmt === 'pct', (c) => valorCelula(l, c).v);
                 const tipo = tipoLinha(l);
                 const forte = tipo === 'forte';
                 const pct = tipo === 'pct';
@@ -2078,10 +2534,14 @@ export default function Forecast({ modoCorte = false }) {
                   (ehImpAnt && impAntecip[col] !== undefined) ||
                   (ehImpCar && impCartao[col] !== undefined) ||
                   (ehServTerc && servTerc[col] !== undefined);
-                const colMesLinha =
+                const colMesAberta =
                   !visao2027 && mesAberto[l.label] && temDadoMes(mesAberto[l.label])
                     ? mesAberto[l.label]
                     : null;
+                // Corte de custo desenha o drill próprio, com tudo editável
+                const colMesLinha = modoCorte ? null : colMesAberta;
+                const linhaCortada =
+                  modoCorte && colunasTela.some((c) => estaCortado(c.key, l.label, ''));
                 const folhaAberta = ehFolha && !!colMesLinha;
                 const pjAbertoLinha = ehPJ && !!colMesLinha;
                 const ocupAbertoLinha = ehOcup && !!colMesLinha;
@@ -2129,7 +2589,8 @@ export default function Forecast({ modoCorte = false }) {
                             <CaretRight size={10} weight="bold" className="text-gray-300 shrink-0" />
                           )
                         ) : null}
-                        {l.label}
+                        <span className={linhaCortada ? 'line-through text-red-500' : ''}>{l.label}</span>
+                        {LINHAS_FACA.has(l.label) && botaoPlus(l.label, '')}
                       </span>
                     </td>
                     {colunasTela.map((c, colIdx) => {
@@ -2162,44 +2623,47 @@ export default function Forecast({ modoCorte = false }) {
                       const cmvEditando = cmvEditavel && editandoCmv === c.key;
                       // Mês de previsão: qualquer valor editável (exceto % calculados)
                       const prevEditavel =
-                        !!espelho[c.key] && !cmvEditavel && !PCT_DERIVADOS.has(l.label);
+                        (!!espelho[c.key] || (modoCorte && c.grupo !== 'total2027')) &&
+                        !cmvEditavel &&
+                        !PCT_DERIVADOS.has(l.label);
+                      const corteLinha =
+                        modoCorte && (facas[c.key] || []).find((f) => f.linha === l.label && !f.chave);
                       const chavePrev = l.label + '|' + c.key;
                       const prevEditando = prevEditavel && editandoPrev === chavePrev;
                       const prevEditado =
                         (modoCorte ? edicoesCorte : edicoesPrev)[c.key]?.[l.label] !== undefined;
                       const ehPctPrev = l.fmt === 'pct';
-                      const celulaMesAberta = celulaMes && colMesLinha === c.key;
+                      const celulaMesAberta = celulaMes && colMesAberta === c.key;
                       return (
                         <td
                           key={c.key}
-                          onMouseDown={
-                            modoSel
-                              ? (e) => {
-                                  e.preventDefault();
-                                  iniciarArrasto(idx, colIdx);
-                                }
-                              : undefined
-                          }
-                          onMouseEnter={modoSel ? () => continuarArrasto(idx, colIdx) : undefined}
+                          {...eventosSel(String(idx), colIdx)}
                           style={selecionada ? { backgroundColor: '#ddd6fe' } : undefined}
                           onClick={
                             modoSel
                               ? undefined
                               : cmvEditavel
                               ? () => !cmvEditando && setEditandoCmv(c.key)
-                              : prevEditavel
+                              : prevEditavel && !(modoCorte && celulaMes)
                                 ? () => !prevEditando && setEditandoPrev(chavePrev)
                                 : celulaMes
                                 ? () => abrirMes(l.label, c.key)
                                 : undefined
+                          }
+                          onDoubleClick={
+                            !modoSel && modoCorte && prevEditavel
+                              ? () => setEditandoPrev(chavePrev)
+                              : undefined
                           }
                           title={
                             modoSel
                               ? undefined
                               : cmvEditavel
                               ? 'Clique para editar o % do CMV sobre a Receita Operacional Líquida'
+                              : modoCorte && celulaMes
+                                ? 'Clique para abrir as despesas deste mês. Duplo clique para editar'
                               : prevEditavel
-                                ? 'Clique para editar. Apague o valor para voltar ao espelho do último realizado'
+                                ? 'Clique para editar. Apague o valor para voltar ao valor original'
                               : celulaMes
                               ? 'Clique para abrir as despesas deste mês'
                               : calc !== undefined
@@ -2278,18 +2742,25 @@ export default function Forecast({ modoCorte = false }) {
                               />
                               {ehPctPrev && <span className="text-[10px] text-gray-500">%</span>}
                             </span>
+                          ) : corteLinha ? (
+                            <span className="line-through text-red-500">{formatar(corteLinha.valor, l.fmt)}</span>
                           ) : (
                             formatar(v, l.fmt)
                           )}
                           {!prevEditando &&
                             LINHAS_FACA.has(l.label) &&
-                            c.grupo === 'mensal' &&
+                            (c.grupo === 'mensal' || c.grupo === 'mes_extra' || c.grupo === 'mes2027') &&
                             !!colParaMes(c) &&
-                            faca(c.key, l.label, '', l.label, v)}
+                            faca(c.key, l.label, '', l.label, corteLinha ? corteLinha.valor : v)}
                         </td>
                       );
                     })}
                   </tr>
+                  {modoCorte &&
+                    linhasAdd.filter((a) => a.linha === l.label && !a.pai).map((a) => linhaAdd(a, 1))}
+                  {modoCorte &&
+                    colMesAberta &&
+                    detalhesCorte(l, colMesAberta).map((item) => linhaDrill(l, item, 1, colMesAberta))}
                   {canalAberto && (
                     <tr className="bg-red-50/40">
                       <td className="sticky left-0 z-10 border-b border-r border-gray-100 pl-12 pr-3 py-1.5 whitespace-nowrap bg-red-50/60 text-[10px] font-semibold text-red-700">
@@ -2322,7 +2793,6 @@ export default function Forecast({ modoCorte = false }) {
                             <span className="inline-flex items-center gap-1.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
                               {p.nome}
-                              {faca(mc, l.label, p.nome, p.nome, -p.valor)}
                             </span>
                           </td>
                           {colunasTela.map((c) => (
@@ -2349,7 +2819,6 @@ export default function Forecast({ modoCorte = false }) {
                             <span className="inline-flex items-center gap-1.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
                               {p.nome}
-                              {faca(mc, l.label, p.nome, p.nome, -p.valor)}
                             </span>
                           </td>
                           {colunasTela.map((c) => (
@@ -2379,7 +2848,6 @@ export default function Forecast({ modoCorte = false }) {
                               {x.venc ? (
                                 <span className="text-gray-400 font-normal"> · venc {x.venc}</span>
                               ) : null}
-                              {faca(mc, l.label, i + ' ' + x.forn, x.forn, -x.valor)}
                             </span>
                           </td>
                           {colunasTela.map((c) => (
@@ -2407,7 +2875,6 @@ export default function Forecast({ modoCorte = false }) {
                               {x.canal ? (
                                 <span className="text-gray-400 font-normal"> · {x.canal}</span>
                               ) : null}
-                              {faca(mc, l.label, x.nome, x.nome, -x.valor)}
                             </span>
                           </td>
                           {colunasTela.map((c) => (
@@ -2435,7 +2902,6 @@ export default function Forecast({ modoCorte = false }) {
                               {x.venc ? (
                                 <span className="text-gray-400 font-normal"> · venc {x.venc}</span>
                               ) : null}
-                              {faca(mc, l.label, i + ' ' + x.forn, x.forn, -x.valor)}
                             </span>
                           </td>
                           {colunasTela.map((c) => (
@@ -2463,7 +2929,6 @@ export default function Forecast({ modoCorte = false }) {
                               <span className="text-gray-400 font-normal">
                                 {' '}· {x.titulos} tít. · {x.clientes} cli.
                               </span>
-                              {faca(mc, l.label, x.nome, x.nome, -x.valor)}
                             </span>
                           </td>
                           {colunasTela.map((c) => (
@@ -2485,7 +2950,6 @@ export default function Forecast({ modoCorte = false }) {
                             <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
                             {x.nome}
                             <span className="text-gray-400 font-normal"> · {x.envios} envios</span>
-                            {faca(colMesLinha, l.label, x.nome, x.nome, -x.valor)}
                           </span>
                         </td>
                         {colunasTela.map((c) => (
@@ -2508,7 +2972,6 @@ export default function Forecast({ modoCorte = false }) {
                             {x.venc ? (
                               <span className="text-gray-400 font-normal"> · pago {x.venc}</span>
                             ) : null}
-                            {faca(colMesLinha, l.label, i + ' ' + x.forn, x.forn, -x.valor)}
                           </span>
                         </td>
                         {colunasTela.map((c) => (
@@ -2534,7 +2997,6 @@ export default function Forecast({ modoCorte = false }) {
                             <span className="inline-flex items-center gap-1.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
                               {x.empresa}
-                              {faca(mc, l.label, x.empresa, x.empresa, -x.valor)}
                             </span>
                           </td>
                           {colunasTela.map((c) => (
@@ -2572,7 +3034,6 @@ export default function Forecast({ modoCorte = false }) {
                                   )}
                                   {cg.cat}
                                   <span className="text-gray-400 font-normal"> · {rotuloMes}</span>
-                                  {faca(mc, l.label, cg.cat, cg.cat, -cg.valor)}
                                 </span>
                               </td>
                               {colunasTela.map((c) => (
@@ -2594,7 +3055,6 @@ export default function Forecast({ modoCorte = false }) {
                                     {x.venc ? (
                                       <span className="text-gray-400"> · venc {x.venc}</span>
                                     ) : null}
-                                    {faca(mc, l.label, cg.cat + '»' + i, x.forn, -x.val)}
                                   </td>
                                   {colunasTela.map((c) => (
                                     <td
@@ -2616,7 +3076,6 @@ export default function Forecast({ modoCorte = false }) {
                         <span className="inline-flex items-center gap-1.5">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                           PRÓ-LABORE (DIRETORES)
-                          {faca(colMesLinha, l.label, 'PRÓ-LABORE', 'PRÓ-LABORE (DIRETORES)', -(prolabore[colMesLinha] ?? 80000))}
                         </span>
                       </td>
                       {colunasTela.map((c) => {
@@ -2668,10 +3127,6 @@ export default function Forecast({ modoCorte = false }) {
                       const prov = ru.tipo === 'provento';
                       const corVal = prov ? 'text-emerald-700' : 'text-red-600';
                       const dot = prov ? 'bg-emerald-500' : 'bg-red-500';
-                      // Corte: como a rubrica entra na DRE (provento é despesa, negativo)
-                      const contrib = (x) => (prov ? -1 : 1) * Math.abs(Number(x) || 0);
-                      const facaFolha = (chave, nome, x) =>
-                        ru.entra ? faca(colMesLinha, l.label, chave, nome, contrib(x)) : null;
                       const temFunc = Object.keys(ru.funcPorCol).length > 0;
                       const rubAberta = temFunc && rubricasAbertas.has(ru.key);
                       // Agrupa por EMPRESA e, dentro, por funcionário — só o mês
@@ -2725,7 +3180,6 @@ export default function Forecast({ modoCorte = false }) {
                                   <span className={'w-1.5 h-1.5 rounded-full ' + dot} />
                                 )}
                                 {ru.desc}
-                                {facaFolha(ru.key, ru.desc, ru.porCol[colMesLinha])}
                               </span>
                             </td>
                             {colunasTela.map((c) => {
@@ -2762,7 +3216,6 @@ export default function Forecast({ modoCorte = false }) {
                                         )}
                                         {emp.empresa}
                                         <span className="text-gray-300"> · {emp.funcs.length} func.</span>
-                                        {facaFolha(ru.key + '»' + emp.empresa, emp.empresa, emp.porCol[colMesLinha])}
                                       </span>
                                     </td>
                                     {colunasTela.map((c) => {
@@ -2788,11 +3241,6 @@ export default function Forecast({ modoCorte = false }) {
                                           {f.funcao ? (
                                             <span className="text-gray-400"> · {f.funcao}</span>
                                           ) : null}
-                                          {facaFolha(
-                                            ru.key + '»' + emp.empresa + '»' + (f.chapa || f.nome),
-                                            f.nome,
-                                            f.porCol[colMesLinha],
-                                          )}
                                         </td>
                                         {colunasTela.map((c) => {
                                           const fv = f.porCol[c.key];
@@ -2819,6 +3267,7 @@ export default function Forecast({ modoCorte = false }) {
                   </React.Fragment>
                 );
               })}
+              {(linhasDaTela.current = linhasNovas) && null}
             </tbody>
           </table>
         </div>
