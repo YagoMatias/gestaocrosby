@@ -877,6 +877,35 @@ export default function RetornoBoleto() {
         );
       })()}
 
+      {/* João (30/10/2026): boleto aberto na Pagar.me mas título já PAGO no TOTVS
+          (ex.: cliente pagou por Pix) → cancelar o boleto na Pagar.me num clique. */}
+      {(() => {
+        const pagosPorFora = boletos.filter((b) => PODE_BAIXAR(b) && TITULO_FECHADO_TOTVS(b));
+        if (!pagosPorFora.length) return null;
+        const soma = pagosPorFora.reduce((a, b) => a + Number(b.vl_fatura || 0), 0);
+        return (
+          <div className="mb-3 rounded-lg border border-red-300 bg-red-50 p-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-red-900">
+            <div>
+              <div className="text-[11px] font-semibold">Pago por fora (ex.: Pix) — boleto ainda aberto na Pagar.me, cancelar</div>
+              <div className="text-lg font-bold">
+                {pagosPorFora.length} <span className="text-xs font-semibold opacity-80">{fmtBRL(soma)}</span>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setSoFechadosTotvs(true);
+                setSelecionados(new Set(pagosPorFora.map((b) => b.id)));
+                setBaixaAberta(true);
+              }}
+              className="ml-auto flex items-center gap-1.5 bg-red-700 text-white text-xs font-bold rounded-lg px-3 py-2 hover:bg-red-800 transition-colors"
+              title="Marca todos os boletos abertos na Pagar.me cujo título já está pago no TOTVS (ex.: Pix) para cancelar na Pagar.me"
+            >
+              Cancelar na Pagar.me ({pagosPorFora.length})
+            </button>
+          </div>
+        );
+      })()}
+
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
         {['aberto', 'vencido', 'pago', 'cancelado'].map((k) => (
           <button
