@@ -160,8 +160,11 @@ export default function Forecast() {
   const [ocupLinha, setOcupLinha] = useState({}); // { [colKey]: total (negativo) }
   const [ocupFiliais, setOcupFiliais] = useState({}); // { [colKey]: [{nome, valor}] }
   // Despesa de MARKETING (Propaganda e Anúncios do Contas a Pagar)
-  const [mktLinha, setMktLinha] = useState({}); // { [colKey]: total (negativo) }
+  const [mktLinha, setMktLinha] = useState({}); // { [colKey]: total (negativo) } — PROPAGANDA E ANÚNCIO
   const [mktLanc, setMktLanc] = useState({}); // { [colKey]: [{forn, venc, valor}] }
+  // Subitem TRÁFEGO do Marketing (Forecast de Mídia do Dryland)
+  const [trafegoLinha, setTrafegoLinha] = useState({}); // { [colKey]: total (negativo) }
+  const [trafegoItens, setTrafegoItens] = useState({}); // { [colKey]: [{canal, nome, valor}] }
   // SERVIÇOS DE TERCEIROS FIXOS: lido do localStorage da DRE Analítica
   // (despesas-gerais-2026:v2). Mesmos números que a Niziany vê lá, com as
   // bonificações importadas manualmente — não dá pra reproduzir pelo backend.
@@ -373,6 +376,36 @@ export default function Forecast() {
     }
     return out;
   }, [dreLocal, colunas]);
+
+  // BONIFICAÇÕES MARKETING (subitem do Marketing, Niziany 30/10): vem da DRE
+  // Analítica (localStorage) — as categorias /BONIFIC.*MARKETING/, que ficam
+  // FORA dos Serviços de Terceiros Fixos. Só set/2026 em diante.
+  const bonifMkt = useMemo(() => {
+    const out = {};
+    if (!dreLocal || !dreLocal.months) return out;
+    for (const c of colunas) {
+      if (c.grupo !== 'mensal' || c.tipo !== 'realizado') continue;
+      const mk = String(c.label || '').slice(0, 3).toLowerCase();
+      if (c.ano !== 2026 || (MES_ABREV[mk] || 0) < 9) continue;
+      const mes = dreLocal.months[mk];
+      if (!mes || !mes.details) continue;
+      const lanc = [];
+      for (const [cat, rows] of Object.entries(mes.details)) {
+        const n = String(cat || '')
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .toUpperCase();
+        if (!/BONIFIC.*MARKETING/.test(n)) continue;
+        for (const r of rows || []) {
+          lanc.push({ forn: r.forn || '—', venc: r.venc || '', valor: Number(r.val) || 0 });
+        }
+      }
+      if (!lanc.length) continue;
+      lanc.sort((a, b) => b.valor - a.valor);
+      out[c.key] = { total: Math.round(lanc.reduce((a, x) => a + x.valor, 0) * 100) / 100, lanc };
+    }
+    return out;
+  }, [dreLocal, colunas]);
   const toggleRecolher = (id) =>
     setRecolhidos((prev) => {
       const n = new Set(prev);
@@ -471,6 +504,8 @@ export default function Forecast() {
       const novoOcupFiliais = {};
       const novoMktLinha = {};
       const novoMktLanc = {};
+      const novoTrafLinha = {};
+      const novoTrafItens = {};
       for (const item of resultados) {
         if (!item) continue;
         const [col, d, pf] = item;
@@ -506,6 +541,9 @@ export default function Forecast() {
           // Despesa de MARKETING (propaganda): total e lançamentos
           if (typeof pf.marketing_total === 'number') novoMktLinha[col] = pf.marketing_total;
           if (Array.isArray(pf.marketing_lanc)) novoMktLanc[col] = pf.marketing_lanc;
+          // Tráfego pago (Forecast de Mídia do Dryland)
+          if (typeof pf.trafego_total === 'number') novoTrafLinha[col] = pf.trafego_total;
+          if (Array.isArray(pf.trafego_itens)) novoTrafItens[col] = pf.trafego_itens;
         }
       }
       setOverrides(novo);
@@ -520,6 +558,8 @@ export default function Forecast() {
       setOcupFiliais(novoOcupFiliais);
       setMktLinha(novoMktLinha);
       setMktLanc(novoMktLanc);
+      setTrafegoLinha(novoTrafLinha);
+      setTrafegoItens(novoTrafItens);
       setCarregandoAuto(false);
     })();
     return () => {
@@ -692,7 +732,11 @@ export default function Forecast() {
                 // do mês e abre só aquele mês (folha, PJ, Ocupação, Serviços).
                 const ehPJ = l.label === 'PJ' && Object.keys(pjLinha).length > 0;
                 const ehOcup = l.label === 'OCUPAÇÃO' && Object.keys(ocupLinha).length > 0;
-                const ehMkt = l.label === 'MARKETING' && Object.keys(mktLinha).length > 0;
+                // Marketing agora é a soma de 3 subitens (nível 2); o drill de
+                // lançamentos de propaganda fica no subitem PROPAGANDA E ANÚNCIO.
+                const ehMkt = l.label === 'PROPAGANDA E ANÚNCIO' && Object.keys(mktLinha).length > 0;
+                const ehTraf = l.label === 'TRÁFEGO' && Object.keys(trafegoLinha).length > 0;
+                const ehBonif = l.label === 'BONIFICAÇÕES MARKETING' && Object.keys(bonifMkt).length > 0;
                 const ehServTerc =
                   l.label === 'SERVIÇOS DE TERCEIROS FIXOS' && Object.keys(servTerc).length > 0;
                 // Coluna (mês) aberta nesta linha, se houver dado nela
@@ -701,6 +745,8 @@ export default function Forecast() {
                   (ehPJ && pjLinha[col] !== undefined) ||
                   (ehOcup && ocupLinha[col] !== undefined) ||
                   (ehMkt && mktLinha[col] !== undefined) ||
+                  (ehTraf && trafegoLinha[col] !== undefined) ||
+                  (ehBonif && bonifMkt[col] !== undefined) ||
                   (ehServTerc && servTerc[col] !== undefined);
                 const colMesLinha =
                   mesAberto[l.label] && temDadoMes(mesAberto[l.label]) ? mesAberto[l.label] : null;
@@ -708,8 +754,11 @@ export default function Forecast() {
                 const pjAbertoLinha = ehPJ && !!colMesLinha;
                 const ocupAbertoLinha = ehOcup && !!colMesLinha;
                 const mktAbertoLinha = ehMkt && !!colMesLinha;
+                const trafAbertoLinha = ehTraf && !!colMesLinha;
+                const bonifAbertoLinha = ehBonif && !!colMesLinha;
                 const servAbertoLinha = ehServTerc && !!colMesLinha;
-                const ehDespesaMes = ehFolha || ehPJ || ehOcup || ehMkt || ehServTerc;
+                const ehDespesaMes =
+                  ehFolha || ehPJ || ehOcup || ehMkt || ehTraf || ehBonif || ehServTerc;
                 // Só a label de seção (pai) e de canal (CREDEV) abrem pela label;
                 // as despesas abrem clicando na célula do mês.
                 const clicavel = ehPai || temCredevCanal;
@@ -767,10 +816,31 @@ export default function Forecast() {
                       ) {
                         pfLine = ocupLinha[c.key];
                       } else if (
-                        l.label === 'MARKETING' &&
+                        l.label === 'PROPAGANDA E ANÚNCIO' &&
                         mktLinha[c.key] !== undefined
                       ) {
                         pfLine = mktLinha[c.key];
+                      } else if (l.label === 'TRÁFEGO' && trafegoLinha[c.key] !== undefined) {
+                        pfLine = trafegoLinha[c.key];
+                      } else if (
+                        l.label === 'BONIFICAÇÕES MARKETING' &&
+                        bonifMkt[c.key] !== undefined
+                      ) {
+                        pfLine = -Math.round((bonifMkt[c.key].total || 0) * 100) / 100;
+                      } else if (
+                        l.label === 'MARKETING' &&
+                        (mktLinha[c.key] !== undefined ||
+                          trafegoLinha[c.key] !== undefined ||
+                          bonifMkt[c.key] !== undefined)
+                      ) {
+                        // Marketing = Propaganda e anúncio + Tráfego + Bonificações marketing
+                        pfLine =
+                          Math.round(
+                            ((mktLinha[c.key] || 0) +
+                              (trafegoLinha[c.key] || 0) -
+                              (bonifMkt[c.key]?.total || 0)) *
+                              100,
+                          ) / 100;
                       } else if (
                         l.label === 'SERVIÇOS DE TERCEIROS FIXOS' &&
                         servTerc[c.key] !== undefined
@@ -918,6 +988,60 @@ export default function Forecast() {
                       return lista.map((x, i) => (
                         <tr key={'mkt-' + i} className="bg-slate-50/50">
                           <td className="sticky left-0 z-10 border-b border-r border-gray-100 pl-12 pr-3 py-1 whitespace-nowrap bg-slate-50 text-[10px] text-red-600">
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                              {x.forn}
+                              {x.venc ? (
+                                <span className="text-gray-400 font-normal"> · venc {x.venc}</span>
+                              ) : null}
+                            </span>
+                          </td>
+                          {colunas.map((c) => (
+                            <td
+                              key={c.key}
+                              className="border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-slate-50/40"
+                            >
+                              {c.key === mc && x.valor ? formatar(-x.valor, 'moeda') : '–'}
+                            </td>
+                          ))}
+                        </tr>
+                      ));
+                    })()}
+                  {trafAbertoLinha &&
+                    (() => {
+                      // Só o mês clicado: tráfego por canal → loja/conta (competência).
+                      const mc = colMesLinha;
+                      const lista = (trafegoItens[mc] || []).slice();
+                      return lista.map((x, i) => (
+                        <tr key={'traf-' + i} className="bg-slate-50/50">
+                          <td className="sticky left-0 z-10 border-b border-r border-gray-100 pl-[4.5rem] pr-3 py-1 whitespace-nowrap bg-slate-50 text-[10px] text-red-600">
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                              {x.nome}
+                              {x.canal ? (
+                                <span className="text-gray-400 font-normal"> · {x.canal}</span>
+                              ) : null}
+                            </span>
+                          </td>
+                          {colunas.map((c) => (
+                            <td
+                              key={c.key}
+                              className="border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-slate-50/40"
+                            >
+                              {c.key === mc && x.valor ? formatar(-x.valor, 'moeda') : '–'}
+                            </td>
+                          ))}
+                        </tr>
+                      ));
+                    })()}
+                  {bonifAbertoLinha &&
+                    (() => {
+                      // Só o mês clicado: bonificações de marketing (DRE Analítica).
+                      const mc = colMesLinha;
+                      const lista = (bonifMkt[mc]?.lanc || []).slice();
+                      return lista.map((x, i) => (
+                        <tr key={'bonif-' + i} className="bg-slate-50/50">
+                          <td className="sticky left-0 z-10 border-b border-r border-gray-100 pl-[4.5rem] pr-3 py-1 whitespace-nowrap bg-slate-50 text-[10px] text-red-600">
                             <span className="inline-flex items-center gap-1.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
                               {x.forn}
