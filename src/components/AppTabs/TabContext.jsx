@@ -261,6 +261,11 @@ const TABBED_PAGES = {
     group: 'Financeiro',
     dot: 'bg-fuchsia-500',
   },
+  '/forecast-corte': {
+    label: 'Corte de custo',
+    group: 'Financeiro',
+    dot: 'bg-red-500',
+  },
   '/mix-canais': {
     label: 'Mix de Canais',
     group: 'Comercial',

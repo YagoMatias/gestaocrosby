@@ -314,6 +314,11 @@ const AVAILABLE_PAGES = [
     name: 'Forecast',
     category: 'DRE',
   },
+  {
+    path: '/forecast-corte',
+    name: 'Corte de custo (Forecast)',
+    category: 'DRE',
+  },
 
   // ─── Comercial ───────────────────────────────────────
   {

@@ -5,7 +5,7 @@
 // cinza, cards com borda). Os valores vêm de src/data/forecastBase.json; as
 // visões e blocos extras seguem no JSON caso precise voltar.
 import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { ChartLineUp, CaretRight, CaretDown, CornersOut, CornersIn } from '@phosphor-icons/react';
+import { ChartLineUp, CaretRight, CaretDown, CornersOut, CornersIn, Knife } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import PageTitle from '../components/ui/PageTitle';
 import base from '../data/forecastBase.json';
@@ -66,6 +66,13 @@ const LINHAS_CANAIS_DRE = [
 ];
 // Percentuais calculados, sem edição direta (TAX % e CMV % são editáveis).
 const PCT_DERIVADOS = new Set(['MARGEM %', 'EBITDA %', '% LUCRO LÍQUIDO']);
+
+// Corte de custo: linhas que a faca tira inteiras do cálculo no mês.
+const LINHAS_FACA = new Set([
+  'PESSOAL FIXO', 'PESSOAL VARIÁVEL', 'PJ', 'OCUPAÇÃO', 'SERVIÇOS DE TERCEIROS FIXOS',
+  'TAXA DE CARTÃO', 'PROPAGANDA E ANÚNCIO', 'TRÁFEGO', 'BONIFICAÇÕES MARKETING', 'FRETES',
+  'PERDAS COM INADIMPLÊNCIA', 'ANTECIPAÇÃO DE RECEBÍVEIS', 'JUROS E MULTA POR ATRASO',
+]);
 
 // Despesas (nível 1) que somam em COMERCIAIS, GERAIS E ADMINISTRATIVAS.
 const LINHAS_SGA = [
@@ -151,7 +158,7 @@ const tipoLinha = (l) => {
   return 'normal';
 };
 
-export default function Forecast() {
+export default function Forecast({ modoCorte = false }) {
   // Realizado × Previsão por mês: a Niziany marca na tela (salvo no backend).
   // Mescla por cima do tipo padrão da planilha.
   const [tipoOverrides, setTipoOverrides] = useState({});
@@ -178,7 +185,58 @@ export default function Forecast() {
   // Valores editados nos meses de previsão: { [colKey]: { [label]: valor } }
   const [edicoesPrev, setEdicoesPrev] = useState({});
   const [editandoPrev, setEditandoPrev] = useState(null); // 'label|col'
+  // Corte de custo: edições e facas próprias, separadas do Forecast
+  const [edicoesCorte, setEdicoesCorte] = useState({});
+  const [facas, setFacas] = useState({}); // { [colKey]: [{ linha, chave, nome, valor }] }
+  const enviarCorte = (corpo) =>
+    fetch(`${API_BASE_URL}/api/forecast-dre/corte`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(corpo),
+    }).catch(() => {});
+  const estaCortado = (col, linha, chave) =>
+    (facas[col] || []).some((f) => f.linha === linha && f.chave === chave);
+  const alternarFaca = (col, linha, chave, nome, valor) => {
+    const ativo = !estaCortado(col, linha, chave);
+    setFacas((p) => {
+      const lista = (p[col] || []).filter((f) => !(f.linha === linha && f.chave === chave));
+      if (ativo) lista.push({ linha, chave, nome, valor });
+      return { ...p, [col]: lista };
+    });
+    enviarCorte({ tipo: 'faca', mes: colParaMes(colunas.find((c) => c.key === col)), linha, chave, nome, valor, ativo });
+  };
+  // Botão da faca (só no Corte de custo). valor = como entra na DRE (despesa negativa).
+  const faca = (col, linha, chave, nome, valor) => {
+    if (!modoCorte || !col) return null;
+    const cortado = estaCortado(col, linha, chave);
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          alternarFaca(col, linha, chave, nome, Number(valor) || 0);
+        }}
+        title={cortado ? 'Cortado: fora do cálculo (clique para desfazer)' : 'Cortar: tira este valor do cálculo'}
+        className={
+          'inline-flex items-center justify-center rounded p-0.5 ml-1 align-middle ' +
+          (cortado ? 'bg-red-100 text-red-600' : 'text-gray-300 hover:text-red-500')
+        }
+      >
+        <Knife size={11} weight={cortado ? 'fill' : 'regular'} />
+      </button>
+    );
+  };
   const salvarEdicaoPrev = (col, mes, label, valor) => {
+    if (modoCorte) {
+      setEdicoesCorte((p) => {
+        const doMes = { ...(p[col] || {}) };
+        if (valor === null) delete doMes[label];
+        else doMes[label] = valor;
+        return { ...p, [col]: doMes };
+      });
+      enviarCorte({ tipo: 'edicao', mes, linha: label, valor, ativo: valor !== null });
+      return;
+    }
     setEdicoesPrev((p) => {
       const doMes = { ...(p[col] || {}) };
       if (valor === null) delete doMes[label];
@@ -419,6 +477,35 @@ export default function Forecast() {
     };
   }, [colunas]);
 
+  // Corte de custo: edições e facas, por mês → coluna
+  useEffect(() => {
+    if (!modoCorte) return undefined;
+    let cancelado = false;
+    (async () => {
+      try {
+        const r = await fetch(`${API_BASE_URL}/api/forecast-dre/corte`);
+        if (!r.ok) return;
+        const j = await r.json();
+        const d = (j && j.data) || {};
+        if (cancelado) return;
+        const ed = {};
+        const fc = {};
+        for (const c of colunas) {
+          const mes = colParaMes(c);
+          if (mes && d.edicoes && d.edicoes[mes]) ed[c.key] = d.edicoes[mes];
+          if (mes && d.facas && d.facas[mes]) fc[c.key] = d.facas[mes];
+        }
+        setEdicoesCorte(ed);
+        setFacas(fc);
+      } catch {
+        /* fica igual ao Forecast */
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, [colunas, modoCorte]);
+
   // CMV % salvo no backend por mês → coluna
   useEffect(() => {
     let cancelado = false;
@@ -606,95 +693,127 @@ export default function Forecast() {
     return out;
   }, [colunas]);
 
-  // Coluna de previsão com edições: parte do espelho, aplica o que foi digitado e
-  // recalcula os totais. Sem edição devolve null e a coluna é o espelho puro.
+  // Coluna com edições ou cortes: parte do valor normal, aplica o que mudou e
+  // recalcula os totais. Sem mudança devolve null e a coluna fica como está.
   const cachePrevisao = {};
   const previsaoDe = (c) => {
     if (c.key in cachePrevisao) return cachePrevisao[c.key];
-    const ed = edicoesPrev[c.key] || {};
-    const proprio = cmvPct[c.key];
-    if (!Object.keys(ed).length && proprio === undefined) {
-      cachePrevisao[c.key] = null;
-      return null;
-    }
     const fonte = espelho[c.key];
+    if (!fonte && !modoCorte) return (cachePrevisao[c.key] = null);
+    const ed = {
+      ...(edicoesPrev[c.key] || {}),
+      ...(modoCorte ? edicoesCorte[c.key] || {} : {}),
+    };
+    const listaFacas = modoCorte ? facas[c.key] || [] : [];
+    const proprio = ed['CMV %'] !== undefined ? ed['CMV %'] : fonte ? cmvPct[c.key] : undefined;
+    if (!Object.keys(ed).length && !listaFacas.length && proprio === undefined) {
+      return (cachePrevisao[c.key] = null);
+    }
     const porLabel = Object.fromEntries(linhas.map((x) => [x.label, x]));
     const base = (label) => {
       const x = porLabel[label];
-      return x ? valorCelula(x, fonte).v : undefined;
+      if (!x) return undefined;
+      return (fonte ? valorCelula(x, fonte) : valorBruto(x, c)).v;
     };
     const num = (v) => Number(v) || 0;
     const r2 = (v) => Math.round(v * 100) / 100;
-    const m = {};
-    const item = (label) => {
-      m[label] = ed[label] !== undefined ? ed[label] : base(label);
-      return num(m[label]);
+    // Facas: linha inteira zera; item do detalhe sai da linha. Item cujo pai
+    // também foi cortado não desconta duas vezes.
+    const chaves = new Set(listaFacas.map((f) => f.linha + '|' + f.chave));
+    const paiCortado = (f) => {
+      const partes = f.chave.split('»');
+      return partes.some((_, i) => i > 0 && chaves.has(f.linha + '|' + partes.slice(0, i).join('»')));
     };
-    const tot = (label, calculado) => {
-      m[label] = ed[label] !== undefined ? ed[label] : r2(calculado);
-      return num(m[label]);
+    const edicoes = { ...ed };
+    delete edicoes['CMV %'];
+    for (const f of listaFacas) {
+      if (!f.chave || paiCortado(f)) continue;
+      edicoes[f.linha] = (edicoes[f.linha] ?? num(base(f.linha))) - num(f.valor);
+    }
+    for (const f of listaFacas) if (!f.chave) edicoes[f.linha] = 0;
+
+    const cadeia = (e, pctCmv) => {
+      const m = {};
+      const item = (label) => {
+        m[label] = e[label] !== undefined ? e[label] : base(label);
+        return num(m[label]);
+      };
+      const tot = (label, calculado) => {
+        m[label] = e[label] !== undefined ? e[label] : r2(calculado);
+        return num(m[label]);
+      };
+      const filho = (pai, filhos) => {
+        const valores = filhos.map(item);
+        const editou = filhos.some((f) => e[f] !== undefined);
+        return tot(pai, editou ? valores.reduce((a, b) => a + b, 0) : num(base(pai)));
+      };
+      const canais = LINHAS_CANAIS_DRE.reduce((a, label) => a + item(label), 0);
+      const credev = item('CREDEV');
+      const rl = tot('RECEITA LÍQUIDA', canais);
+      tot('RECEITA BRUTA', canais + Math.abs(credev));
+      const baseImp = num(base('IMPOSTOS DIRETOS'));
+      const taxa = e['TAX %'];
+      const imp =
+        e['IMPOSTOS DIRETOS'] !== undefined
+          ? e['IMPOSTOS DIRETOS']
+          : taxa !== undefined
+            ? r2(taxa * rl)
+            : baseImp;
+      m['IMPOSTOS DIRETOS'] = imp;
+      const mudouImposto = e['IMPOSTOS DIRETOS'] !== undefined || rl !== num(base('RECEITA LÍQUIDA'));
+      m['TAX %'] = taxa !== undefined ? taxa : mudouImposto && rl ? imp / rl : base('TAX %');
+      const rol = tot('RECEITA OPERACIONAL LÍQUIDA', rl + imp);
+      const baseCmv = num(base('CUSTO DAS MERCADORIAS VENDIDAS'));
+      const cmvCalc = pctCmv !== undefined ? pctCmv * rol : baseCmv;
+      const cmv = tot('CUSTO DAS MERCADORIAS VENDIDAS', cmvCalc);
+      m['CMV %'] =
+        e['CUSTO DAS MERCADORIAS VENDIDAS'] === undefined && pctCmv !== undefined
+          ? pctCmv
+          : rol
+            ? cmv / rol
+            : base('CMV %');
+      const lb = tot('LUCRO BRUTO', rol + cmv);
+      filho('MARKETING', ['PROPAGANDA E ANÚNCIO', 'TRÁFEGO', 'BONIFICAÇÕES MARKETING']);
+      filho('SERVIÇOS DE TERCEIROS VARIÁVEIS', ['TAXA DE CARTÃO']);
+      ['PESSOAL FIXO', 'PESSOAL VARIÁVEL', 'PJ', 'OCUPAÇÃO', 'SERVIÇOS DE TERCEIROS FIXOS', 'FRETES', 'PERDAS COM INADIMPLÊNCIA'].forEach(item);
+      const sga = tot('COMERCIAIS, GERAIS E ADMINISTRATIVAS', LINHAS_SGA.reduce((a, label) => a + num(m[label]), 0));
+      const oper = tot('RECEITAS (DESPESAS) OPERACIONAIS', sga);
+      const lo = tot('LUCRO OPERACIONAL', lb + oper + item('OUTRAS (DESPESAS) RECEITAS'));
+      tot('EBITDA', lo);
+      const recFin = filho('RECEITA FINANCEIRA', ['RECEITA FINANCEIRA COM JUROS']);
+      const despFin = filho('DESPESA FINANCEIRA', ['ANTECIPAÇÃO DE RECEBÍVEIS', 'JUROS E MULTA POR ATRASO']);
+      const naoOp = tot('RECEITA (DESPESA) NÃO OPERACIONAL', recFin + despFin);
+      const resFin = tot('RESULTADO FINANCEIRO', naoOp);
+      const lair = tot('LUCRO ANTES DO IR E CS', lo + resFin);
+      const ll = tot('LUCRO LÍQUIDO', lair + item('IMPOSTO DE RENDA E CONTRIBUIÇÃO SOCIAL'));
+      tot('RESULTADO FINAL', ll + item('INVESTIMENTOS') + item('DISTRIBUIÇÃO LUCROS'));
+      return m;
     };
-    const filho = (pai, filhos) => {
-      const valores = filhos.map(item);
-      const editou = filhos.some((f) => ed[f] !== undefined);
-      return tot(pai, editou ? valores.reduce((a, b) => a + b, 0) : num(base(pai)));
-    };
-    const canais = LINHAS_CANAIS_DRE.reduce((a, label) => a + item(label), 0);
-    const credev = item('CREDEV');
-    const rl = tot('RECEITA LÍQUIDA', canais);
-    tot('RECEITA BRUTA', canais + Math.abs(credev));
-    const baseImp = num(base('IMPOSTOS DIRETOS'));
-    const taxa = ed['TAX %'];
-    const imp =
-      ed['IMPOSTOS DIRETOS'] !== undefined
-        ? ed['IMPOSTOS DIRETOS']
-        : taxa !== undefined
-          ? r2(taxa * rl)
-          : baseImp;
-    m['IMPOSTOS DIRETOS'] = imp;
-    const mudouImposto = ed['IMPOSTOS DIRETOS'] !== undefined || rl !== num(base('RECEITA LÍQUIDA'));
-    m['TAX %'] = taxa !== undefined ? taxa : mudouImposto && rl ? imp / rl : base('TAX %');
-    const rol = tot('RECEITA OPERACIONAL LÍQUIDA', rl + imp);
-    const baseCmv = num(base('CUSTO DAS MERCADORIAS VENDIDAS'));
-    const cmvCalc = proprio !== undefined ? proprio * rol : baseCmv;
-    const cmv = tot('CUSTO DAS MERCADORIAS VENDIDAS', cmvCalc);
-    m['CMV %'] =
-      ed['CUSTO DAS MERCADORIAS VENDIDAS'] === undefined && proprio !== undefined
-        ? proprio
-        : rol
-          ? cmv / rol
-          : base('CMV %');
-    const lb = tot('LUCRO BRUTO', rol + cmv);
-    m['MARGEM %'] = rol ? lb / rol : base('MARGEM %');
-    filho('MARKETING', ['PROPAGANDA E ANÚNCIO', 'TRÁFEGO', 'BONIFICAÇÕES MARKETING']);
-    filho('SERVIÇOS DE TERCEIROS VARIÁVEIS', ['TAXA DE CARTÃO']);
-    ['PESSOAL FIXO', 'PESSOAL VARIÁVEL', 'PJ', 'OCUPAÇÃO', 'SERVIÇOS DE TERCEIROS FIXOS', 'FRETES', 'PERDAS COM INADIMPLÊNCIA'].forEach(item);
-    const sga = tot('COMERCIAIS, GERAIS E ADMINISTRATIVAS', LINHAS_SGA.reduce((a, label) => a + num(m[label]), 0));
-    const oper = tot('RECEITAS (DESPESAS) OPERACIONAIS', sga);
-    const lo = tot('LUCRO OPERACIONAL', lb + oper + item('OUTRAS (DESPESAS) RECEITAS'));
-    const ebitda = tot('EBITDA', lo);
-    m['EBITDA %'] = rol ? ebitda / rol : base('EBITDA %');
-    const recFin = filho('RECEITA FINANCEIRA', ['RECEITA FINANCEIRA COM JUROS']);
-    const despFin = filho('DESPESA FINANCEIRA', ['ANTECIPAÇÃO DE RECEBÍVEIS', 'JUROS E MULTA POR ATRASO']);
-    const naoOp = tot('RECEITA (DESPESA) NÃO OPERACIONAL', recFin + despFin);
-    const resFin = tot('RESULTADO FINANCEIRO', naoOp);
-    const lair = tot('LUCRO ANTES DO IR E CS', lo + resFin);
-    const ll = tot('LUCRO LÍQUIDO', lair + item('IMPOSTO DE RENDA E CONTRIBUIÇÃO SOCIAL'));
-    m['% LUCRO LÍQUIDO'] = rol ? ll / rol : base('% LUCRO LÍQUIDO');
-    tot('RESULTADO FINAL', ll + item('INVESTIMENTOS') + item('DISTRIBUIÇÃO LUCROS'));
-    cachePrevisao[c.key] = m;
-    return m;
+    const m = cadeia(edicoes, proprio);
+    // Mês cuja planilha não fecha com a fórmula: mantém a diferença original,
+    // assim só o que foi editado ou cortado move os totais.
+    const m0 = cadeia({}, undefined);
+    for (const x of linhas) {
+      if (x.fmt === 'pct' || edicoes[x.label] !== undefined || !(x.label in m)) continue;
+      if (x.label === 'CUSTO DAS MERCADORIAS VENDIDAS' && proprio !== undefined) continue;
+      m[x.label] = r2(num(m[x.label]) + num(base(x.label)) - num(m0[x.label]));
+    }
+    const rol = num(m['RECEITA OPERACIONAL LÍQUIDA']);
+    m['MARGEM %'] = rol ? num(m['LUCRO BRUTO']) / rol : base('MARGEM %');
+    m['EBITDA %'] = rol ? num(m.EBITDA) / rol : base('EBITDA %');
+    m['% LUCRO LÍQUIDO'] = rol ? num(m['LUCRO LÍQUIDO']) / rol : base('% LUCRO LÍQUIDO');
+    return (cachePrevisao[c.key] = m);
   };
 
   // Valor exibido de uma linha numa coluna (tela e Excel usam a mesma conta).
   const valorCelula = (l, c) => {
     const fonte = espelho[c.key];
-    if (fonte) {
-      const base = valorCelula(l, fonte);
-      const m = previsaoDe(c);
-      if (!m || !(l.label in m)) return base;
-      return { ...base, v: m[l.label] };
-    }
+    const base = fonte ? valorCelula(l, fonte) : valorBruto(l, c);
+    const m = previsaoDe(c);
+    if (!m || !(l.label in m)) return base;
+    return { ...base, v: m[l.label] };
+  };
+  const valorBruto = (l, c) => {
     let pfLine = valorAuto(l.label, c.key);
     // Linhas calculadas (só célula vazia na planilha, colunas mensais)
     const resultadoCalc =
@@ -842,7 +961,7 @@ export default function Forecast() {
     for (const l of linhas) {
       const nivel = Number(l.nivel) || 0;
       add(l.label, nivel, (c) => valorCelula(l, c).v, l.fmt);
-      for (const d of detalhesLinha(l)) {
+      for (const d of modoCorte ? [] : detalhesLinha(l)) {
         add(d.label, nivel + d.nivel, (c) => d.valores[c.key], 'moeda');
       }
     }
@@ -860,7 +979,7 @@ export default function Forecast() {
     ws['!freeze'] = { xSplit: 1, ySplit: 2 };
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Forecast');
-    XLSX.writeFile(wb, `Forecast_DRE_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    XLSX.writeFile(wb, `${modoCorte ? 'Corte_de_custo' : 'Forecast_DRE'}_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
   // ── Travar mês (Niziany 30/10) ────────────────────────────────────────────
@@ -870,7 +989,7 @@ export default function Forecast() {
   };
   const podeTravar = (c) => {
     const mes = colParaMes(c);
-    return !!(mes && c.grupo === 'mensal' && c.tipo === 'realizado' && mes >= MES_AUTO_INICIO);
+    return !!(!modoCorte && mes && c.grupo === 'mensal' && c.tipo === 'realizado' && mes >= MES_AUTO_INICIO);
   };
   const alternarTrava = async (c) => {
     const mes = colParaMes(c);
@@ -1409,9 +1528,13 @@ export default function Forecast() {
   return (
     <div className="w-full max-w-7xl mx-auto px-2 sm:px-4 py-4">
       <PageTitle
-        title="Forecast"
-        subtitle="DRE projetada de 2026 — Realizado (jan–set) e Previsão (out–dez)"
-        icon={ChartLineUp}
+        title={modoCorte ? 'Corte de custo' : 'Forecast'}
+        subtitle={
+          modoCorte
+            ? 'Espelho do Forecast: a faca tira valores do cálculo e a previsão é editável. O Forecast não muda'
+            : 'DRE projetada de 2026 — Realizado (jan–set) e Previsão (out–dez)'
+        }
+        icon={modoCorte ? Knife : ChartLineUp}
         iconColor="text-[#000638]"
       />
 
@@ -1461,6 +1584,8 @@ export default function Forecast() {
             >
               Exportar Excel
             </button>
+            {!modoCorte && (
+              <>
             <input
               ref={fileRef}
               type="file"
@@ -1477,6 +1602,8 @@ export default function Forecast() {
             >
               {importando ? 'Importando…' : 'Importar planilha'}
             </button>
+              </>
+            )}
             <button
               type="button"
               onClick={() => setTelaCheia((v) => !v)}
@@ -1723,14 +1850,15 @@ export default function Forecast() {
                       const celulaMes = ehDespesaMes && temDadoMes(c.key);
                       // Linha CMV %: célula de mês editável (clique → digita o %)
                       const cmvEditavel =
-                        l.label === 'CMV %' && c.grupo === 'mensal' && !!colParaMes(c) && !mesTravado(c);
+                        !modoCorte && l.label === 'CMV %' && c.grupo === 'mensal' && !!colParaMes(c) && !mesTravado(c);
                       const cmvEditando = cmvEditavel && editandoCmv === c.key;
                       // Mês de previsão: qualquer valor editável (exceto % calculados)
                       const prevEditavel =
                         !!espelho[c.key] && !cmvEditavel && !PCT_DERIVADOS.has(l.label);
                       const chavePrev = l.label + '|' + c.key;
                       const prevEditando = prevEditavel && editandoPrev === chavePrev;
-                      const prevEditado = edicoesPrev[c.key]?.[l.label] !== undefined;
+                      const prevEditado =
+                        (modoCorte ? edicoesCorte : edicoesPrev)[c.key]?.[l.label] !== undefined;
                       const ehPctPrev = l.fmt === 'pct';
                       const celulaMesAberta = celulaMes && colMesLinha === c.key;
                       return (
@@ -1828,6 +1956,11 @@ export default function Forecast() {
                           ) : (
                             formatar(v, l.fmt)
                           )}
+                          {!prevEditando &&
+                            LINHAS_FACA.has(l.label) &&
+                            c.grupo === 'mensal' &&
+                            !!colParaMes(c) &&
+                            faca(c.key, l.label, '', l.label, v)}
                         </td>
                       );
                     })}
@@ -1864,6 +1997,7 @@ export default function Forecast() {
                             <span className="inline-flex items-center gap-1.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
                               {p.nome}
+                              {faca(mc, l.label, p.nome, p.nome, -p.valor)}
                             </span>
                           </td>
                           {colunas.map((c) => (
@@ -1890,6 +2024,7 @@ export default function Forecast() {
                             <span className="inline-flex items-center gap-1.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
                               {p.nome}
+                              {faca(mc, l.label, p.nome, p.nome, -p.valor)}
                             </span>
                           </td>
                           {colunas.map((c) => (
@@ -1919,6 +2054,7 @@ export default function Forecast() {
                               {x.venc ? (
                                 <span className="text-gray-400 font-normal"> · venc {x.venc}</span>
                               ) : null}
+                              {faca(mc, l.label, i + ' ' + x.forn, x.forn, -x.valor)}
                             </span>
                           </td>
                           {colunas.map((c) => (
@@ -1946,6 +2082,7 @@ export default function Forecast() {
                               {x.canal ? (
                                 <span className="text-gray-400 font-normal"> · {x.canal}</span>
                               ) : null}
+                              {faca(mc, l.label, x.nome, x.nome, -x.valor)}
                             </span>
                           </td>
                           {colunas.map((c) => (
@@ -1973,6 +2110,7 @@ export default function Forecast() {
                               {x.venc ? (
                                 <span className="text-gray-400 font-normal"> · venc {x.venc}</span>
                               ) : null}
+                              {faca(mc, l.label, i + ' ' + x.forn, x.forn, -x.valor)}
                             </span>
                           </td>
                           {colunas.map((c) => (
@@ -2000,6 +2138,7 @@ export default function Forecast() {
                               <span className="text-gray-400 font-normal">
                                 {' '}· {x.titulos} tít. · {x.clientes} cli.
                               </span>
+                              {faca(mc, l.label, x.nome, x.nome, -x.valor)}
                             </span>
                           </td>
                           {colunas.map((c) => (
@@ -2021,6 +2160,7 @@ export default function Forecast() {
                             <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
                             {x.nome}
                             <span className="text-gray-400 font-normal"> · {x.envios} envios</span>
+                            {faca(colMesLinha, l.label, x.nome, x.nome, -x.valor)}
                           </span>
                         </td>
                         {colunas.map((c) => (
@@ -2043,6 +2183,7 @@ export default function Forecast() {
                             {x.venc ? (
                               <span className="text-gray-400 font-normal"> · pago {x.venc}</span>
                             ) : null}
+                            {faca(colMesLinha, l.label, i + ' ' + x.forn, x.forn, -x.valor)}
                           </span>
                         </td>
                         {colunas.map((c) => (
@@ -2068,6 +2209,7 @@ export default function Forecast() {
                             <span className="inline-flex items-center gap-1.5">
                               <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
                               {x.empresa}
+                              {faca(mc, l.label, x.empresa, x.empresa, -x.valor)}
                             </span>
                           </td>
                           {colunas.map((c) => (
@@ -2105,6 +2247,7 @@ export default function Forecast() {
                                   )}
                                   {cg.cat}
                                   <span className="text-gray-400 font-normal"> · {rotuloMes}</span>
+                                  {faca(mc, l.label, cg.cat, cg.cat, -cg.valor)}
                                 </span>
                               </td>
                               {colunas.map((c) => (
@@ -2126,6 +2269,7 @@ export default function Forecast() {
                                     {x.venc ? (
                                       <span className="text-gray-400"> · venc {x.venc}</span>
                                     ) : null}
+                                    {faca(mc, l.label, cg.cat + '»' + i, x.forn, -x.val)}
                                   </td>
                                   {colunas.map((c) => (
                                     <td
@@ -2147,10 +2291,11 @@ export default function Forecast() {
                         <span className="inline-flex items-center gap-1.5">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                           PRÓ-LABORE (DIRETORES)
+                          {faca(colMesLinha, l.label, 'PRÓ-LABORE', 'PRÓ-LABORE (DIRETORES)', -(prolabore[colMesLinha] ?? 80000))}
                         </span>
                       </td>
                       {colunas.map((c) => {
-                        const temFolha = pfFixo[c.key] !== undefined && !mesTravado(c);
+                        const temFolha = !modoCorte && pfFixo[c.key] !== undefined && !mesTravado(c);
                         const editando = editandoProl === c.key;
                         const val = prolabore[c.key] ?? 80000;
                         return (
@@ -2197,6 +2342,10 @@ export default function Forecast() {
                       const prov = ru.tipo === 'provento';
                       const corVal = prov ? 'text-emerald-700' : 'text-red-600';
                       const dot = prov ? 'bg-emerald-500' : 'bg-red-500';
+                      // Corte: como a rubrica entra na DRE (provento é despesa, negativo)
+                      const contrib = (x) => (prov ? -1 : 1) * Math.abs(Number(x) || 0);
+                      const facaFolha = (chave, nome, x) =>
+                        ru.entra ? faca(colMesLinha, l.label, chave, nome, contrib(x)) : null;
                       const temFunc = Object.keys(ru.funcPorCol).length > 0;
                       const rubAberta = temFunc && rubricasAbertas.has(ru.key);
                       // Agrupa por EMPRESA e, dentro, por funcionário — só o mês
@@ -2250,6 +2399,7 @@ export default function Forecast() {
                                   <span className={'w-1.5 h-1.5 rounded-full ' + dot} />
                                 )}
                                 {ru.desc}
+                                {facaFolha(ru.key, ru.desc, ru.porCol[colMesLinha])}
                               </span>
                             </td>
                             {colunas.map((c) => {
@@ -2286,6 +2436,7 @@ export default function Forecast() {
                                         )}
                                         {emp.empresa}
                                         <span className="text-gray-300"> · {emp.funcs.length} func.</span>
+                                        {facaFolha(ru.key + '»' + emp.empresa, emp.empresa, emp.porCol[colMesLinha])}
                                       </span>
                                     </td>
                                     {colunas.map((c) => {
@@ -2311,6 +2462,11 @@ export default function Forecast() {
                                           {f.funcao ? (
                                             <span className="text-gray-400"> · {f.funcao}</span>
                                           ) : null}
+                                          {facaFolha(
+                                            ru.key + '»' + emp.empresa + '»' + (f.chapa || f.nome),
+                                            f.nome,
+                                            f.porCol[colMesLinha],
+                                          )}
                                         </td>
                                         {colunas.map((c) => {
                                           const fv = f.porCol[c.key];

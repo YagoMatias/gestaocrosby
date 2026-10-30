@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import { useTabContext } from './AppTabs/TabContext';
 import {
+  Knife,
   UserGear,
   Plugs,
   ArrowsLeftRight,
@@ -520,6 +521,13 @@ const financeiro = [
     href: '/forecast',
     icon: ChartLineUp,
     color: 'text-fuchsia-600',
+    roles: ['owner', 'admin', 'manager', 'user'],
+  },
+  {
+    name: 'Corte de custo',
+    href: '/forecast-corte',
+    icon: Knife,
+    color: 'text-red-600',
     roles: ['owner', 'admin', 'manager', 'user'],
   },
 ];

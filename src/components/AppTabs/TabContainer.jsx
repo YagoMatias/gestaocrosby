@@ -79,6 +79,7 @@ const PAGE_COMPONENTS = {
   '/crm-vendas': lazy(() => import('../../pages/CRMVendas')),
   '/new-forecast': lazy(() => import('../../pages/NewForecast')),
   '/forecast': lazy(() => import('../../pages/Forecast')),
+  '/forecast-corte': lazy(() => import('../../pages/CorteCustoForecast')),
   '/mix-canais': lazy(() => import('../../pages/MixCanais')),
   '/crm/competicao': lazy(() => import('../../pages/PainelCompeticao')),
   '/ranking-compras-franquias': lazy(
