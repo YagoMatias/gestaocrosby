@@ -189,6 +189,9 @@ export default function Forecast() {
   const [trafegoLinha, setTrafegoLinha] = useState({}); // { [colKey]: total (negativo) }
   const [trafegoItens, setTrafegoItens] = useState({}); // { [colKey]: [{canal, nome, valor}] }
   // PERDAS COM INADIMPLÊNCIA (Dashboard Inadimplência, mês específico)
+  // JUROS E MULTA POR ATRASO (natureza 7005 paga no mês)
+  const [jurosLinha, setJurosLinha] = useState({}); // { [colKey]: total (negativo) }
+  const [jurosLanc, setJurosLanc] = useState({}); // { [colKey]: [{forn, venc, valor}] }
   const [perdasLinha, setPerdasLinha] = useState({}); // { [colKey]: total (negativo) }
   const [perdasCanais, setPerdasCanais] = useState({}); // { [colKey]: [{nome, valor, titulos, clientes}] }
   // Importação da planilha de taxas de cartão (Niziany 30/10): por coluna,
@@ -628,6 +631,13 @@ export default function Forecast() {
     const r = linhas.find((x) => x.label === label);
     return Number(r?.valores?.[col]) || 0;
   };
+  // Filhos da Despesa financeira: valor automático quando há, senão a planilha.
+  const valAntecip = (col) =>
+    impAntecip[col] !== undefined
+      ? -(impAntecip[col].total || 0)
+      : estatico('ANTECIPAÇÃO DE RECEBÍVEIS', col);
+  const valJuros = (col) =>
+    jurosLinha[col] !== undefined ? jurosLinha[col] : estatico('JUROS E MULTA POR ATRASO', col);
 
   // ── Importar planilha de taxas de cartão (Niziany 30/10) ──────────────────
   // Arquivo mensal "PAINEL DRE — TAXAS DE CARTÃO": o mês vem do título da aba
@@ -806,6 +816,8 @@ export default function Forecast() {
       const novoMktLanc = {};
       const novoTrafLinha = {};
       const novoTrafItens = {};
+      const novoJurosLinha = {};
+      const novoJurosLanc = {};
       const novoPerdasLinha = {};
       const novoPerdasCanais = {};
       const novoImpAntecip = {};
@@ -848,6 +860,9 @@ export default function Forecast() {
           // Tráfego pago (Forecast de Mídia do Dryland)
           if (typeof pf.trafego_total === 'number') novoTrafLinha[col] = pf.trafego_total;
           if (Array.isArray(pf.trafego_itens)) novoTrafItens[col] = pf.trafego_itens;
+          // Juros e multa por atraso (Contas a Pagar)
+          if (typeof pf.juros_total === 'number') novoJurosLinha[col] = pf.juros_total;
+          if (Array.isArray(pf.juros_lanc)) novoJurosLanc[col] = pf.juros_lanc;
           // Perdas com inadimplência (Dashboard Inadimplência)
           if (typeof pf.perdas_total === 'number') novoPerdasLinha[col] = pf.perdas_total;
           if (Array.isArray(pf.perdas_canais)) novoPerdasCanais[col] = pf.perdas_canais;
@@ -872,6 +887,8 @@ export default function Forecast() {
       setMktLanc(novoMktLanc);
       setTrafegoLinha(novoTrafLinha);
       setTrafegoItens(novoTrafItens);
+      setJurosLinha(novoJurosLinha);
+      setJurosLanc(novoJurosLanc);
       setPerdasLinha(novoPerdasLinha);
       setPerdasCanais(novoPerdasCanais);
       setImpAntecip(novoImpAntecip);
@@ -1103,6 +1120,8 @@ export default function Forecast() {
                 const ehBonif = l.label === 'BONIFICAÇÕES MARKETING' && Object.keys(bonifMkt).length > 0;
                 const ehPerdas =
                   l.label === 'PERDAS COM INADIMPLÊNCIA' && Object.keys(perdasLinha).length > 0;
+                const ehJuros =
+                  l.label === 'JUROS E MULTA POR ATRASO' && Object.keys(jurosLinha).length > 0;
                 const ehImpAnt =
                   l.label === 'ANTECIPAÇÃO DE RECEBÍVEIS' && Object.keys(impAntecip).length > 0;
                 const ehImpCar = l.label === 'TAXA DE CARTÃO' && Object.keys(impCartao).length > 0;
@@ -1117,6 +1136,7 @@ export default function Forecast() {
                   (ehTraf && trafegoLinha[col] !== undefined) ||
                   (ehBonif && bonifMkt[col] !== undefined) ||
                   (ehPerdas && perdasLinha[col] !== undefined) ||
+                  (ehJuros && jurosLinha[col] !== undefined) ||
                   (ehImpAnt && impAntecip[col] !== undefined) ||
                   (ehImpCar && impCartao[col] !== undefined) ||
                   (ehServTerc && servTerc[col] !== undefined);
@@ -1129,11 +1149,12 @@ export default function Forecast() {
                 const trafAbertoLinha = ehTraf && !!colMesLinha;
                 const bonifAbertoLinha = ehBonif && !!colMesLinha;
                 const perdasAbertoLinha = ehPerdas && !!colMesLinha;
+                const jurosAberto = ehJuros && !!colMesLinha;
                 const impAntAberto = ehImpAnt && !!colMesLinha;
                 const impCarAberto = ehImpCar && !!colMesLinha;
                 const servAbertoLinha = ehServTerc && !!colMesLinha;
                 const ehDespesaMes =
-                  ehFolha || ehPJ || ehOcup || ehMkt || ehTraf || ehBonif || ehPerdas || ehImpAnt || ehImpCar || ehServTerc;
+                  ehFolha || ehPJ || ehOcup || ehMkt || ehTraf || ehBonif || ehPerdas || ehJuros || ehImpAnt || ehImpCar || ehServTerc;
                 // Só a label de seção (pai) e de canal (CREDEV) abrem pela label;
                 // as despesas abrem clicando na célula do mês.
                 const clicavel = ehPai || temCredevCanal;
@@ -1226,23 +1247,22 @@ export default function Forecast() {
                         impAntecip[c.key] !== undefined
                       ) {
                         pfLine = -Math.round((impAntecip[c.key].total || 0) * 100) / 100;
-                      } else if (l.label === 'DESPESA FINANCEIRA' && impAntecip[c.key] !== undefined) {
-                        // = Antecipação (importada) + Juros e multa (planilha)
-                        pfLine =
-                          Math.round(
-                            (-(impAntecip[c.key].total || 0) + estatico('JUROS E MULTA POR ATRASO', c.key)) * 100,
-                          ) / 100;
+                      } else if (l.label === 'JUROS E MULTA POR ATRASO' && jurosLinha[c.key] !== undefined) {
+                        pfLine = jurosLinha[c.key];
+                      } else if (
+                        l.label === 'DESPESA FINANCEIRA' &&
+                        (impAntecip[c.key] !== undefined || jurosLinha[c.key] !== undefined)
+                      ) {
+                        // = Antecipação de recebíveis + Juros e multa por atraso
+                        pfLine = Math.round((valAntecip(c.key) + valJuros(c.key)) * 100) / 100;
                       } else if (
                         l.label === 'RECEITA (DESPESA) NÃO OPERACIONAL' &&
-                        impAntecip[c.key] !== undefined
+                        (impAntecip[c.key] !== undefined || jurosLinha[c.key] !== undefined)
                       ) {
                         // = Receita financeira (planilha) + Despesa financeira recomposta
                         pfLine =
                           Math.round(
-                            (estatico('RECEITA FINANCEIRA', c.key) -
-                              (impAntecip[c.key].total || 0) +
-                              estatico('JUROS E MULTA POR ATRASO', c.key)) *
-                              100,
+                            (estatico('RECEITA FINANCEIRA', c.key) + valAntecip(c.key) + valJuros(c.key)) * 100,
                           ) / 100;
                       } else if (
                         l.label === 'PERDAS COM INADIMPLÊNCIA' &&
@@ -1545,6 +1565,28 @@ export default function Forecast() {
                         </tr>
                       ));
                     })()}
+                  {jurosAberto &&
+                    (jurosLanc[colMesLinha] || []).map((x, i) => (
+                      <tr key={'juros-' + i} className="bg-slate-50/50">
+                        <td className="sticky left-0 z-10 border-b border-r border-gray-100 pl-[4.5rem] pr-3 py-1 whitespace-nowrap bg-slate-50 text-[10px] text-red-600">
+                          <span className="inline-flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                            {x.forn}
+                            {x.venc ? (
+                              <span className="text-gray-400 font-normal"> · pago {x.venc}</span>
+                            ) : null}
+                          </span>
+                        </td>
+                        {colunas.map((c) => (
+                          <td
+                            key={c.key}
+                            className="border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-slate-50/40"
+                          >
+                            {c.key === colMesLinha && x.valor ? formatar(-x.valor, 'moeda') : '–'}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
                   {(impAntAberto || impCarAberto) &&
                     (() => {
                       // Só o mês clicado: taxa por empresa (planilha importada).
