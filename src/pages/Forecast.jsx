@@ -165,6 +165,9 @@ export default function Forecast() {
   // Subitem TRÁFEGO do Marketing (Forecast de Mídia do Dryland)
   const [trafegoLinha, setTrafegoLinha] = useState({}); // { [colKey]: total (negativo) }
   const [trafegoItens, setTrafegoItens] = useState({}); // { [colKey]: [{canal, nome, valor}] }
+  // PERDAS COM INADIMPLÊNCIA (Dashboard Inadimplência, mês específico)
+  const [perdasLinha, setPerdasLinha] = useState({}); // { [colKey]: total (negativo) }
+  const [perdasCanais, setPerdasCanais] = useState({}); // { [colKey]: [{nome, valor, titulos, clientes}] }
   // SERVIÇOS DE TERCEIROS FIXOS: lido do localStorage da DRE Analítica
   // (despesas-gerais-2026:v2). Mesmos números que a Niziany vê lá, com as
   // bonificações importadas manualmente — não dá pra reproduzir pelo backend.
@@ -506,6 +509,8 @@ export default function Forecast() {
       const novoMktLanc = {};
       const novoTrafLinha = {};
       const novoTrafItens = {};
+      const novoPerdasLinha = {};
+      const novoPerdasCanais = {};
       for (const item of resultados) {
         if (!item) continue;
         const [col, d, pf] = item;
@@ -544,6 +549,9 @@ export default function Forecast() {
           // Tráfego pago (Forecast de Mídia do Dryland)
           if (typeof pf.trafego_total === 'number') novoTrafLinha[col] = pf.trafego_total;
           if (Array.isArray(pf.trafego_itens)) novoTrafItens[col] = pf.trafego_itens;
+          // Perdas com inadimplência (Dashboard Inadimplência)
+          if (typeof pf.perdas_total === 'number') novoPerdasLinha[col] = pf.perdas_total;
+          if (Array.isArray(pf.perdas_canais)) novoPerdasCanais[col] = pf.perdas_canais;
         }
       }
       setOverrides(novo);
@@ -560,6 +568,8 @@ export default function Forecast() {
       setMktLanc(novoMktLanc);
       setTrafegoLinha(novoTrafLinha);
       setTrafegoItens(novoTrafItens);
+      setPerdasLinha(novoPerdasLinha);
+      setPerdasCanais(novoPerdasCanais);
       setCarregandoAuto(false);
     })();
     return () => {
@@ -737,6 +747,8 @@ export default function Forecast() {
                 const ehMkt = l.label === 'PROPAGANDA E ANÚNCIO' && Object.keys(mktLinha).length > 0;
                 const ehTraf = l.label === 'TRÁFEGO' && Object.keys(trafegoLinha).length > 0;
                 const ehBonif = l.label === 'BONIFICAÇÕES MARKETING' && Object.keys(bonifMkt).length > 0;
+                const ehPerdas =
+                  l.label === 'PERDAS COM INADIMPLÊNCIA' && Object.keys(perdasLinha).length > 0;
                 const ehServTerc =
                   l.label === 'SERVIÇOS DE TERCEIROS FIXOS' && Object.keys(servTerc).length > 0;
                 // Coluna (mês) aberta nesta linha, se houver dado nela
@@ -747,6 +759,7 @@ export default function Forecast() {
                   (ehMkt && mktLinha[col] !== undefined) ||
                   (ehTraf && trafegoLinha[col] !== undefined) ||
                   (ehBonif && bonifMkt[col] !== undefined) ||
+                  (ehPerdas && perdasLinha[col] !== undefined) ||
                   (ehServTerc && servTerc[col] !== undefined);
                 const colMesLinha =
                   mesAberto[l.label] && temDadoMes(mesAberto[l.label]) ? mesAberto[l.label] : null;
@@ -756,9 +769,10 @@ export default function Forecast() {
                 const mktAbertoLinha = ehMkt && !!colMesLinha;
                 const trafAbertoLinha = ehTraf && !!colMesLinha;
                 const bonifAbertoLinha = ehBonif && !!colMesLinha;
+                const perdasAbertoLinha = ehPerdas && !!colMesLinha;
                 const servAbertoLinha = ehServTerc && !!colMesLinha;
                 const ehDespesaMes =
-                  ehFolha || ehPJ || ehOcup || ehMkt || ehTraf || ehBonif || ehServTerc;
+                  ehFolha || ehPJ || ehOcup || ehMkt || ehTraf || ehBonif || ehPerdas || ehServTerc;
                 // Só a label de seção (pai) e de canal (CREDEV) abrem pela label;
                 // as despesas abrem clicando na célula do mês.
                 const clicavel = ehPai || temCredevCanal;
@@ -827,6 +841,11 @@ export default function Forecast() {
                         bonifMkt[c.key] !== undefined
                       ) {
                         pfLine = -Math.round((bonifMkt[c.key].total || 0) * 100) / 100;
+                      } else if (
+                        l.label === 'PERDAS COM INADIMPLÊNCIA' &&
+                        perdasLinha[c.key] !== undefined
+                      ) {
+                        pfLine = perdasLinha[c.key];
                       } else if (
                         l.label === 'MARKETING' &&
                         (mktLinha[c.key] !== undefined ||
@@ -1048,6 +1067,33 @@ export default function Forecast() {
                               {x.venc ? (
                                 <span className="text-gray-400 font-normal"> · venc {x.venc}</span>
                               ) : null}
+                            </span>
+                          </td>
+                          {colunas.map((c) => (
+                            <td
+                              key={c.key}
+                              className="border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-slate-50/40"
+                            >
+                              {c.key === mc && x.valor ? formatar(-x.valor, 'moeda') : '–'}
+                            </td>
+                          ))}
+                        </tr>
+                      ));
+                    })()}
+                  {perdasAbertoLinha &&
+                    (() => {
+                      // Só o mês clicado: saldo vencido em aberto por canal.
+                      const mc = colMesLinha;
+                      const lista = (perdasCanais[mc] || []).slice();
+                      return lista.map((x, i) => (
+                        <tr key={'perdas-' + i} className="bg-slate-50/50">
+                          <td className="sticky left-0 z-10 border-b border-r border-gray-100 pl-12 pr-3 py-1 whitespace-nowrap bg-slate-50 text-[10px] text-red-600">
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                              {x.nome}
+                              <span className="text-gray-400 font-normal">
+                                {' '}· {x.titulos} tít. · {x.clientes} cli.
+                              </span>
                             </span>
                           </td>
                           {colunas.map((c) => (
