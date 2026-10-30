@@ -64,6 +64,53 @@ const COLUNA_TOTAL_2027 = {
   key: 'P2027-T', label: '2027', tipo: 'forecast', grupo: 'total2027', ano: 2027, somaMeses: true,
 };
 const COLUNAS_2027 = [...MESES_2027, COLUNA_TOTAL_2027];
+// Previsão 2027 sem canais: Receita Bruta = Receita Líquida (Niziany 30/10)
+const OCULTAS_2027 = new Set([
+  'VAREJO', 'MULTIMARCAS', 'FRANQUIA', 'REVENDA', 'BAZAR',
+  'FARDAMENTO', 'IMOBILIZADO', 'BLUECRED', 'CREDEV',
+]);
+const LINHAS_RECEITA_2027 = ['RECEITA BRUTA', 'RECEITA LÍQUIDA'];
+
+// Shopping Recife fora do Forecast (Niziany 30/10): a loja é a empresa CROSBY
+// RECIFE MALL LTDA (cliente 29541, filial 98). Filial 98 não entra em Ocupação,
+// Serviços, Marketing e Juros; sobram folha e perda. Tira aqui, ao carregar, pra
+// valer também no mês travado, sem mexer no que está salvo.
+const EH_SHOPPING_RECIFE = /RECIFE MALL|SHOPPING RECIFE/i;
+function semShoppingRecife(pf) {
+  const r2 = (v) => Math.round(v * 100) / 100;
+  let fixo = 0;
+  let variavel = 0;
+  const rubricas = (pf.rubricas || []).map((r) => {
+    if (!Array.isArray(r.funcionarios)) return r;
+    const fora = r.funcionarios.filter((f) => EH_SHOPPING_RECIFE.test(f.loja || ''));
+    if (!fora.length) return r;
+    const soma = fora.reduce((a, f) => a + (Number(f.valor) || 0), 0);
+    if (r.entra !== false && r.tipo === 'provento') {
+      if (r.grupo === 'variavel') variavel += soma;
+      else fixo += soma;
+    }
+    return {
+      ...r,
+      valor: r2((Number(r.valor) || 0) - soma),
+      funcionarios: r.funcionarios.filter((f) => !EH_SHOPPING_RECIFE.test(f.loja || '')),
+    };
+  });
+  const perdaFora = (pf.perdas_canais || [])
+    .filter((x) => EH_SHOPPING_RECIFE.test(x.nome || ''))
+    .reduce((a, x) => a + (Number(x.valor) || 0), 0);
+  return {
+    ...pf,
+    rubricas,
+    proventos_fixo: r2((pf.proventos_fixo || 0) - fixo),
+    proventos_variavel: r2((pf.proventos_variavel || 0) - variavel),
+    pessoal_fixo: r2((pf.pessoal_fixo || 0) + fixo),
+    pessoal_variavel: r2((pf.pessoal_variavel || 0) + variavel),
+    perdas_total: typeof pf.perdas_total === 'number' ? r2(pf.perdas_total + perdaFora) : pf.perdas_total,
+    perdas_canais: Array.isArray(pf.perdas_canais)
+      ? pf.perdas_canais.filter((x) => !EH_SHOPPING_RECIFE.test(x.nome || ''))
+      : pf.perdas_canais,
+  };
+}
 // % da coluna de total: conta sobre as somas, não soma de percentuais
 const PCT_RAZAO = {
   'TAX %': ['IMPOSTOS DIRETOS', 'RECEITA LÍQUIDA'],
@@ -261,6 +308,13 @@ export default function Forecast({ modoCorte = false }) {
     );
   };
   const salvarEdicaoPrev = (col, mes, label, valor) => {
+    if (mes.startsWith('2027-') && LINHAS_RECEITA_2027.includes(label)) {
+      const outra = LINHAS_RECEITA_2027.find((x) => x !== label);
+      gravarEdicaoPrev(col, mes, outra, valor);
+    }
+    gravarEdicaoPrev(col, mes, label, valor);
+  };
+  const gravarEdicaoPrev = (col, mes, label, valor) => {
     if (modoCorte) {
       setEdicoesCorte((p) => {
         const doMes = { ...(p[col] || {}) };
@@ -740,6 +794,7 @@ export default function Forecast({ modoCorte = false }) {
     const ano = c.grupo === 'ano';
     const soma2026 = c.key === 'ANO2026'; // soma dos meses, inclusive os totais
     const anual = ano && !soma2026; // projeção × 12
+    const mes2027 = c.grupo === 'mes2027';
     if (!fonte && (ano || !modoCorte)) return (cachePrevisao[c.key] = null);
     const ed = {
       ...(edicoesPrev[c.key] || {}),
@@ -748,6 +803,7 @@ export default function Forecast({ modoCorte = false }) {
     const listaFacas = modoCorte ? facas[c.key] || [] : [];
     if (
       !ano &&
+      !mes2027 &&
       !Object.keys(ed).length &&
       !listaFacas.length &&
       ed['CMV %'] === undefined &&
@@ -801,6 +857,10 @@ export default function Forecast({ modoCorte = false }) {
       edicoes[f.linha] = (edicoes[f.linha] ?? num(base(f.linha))) - num(f.valor);
     }
     for (const f of listaFacas) if (!f.chave) edicoes[f.linha] = 0;
+    if (mes2027) {
+      const receita = edicoes['RECEITA LÍQUIDA'] ?? edicoes['RECEITA BRUTA'] ?? direto('RECEITA LÍQUIDA');
+      LINHAS_RECEITA_2027.forEach((label) => (edicoes[label] = receita));
+    }
 
     const cadeia = (e, pctCmv) => {
       const m = {};
@@ -1044,6 +1104,7 @@ export default function Forecast({ modoCorte = false }) {
   const chaveSel = (idx, col) => idx + '|' + col;
   const linhaVisivel = (idx) => {
     const info = estrutura[idx];
+    if (visao2027 && OCULTAS_2027.has(linhas[idx].label)) return false;
     return !(
       (info.paiId && recolhidos.has(info.paiId)) ||
       (info.avoId && recolhidos.has(info.avoId))
@@ -1117,7 +1178,7 @@ export default function Forecast({ modoCorte = false }) {
       const { default: ExcelJS } = await import('exceljs');
       const { buffer } = await gerarForecastXlsx({
         ExcelJS,
-        linhas,
+        linhas: visao2027 ? linhas.filter((l) => !OCULTAS_2027.has(l.label)) : linhas,
         colunas: colunasTela,
         valorDe: (l) => Object.fromEntries(colunasTela.map((c) => [c.key, valorCelula(l, c).v])),
         detalhesDe: modoCorte || visao2027 ? () => [] : detalhesLinha,
@@ -1600,7 +1661,7 @@ export default function Forecast({ modoCorte = false }) {
       const novoImpCartao = {};
       for (const item of resultados) {
         if (!item) continue;
-        const [col, d, pf, imp] = item;
+        const [col, d, pfSalvo, imp] = item;
         novo[col] = {};
         if (d) {
           for (const [linha, chave] of Object.entries(CANAL_POR_LINHA)) {
@@ -1614,7 +1675,8 @@ export default function Forecast({ modoCorte = false }) {
           }
         }
         // Pessoal Fixo (fixos + pró-labore) e Pessoal Variável (comissão).
-        if (pf && typeof pf.pessoal_fixo === 'number') {
+        if (pfSalvo && typeof pfSalvo.pessoal_fixo === 'number') {
+          const pf = semShoppingRecife(pfSalvo);
           novoPfFixo[col] = pf.proventos_fixo || 0;
           novoPfVar[col] = pf.proventos_variavel || 0;
           novoProlabore[col] = typeof pf.prolabore === 'number' ? pf.prolabore : 80000;
@@ -1929,6 +1991,7 @@ export default function Forecast({ modoCorte = false }) {
             <tbody>
               {linhas.map((l, idx) => {
                 const info = estrutura[idx];
+                if (visao2027 && OCULTAS_2027.has(l.label)) return null;
                 // Esconde filhos de uma seção recolhida
                 if (
                   (info.paiId && recolhidos.has(info.paiId)) ||
