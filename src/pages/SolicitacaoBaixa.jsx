@@ -44,6 +44,21 @@ const SolicitacaoBaixa = () => {
   const [lotes, setLotes] = useState([]);
   const [loteAberto, setLoteAberto] = useState(null);
   const [carregandoLotes, setCarregandoLotes] = useState(false);
+  const [loteCopiado, setLoteCopiado] = useState(null);
+  // Copia os números dos títulos do lote no formato que o Retorno Boleto aceita
+  // colar (empresa-fatura-parcela, um por linha) — João, 30/10/2026.
+  const copiarTitulosLote = async (l) => {
+    const linhas = [...new Set((l.itens || []).map((it) => String(it.titulo || '').replace('/', '-').trim()).filter(Boolean))];
+    if (!linhas.length) return;
+    const txt = linhas.join('\n');
+    try {
+      await navigator.clipboard.writeText(txt);
+      setLoteCopiado(l.id);
+      setTimeout(() => setLoteCopiado(null), 2000);
+    } catch {
+      window.prompt('Copie os títulos (cole no Retorno Boleto):', txt);
+    }
+  };
   const carregarLotes = async () => {
     setCarregandoLotes(true);
     try {
@@ -1445,6 +1460,16 @@ const SolicitacaoBaixa = () => {
                     </button>
                     {aberto && (
                       <div className="border-t border-gray-100 overflow-x-auto">
+                        <div className="px-2 py-1.5 bg-gray-50 border-b border-gray-100">
+                          <button
+                            type="button"
+                            onClick={() => copiarTitulosLote(l)}
+                            className={`inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold border transition-colors ${loteCopiado === l.id ? 'bg-green-100 border-green-400 text-green-800' : 'bg-white hover:bg-gray-100 border-gray-300 text-[#000638]'}`}
+                            title="Copia os números dos títulos deste lote (empresa-fatura-parcela, um por linha) para colar no Retorno Boleto e baixar na Pagar.me"
+                          >
+                            {loteCopiado === l.id ? 'Copiado!' : `Copiar títulos p/ Retorno Boleto (${(l.itens || []).length})`}
+                          </button>
+                        </div>
                         <table className="w-full text-xs">
                           <thead className="bg-gray-50 text-gray-600">
                             <tr>
