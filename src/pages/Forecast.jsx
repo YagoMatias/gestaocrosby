@@ -38,6 +38,7 @@ const MES_ABREV = {
 };
 // Coluna mensal → 'YYYY-MM' (usa o label 'Set/26' + o ano da coluna).
 const colParaMes = (c) => {
+  if (c.grupo === 'ano') return String(c.ano); // colunas anuais guardam edição pelo ano
   if (c.grupo !== 'mensal' || !c.ano) return null;
   const m = MES_ABREV[String(c.label || '').slice(0, 3).toLowerCase()];
   return m ? `${c.ano}-${String(m).padStart(2, '0')}` : null;
@@ -46,6 +47,12 @@ const colParaMes = (c) => {
 // Automático de set/2026 em diante, em QUALQUER ano: os meses seguintes
 // ficam "fixos" — basta marcar o mês como realizado (Niziany 30/10).
 const MES_AUTO_INICIO = '2026-09';
+// Colunas anuais da previsão (Niziany 30/10): receita soma os meses de 2026,
+// impostos e CMV seguem o % do último realizado, o resto é esse mês × 12.
+const COLUNAS_ANO = [
+  { key: 'ANO2026', label: '2026', tipo: 'forecast', grupo: 'ano', ano: 2026 },
+  { key: 'ANO2027', label: '2027', tipo: 'forecast', grupo: 'ano', ano: 2027 },
+];
 function mesesAutomaticos(colunas) {
   const out = [];
   for (const c of colunas) {
@@ -333,7 +340,8 @@ export default function Forecast({ modoCorte = false }) {
           const ov = mes && tipoOverrides[mes];
           if (!ov) return c;
           return { ...c, tipo: ov === 'previsao' ? 'forecast' : 'realizado' };
-        }),
+        })
+        .concat(COLUNAS_ANO),
     [tipoOverrides],
   );
   const grupos = useMemo(() => agruparColunas(colunas), [colunas]);
@@ -667,7 +675,7 @@ export default function Forecast({ modoCorte = false }) {
   // Alterna um mês entre Realizado e Previsão (clique no cabeçalho do mês).
   const alternarTipoMes = async (c) => {
     const mes = colParaMes(c);
-    if (!mes) return;
+    if (!mes || c.grupo !== 'mensal') return;
     const novo = c.tipo === 'realizado' ? 'previsao' : 'realizado';
     setTipoOverrides((p) => ({ ...p, [mes]: novo }));
     try {
@@ -700,24 +708,53 @@ export default function Forecast({ modoCorte = false }) {
   const previsaoDe = (c) => {
     if (c.key in cachePrevisao) return cachePrevisao[c.key];
     const fonte = espelho[c.key];
-    if (!fonte && !modoCorte) return (cachePrevisao[c.key] = null);
+    const anual = c.grupo === 'ano';
+    if (!fonte && (anual || !modoCorte)) return (cachePrevisao[c.key] = null);
     const ed = {
       ...(edicoesPrev[c.key] || {}),
       ...(modoCorte ? edicoesCorte[c.key] || {} : {}),
     };
     const listaFacas = modoCorte ? facas[c.key] || [] : [];
-    const proprio = ed['CMV %'] !== undefined ? ed['CMV %'] : fonte ? cmvPct[c.key] : undefined;
-    if (!Object.keys(ed).length && !listaFacas.length && proprio === undefined) {
+    if (
+      !anual &&
+      !Object.keys(ed).length &&
+      !listaFacas.length &&
+      ed['CMV %'] === undefined &&
+      cmvPct[c.key] === undefined
+    ) {
       return (cachePrevisao[c.key] = null);
     }
     const porLabel = Object.fromEntries(linhas.map((x) => [x.label, x]));
-    const base = (label) => {
+    const num = (v) => Number(v) || 0;
+    const r2 = (v) => Math.round(v * 100) / 100;
+    const direto = (label) => {
       const x = porLabel[label];
       if (!x) return undefined;
       return (fonte ? valorCelula(x, fonte) : valorBruto(x, c)).v;
     };
-    const num = (v) => Number(v) || 0;
-    const r2 = (v) => Math.round(v * 100) / 100;
+    const mesesAno = colunas.filter((x) => x.grupo === 'mensal');
+    const somaMeses = (label) =>
+      mesesAno.reduce((a, k) => a + num(valorCelula(porLabel[label], k).v), 0);
+    const ehReceita = (label) => LINHAS_CANAIS_DRE.includes(label) || label === 'CREDEV';
+    const base = (label) => {
+      if (!anual) return direto(label);
+      return ehReceita(label) ? somaMeses(label) : num(direto(label)) * 12;
+    };
+    const fracao = (a, b) => (num(direto(b)) ? num(direto(a)) / num(direto(b)) : 0);
+    const proprio =
+      ed['CMV %'] !== undefined
+        ? ed['CMV %']
+        : anual
+          ? fracao('CUSTO DAS MERCADORIAS VENDIDAS', 'RECEITA OPERACIONAL LÍQUIDA')
+          : fonte
+            ? cmvPct[c.key]
+            : undefined;
+    // Ano: mês com total digitado sem canais também entra na receita do ano
+    const somaCanaisBase = anual ? LINHAS_CANAIS_DRE.reduce((a, label) => a + num(base(label)), 0) : 0;
+    const ajusteRL = anual ? somaMeses('RECEITA LÍQUIDA') - somaCanaisBase : 0;
+    const ajusteRB = anual
+      ? somaMeses('RECEITA BRUTA') - somaCanaisBase - Math.abs(num(base('CREDEV')))
+      : 0;
     // Facas: linha inteira zera; item do detalhe sai da linha. Item cujo pai
     // também foi cortado não desconta duas vezes.
     const chaves = new Set(listaFacas.map((f) => f.linha + '|' + f.chave));
@@ -750,10 +787,15 @@ export default function Forecast({ modoCorte = false }) {
       };
       const canais = LINHAS_CANAIS_DRE.reduce((a, label) => a + item(label), 0);
       const credev = item('CREDEV');
-      const rl = tot('RECEITA LÍQUIDA', canais);
-      tot('RECEITA BRUTA', canais + Math.abs(credev));
+      const rl = tot('RECEITA LÍQUIDA', canais + ajusteRL);
+      tot('RECEITA BRUTA', canais + Math.abs(credev) + ajusteRB);
       const baseImp = num(base('IMPOSTOS DIRETOS'));
-      const taxa = e['TAX %'];
+      const taxa =
+        e['TAX %'] !== undefined
+          ? e['TAX %']
+          : anual
+            ? fracao('IMPOSTOS DIRETOS', 'RECEITA LÍQUIDA')
+            : undefined;
       const imp =
         e['IMPOSTOS DIRETOS'] !== undefined
           ? e['IMPOSTOS DIRETOS']
@@ -794,7 +836,7 @@ export default function Forecast({ modoCorte = false }) {
     // Mês cuja planilha não fecha com a fórmula: mantém a diferença original,
     // assim só o que foi editado ou cortado move os totais.
     const m0 = cadeia({}, undefined);
-    for (const x of linhas) {
+    for (const x of anual ? [] : linhas) {
       if (x.fmt === 'pct' || edicoes[x.label] !== undefined || !(x.label in m)) continue;
       if (x.label === 'CUSTO DAS MERCADORIAS VENDIDAS' && proprio !== undefined) continue;
       m[x.label] = r2(num(m[x.label]) + num(base(x.label)) - num(m0[x.label]));
