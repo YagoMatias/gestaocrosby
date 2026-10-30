@@ -544,6 +544,198 @@ export default function Forecast() {
     }
   };
 
+  // Previsão = espelho do último mês realizado (Niziany 30/10): cada mês em
+  // previsão repete o realizado anterior. Se o CMV % do mês foi editado, o CMV e
+  // os totais abaixo dele recalculam com esse %.
+  const espelho = useMemo(() => {
+    const out = {};
+    let ultimo = null;
+    for (const c of colunas) {
+      if (c.tipo === 'realizado') ultimo = c;
+      else if (ultimo) out[c.key] = ultimo;
+    }
+    return out;
+  }, [colunas]);
+
+  // Valor exibido de uma linha numa coluna (tela e Excel usam a mesma conta).
+  const valorCelula = (l, c) => {
+    const fonte = espelho[c.key];
+    if (fonte) {
+      const base = valorCelula(l, fonte);
+      const proprio = cmvPct[c.key];
+      if (proprio === undefined) return base;
+      if (l.label === 'CMV %') return { ...base, v: proprio, auto: true };
+      const r = cadeiaDre(fonte.key, proprio)[l.label];
+      return r !== undefined ? { ...base, v: r, auto: true } : base;
+    }
+    let pfLine = valorAuto(l.label, c.key);
+    // Linhas calculadas (só célula vazia na planilha, colunas mensais)
+    const resultadoCalc =
+      c.grupo === 'mensal' &&
+      l.valores[c.key] == null &&
+      (l.label === 'RESULTADO FINANCEIRO' || l.label === 'RESULTADO FINAL');
+    if (resultadoCalc) {
+      const bruto =
+        l.label === 'RESULTADO FINANCEIRO' ? valResultadoFinanceiro(c.key) : valResultadoFinal(c.key);
+      pfLine = Math.round(bruto * 100) / 100;
+    }
+    // Mês automático realizado: totais recalculados a partir das linhas de cima
+    if (colsCadeia.has(c.key)) {
+      const recalculado = cadeiaDre(c.key)[l.label];
+      if (recalculado !== undefined) pfLine = recalculado;
+    }
+    const ovr = overrides[c.key]?.[l.label];
+    const calc = totaisCalculados[c.key]?.[l.label];
+    const auto = pfLine !== undefined || ovr !== undefined;
+    const v =
+      pfLine !== undefined
+        ? pfLine
+        : calc !== undefined
+          ? calc
+          : ovr !== undefined
+            ? ovr
+            : l.valores[c.key];
+    return { v, auto, calc, resultadoCalc };
+  };
+
+  // ── Exportar Excel (Niziany 30/10) ────────────────────────────────────────
+  // Mesmos valores da tela, com o detalhe das despesas em níveis recolhíveis.
+  // Detalhe de uma linha: [{ label, nivel, valores: { [colKey]: número } }]
+  const detalhesLinha = (l) => {
+    const porNome = (fonte, nomeDe, valorDe) => {
+      const m = new Map();
+      for (const [col, lista] of Object.entries(fonte)) {
+        (lista || []).forEach((it) => {
+          const nome = nomeDe(it);
+          const e = m.get(nome) || { label: nome, nivel: 1, valores: {} };
+          e.valores[col] = (e.valores[col] || 0) + valorDe(it);
+          m.set(nome, e);
+        });
+      }
+      return [...m.values()];
+    };
+    // Lançamentos ficam separados, um por linha, como na tela.
+    const lancamentos = (fonte, nivel = 1) => {
+      const out = [];
+      for (const [col, lista] of Object.entries(fonte)) {
+        (lista || []).forEach((x) => {
+          out.push({
+            label: x.forn + (x.venc ? ` · ${x.venc}` : ''),
+            nivel,
+            valores: { [col]: -(Number(x.valor ?? x.val) || 0) },
+          });
+        });
+      }
+      return out;
+    };
+    const negativo = (it) => -(Number(it.valor) || 0);
+    const soLista = (obj, campo) =>
+      Object.fromEntries(Object.entries(obj).map(([col, d]) => [col, (d && d[campo]) || []]));
+
+    if (l.label === 'PESSOAL FIXO' || l.label === 'PESSOAL VARIÁVEL') {
+      const grupo = l.label === 'PESSOAL FIXO' ? 'fixo' : 'variavel';
+      const out = [];
+      if (grupo === 'fixo') {
+        const valores = {};
+        Object.keys(pfFixo).forEach((col) => {
+          valores[col] = prolabore[col] ?? 80000;
+        });
+        out.push({ label: 'PRÓ-LABORE (DIRETORES)', nivel: 1, valores });
+      }
+      rubricasUnidas
+        .filter((r) => r.grupo === grupo)
+        .forEach((ru) => {
+          out.push({ label: ru.desc, nivel: 1, valores: { ...ru.porCol } });
+          const lojas = new Map();
+          for (const [col, lista] of Object.entries(ru.funcPorCol)) {
+            (lista || []).forEach((f) => {
+              const nomeLoja = f.loja || '— sem seção —';
+              const lj = lojas.get(nomeLoja) || { valores: {}, funcs: new Map() };
+              lj.valores[col] = (lj.valores[col] || 0) + (Number(f.valor) || 0);
+              const fk = (f.chapa || '') + '|' + f.nome;
+              const fe = lj.funcs.get(fk) || {
+                label: f.funcao ? `${f.nome} · ${f.funcao}` : f.nome,
+                valores: {},
+              };
+              fe.valores[col] = Number(f.valor) || 0;
+              lj.funcs.set(fk, fe);
+              lojas.set(nomeLoja, lj);
+            });
+          }
+          for (const [nomeLoja, lj] of lojas) {
+            out.push({ label: nomeLoja, nivel: 2, valores: lj.valores });
+            for (const fe of lj.funcs.values()) out.push({ ...fe, nivel: 3 });
+          }
+        });
+      return out;
+    }
+    if (l.label === 'SERVIÇOS DE TERCEIROS FIXOS') {
+      const out = [];
+      for (const [col, d] of Object.entries(servTerc)) {
+        (d.categorias || []).forEach((cg) => {
+          out.push({ label: cg.cat, nivel: 1, valores: { [col]: -(Number(cg.valor) || 0) } });
+          out.push(...lancamentos({ [col]: cg.lancamentos }, 2));
+        });
+      }
+      return out;
+    }
+    if (l.label === 'PJ') return porNome(pjNomes, (x) => x.nome, negativo);
+    if (l.label === 'OCUPAÇÃO') return porNome(ocupFiliais, (x) => x.nome, negativo);
+    if (l.label === 'PERDAS COM INADIMPLÊNCIA') return porNome(perdasCanais, (x) => x.nome, negativo);
+    if (l.label === 'FRETES') return porNome(freteCanais, (x) => x.nome, negativo);
+    if (l.label === 'TRÁFEGO') return porNome(trafegoItens, (x) => x.nome, negativo);
+    if (l.label === 'ANTECIPAÇÃO DE RECEBÍVEIS')
+      return porNome(soLista(impAntecip, 'empresas'), (x) => x.empresa, negativo);
+    if (l.label === 'TAXA DE CARTÃO')
+      return porNome(soLista(impCartao, 'empresas'), (x) => x.empresa, negativo);
+    if (l.label === 'PROPAGANDA E ANÚNCIO') return lancamentos(mktLanc);
+    if (l.label === 'BONIFICAÇÕES MARKETING') return lancamentos(soLista(bonifMkt, 'lanc'));
+    if (l.label === 'JUROS E MULTA POR ATRASO') return lancamentos(jurosLanc);
+    return [];
+  };
+
+  const exportarExcel = () => {
+    const linhasXls = [
+      ['DRE Forecast', ...colunas.map((c) => (c.tipo === 'realizado' ? 'Realizado' : 'Previsão'))],
+      ['em R$', ...colunas.map((c) => c.label)],
+    ];
+    const niveis = [0, 0];
+    const formatos = [null, null];
+    const add = (label, nivel, valorDe, fmt) => {
+      linhasXls.push([
+        '    '.repeat(nivel) + label,
+        ...colunas.map((c) => {
+          const v = valorDe(c);
+          return typeof v === 'number' ? v : null;
+        }),
+      ]);
+      niveis.push(nivel);
+      formatos.push(fmt);
+    };
+    for (const l of linhas) {
+      const nivel = Number(l.nivel) || 0;
+      add(l.label, nivel, (c) => valorCelula(l, c).v, l.fmt);
+      for (const d of detalhesLinha(l)) {
+        add(d.label, nivel + d.nivel, (c) => d.valores[c.key], 'moeda');
+      }
+    }
+    const ws = XLSX.utils.aoa_to_sheet(linhasXls);
+    linhasXls.forEach((_, r) => {
+      if (!formatos[r]) return;
+      colunas.forEach((__, i) => {
+        const cel = ws[XLSX.utils.encode_cell({ r, c: i + 1 })];
+        if (cel && cel.t === 'n') cel.z = formatos[r] === 'pct' ? '0.0%' : '#,##0.00';
+      });
+    });
+    ws['!cols'] = [{ wch: 52 }, ...colunas.map(() => ({ wch: 14 }))];
+    ws['!rows'] = niveis.map((n) => ({ level: Math.min(n, 7) }));
+    ws['!outline'] = { above: true };
+    ws['!freeze'] = { xSplit: 1, ySplit: 2 };
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Forecast');
+    XLSX.writeFile(wb, `Forecast_DRE_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+
   // ── Travar mês (Niziany 30/10) ────────────────────────────────────────────
   const mesTravado = (c) => {
     const mes = colParaMes(c);
@@ -784,14 +976,12 @@ export default function Forecast() {
     const a = valorAuto(label, col);
     return a !== undefined ? a : estatico(label, col);
   };
-  const cadeiaDre = (col) => {
+  const cadeiaDre = (col, cmvProprio) => {
     const r2 = (x) => Math.round(x * 100) / 100;
     const rl = totaisCalculados[col]?.['RECEITA LÍQUIDA'] ?? estatico('RECEITA LÍQUIDA', col);
     const rol = rl + estatico('IMPOSTOS DIRETOS', col);
-    const cmv =
-      cmvPct[col] !== undefined
-        ? cmvPct[col] * rol
-        : estatico('CUSTO DAS MERCADORIAS VENDIDAS', col);
+    const pctCmv = cmvProprio !== undefined ? cmvProprio : cmvPct[col];
+    const cmv = pctCmv !== undefined ? pctCmv * rol : estatico('CUSTO DAS MERCADORIAS VENDIDAS', col);
     const lb = rol + cmv;
     const sga = LINHAS_SGA.reduce((a, label) => a + valorLinha(label, col), 0);
     const lo = lb + sga + estatico('OUTRAS (DESPESAS) RECEITAS', col);
@@ -1136,6 +1326,14 @@ export default function Forecast() {
             >
               {atualizando ? 'Atualizando…' : 'Atualizar dados'}
             </button>
+            <button
+              type="button"
+              onClick={exportarExcel}
+              className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+              title="Baixa o Forecast em Excel, com as despesas abertas em níveis"
+            >
+              Exportar Excel
+            </button>
             <input
               ref={fileRef}
               type="file"
@@ -1374,39 +1572,11 @@ export default function Forecast() {
                       </span>
                     </td>
                     {colunas.map((c) => {
-                      let pfLine = valorAuto(l.label, c.key);
-                      // Linhas calculadas (só célula vazia na planilha, colunas mensais)
-                      const resultadoCalc =
-                        c.grupo === 'mensal' &&
-                        l.valores[c.key] == null &&
-                        (l.label === 'RESULTADO FINANCEIRO' || l.label === 'RESULTADO FINAL');
-                      if (resultadoCalc) {
-                        const bruto =
-                          l.label === 'RESULTADO FINANCEIRO'
-                            ? valResultadoFinanceiro(c.key)
-                            : valResultadoFinal(c.key);
-                        pfLine = Math.round(bruto * 100) / 100;
-                      }
-                      // Mês automático realizado: totais recalculados a partir das linhas de cima
-                      if (colsCadeia.has(c.key)) {
-                        const recalculado = cadeiaDre(c.key)[l.label];
-                        if (recalculado !== undefined) pfLine = recalculado;
-                      }
-                      const ovr = overrides[c.key]?.[l.label];
-                      const calc = totaisCalculados[c.key]?.[l.label];
-                      const auto = pfLine !== undefined || ovr !== undefined;
+                      const { v, auto, calc, resultadoCalc } = valorCelula(l, c);
                       // Marcação verde só nos meses de previsão (Niziany 30/10).
                       const autoVisual = auto && c.tipo === 'forecast' && !resultadoCalc;
                       // Faturamento por canal: mesma fonte das outras células (só o fundo marca o automático)
                       const ehFat = CANAL_POR_LINHA[l.label] !== undefined;
-                      const v =
-                        pfLine !== undefined
-                          ? pfLine
-                          : calc !== undefined
-                            ? calc
-                            : ovr !== undefined
-                              ? ovr
-                              : l.valores[c.key];
                       const negativo = typeof v === 'number' && v < 0;
                       const corTexto = negativo
                         ? 'text-red-600'
