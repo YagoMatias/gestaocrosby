@@ -112,7 +112,7 @@ const INICIO_SECAO = new Set([
   'CUSTO DAS MERCADORIAS VENDIDAS',
   'RECEITAS (DESPESAS) OPERACIONAIS',
   'LUCRO OPERACIONAL',
-  'RECEITAS NÃO OPERACIONAIS',
+  'RECEITA (DESPESA) NÃO OPERACIONAL',
   'INVESTIMENTOS',
 ]);
 
@@ -120,6 +120,7 @@ const tipoLinha = (l) => {
   if (l.fmt === 'pct') return 'pct';
   if (TOTAIS_FORTES.has(l.label)) return 'forte';
   if (l.nivel === 1) return 'sub';
+  if (l.nivel === 2) return 'sub2'; // item de subgrupo (3º nível)
   return 'normal';
 };
 
@@ -201,17 +202,33 @@ export default function Forecast() {
 
   // Estrutura pai → filhos: uma linha de nível 0 seguida de linhas de nível 1
   // é "pai" (expansível). Clicar nela recolhe/mostra os detalhes.
+  // Agora com 3 níveis (Niziany 30/10): seção (0) → subgrupo (1) → item (2).
+  // Recolher a seção esconde subgrupos e itens; recolher o subgrupo esconde
+  // só os itens dele (paiId = quem abre/fecha direto, avoId = a seção).
   const estrutura = useMemo(() => {
-    const info = linhas.map(() => ({ isPai: false, paiId: null }));
-    let ultimoPai = null;
+    const info = linhas.map(() => ({ isPai: false, paiId: null, avoId: null }));
+    let ultimoPai = null; // seção (nível 0)
+    let ultimoSub = null; // subgrupo (nível 1)
     linhas.forEach((l, i) => {
-      if (l.nivel === 1 && l.fmt !== 'pct') {
+      if (l.fmt === 'pct') return;
+      if (l.nivel === 1) {
         if (ultimoPai != null) {
           info[i].paiId = linhas[ultimoPai].id;
           info[ultimoPai].isPai = true;
         }
-      } else if (l.fmt !== 'pct') {
+        ultimoSub = i;
+      } else if (l.nivel === 2) {
+        if (ultimoSub != null) {
+          info[i].paiId = linhas[ultimoSub].id;
+          info[ultimoSub].isPai = true;
+          info[i].avoId = ultimoPai != null ? linhas[ultimoPai].id : null;
+        } else if (ultimoPai != null) {
+          info[i].paiId = linhas[ultimoPai].id;
+          info[ultimoPai].isPai = true;
+        }
+      } else {
         ultimoPai = i;
+        ultimoSub = null;
       }
     });
     return info;
@@ -620,11 +637,16 @@ export default function Forecast() {
               {linhas.map((l, idx) => {
                 const info = estrutura[idx];
                 // Esconde filhos de uma seção recolhida
-                if (info.paiId && recolhidos.has(info.paiId)) return null;
+                if (
+                  (info.paiId && recolhidos.has(info.paiId)) ||
+                  (info.avoId && recolhidos.has(info.avoId))
+                )
+                  return null;
                 const tipo = tipoLinha(l);
                 const forte = tipo === 'forte';
                 const pct = tipo === 'pct';
                 const sub = tipo === 'sub';
+                const sub2 = tipo === 'sub2';
                 const ehPai = info.isPai;
                 const recolhido = recolhidos.has(l.id);
                 const secao = INICIO_SECAO.has(l.label);
@@ -639,9 +661,13 @@ export default function Forecast() {
                   ? 'font-bold text-[#000638]'
                   : pct
                     ? 'pl-8 text-gray-400 italic font-normal text-[10px]'
-                    : sub
-                      ? 'pl-8 text-gray-500 font-normal'
-                      : 'font-semibold text-gray-700';
+                    : sub2
+                      ? 'pl-14 text-gray-500 font-normal text-[10px]'
+                      : sub
+                        ? ehPai
+                          ? 'pl-8 text-gray-700 font-semibold'
+                          : 'pl-8 text-gray-500 font-normal'
+                        : 'font-semibold text-gray-700';
                 const labelBg = forte ? 'bg-[#eef0f6]' : zebra ? 'bg-gray-50' : 'bg-white';
                 // Linha de canal que abre pra mostrar o CREDEV do canal (só visual)
                 const canalKey = CREDEV_CANAL_POR_LINHA[l.label];
@@ -773,7 +799,7 @@ export default function Forecast() {
                               ? 'text-[#000638]'
                               : pct
                                 ? 'text-gray-400 italic'
-                                : sub
+                                : sub || sub2
                                   ? 'text-gray-600'
                                   : 'text-gray-800';
                       // Célula de mês clicável nas linhas de despesa: abre só
@@ -800,7 +826,7 @@ export default function Forecast() {
                             bordaTopo + ' ' +
                             (auto ? 'bg-emerald-50 font-semibold ' : TIPO_CELULA[c.tipo] + ' ') +
                             (forte && !auto ? 'font-bold ' : '') +
-                            (pct ? 'text-[10px] ' : '') +
+                            (pct || sub2 ? 'text-[10px] ' : '') +
                             (celulaMes ? 'cursor-pointer hover:underline ' : '') +
                             (celulaMesAberta ? 'ring-1 ring-inset ring-emerald-400 ' : '') +
                             corTexto
