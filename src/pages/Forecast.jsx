@@ -59,6 +59,14 @@ function mesesAutomaticos(colunas) {
   return out;
 }
 
+// Linhas de venda que somam a RECEITA LÍQUIDA.
+const LINHAS_CANAIS_DRE = [
+  'VAREJO', 'MULTIMARCAS', 'FRANQUIA', 'REVENDA', 'BAZAR',
+  'FARDAMENTO', 'IMOBILIZADO', 'BLUECRED',
+];
+// Percentuais calculados, sem edição direta (TAX % e CMV % são editáveis).
+const PCT_DERIVADOS = new Set(['MARGEM %', 'EBITDA %', '% LUCRO LÍQUIDO']);
+
 // Despesas (nível 1) que somam em COMERCIAIS, GERAIS E ADMINISTRATIVAS.
 const LINHAS_SGA = [
   'PESSOAL FIXO',
@@ -167,6 +175,22 @@ export default function Forecast() {
   // Sem override usa o % da planilha (linha CMV %). Ao editar, CMV = % × ROL.
   const [cmvPct, setCmvPct] = useState({}); // { [colKey]: pct }
   const [editandoCmv, setEditandoCmv] = useState(null); // col sendo editada
+  // Valores editados nos meses de previsão: { [colKey]: { [label]: valor } }
+  const [edicoesPrev, setEdicoesPrev] = useState({});
+  const [editandoPrev, setEditandoPrev] = useState(null); // 'label|col'
+  const salvarEdicaoPrev = (col, mes, label, valor) => {
+    setEdicoesPrev((p) => {
+      const doMes = { ...(p[col] || {}) };
+      if (valor === null) delete doMes[label];
+      else doMes[label] = valor;
+      return { ...p, [col]: doMes };
+    });
+    fetch(`${API_BASE_URL}/api/forecast-dre/previsao-manual`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mes, linha: label, valor }),
+    }).catch(() => {});
+  };
   const salvarCmvPct = (col, mes, pct) => {
     setCmvPct((p) => ({ ...p, [col]: pct }));
     fetch(`${API_BASE_URL}/api/forecast-dre/cmv-pct`, {
@@ -370,6 +394,31 @@ export default function Forecast() {
     return [...map.values()].sort((a, b) => b.max - a.max);
   }, [rubricasFolha]);
 
+  // Valores editados na previsão, por mês → coluna
+  useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      try {
+        const r = await fetch(`${API_BASE_URL}/api/forecast-dre/previsao-manual`);
+        if (!r.ok) return;
+        const j = await r.json();
+        const ed = (j && j.data && j.data.edicoes) || {};
+        if (cancelado) return;
+        const novo = {};
+        for (const c of colunas) {
+          const mes = colParaMes(c);
+          if (mes && ed[mes]) novo[c.key] = ed[mes];
+        }
+        setEdicoesPrev(novo);
+      } catch {
+        /* fica só com o espelho */
+      }
+    })();
+    return () => {
+      cancelado = true;
+    };
+  }, [colunas]);
+
   // CMV % salvo no backend por mês → coluna
   useEffect(() => {
     let cancelado = false;
@@ -557,16 +606,94 @@ export default function Forecast() {
     return out;
   }, [colunas]);
 
+  // Coluna de previsão com edições: parte do espelho, aplica o que foi digitado e
+  // recalcula os totais. Sem edição devolve null e a coluna é o espelho puro.
+  const cachePrevisao = {};
+  const previsaoDe = (c) => {
+    if (c.key in cachePrevisao) return cachePrevisao[c.key];
+    const ed = edicoesPrev[c.key] || {};
+    const proprio = cmvPct[c.key];
+    if (!Object.keys(ed).length && proprio === undefined) {
+      cachePrevisao[c.key] = null;
+      return null;
+    }
+    const fonte = espelho[c.key];
+    const porLabel = Object.fromEntries(linhas.map((x) => [x.label, x]));
+    const base = (label) => {
+      const x = porLabel[label];
+      return x ? valorCelula(x, fonte).v : undefined;
+    };
+    const num = (v) => Number(v) || 0;
+    const r2 = (v) => Math.round(v * 100) / 100;
+    const m = {};
+    const item = (label) => {
+      m[label] = ed[label] !== undefined ? ed[label] : base(label);
+      return num(m[label]);
+    };
+    const tot = (label, calculado) => {
+      m[label] = ed[label] !== undefined ? ed[label] : r2(calculado);
+      return num(m[label]);
+    };
+    const filho = (pai, filhos) => {
+      const valores = filhos.map(item);
+      const editou = filhos.some((f) => ed[f] !== undefined);
+      return tot(pai, editou ? valores.reduce((a, b) => a + b, 0) : num(base(pai)));
+    };
+    const canais = LINHAS_CANAIS_DRE.reduce((a, label) => a + item(label), 0);
+    const credev = item('CREDEV');
+    const rl = tot('RECEITA LÍQUIDA', canais);
+    tot('RECEITA BRUTA', canais + Math.abs(credev));
+    const baseImp = num(base('IMPOSTOS DIRETOS'));
+    const taxa = ed['TAX %'];
+    const imp =
+      ed['IMPOSTOS DIRETOS'] !== undefined
+        ? ed['IMPOSTOS DIRETOS']
+        : taxa !== undefined
+          ? r2(taxa * rl)
+          : baseImp;
+    m['IMPOSTOS DIRETOS'] = imp;
+    const mudouImposto = ed['IMPOSTOS DIRETOS'] !== undefined || rl !== num(base('RECEITA LÍQUIDA'));
+    m['TAX %'] = taxa !== undefined ? taxa : mudouImposto && rl ? imp / rl : base('TAX %');
+    const rol = tot('RECEITA OPERACIONAL LÍQUIDA', rl + imp);
+    const baseCmv = num(base('CUSTO DAS MERCADORIAS VENDIDAS'));
+    const cmvCalc = proprio !== undefined ? proprio * rol : baseCmv;
+    const cmv = tot('CUSTO DAS MERCADORIAS VENDIDAS', cmvCalc);
+    m['CMV %'] =
+      ed['CUSTO DAS MERCADORIAS VENDIDAS'] === undefined && proprio !== undefined
+        ? proprio
+        : rol
+          ? cmv / rol
+          : base('CMV %');
+    const lb = tot('LUCRO BRUTO', rol + cmv);
+    m['MARGEM %'] = rol ? lb / rol : base('MARGEM %');
+    filho('MARKETING', ['PROPAGANDA E ANÚNCIO', 'TRÁFEGO', 'BONIFICAÇÕES MARKETING']);
+    filho('SERVIÇOS DE TERCEIROS VARIÁVEIS', ['TAXA DE CARTÃO']);
+    ['PESSOAL FIXO', 'PESSOAL VARIÁVEL', 'PJ', 'OCUPAÇÃO', 'SERVIÇOS DE TERCEIROS FIXOS', 'FRETES', 'PERDAS COM INADIMPLÊNCIA'].forEach(item);
+    const sga = tot('COMERCIAIS, GERAIS E ADMINISTRATIVAS', LINHAS_SGA.reduce((a, label) => a + num(m[label]), 0));
+    const oper = tot('RECEITAS (DESPESAS) OPERACIONAIS', sga);
+    const lo = tot('LUCRO OPERACIONAL', lb + oper + item('OUTRAS (DESPESAS) RECEITAS'));
+    const ebitda = tot('EBITDA', lo);
+    m['EBITDA %'] = rol ? ebitda / rol : base('EBITDA %');
+    const recFin = filho('RECEITA FINANCEIRA', ['RECEITA FINANCEIRA COM JUROS']);
+    const despFin = filho('DESPESA FINANCEIRA', ['ANTECIPAÇÃO DE RECEBÍVEIS', 'JUROS E MULTA POR ATRASO']);
+    const naoOp = tot('RECEITA (DESPESA) NÃO OPERACIONAL', recFin + despFin);
+    const resFin = tot('RESULTADO FINANCEIRO', naoOp);
+    const lair = tot('LUCRO ANTES DO IR E CS', lo + resFin);
+    const ll = tot('LUCRO LÍQUIDO', lair + item('IMPOSTO DE RENDA E CONTRIBUIÇÃO SOCIAL'));
+    m['% LUCRO LÍQUIDO'] = rol ? ll / rol : base('% LUCRO LÍQUIDO');
+    tot('RESULTADO FINAL', ll + item('INVESTIMENTOS') + item('DISTRIBUIÇÃO LUCROS'));
+    cachePrevisao[c.key] = m;
+    return m;
+  };
+
   // Valor exibido de uma linha numa coluna (tela e Excel usam a mesma conta).
   const valorCelula = (l, c) => {
     const fonte = espelho[c.key];
     if (fonte) {
       const base = valorCelula(l, fonte);
-      const proprio = cmvPct[c.key];
-      if (proprio === undefined) return base;
-      if (l.label === 'CMV %') return { ...base, v: proprio, auto: true };
-      const r = cadeiaDre(fonte.key, proprio)[l.label];
-      return r !== undefined ? { ...base, v: r, auto: true } : base;
+      const m = previsaoDe(c);
+      if (!m || !(l.label in m)) return base;
+      return { ...base, v: m[l.label] };
     }
     let pfLine = valorAuto(l.label, c.key);
     // Linhas calculadas (só célula vazia na planilha, colunas mensais)
@@ -1598,6 +1725,13 @@ export default function Forecast() {
                       const cmvEditavel =
                         l.label === 'CMV %' && c.grupo === 'mensal' && !!colParaMes(c) && !mesTravado(c);
                       const cmvEditando = cmvEditavel && editandoCmv === c.key;
+                      // Mês de previsão: qualquer valor editável (exceto % calculados)
+                      const prevEditavel =
+                        !!espelho[c.key] && !cmvEditavel && !PCT_DERIVADOS.has(l.label);
+                      const chavePrev = l.label + '|' + c.key;
+                      const prevEditando = prevEditavel && editandoPrev === chavePrev;
+                      const prevEditado = edicoesPrev[c.key]?.[l.label] !== undefined;
+                      const ehPctPrev = l.fmt === 'pct';
                       const celulaMesAberta = celulaMes && colMesLinha === c.key;
                       return (
                         <td
@@ -1605,13 +1739,17 @@ export default function Forecast() {
                           onClick={
                             cmvEditavel
                               ? () => !cmvEditando && setEditandoCmv(c.key)
-                              : celulaMes
+                              : prevEditavel
+                                ? () => !prevEditando && setEditandoPrev(chavePrev)
+                                : celulaMes
                                 ? () => abrirMes(l.label, c.key)
                                 : undefined
                           }
                           title={
                             cmvEditavel
                               ? 'Clique para editar o % do CMV sobre a Receita Operacional Líquida'
+                              : prevEditavel
+                                ? 'Clique para editar. Apague o valor para voltar ao espelho do último realizado'
                               : celulaMes
                               ? 'Clique para abrir as despesas deste mês'
                               : calc !== undefined
@@ -1628,7 +1766,8 @@ export default function Forecast() {
                             (autoVisual ? (ehFat ? 'bg-emerald-50 ' : 'bg-emerald-50 font-semibold ') : TIPO_CELULA[c.tipo] + ' ') +
                             (forte && !autoVisual ? 'font-bold ' : '') +
                             (pct || sub2 ? 'text-[10px] ' : '') +
-                            (celulaMes || cmvEditavel ? 'cursor-pointer hover:underline ' : '') +
+                            (celulaMes || cmvEditavel || prevEditavel ? 'cursor-pointer hover:underline ' : '') +
+                            (prevEditado ? 'ring-1 ring-inset ring-amber-400 ' : '') +
                             (celulaMesAberta ? 'ring-1 ring-inset ring-emerald-400 ' : '') +
                             corTexto
                           }
@@ -1653,6 +1792,38 @@ export default function Forecast() {
                                 className="w-14 text-right text-[10px] text-emerald-800 bg-white border border-emerald-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-emerald-400"
                               />
                               <span className="text-[10px] text-gray-500">%</span>
+                            </span>
+                          ) : prevEditando ? (
+                            <span className="inline-flex items-center gap-0.5">
+                              <input
+                                type="number"
+                                step={ehPctPrev ? '0.1' : '0.01'}
+                                autoFocus
+                                defaultValue={
+                                  ehPctPrev
+                                    ? Math.round(Math.abs((v || 0) * 100) * 10) / 10
+                                    : Math.round((v || 0) * 100) / 100
+                                }
+                                onBlur={(e) => {
+                                  const t = e.target.value.trim();
+                                  const n = ehPctPrev ? -(Math.abs(Number(t) || 0) / 100) : Number(t) || 0;
+                                  const atual = ehPctPrev
+                                    ? -(Math.round(Math.abs((v || 0) * 100) * 10) / 10) / 100
+                                    : Math.round((v || 0) * 100) / 100;
+                                  if (t === '') {
+                                    if (prevEditado) salvarEdicaoPrev(c.key, colParaMes(c), l.label, null);
+                                  } else if (Math.abs(n - atual) > 1e-9) {
+                                    salvarEdicaoPrev(c.key, colParaMes(c), l.label, n);
+                                  }
+                                  setEditandoPrev(null);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') e.target.blur();
+                                  if (e.key === 'Escape') setEditandoPrev(null);
+                                }}
+                                className="w-24 text-right text-[10px] text-gray-800 bg-white border border-amber-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                              />
+                              {ehPctPrev && <span className="text-[10px] text-gray-500">%</span>}
                             </span>
                           ) : (
                             formatar(v, l.fmt)
