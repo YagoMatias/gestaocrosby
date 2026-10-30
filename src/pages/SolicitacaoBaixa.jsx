@@ -278,7 +278,15 @@ const SolicitacaoBaixa = () => {
   }, [solicitacoesFiltradas, selectedItems]);
 
   // Selecionar/desselecionar item
+  // Baixa bloqueada (João, 30/10/2026): boleto Pagar.me pago mas ainda não
+  // creditado — fica na lista, mas não pode baixar até o dinheiro cair na conta.
+  const hojeISO = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+  const baixaBloqueada = (s) =>
+    s.status === 'pendente' && s.bloqueado && (!s.liberar_em || String(s.liberar_em).slice(0, 10) > hojeISO);
+
   const toggleItem = (id) => {
+    const sol = solicitacoes.find((s) => s.id === id);
+    if (sol && baixaBloqueada(sol)) return; // bloqueada: não seleciona
     setSelectedItems((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -287,9 +295,9 @@ const SolicitacaoBaixa = () => {
     });
   };
 
-  // Selecionar todos filtrados
+  // Selecionar todos filtrados (pula os bloqueados)
   const toggleSelectAll = () => {
-    const ids = solicitacoesFiltradas.map((s) => s.id);
+    const ids = solicitacoesFiltradas.filter((s) => !baixaBloqueada(s)).map((s) => s.id);
     const allSelected =
       ids.length > 0 && ids.every((id) => selectedItems.has(id));
     if (allSelected) {
@@ -475,8 +483,8 @@ const SolicitacaoBaixa = () => {
 
   // Processar baixa em lote via TOTVS
   const processarBaixaLote = async () => {
-    const selecionadas = solicitacoesFiltradas.filter((s) =>
-      selectedItems.has(s.id),
+    const selecionadas = solicitacoesFiltradas.filter(
+      (s) => selectedItems.has(s.id) && !baixaBloqueada(s),
     );
     if (selecionadas.length === 0) return;
 
@@ -527,8 +535,8 @@ const SolicitacaoBaixa = () => {
     }
 
 
-    const selecionadas = solicitacoesFiltradas.filter((s) =>
-      selectedItems.has(s.id),
+    const selecionadas = solicitacoesFiltradas.filter(
+      (s) => selectedItems.has(s.id) && !baixaBloqueada(s),
     );
     const pendentes = selecionadas.filter(
       (s) => s.status === 'pendente' || s.status === 'aprovada',
@@ -1043,9 +1051,11 @@ const SolicitacaoBaixa = () => {
                     <td className="px-3 py-2 text-center">
                       <input
                         type="checkbox"
-                        className="accent-[#000638] cursor-pointer"
+                        className="accent-[#000638] cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
                         checked={isSelected}
+                        disabled={baixaBloqueada(sol)}
                         onChange={() => toggleItem(sol.id)}
+                        title={baixaBloqueada(sol) ? `Baixa bloqueada até ${String(sol.liberar_em).slice(0, 10).split('-').reverse().join('/')} (aguardando o crédito na conta)` : undefined}
                       />
                     </td>
                     <td className="px-3 py-2">
@@ -1055,6 +1065,14 @@ const SolicitacaoBaixa = () => {
                         <StatusIcon size={12} weight="bold" />
                         {config.label}
                       </span>
+                      {baixaBloqueada(sol) && (
+                        <span
+                          className="ml-1 inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300"
+                          title="Boleto pago, mas o dinheiro ainda não caiu na conta. Libera para baixa na data do crédito."
+                        >
+                          🔒 libera {String(sol.liberar_em).slice(0, 10).split('-').reverse().slice(0, 2).join('/')}
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap">
                       <div className="font-medium">
