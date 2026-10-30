@@ -42,14 +42,19 @@ const colParaMes = (c) => {
   return m ? `${c.ano}-${String(m).padStart(2, '0')}` : null;
 };
 // Meses a puxar do New Forecast: colunas mensais de 2026, realizado, mês >= 9.
+// Automático de set/2026 em diante, em QUALQUER ano: os meses seguintes
+// ficam "fixos" — basta marcar o mês como realizado (Niziany 30/10).
+const MES_AUTO_INICIO = '2026-09';
 function mesesAutomaticos(colunas) {
   const out = [];
   for (const c of colunas) {
-    if (c.grupo !== 'mensal' || c.ano !== 2026 || c.tipo !== 'realizado') continue;
+    if (c.grupo !== 'mensal' || !c.ano || c.tipo !== 'realizado') continue;
     const abrev = String(c.label || '').slice(0, 3).toLowerCase();
     const m = MES_ABREV[abrev];
-    if (!m || m < 9) continue;
-    out.push({ col: c.key, mes: `2026-${String(m).padStart(2, '0')}` });
+    if (!m) continue;
+    const mes = `${c.ano}-${String(m).padStart(2, '0')}`;
+    if (mes < MES_AUTO_INICIO) continue;
+    out.push({ col: c.key, mes });
   }
   return out;
 }
@@ -129,6 +134,11 @@ export default function Forecast() {
   // Realizado × Previsão por mês: a Niziany marca na tela (salvo no backend).
   // Mescla por cima do tipo padrão da planilha.
   const [tipoOverrides, setTipoOverrides] = useState({});
+  // Meses travados (Niziany 30/10): { [mes]: { travado, snapshot } }
+  const [travas, setTravas] = useState({});
+  // Botão "Atualizar dados": força o recálculo nas fontes e relê
+  const [atualizando, setAtualizando] = useState(false);
+  const [refetchTick, setRefetchTick] = useState(0);
   // Overrides ao vivo por coluna: { [colKey]: { VAREJO: v, MULTIMARCAS: v, ... } }
   const [overrides, setOverrides] = useState({});
   // CREDEV por canal (só visualização): { [colKey]: { varejo, multimarcas, ... } }
@@ -383,7 +393,6 @@ export default function Forecast() {
   // lançamentos, igual à DRE Analítica.
   const servTerc = useMemo(() => {
     const out = {};
-    if (!dreLocal || !dreLocal.months) return out;
     const norm = (s) =>
       String(s || '')
         .normalize('NFD')
@@ -394,7 +403,15 @@ export default function Forecast() {
       if (c.grupo !== 'mensal' || c.tipo !== 'realizado') continue;
       const mk = String(c.label || '').slice(0, 3).toLowerCase();
       // Só set/2026 em diante — jan–ago ficam com o número da planilha.
-      if (c.ano !== 2026 || (MES_ABREV[mk] || 0) < 9) continue;
+      if (!c.ano || !MES_ABREV[mk]) continue;
+      const mesStr = `${c.ano}-${String(MES_ABREV[mk]).padStart(2, '0')}`;
+      if (mesStr < MES_AUTO_INICIO) continue;
+      const tv = travas[mesStr];
+      if (tv && tv.travado) {
+        if (tv.snapshot && tv.snapshot.servTerc) out[c.key] = tv.snapshot.servTerc;
+        continue; // mês travado: só o snapshot
+      }
+      if (!dreLocal || !dreLocal.months) continue;
       const mes = dreLocal.months[mk];
       if (!mes || !mes.details) continue;
       const categorias = [];
@@ -422,18 +439,25 @@ export default function Forecast() {
       out[c.key] = { total: Math.round(total * 100) / 100, categorias };
     }
     return out;
-  }, [dreLocal, colunas]);
+  }, [dreLocal, colunas, travas]);
 
   // BONIFICAÇÕES MARKETING (subitem do Marketing, Niziany 30/10): vem da DRE
   // Analítica (localStorage) — as categorias /BONIFIC.*MARKETING/, que ficam
   // FORA dos Serviços de Terceiros Fixos. Só set/2026 em diante.
   const bonifMkt = useMemo(() => {
     const out = {};
-    if (!dreLocal || !dreLocal.months) return out;
     for (const c of colunas) {
       if (c.grupo !== 'mensal' || c.tipo !== 'realizado') continue;
       const mk = String(c.label || '').slice(0, 3).toLowerCase();
-      if (c.ano !== 2026 || (MES_ABREV[mk] || 0) < 9) continue;
+      if (!c.ano || !MES_ABREV[mk]) continue;
+      const mesStr = `${c.ano}-${String(MES_ABREV[mk]).padStart(2, '0')}`;
+      if (mesStr < MES_AUTO_INICIO) continue;
+      const tv = travas[mesStr];
+      if (tv && tv.travado) {
+        if (tv.snapshot && tv.snapshot.bonifMkt) out[c.key] = tv.snapshot.bonifMkt;
+        continue; // mês travado: só o snapshot
+      }
+      if (!dreLocal || !dreLocal.months) continue;
       const mes = dreLocal.months[mk];
       if (!mes || !mes.details) continue;
       const lanc = [];
@@ -452,7 +476,7 @@ export default function Forecast() {
       out[c.key] = { total: Math.round(lanc.reduce((a, x) => a + x.valor, 0) * 100) / 100, lanc };
     }
     return out;
-  }, [dreLocal, colunas]);
+  }, [dreLocal, colunas, travas]);
   const toggleRecolher = (id) =>
     setRecolhidos((prev) => {
       const n = new Set(prev);
@@ -471,6 +495,8 @@ export default function Forecast() {
         const j = await r.json();
         const ov = (j?.data || j)?.overrides;
         if (!cancelado && ov && typeof ov === 'object') setTipoOverrides(ov);
+        const tv = (j?.data || j)?.travas;
+        if (!cancelado && tv && typeof tv === 'object') setTravas(tv);
       } catch {
         /* sem config → usa o padrão da planilha */
       }
@@ -494,6 +520,105 @@ export default function Forecast() {
       });
     } catch {
       /* falha ao salvar: fica só na sessão */
+    }
+  };
+
+  // ── Travar mês (Niziany 30/10) ────────────────────────────────────────────
+  const mesTravado = (c) => {
+    const mes = colParaMes(c);
+    return !!(mes && travas[mes] && travas[mes].travado);
+  };
+  const podeTravar = (c) => {
+    const mes = colParaMes(c);
+    return !!(mes && c.grupo === 'mensal' && c.tipo === 'realizado' && mes >= MES_AUTO_INICIO);
+  };
+  const alternarTrava = async (c) => {
+    const mes = colParaMes(c);
+    if (!mes) return;
+    const novo = !mesTravado(c);
+    if (
+      !window.confirm(
+        novo
+          ? `Travar ${c.label}? Os valores do mês ficam congelados: as automações param de atualizar e pró-labore, CMV % e importação ficam bloqueados.`
+          : `Destravar ${c.label}? As automações voltam a atualizar esse mês.`,
+      )
+    )
+      return;
+    // snapshot das linhas que vêm do localStorage (DRE Analítica)
+    const snapshot = novo
+      ? { servTerc: servTerc[c.key] || null, bonifMkt: bonifMkt[c.key] || null }
+      : null;
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/forecast-dre/travar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mes, travado: novo, snapshot }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      setTravas((p) => {
+        const n = { ...p };
+        if (novo) n[mes] = { travado: true, snapshot };
+        else delete n[mes];
+        return n;
+      });
+      if (!novo) setRefetchTick((t) => t + 1);
+    } catch (e) {
+      window.alert(`Não consegui ${novo ? 'travar' : 'destravar'} o mês: ${e.message}`);
+    }
+  };
+
+  // ── Atualizar dados nas fontes originais (Niziany 30/10) ──────────────────
+  // Dispara o recálculo (refresh=1, roda em background no servidor) pros meses
+  // automáticos não travados e vai relendo a cada 20 s até a folha (pessoal-fixo)
+  // ter um calculado_em novo — a receita (New Forecast) pode demorar mais e
+  // entra nas releituras seguintes.
+  const atualizarDados = async () => {
+    const alvos = mesesAutomaticos(colunas).filter(({ mes }) => !(travas[mes] && travas[mes].travado));
+    if (!alvos.length) {
+      window.alert('Nenhum mês automático destravado pra atualizar (marque o mês como realizado e sem cadeado).');
+      return;
+    }
+    if (
+      !window.confirm(
+        `Atualizar ${alvos.map((a) => a.mes).join(', ')} nas fontes originais (New Forecast, Dryland, Contas a Pagar…)? Pode levar alguns minutos.`,
+      )
+    )
+      return;
+    setAtualizando(true);
+    const inicio = Date.now();
+    try {
+      await Promise.all(
+        alvos.flatMap(({ mes }) => [
+          fetch(`${API_BASE_URL}/api/forecast-dre/receita-canais?mes=${mes}&refresh=1`).catch(() => null),
+          fetch(`${API_BASE_URL}/api/forecast-dre/pessoal-fixo?mes=${mes}&refresh=1`).catch(() => null),
+        ]),
+      );
+      const limite = inicio + 15 * 60 * 1000;
+      const prontos = new Set();
+      while (Date.now() < limite && prontos.size < alvos.length) {
+        await new Promise((ok) => setTimeout(ok, 20000));
+        for (const { mes } of alvos) {
+          if (prontos.has(mes)) continue;
+          try {
+            const r = await fetch(`${API_BASE_URL}/api/forecast-dre/pessoal-fixo?mes=${mes}`);
+            const j = await r.json();
+            const d = j?.data || j;
+            const em = d && d.calculado_em ? Date.parse(d.calculado_em) : 0;
+            if (em >= inicio) prontos.add(mes);
+          } catch {
+            /* tenta de novo no próximo ciclo */
+          }
+        }
+        setRefetchTick((t) => t + 1);
+      }
+      setRefetchTick((t) => t + 1);
+      window.alert(
+        prontos.size === alvos.length
+          ? 'Dados atualizados nas fontes originais. A receita (New Forecast) pode levar mais alguns minutos — a tela relê sozinha ao recarregar.'
+          : 'Atualização disparada; alguns meses ainda estão recalculando no servidor. Dá um Ctrl+Shift+R daqui a alguns minutos.',
+      );
+    } finally {
+      setAtualizando(false);
     }
   };
 
@@ -545,6 +670,9 @@ export default function Forecast() {
         const dig = window.prompt('Não achei o mês no título da planilha. Informe o mês (AAAA-MM):', '');
         if (!dig || !/^\d{4}-\d{2}$/.test(dig.trim())) throw new Error('Mês não informado.');
         mes = dig.trim();
+      }
+      if (travas[mes] && travas[mes].travado) {
+        throw new Error(`O mês ${mes} está travado — destrave no cadeado do mês pra importar.`);
       }
       const mat = XLSX.utils.sheet_to_json(abaEmp, { header: 1, blankrows: false, defval: '' });
       const up = (v) => String(v || '').trim().toUpperCase();
@@ -754,7 +882,7 @@ export default function Forecast() {
       cancelado = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [colunas]);
+  }, [colunas, refetchTick]);
 
   return (
     <div className="w-full max-w-7xl mx-auto px-2 sm:px-4 py-4">
@@ -803,6 +931,15 @@ export default function Forecast() {
                 <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> New Forecast
               </span>
             </div>
+            <button
+              type="button"
+              disabled={atualizando}
+              onClick={atualizarDados}
+              className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100 disabled:opacity-60"
+              title="Recalcula os meses automáticos (não travados) nas fontes originais: New Forecast, Dryland, Contas a Pagar…"
+            >
+              {atualizando ? 'Atualizando…' : 'Atualizar dados'}
+            </button>
             <input
               ref={fileRef}
               type="file"
@@ -865,14 +1002,37 @@ export default function Forecast() {
                 {colunas.map((c) => (
                   <th
                     key={c.key}
-                    onClick={() => alternarTipoMes(c)}
-                    title="Clique para alternar entre Realizado e Previsão"
+                    onClick={() => !mesTravado(c) && alternarTipoMes(c)}
+                    title={
+                      mesTravado(c)
+                        ? 'Mês travado — clique no cadeado para destravar'
+                        : 'Clique para alternar entre Realizado e Previsão'
+                    }
                     className={
                       'border-b border-gray-200 px-3 py-1.5 text-right font-semibold text-gray-600 whitespace-nowrap bg-gray-100 cursor-pointer select-none hover:bg-blue-100 hover:text-[#000638] ' +
-                      TIPO_CELULA[c.tipo]
+                      TIPO_CELULA[c.tipo] +
+                      (mesTravado(c) ? ' ring-1 ring-inset ring-amber-400' : '')
                     }
                   >
-                    {c.label}
+                    <span className="inline-flex items-center gap-1">
+                      {c.label}
+                      {podeTravar(c) && (
+                        <span
+                          role="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            alternarTrava(c);
+                          }}
+                          title={mesTravado(c) ? 'Destravar o mês' : 'Travar o mês (congela os valores)'}
+                          className={
+                            'text-[11px] leading-none ' +
+                            (mesTravado(c) ? 'text-amber-600' : 'text-gray-300 hover:text-gray-500')
+                          }
+                        >
+                          {mesTravado(c) ? '🔒' : '🔓'}
+                        </span>
+                      )}
+                    </span>
                   </th>
                 ))}
               </tr>
@@ -1138,7 +1298,8 @@ export default function Forecast() {
                       // aquele mês (folha, PJ, Ocupação, Serviços).
                       const celulaMes = ehDespesaMes && temDadoMes(c.key);
                       // Linha CMV %: célula de mês editável (clique → digita o %)
-                      const cmvEditavel = l.label === 'CMV %' && c.grupo === 'mensal' && !!colParaMes(c);
+                      const cmvEditavel =
+                        l.label === 'CMV %' && c.grupo === 'mensal' && !!colParaMes(c) && !mesTravado(c);
                       const cmvEditando = cmvEditavel && editandoCmv === c.key;
                       const celulaMesAberta = celulaMes && colMesLinha === c.key;
                       return (
@@ -1479,7 +1640,7 @@ export default function Forecast() {
                         </span>
                       </td>
                       {colunas.map((c) => {
-                        const temFolha = pfFixo[c.key] !== undefined;
+                        const temFolha = pfFixo[c.key] !== undefined && !mesTravado(c);
                         const editando = editandoProl === c.key;
                         const val = prolabore[c.key] ?? 80000;
                         return (
