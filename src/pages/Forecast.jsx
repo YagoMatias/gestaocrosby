@@ -10,6 +10,7 @@ import * as XLSX from 'xlsx';
 import PageTitle from '../components/ui/PageTitle';
 import base from '../data/forecastBase.json';
 import { API_BASE_URL } from '../config/constants';
+import { gerarForecastXlsx } from './forecastExcel';
 
 // Automação da receita bruta (Niziany, 27–28/10/2026): a partir de setembro/2026
 // os canais vêm do New Forecast (GET /api/forecast-dre/receita-canais), já com
@@ -886,12 +887,14 @@ export default function Forecast({ modoCorte = false }) {
         Object.keys(pfFixo).forEach((col) => {
           valores[col] = prolabore[col] ?? 80000;
         });
-        out.push({ label: 'PRÓ-LABORE (DIRETORES)', nivel: 1, valores });
+        out.push({ label: 'PRÓ-LABORE (DIRETORES)', nivel: 1, valores, peso: -1 });
       }
       rubricasUnidas
         .filter((r) => r.grupo === grupo)
         .forEach((ru) => {
-          out.push({ label: ru.desc, nivel: 1, valores: { ...ru.porCol } });
+          // Provento é despesa na DRE; rubrica que não entra não soma
+          const peso = !ru.entra ? 0 : ru.tipo === 'provento' ? -1 : 1;
+          out.push({ label: ru.desc, nivel: 1, valores: { ...ru.porCol }, peso });
           const lojas = new Map();
           for (const [col, lista] of Object.entries(ru.funcPorCol)) {
             (lista || []).forEach((f) => {
@@ -916,12 +919,19 @@ export default function Forecast({ modoCorte = false }) {
       return out;
     }
     if (l.label === 'SERVIÇOS DE TERCEIROS FIXOS') {
-      const out = [];
+      const cats = new Map();
       for (const [col, d] of Object.entries(servTerc)) {
         (d.categorias || []).forEach((cg) => {
-          out.push({ label: cg.cat, nivel: 1, valores: { [col]: -(Number(cg.valor) || 0) } });
-          out.push(...lancamentos({ [col]: cg.lancamentos }, 2));
+          const e = cats.get(cg.cat) || { valores: {}, lanc: {} };
+          e.valores[col] = -(Number(cg.valor) || 0);
+          e.lanc[col] = cg.lancamentos;
+          cats.set(cg.cat, e);
         });
+      }
+      const out = [];
+      for (const [cat, e] of cats) {
+        out.push({ label: cat, nivel: 1, valores: e.valores });
+        out.push(...lancamentos(e.lanc, 2));
       }
       return out;
     }
@@ -940,46 +950,35 @@ export default function Forecast({ modoCorte = false }) {
     return [];
   };
 
-  const exportarExcel = () => {
-    const linhasXls = [
-      ['DRE Forecast', ...colunas.map((c) => (c.tipo === 'realizado' ? 'Realizado' : 'Previsão'))],
-      ['em R$', ...colunas.map((c) => c.label)],
-    ];
-    const niveis = [0, 0];
-    const formatos = [null, null];
-    const add = (label, nivel, valorDe, fmt) => {
-      linhasXls.push([
-        '    '.repeat(nivel) + label,
-        ...colunas.map((c) => {
-          const v = valorDe(c);
-          return typeof v === 'number' ? v : null;
-        }),
-      ]);
-      niveis.push(nivel);
-      formatos.push(fmt);
-    };
-    for (const l of linhas) {
-      const nivel = Number(l.nivel) || 0;
-      add(l.label, nivel, (c) => valorCelula(l, c).v, l.fmt);
-      for (const d of modoCorte ? [] : detalhesLinha(l)) {
-        add(d.label, nivel + d.nivel, (c) => d.valores[c.key], 'moeda');
-      }
-    }
-    const ws = XLSX.utils.aoa_to_sheet(linhasXls);
-    linhasXls.forEach((_, r) => {
-      if (!formatos[r]) return;
-      colunas.forEach((__, i) => {
-        const cel = ws[XLSX.utils.encode_cell({ r, c: i + 1 })];
-        if (cel && cel.t === 'n') cel.z = formatos[r] === 'pct' ? '0.0%' : '#,##0.00';
+  const [exportando, setExportando] = useState(false);
+  const exportarExcel = async () => {
+    try {
+      setExportando(true);
+      const { default: ExcelJS } = await import('exceljs');
+      const { buffer } = await gerarForecastXlsx({
+        ExcelJS,
+        linhas,
+        colunas,
+        valorDe: (l) => Object.fromEntries(colunas.map((c) => [c.key, valorCelula(l, c).v])),
+        detalhesDe: modoCorte ? () => [] : detalhesLinha,
+        titulo: modoCorte ? 'Corte de custo' : 'DRE Forecast',
+        tipoDe: tipoLinha,
+        inicioSecao: INICIO_SECAO,
       });
-    });
-    ws['!cols'] = [{ wch: 52 }, ...colunas.map(() => ({ wch: 14 }))];
-    ws['!rows'] = niveis.map((n) => ({ level: Math.min(n, 7) }));
-    ws['!outline'] = { above: true };
-    ws['!freeze'] = { xSplit: 1, ySplit: 2 };
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Forecast');
-    XLSX.writeFile(wb, `${modoCorte ? 'Corte_de_custo' : 'Forecast_DRE'}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(
+        new Blob([buffer], {
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        }),
+      );
+      a.download = `${modoCorte ? 'Corte_de_custo' : 'Forecast_DRE'}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e) {
+      window.alert('Não consegui gerar o Excel: ' + (e.message || e));
+    } finally {
+      setExportando(false);
+    }
   };
 
   // ── Travar mês (Niziany 30/10) ────────────────────────────────────────────
@@ -1579,10 +1578,11 @@ export default function Forecast({ modoCorte = false }) {
             <button
               type="button"
               onClick={exportarExcel}
-              className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-              title="Baixa o Forecast em Excel, com as despesas abertas em níveis"
+              disabled={exportando}
+              className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-60"
+              title="Baixa o painel em Excel, com fórmulas nos totais e as despesas abertas em níveis"
             >
-              Exportar Excel
+              {exportando ? 'Gerando…' : 'Exportar Excel'}
             </button>
             {!modoCorte && (
               <>
