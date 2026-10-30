@@ -4,8 +4,9 @@
 // Layout no padrão das demais páginas do HeadCoach (azul #000638, cabeçalho
 // cinza, cards com borda). Os valores vêm de src/data/forecastBase.json; as
 // visões e blocos extras seguem no JSON caso precise voltar.
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { ChartLineUp, CaretRight, CaretDown, CornersOut, CornersIn } from '@phosphor-icons/react';
+import * as XLSX from 'xlsx';
 import PageTitle from '../components/ui/PageTitle';
 import base from '../data/forecastBase.json';
 import { API_BASE_URL } from '../config/constants';
@@ -168,6 +169,12 @@ export default function Forecast() {
   // PERDAS COM INADIMPLÊNCIA (Dashboard Inadimplência, mês específico)
   const [perdasLinha, setPerdasLinha] = useState({}); // { [colKey]: total (negativo) }
   const [perdasCanais, setPerdasCanais] = useState({}); // { [colKey]: [{nome, valor, titulos, clientes}] }
+  // Importação da planilha de taxas de cartão (Niziany 30/10): por coluna,
+  // { total, empresas:[{empresa, valor}] } — antecipação e taxa de cartão.
+  const [impAntecip, setImpAntecip] = useState({});
+  const [impCartao, setImpCartao] = useState({});
+  const [importando, setImportando] = useState(false);
+  const fileRef = useRef(null);
   // SERVIÇOS DE TERCEIROS FIXOS: lido do localStorage da DRE Analítica
   // (despesas-gerais-2026:v2). Mesmos números que a Niziany vê lá, com as
   // bonificações importadas manualmente — não dá pra reproduzir pelo backend.
@@ -453,6 +460,118 @@ export default function Forecast() {
     }
   };
 
+  // Valor da planilha (estático) de uma linha numa coluna — usado pra recompor
+  // os pais quando um filho é sobrescrito pela importação.
+  const estatico = (label, col) => {
+    const r = linhas.find((x) => x.label === label);
+    return Number(r?.valores?.[col]) || 0;
+  };
+
+  // ── Importar planilha de taxas de cartão (Niziany 30/10) ──────────────────
+  // Arquivo mensal "PAINEL DRE — TAXAS DE CARTÃO": o mês vem do título da aba
+  // "Painel DRE"; a aba "Painel por Empresa" traz, por empresa (linhas
+  // "► TOTAL …"), TAXA DE CARTÃO e TAXA DE ANTECIPAÇÃO. Só manda os totais por
+  // empresa pro backend; reimportar o mesmo mês substitui a importação anterior.
+  const MESES_PT = {
+    janeiro: 1, fevereiro: 2, marco: 3, 'março': 3, abril: 4, maio: 5, junho: 6,
+    julho: 7, agosto: 8, setembro: 9, outubro: 10, novembro: 11, dezembro: 12,
+  };
+  const lerNumero = (v) => {
+    if (v == null || v === '') return 0;
+    if (typeof v === 'number') return v;
+    const t = String(v).trim();
+    const n = Number(/^-?[\d.]+,\d+$/.test(t) ? t.replace(/\./g, '').replace(',', '.') : t);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const fmtBRL2 = (v) =>
+    (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const importarPlanilha = async (ev) => {
+    const file = ev.target.files && ev.target.files[0];
+    ev.target.value = '';
+    if (!file) return;
+    try {
+      setImportando(true);
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array', cellDates: false });
+      const abaEmp = wb.Sheets['Painel por Empresa'];
+      if (!abaEmp) throw new Error('Não achei a aba "Painel por Empresa" nessa planilha.');
+      let mes = null;
+      const abaDre = wb.Sheets['Painel DRE'];
+      if (abaDre) {
+        const m1 = XLSX.utils.sheet_to_json(abaDre, { header: 1, blankrows: false, defval: '' });
+        const titulo = String((m1[0] && m1[0][0]) || '');
+        const m = titulo.match(/([A-Za-zÇç]+)\s*\/\s*(\d{4})\s*$/);
+        const num = m && MESES_PT[m[1].toLowerCase()];
+        if (num) mes = `${m[2]}-${String(num).padStart(2, '0')}`;
+      }
+      if (!mes) {
+        const dig = window.prompt('Não achei o mês no título da planilha. Informe o mês (AAAA-MM):', '');
+        if (!dig || !/^\d{4}-\d{2}$/.test(dig.trim())) throw new Error('Mês não informado.');
+        mes = dig.trim();
+      }
+      const mat = XLSX.utils.sheet_to_json(abaEmp, { header: 1, blankrows: false, defval: '' });
+      const up = (v) => String(v || '').trim().toUpperCase();
+      const hi = mat.findIndex((r) => r.some((c) => up(c) === 'EMPRESA'));
+      if (hi < 0) throw new Error('Não achei o cabeçalho EMPRESA na aba "Painel por Empresa".');
+      const hdr = mat[hi].map(up);
+      const iE = hdr.indexOf('EMPRESA');
+      const iA = hdr.indexOf('ADQUIRENTE');
+      const iC = hdr.indexOf('TAXA DE CARTÃO');
+      const iT = hdr.indexOf('TAXA DE ANTECIPAÇÃO');
+      if (iE < 0 || iC < 0 || iT < 0) {
+        throw new Error('Cabeçalho sem EMPRESA / TAXA DE CARTÃO / TAXA DE ANTECIPAÇÃO.');
+      }
+      const emp = [];
+      for (const r of mat.slice(hi + 1)) {
+        const e = String(r[iE] || '').trim();
+        if (!e || up(e).startsWith('TOTAL')) continue;
+        const a = iA >= 0 ? String(r[iA] || '').trim() : '';
+        if (a && !a.startsWith('►') && !up(a).startsWith('TOTAL')) continue;
+        emp.push({ empresa: e, cartao: lerNumero(r[iC]), antecip: lerNumero(r[iT]) });
+      }
+      if (!emp.length) throw new Error('Nenhuma empresa encontrada na aba "Painel por Empresa".');
+      const totC = emp.reduce((a, x) => a + x.cartao, 0);
+      const totA = emp.reduce((a, x) => a + x.antecip, 0);
+      const ok = window.confirm(
+        `Importar "${file.name}" para ${mes}?\n\n` +
+          `Taxa de cartão → Serviços de Terceiros Variáveis: R$ ${fmtBRL2(totC)}\n` +
+          `Taxa de antecipação → Antecipação de recebíveis: R$ ${fmtBRL2(totA)}\n\n` +
+          `Empresas: ${emp.map((x) => x.empresa).join(', ')}\n\n` +
+          'Isso substitui uma importação anterior do mesmo mês.',
+      );
+      if (!ok) return;
+      const resp = await fetch(`${API_BASE_URL}/api/forecast-dre/importacao`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mes,
+          arquivo: file.name,
+          linhas: {
+            taxa_antecipacao: emp.map((x) => ({ empresa: x.empresa, valor: x.antecip })),
+            taxa_cartao: emp.map((x) => ({ empresa: x.empresa, valor: x.cartao })),
+          },
+        }),
+      });
+      if (!resp.ok) throw new Error(`Falha ao salvar (HTTP ${resp.status}).`);
+      const r2 = await fetch(`${API_BASE_URL}/api/forecast-dre/importacao?mes=${mes}`);
+      const j2 = await r2.json();
+      const d2 = (j2 && j2.data) || j2 || {};
+      const col = colunas.find((c) => colParaMes(c) === mes);
+      if (col) {
+        setImpAntecip((p) => ({ ...p, [col.key]: d2.taxa_antecipacao }));
+        setImpCartao((p) => ({ ...p, [col.key]: d2.taxa_cartao }));
+      }
+      window.alert(
+        `Importado ${mes}: taxa de cartão R$ ${fmtBRL2(totC)} e taxa de antecipação R$ ${fmtBRL2(totA)}.` +
+          (col ? '' : ' O mês ainda não está marcado como realizado na tabela; aparece quando for.'),
+      );
+    } catch (e) {
+      window.alert(`Não importei: ${e.message}`);
+    } finally {
+      setImportando(false);
+    }
+  };
+
   useEffect(() => {
     let cancelado = false;
     const alvos = mesesAutomaticos(colunas);
@@ -462,7 +581,7 @@ export default function Forecast() {
       const resultados = await Promise.all(
         alvos.map(async ({ col, mes }) => {
           // Receita por canal + CREDEV, e em paralelo a folha (Pessoal Fixo)
-          const [recOk, pf] = await Promise.all([
+          const [recOk, pf, imp] = await Promise.all([
             (async () => {
               try {
                 const r = await fetch(
@@ -489,9 +608,22 @@ export default function Forecast() {
                 return null;
               }
             })(),
+            (async () => {
+              try {
+                const r = await fetch(
+                  `${API_BASE_URL}/api/forecast-dre/importacao?mes=${mes}`,
+                );
+                if (!r.ok) return null;
+                const j = await r.json();
+                const d = j?.data || j;
+                return d && (d.taxa_antecipacao || d.taxa_cartao) ? d : null;
+              } catch {
+                return null;
+              }
+            })(),
           ]);
-          if (!recOk && !pf) return null;
-          return [col, recOk, pf];
+          if (!recOk && !pf && !imp) return null;
+          return [col, recOk, pf, imp];
         }),
       );
       if (cancelado) return;
@@ -511,9 +643,11 @@ export default function Forecast() {
       const novoTrafItens = {};
       const novoPerdasLinha = {};
       const novoPerdasCanais = {};
+      const novoImpAntecip = {};
+      const novoImpCartao = {};
       for (const item of resultados) {
         if (!item) continue;
-        const [col, d, pf] = item;
+        const [col, d, pf, imp] = item;
         novo[col] = {};
         if (d) {
           for (const [linha, chave] of Object.entries(CANAL_POR_LINHA)) {
@@ -553,6 +687,11 @@ export default function Forecast() {
           if (typeof pf.perdas_total === 'number') novoPerdasLinha[col] = pf.perdas_total;
           if (Array.isArray(pf.perdas_canais)) novoPerdasCanais[col] = pf.perdas_canais;
         }
+        // Planilha de taxas importada (antecipação / taxa de cartão por empresa)
+        if (imp) {
+          if (imp.taxa_antecipacao?.empresas?.length) novoImpAntecip[col] = imp.taxa_antecipacao;
+          if (imp.taxa_cartao?.empresas?.length) novoImpCartao[col] = imp.taxa_cartao;
+        }
       }
       setOverrides(novo);
       setCredevCanais(novoCredevCanais);
@@ -570,6 +709,8 @@ export default function Forecast() {
       setTrafegoItens(novoTrafItens);
       setPerdasLinha(novoPerdasLinha);
       setPerdasCanais(novoPerdasCanais);
+      setImpAntecip(novoImpAntecip);
+      setImpCartao(novoImpCartao);
       setCarregandoAuto(false);
     })();
     return () => {
@@ -625,6 +766,22 @@ export default function Forecast() {
                 <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500" /> New Forecast
               </span>
             </div>
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".xlsx,.xls"
+              className="hidden"
+              onChange={importarPlanilha}
+            />
+            <button
+              type="button"
+              disabled={importando}
+              onClick={() => fileRef.current && fileRef.current.click()}
+              className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 disabled:opacity-60"
+              title="Importar a planilha mensal de taxas de cartão (Painel DRE): preenche Antecipação de recebíveis e Taxa de cartão por empresa"
+            >
+              {importando ? 'Importando…' : 'Importar planilha'}
+            </button>
             <button
               type="button"
               onClick={() => setTelaCheia((v) => !v)}
@@ -749,6 +906,9 @@ export default function Forecast() {
                 const ehBonif = l.label === 'BONIFICAÇÕES MARKETING' && Object.keys(bonifMkt).length > 0;
                 const ehPerdas =
                   l.label === 'PERDAS COM INADIMPLÊNCIA' && Object.keys(perdasLinha).length > 0;
+                const ehImpAnt =
+                  l.label === 'ANTECIPAÇÃO DE RECEBÍVEIS' && Object.keys(impAntecip).length > 0;
+                const ehImpCar = l.label === 'TAXA DE CARTÃO' && Object.keys(impCartao).length > 0;
                 const ehServTerc =
                   l.label === 'SERVIÇOS DE TERCEIROS FIXOS' && Object.keys(servTerc).length > 0;
                 // Coluna (mês) aberta nesta linha, se houver dado nela
@@ -760,6 +920,8 @@ export default function Forecast() {
                   (ehTraf && trafegoLinha[col] !== undefined) ||
                   (ehBonif && bonifMkt[col] !== undefined) ||
                   (ehPerdas && perdasLinha[col] !== undefined) ||
+                  (ehImpAnt && impAntecip[col] !== undefined) ||
+                  (ehImpCar && impCartao[col] !== undefined) ||
                   (ehServTerc && servTerc[col] !== undefined);
                 const colMesLinha =
                   mesAberto[l.label] && temDadoMes(mesAberto[l.label]) ? mesAberto[l.label] : null;
@@ -770,9 +932,11 @@ export default function Forecast() {
                 const trafAbertoLinha = ehTraf && !!colMesLinha;
                 const bonifAbertoLinha = ehBonif && !!colMesLinha;
                 const perdasAbertoLinha = ehPerdas && !!colMesLinha;
+                const impAntAberto = ehImpAnt && !!colMesLinha;
+                const impCarAberto = ehImpCar && !!colMesLinha;
                 const servAbertoLinha = ehServTerc && !!colMesLinha;
                 const ehDespesaMes =
-                  ehFolha || ehPJ || ehOcup || ehMkt || ehTraf || ehBonif || ehPerdas || ehServTerc;
+                  ehFolha || ehPJ || ehOcup || ehMkt || ehTraf || ehBonif || ehPerdas || ehImpAnt || ehImpCar || ehServTerc;
                 // Só a label de seção (pai) e de canal (CREDEV) abrem pela label;
                 // as despesas abrem clicando na célula do mês.
                 const clicavel = ehPai || temCredevCanal;
@@ -841,6 +1005,37 @@ export default function Forecast() {
                         bonifMkt[c.key] !== undefined
                       ) {
                         pfLine = -Math.round((bonifMkt[c.key].total || 0) * 100) / 100;
+                      } else if (l.label === 'TAXA DE CARTÃO' && impCartao[c.key] !== undefined) {
+                        pfLine = -Math.round((impCartao[c.key].total || 0) * 100) / 100;
+                      } else if (
+                        l.label === 'SERVIÇOS DE TERCEIROS VARIÁVEIS' &&
+                        impCartao[c.key] !== undefined
+                      ) {
+                        // = soma do subnível (só Taxa de cartão por enquanto)
+                        pfLine = -Math.round((impCartao[c.key].total || 0) * 100) / 100;
+                      } else if (
+                        l.label === 'ANTECIPAÇÃO DE RECEBÍVEIS' &&
+                        impAntecip[c.key] !== undefined
+                      ) {
+                        pfLine = -Math.round((impAntecip[c.key].total || 0) * 100) / 100;
+                      } else if (l.label === 'DESPESA FINANCEIRA' && impAntecip[c.key] !== undefined) {
+                        // = Antecipação (importada) + Juros e multa (planilha)
+                        pfLine =
+                          Math.round(
+                            (-(impAntecip[c.key].total || 0) + estatico('JUROS E MULTA POR ATRASO', c.key)) * 100,
+                          ) / 100;
+                      } else if (
+                        l.label === 'RECEITA (DESPESA) NÃO OPERACIONAL' &&
+                        impAntecip[c.key] !== undefined
+                      ) {
+                        // = Receita financeira (planilha) + Despesa financeira recomposta
+                        pfLine =
+                          Math.round(
+                            (estatico('RECEITA FINANCEIRA', c.key) -
+                              (impAntecip[c.key].total || 0) +
+                              estatico('JUROS E MULTA POR ATRASO', c.key)) *
+                              100,
+                          ) / 100;
                       } else if (
                         l.label === 'PERDAS COM INADIMPLÊNCIA' &&
                         perdasLinha[c.key] !== undefined
@@ -1094,6 +1289,32 @@ export default function Forecast() {
                               <span className="text-gray-400 font-normal">
                                 {' '}· {x.titulos} tít. · {x.clientes} cli.
                               </span>
+                            </span>
+                          </td>
+                          {colunas.map((c) => (
+                            <td
+                              key={c.key}
+                              className="border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-slate-50/40"
+                            >
+                              {c.key === mc && x.valor ? formatar(-x.valor, 'moeda') : '–'}
+                            </td>
+                          ))}
+                        </tr>
+                      ));
+                    })()}
+                  {(impAntAberto || impCarAberto) &&
+                    (() => {
+                      // Só o mês clicado: taxa por empresa (planilha importada).
+                      const mc = colMesLinha;
+                      const src = impAntAberto ? impAntecip[mc] : impCartao[mc];
+                      const lista = ((src && src.empresas) || []).slice();
+                      const pref = impAntAberto ? 'impA-' : 'impC-';
+                      return lista.map((x, i) => (
+                        <tr key={pref + i} className="bg-slate-50/50">
+                          <td className="sticky left-0 z-10 border-b border-r border-gray-100 pl-[4.5rem] pr-3 py-1 whitespace-nowrap bg-slate-50 text-[10px] text-red-600">
+                            <span className="inline-flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-400" />
+                              {x.empresa}
                             </span>
                           </td>
                           {colunas.map((c) => (
