@@ -2620,17 +2620,18 @@ export default function Forecast({ modoCorte = false }) {
                         </span>
                       </td>
                       {colunasTela.map((c) => {
-                        const temFolha = !modoCorte && pfFixo[c.key] !== undefined && !mesTravado(c);
+                        const temFolha = pfFixo[c.key] !== undefined;
+                        const podeEditar = temFolha && !modoCorte && !mesTravado(c);
                         const editando = editandoProl === c.key;
                         const val = prolabore[c.key] ?? 80000;
                         return (
                           <td
                             key={c.key}
-                            onClick={() => temFolha && !editando && setEditandoProl(c.key)}
-                            title={temFolha ? 'Clique para editar o pró-labore' : undefined}
+                            onClick={() => podeEditar && !editando && setEditandoProl(c.key)}
+                            title={podeEditar ? 'Clique para editar o pró-labore' : undefined}
                             className={
                               'border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] bg-slate-50/40 text-emerald-700 ' +
-                              (temFolha && !editando ? 'cursor-pointer hover:underline' : '')
+                              (podeEditar && !editando ? 'cursor-pointer hover:underline' : '')
                             }
                           >
                             {temFolha ? (
