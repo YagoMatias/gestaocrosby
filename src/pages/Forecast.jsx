@@ -38,6 +38,7 @@ const MES_ABREV = {
 };
 // Coluna mensal → 'YYYY-MM' (usa o label 'Set/26' + o ano da coluna).
 const colParaMes = (c) => {
+  if (c.grupo === 'mes2027') return c.mes;
   if (c.grupo === 'ano') return String(c.ano); // colunas anuais guardam edição pelo ano
   if (c.grupo !== 'mensal' || !c.ano) return null;
   const m = MES_ABREV[String(c.label || '').slice(0, 3).toLowerCase()];
@@ -47,6 +48,30 @@ const colParaMes = (c) => {
 // Automático de set/2026 em diante, em QUALQUER ano: os meses seguintes
 // ficam "fixos" — basta marcar o mês como realizado (Niziany 30/10).
 const MES_AUTO_INICIO = '2026-09';
+// Tela Previsão 2027 (Niziany 30/10): cada mês parte do último realizado e é
+// editável; a última coluna soma os meses.
+const MESES_2027 = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'].map(
+  (nome, i) => ({
+    key: 'P2027-' + (i + 1),
+    label: `${nome}/27`,
+    tipo: 'forecast',
+    grupo: 'mes2027',
+    ano: 2027,
+    mes: `2027-${String(i + 1).padStart(2, '0')}`,
+  }),
+);
+const COLUNA_TOTAL_2027 = {
+  key: 'P2027-T', label: '2027', tipo: 'forecast', grupo: 'total2027', ano: 2027, somaMeses: true,
+};
+const COLUNAS_2027 = [...MESES_2027, COLUNA_TOTAL_2027];
+// % da coluna de total: conta sobre as somas, não soma de percentuais
+const PCT_RAZAO = {
+  'TAX %': ['IMPOSTOS DIRETOS', 'RECEITA LÍQUIDA'],
+  'CMV %': ['CUSTO DAS MERCADORIAS VENDIDAS', 'RECEITA OPERACIONAL LÍQUIDA'],
+  'MARGEM %': ['LUCRO BRUTO', 'RECEITA OPERACIONAL LÍQUIDA'],
+  'EBITDA %': ['EBITDA', 'RECEITA OPERACIONAL LÍQUIDA'],
+  '% LUCRO LÍQUIDO': ['LUCRO LÍQUIDO', 'RECEITA OPERACIONAL LÍQUIDA'],
+};
 // Colunas anuais da previsão (Niziany 30/10): receita soma os meses de 2026,
 // impostos e CMV seguem o % do último realizado, o resto é esse mês × 12.
 const COLUNAS_ANO = [
@@ -344,7 +369,9 @@ export default function Forecast({ modoCorte = false }) {
         .concat(COLUNAS_ANO),
     [tipoOverrides],
   );
-  const grupos = useMemo(() => agruparColunas(colunas), [colunas]);
+  const [visao2027, setVisao2027] = useState(false);
+  const colunasTela = visao2027 ? COLUNAS_2027 : colunas;
+  const grupos = useMemo(() => agruparColunas(colunasTela), [colunasTela]);
   const linhas = base.blocos.dre || [];
 
   // Estrutura pai → filhos: uma linha de nível 0 seguida de linhas de nível 1
@@ -472,7 +499,7 @@ export default function Forecast({ modoCorte = false }) {
         const ed = (j && j.data && j.data.edicoes) || {};
         if (cancelado) return;
         const novo = {};
-        for (const c of colunas) {
+        for (const c of [...colunas, ...MESES_2027]) {
           const mes = colParaMes(c);
           if (mes && ed[mes]) novo[c.key] = ed[mes];
         }
@@ -499,7 +526,7 @@ export default function Forecast({ modoCorte = false }) {
         if (cancelado) return;
         const ed = {};
         const fc = {};
-        for (const c of colunas) {
+        for (const c of [...colunas, ...MESES_2027]) {
           const mes = colParaMes(c);
           if (mes && d.edicoes && d.edicoes[mes]) ed[c.key] = d.edicoes[mes];
           if (mes && d.facas && d.facas[mes]) fc[c.key] = d.facas[mes];
@@ -699,6 +726,7 @@ export default function Forecast({ modoCorte = false }) {
       if (c.tipo === 'realizado') ultimo = c;
       else if (ultimo) out[c.key] = ultimo;
     }
+    if (ultimo) MESES_2027.forEach((c) => (out[c.key] = ultimo));
     return out;
   }, [colunas]);
 
@@ -850,6 +878,13 @@ export default function Forecast({ modoCorte = false }) {
 
   // Valor exibido de uma linha numa coluna (tela e Excel usam a mesma conta).
   const valorCelula = (l, c) => {
+    if (c.grupo === 'total2027') {
+      const somaLinha = (x) => MESES_2027.reduce((a, m) => a + (Number(valorCelula(x, m).v) || 0), 0);
+      const razao = PCT_RAZAO[l.label];
+      if (!razao) return { v: somaLinha(l), auto: false };
+      const [a, b] = razao.map((label) => somaLinha(linhas.find((x) => x.label === label)));
+      return { v: b ? a / b : 0, auto: false };
+    }
     const fonte = espelho[c.key];
     const base = fonte ? valorCelula(l, fonte) : valorBruto(l, c);
     const m = previsaoDe(c);
@@ -1006,7 +1041,7 @@ export default function Forecast({ modoCorte = false }) {
     );
   };
   const iniciarArrasto = (idx, i) => {
-    const chave = chaveSel(idx, colunas[i].key);
+    const chave = chaveSel(idx, colunasTela[i].key);
     const base = new Set(selCel);
     const adiciona = !base.has(chave);
     arrastoSel.current = { idx, i, base, adiciona };
@@ -1021,7 +1056,7 @@ export default function Forecast({ modoCorte = false }) {
     for (let r = Math.min(a.idx, idx); r <= Math.max(a.idx, idx); r++) {
       if (!linhaVisivel(r)) continue;
       for (let k = Math.min(a.i, i); k <= Math.max(a.i, i); k++) {
-        const chave = chaveSel(r, colunas[k].key);
+        const chave = chaveSel(r, colunasTela[k].key);
         if (a.adiciona) novo.add(chave);
         else novo.delete(chave);
       }
@@ -1037,7 +1072,7 @@ export default function Forecast({ modoCorte = false }) {
       return novo;
     });
   };
-  const selecionarLinha = (idx) => alternarGrupoSel(colunas.map((c) => chaveSel(idx, c.key)));
+  const selecionarLinha = (idx) => alternarGrupoSel(colunasTela.map((c) => chaveSel(idx, c.key)));
   const selecionarMes = (col) =>
     alternarGrupoSel(linhas.map((_, idx) => idx).filter(linhaVisivel).map((idx) => chaveSel(idx, col)));
   useEffect(() => {
@@ -1054,7 +1089,7 @@ export default function Forecast({ modoCorte = false }) {
     for (const chave of selCel) {
       const sep = chave.indexOf('|');
       const l = linhas[Number(chave.slice(0, sep))];
-      const c = colunas.find((x) => x.key === chave.slice(sep + 1));
+      const c = colunasTela.find((x) => x.key === chave.slice(sep + 1));
       if (!l || !c) continue;
       const v = valorCelula(l, c).v;
       if (l.fmt === 'pct') ignoradas++;
@@ -1074,10 +1109,10 @@ export default function Forecast({ modoCorte = false }) {
       const { buffer } = await gerarForecastXlsx({
         ExcelJS,
         linhas,
-        colunas,
-        valorDe: (l) => Object.fromEntries(colunas.map((c) => [c.key, valorCelula(l, c).v])),
-        detalhesDe: modoCorte ? () => [] : detalhesLinha,
-        titulo: modoCorte ? 'Corte de custo' : 'DRE Forecast',
+        colunas: colunasTela,
+        valorDe: (l) => Object.fromEntries(colunasTela.map((c) => [c.key, valorCelula(l, c).v])),
+        detalhesDe: modoCorte || visao2027 ? () => [] : detalhesLinha,
+        titulo: visao2027 ? 'Previsão 2027' : modoCorte ? 'Corte de custo' : 'DRE Forecast',
         tipoDe: tipoLinha,
         inicioSecao: INICIO_SECAO,
       });
@@ -1087,7 +1122,7 @@ export default function Forecast({ modoCorte = false }) {
           type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         }),
       );
-      a.download = `${modoCorte ? 'Corte_de_custo' : 'Forecast_DRE'}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      a.download = `${modoCorte ? 'Corte_de_custo' : 'Forecast_DRE'}${visao2027 ? '_Previsao_2027' : ''}_${new Date().toISOString().slice(0, 10)}.xlsx`;
       a.click();
       URL.revokeObjectURL(a.href);
     } catch (e) {
@@ -1693,6 +1728,37 @@ export default function Forecast({ modoCorte = false }) {
             </button>
             <button
               type="button"
+              role="switch"
+              aria-checked={visao2027}
+              onClick={() => {
+                setVisao2027((v) => !v);
+                setSelCel(new Set());
+              }}
+              className={
+                'inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg border ' +
+                (visao2027
+                  ? 'border-blue-400 bg-blue-600 text-white'
+                  : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50')
+              }
+              title="Meses de 2027 a partir do último mês realizado, editáveis, com o total do ano na última coluna"
+            >
+              <span
+                className={
+                  'relative inline-block w-6 h-3.5 rounded-full ' +
+                  (visao2027 ? 'bg-white/40' : 'bg-gray-300')
+                }
+              >
+                <span
+                  className={
+                    'absolute top-0.5 w-2.5 h-2.5 rounded-full bg-white shadow ' +
+                    (visao2027 ? 'left-3' : 'left-0.5')
+                  }
+                />
+              </span>
+              Previsão 2027
+            </button>
+            <button
+              type="button"
               onClick={() => setModoSel((v) => !v)}
               className={
                 'inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-lg border ' +
@@ -1811,7 +1877,7 @@ export default function Forecast({ modoCorte = false }) {
                 <th className="sticky left-0 z-30 bg-gray-100 border-b border-r border-gray-200 px-3 py-1.5 text-left text-[10px] text-gray-400 font-normal">
                   em R$
                 </th>
-                {colunas.map((c) => (
+                {colunasTela.map((c) => (
                   <th
                     key={c.key}
                     onClick={() => (modoSel ? selecionarMes(c.key) : !mesTravado(c) && alternarTipoMes(c))}
@@ -1890,6 +1956,7 @@ export default function Forecast({ modoCorte = false }) {
                 // Linha de canal que abre pra mostrar o CREDEV do canal (só visual)
                 const canalKey = CREDEV_CANAL_POR_LINHA[l.label];
                 const temCredevCanal =
+                  !visao2027 &&
                   canalKey &&
                   Object.values(credevCanais).some(
                     (cc) => cc && typeof cc[canalKey] === 'number' && cc[canalKey] !== 0,
@@ -1940,7 +2007,9 @@ export default function Forecast({ modoCorte = false }) {
                   (ehImpCar && impCartao[col] !== undefined) ||
                   (ehServTerc && servTerc[col] !== undefined);
                 const colMesLinha =
-                  mesAberto[l.label] && temDadoMes(mesAberto[l.label]) ? mesAberto[l.label] : null;
+                  !visao2027 && mesAberto[l.label] && temDadoMes(mesAberto[l.label])
+                    ? mesAberto[l.label]
+                    : null;
                 const folhaAberta = ehFolha && !!colMesLinha;
                 const pjAbertoLinha = ehPJ && !!colMesLinha;
                 const ocupAbertoLinha = ehOcup && !!colMesLinha;
@@ -1991,7 +2060,7 @@ export default function Forecast({ modoCorte = false }) {
                         {l.label}
                       </span>
                     </td>
-                    {colunas.map((c, colIdx) => {
+                    {colunasTela.map((c, colIdx) => {
                       const { v, auto, calc, resultadoCalc } = valorCelula(l, c);
                       const selecionada = modoSel && selCel.has(chaveSel(idx, c.key));
                       // Marcação verde só nos meses de previsão (Niziany 30/10).
@@ -2154,7 +2223,7 @@ export default function Forecast({ modoCorte = false }) {
                       <td className="sticky left-0 z-10 border-b border-r border-gray-100 pl-12 pr-3 py-1.5 whitespace-nowrap bg-red-50/60 text-[10px] font-semibold text-red-700">
                         ↳ CREDEV {l.label}
                       </td>
-                      {colunas.map((c) => {
+                      {colunasTela.map((c) => {
                         const cv = credevCanais[c.key]?.[canalKey];
                         return (
                           <td
@@ -2184,7 +2253,7 @@ export default function Forecast({ modoCorte = false }) {
                               {faca(mc, l.label, p.nome, p.nome, -p.valor)}
                             </span>
                           </td>
-                          {colunas.map((c) => (
+                          {colunasTela.map((c) => (
                             <td
                               key={c.key}
                               className="border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-slate-50/40"
@@ -2211,7 +2280,7 @@ export default function Forecast({ modoCorte = false }) {
                               {faca(mc, l.label, p.nome, p.nome, -p.valor)}
                             </span>
                           </td>
-                          {colunas.map((c) => (
+                          {colunasTela.map((c) => (
                             <td
                               key={c.key}
                               className="border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-slate-50/40"
@@ -2241,7 +2310,7 @@ export default function Forecast({ modoCorte = false }) {
                               {faca(mc, l.label, i + ' ' + x.forn, x.forn, -x.valor)}
                             </span>
                           </td>
-                          {colunas.map((c) => (
+                          {colunasTela.map((c) => (
                             <td
                               key={c.key}
                               className="border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-slate-50/40"
@@ -2269,7 +2338,7 @@ export default function Forecast({ modoCorte = false }) {
                               {faca(mc, l.label, x.nome, x.nome, -x.valor)}
                             </span>
                           </td>
-                          {colunas.map((c) => (
+                          {colunasTela.map((c) => (
                             <td
                               key={c.key}
                               className="border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-slate-50/40"
@@ -2297,7 +2366,7 @@ export default function Forecast({ modoCorte = false }) {
                               {faca(mc, l.label, i + ' ' + x.forn, x.forn, -x.valor)}
                             </span>
                           </td>
-                          {colunas.map((c) => (
+                          {colunasTela.map((c) => (
                             <td
                               key={c.key}
                               className="border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-slate-50/40"
@@ -2325,7 +2394,7 @@ export default function Forecast({ modoCorte = false }) {
                               {faca(mc, l.label, x.nome, x.nome, -x.valor)}
                             </span>
                           </td>
-                          {colunas.map((c) => (
+                          {colunasTela.map((c) => (
                             <td
                               key={c.key}
                               className="border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-slate-50/40"
@@ -2347,7 +2416,7 @@ export default function Forecast({ modoCorte = false }) {
                             {faca(colMesLinha, l.label, x.nome, x.nome, -x.valor)}
                           </span>
                         </td>
-                        {colunas.map((c) => (
+                        {colunasTela.map((c) => (
                           <td
                             key={c.key}
                             className="border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-slate-50/40"
@@ -2370,7 +2439,7 @@ export default function Forecast({ modoCorte = false }) {
                             {faca(colMesLinha, l.label, i + ' ' + x.forn, x.forn, -x.valor)}
                           </span>
                         </td>
-                        {colunas.map((c) => (
+                        {colunasTela.map((c) => (
                           <td
                             key={c.key}
                             className="border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-slate-50/40"
@@ -2396,7 +2465,7 @@ export default function Forecast({ modoCorte = false }) {
                               {faca(mc, l.label, x.empresa, x.empresa, -x.valor)}
                             </span>
                           </td>
-                          {colunas.map((c) => (
+                          {colunasTela.map((c) => (
                             <td
                               key={c.key}
                               className="border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-slate-50/40"
@@ -2434,7 +2503,7 @@ export default function Forecast({ modoCorte = false }) {
                                   {faca(mc, l.label, cg.cat, cg.cat, -cg.valor)}
                                 </span>
                               </td>
-                              {colunas.map((c) => (
+                              {colunasTela.map((c) => (
                                 <td
                                   key={c.key}
                                   className="border-b border-gray-100 px-3 py-1 text-right tabular-nums whitespace-nowrap text-[10px] text-red-600 bg-slate-50/40"
@@ -2455,7 +2524,7 @@ export default function Forecast({ modoCorte = false }) {
                                     ) : null}
                                     {faca(mc, l.label, cg.cat + '»' + i, x.forn, -x.val)}
                                   </td>
-                                  {colunas.map((c) => (
+                                  {colunasTela.map((c) => (
                                     <td
                                       key={c.key}
                                       className="border-b border-gray-100 px-3 py-0.5 text-right tabular-nums whitespace-nowrap text-[10px] text-gray-500"
@@ -2478,7 +2547,7 @@ export default function Forecast({ modoCorte = false }) {
                           {faca(colMesLinha, l.label, 'PRÓ-LABORE', 'PRÓ-LABORE (DIRETORES)', -(prolabore[colMesLinha] ?? 80000))}
                         </span>
                       </td>
-                      {colunas.map((c) => {
+                      {colunasTela.map((c) => {
                         const temFolha = !modoCorte && pfFixo[c.key] !== undefined && !mesTravado(c);
                         const editando = editandoProl === c.key;
                         const val = prolabore[c.key] ?? 80000;
@@ -2586,7 +2655,7 @@ export default function Forecast({ modoCorte = false }) {
                                 {facaFolha(ru.key, ru.desc, ru.porCol[colMesLinha])}
                               </span>
                             </td>
-                            {colunas.map((c) => {
+                            {colunasTela.map((c) => {
                               const rv = ru.porCol[c.key];
                               return (
                                 <td
@@ -2623,7 +2692,7 @@ export default function Forecast({ modoCorte = false }) {
                                         {facaFolha(ru.key + '»' + emp.empresa, emp.empresa, emp.porCol[colMesLinha])}
                                       </span>
                                     </td>
-                                    {colunas.map((c) => {
+                                    {colunasTela.map((c) => {
                                       const ev = emp.porCol[c.key];
                                       return (
                                         <td
@@ -2652,7 +2721,7 @@ export default function Forecast({ modoCorte = false }) {
                                             f.porCol[colMesLinha],
                                           )}
                                         </td>
-                                        {colunas.map((c) => {
+                                        {colunasTela.map((c) => {
                                           const fv = f.porCol[c.key];
                                           return (
                                             <td

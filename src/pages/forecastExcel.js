@@ -218,7 +218,14 @@ export async function gerarForecastXlsx({ ExcelJS, linhas, colunas, valorDe, det
       const c = row.getCell(i + 2);
       const v = r.valores[col.key];
       const num = typeof v === 'number' ? v : null;
-      const f = num === null ? null : formulaDaCelula(r, porLabel, col.key, letraColuna(i + 2));
+      // Coluna de total: cada linha soma os meses à esquerda
+      const somaLinha = col.somaMeses && r.fmt !== 'pct' && !r.detalhe;
+      const f =
+        num === null
+          ? null
+          : somaLinha
+            ? `SUM(B${r.num}:${letraColuna(i + 1)}${r.num})`
+            : formulaDaCelula(r, porLabel, col.key, letraColuna(i + 2));
       if (f) {
         c.value = { formula: f, result: num };
         comFormula++;
