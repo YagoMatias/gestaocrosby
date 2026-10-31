@@ -7,6 +7,10 @@
 // Produto que ainda não está na promoção é INSERIDO (promotion-items) quando
 // a opção "incluir novos" estiver marcada.
 //
+// Sem limite de SKUs: a planilha é dividida em lotes e enviada em loop (consulta
+// de 500 em 500, gravação de 5.000 em 5.000). Lote que falha é repetido e, se
+// continuar falhando, o loop segue e os itens ficam para reenviar depois.
+//
 // Backend: totvsrouter/promocaoValores.js (apigestaocrosby) em
 // /api/totvs/promocao-valores/{promocoes,preview,aplicar}.
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -45,6 +49,32 @@ const fmtData = (s) => {
 };
 
 const round2 = (v) => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
+
+const fmtNum = (n) => Number(n || 0).toLocaleString('pt-BR');
+
+const LOTE_CONSULTA = 500;
+const LOTE_GRAVACAO = 5000;
+const POR_PAGINA = 200; // linhas desenhadas na tabela (o resto fica só em memória)
+const TIMEOUT_CONSULTA = 10 * 60 * 1000;
+const TIMEOUT_GRAVACAO = 60 * 60 * 1000;
+const ESPERAS_LOTE_MS = [5000, 15000];
+
+const emLotes = (lista, tamanho) => {
+  const lotes = [];
+  for (let i = 0; i < lista.length; i += tamanho) lotes.push(lista.slice(i, i + tamanho));
+  return lotes;
+};
+
+async function repetirLote(fn, deveParar) {
+  for (let tentativa = 0; ; tentativa++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (tentativa >= ESPERAS_LOTE_MS.length || deveParar()) throw err;
+      await new Promise((r) => setTimeout(r, ESPERAS_LOTE_MS[tentativa]));
+    }
+  }
+}
 
 // Arredondamento comercial do valor calculado
 const ARREDONDAMENTOS = [
@@ -95,6 +125,7 @@ const SITUACAO = {
   ignorar: { label: 'Fora da promoção (ignorado)', cls: 'bg-gray-100 text-gray-600 border-gray-200' },
   nao_encontrado: { label: 'Não encontrado', cls: 'bg-red-50 text-red-700 border-red-200' },
   sem_preco: { label: 'Sem preço', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
+  falha_consulta: { label: 'Falha na consulta', cls: 'bg-red-50 text-red-700 border-red-200' },
   gravado: { label: 'Gravado', cls: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
   erro: { label: 'Erro', cls: 'bg-red-100 text-red-800 border-red-300' },
 };
@@ -102,6 +133,7 @@ const SITUACAO = {
 export default function PromocaoValores() {
   const { apiMutate } = useApiClient();
   const fileRef = useRef(null);
+  const pararRef = useRef(false);
 
   // ── parâmetros ──
   const [empresas, setEmpresas] = useState([]);
@@ -125,7 +157,8 @@ export default function PromocaoValores() {
   // ── prévia / gravação ──
   const [buscando, setBuscando] = useState(false);
   const [rows, setRows] = useState([]);
-  const [resumo, setResumo] = useState(null);
+  const [pagina, setPagina] = useState(1);
+  const [progresso, setProgresso] = useState(null);
   const [valores, setValores] = useState({}); // productCode → valor editado
   const [selecionados, setSelecionados] = useState({}); // productCode → bool
   const [erro, setErro] = useState(null);
@@ -220,7 +253,6 @@ export default function PromocaoValores() {
         setOrigemSkus({ arquivo: file.name, coluna, aba: wb.SheetNames[0] });
         setTextoSkus('');
         setRows([]);
-        setResumo(null);
         setResultado(null);
       } catch (e) {
         setErro(`Erro ao ler a planilha: ${e.message}`);
@@ -242,7 +274,6 @@ export default function PromocaoValores() {
     setSkus(lidos);
     setOrigemSkus({ arquivo: 'lista colada', coluna: null });
     setRows([]);
-    setResumo(null);
     setResultado(null);
   }, [textoSkus]);
 
@@ -250,7 +281,6 @@ export default function PromocaoValores() {
     setSkus([]);
     setOrigemSkus(null);
     setRows([]);
-    setResumo(null);
     setResultado(null);
     setValores({});
     setSelecionados({});
@@ -272,48 +302,132 @@ export default function PromocaoValores() {
     [percentual, arredondamento],
   );
 
-  const buscar = useCallback(async () => {
-    if (!empresa || !promocao || !skus.length) return;
-    setBuscando(true);
-    setErro(null);
-    setResultado(null);
-    try {
-      const j = await apiMutate(
-        '/api/totvs/promocao-valores/preview',
-        'POST',
-        { branch: Number(empresa), promotionCode: Number(promocao), priceCode: Number(priceCode) || 1, skus },
-        {},
-        { timeout: 10 * 60 * 1000 },
-      );
-      const lista = j?.data?.rows || [];
-      setRows(lista);
-      setResumo(j?.data?.resumo || null);
-      const sel = {};
-      const vals = {};
-      for (const r of lista) {
-        if (r.status === 'ok') {
-          sel[r.productCode] = true;
-          vals[r.productCode] = calcular(r.price);
+  const calcularRef = useRef(calcular);
+  calcularRef.current = calcular;
+
+  const resumo = useMemo(() => {
+    const conta = (fn) => rows.filter(fn).length;
+    return {
+      total: rows.length,
+      ok: conta((r) => r.status === 'ok'),
+      naoEncontrados: conta((r) => r.status === 'nao_encontrado'),
+      semPreco: conta((r) => r.status === 'sem_preco'),
+      falhas: conta((r) => r.status === 'falha_consulta'),
+      jaNaPromocao: conta((r) => r.naPromocao),
+    };
+  }, [rows]);
+
+  // Consulta em loop. `base` são as linhas já resolvidas ao reconsultar falhas.
+  const consultar = useCallback(
+    async (lista, base) => {
+      if (!empresa || !promocao || !lista.length) return;
+      pararRef.current = false;
+      setBuscando(true);
+      setErro(null);
+      setResultado(null);
+      setPagina(1);
+      const acumulado = [...base];
+      const vistos = new Set(base.map((r) => r.sku));
+      setRows(acumulado.slice());
+      const lotes = emLotes(lista, LOTE_CONSULTA);
+      const registrar = (novas) => {
+        const entradas = novas.filter((r) => !vistos.has(r.sku));
+        entradas.forEach((r) => vistos.add(r.sku));
+        acumulado.push(...entradas);
+        setRows(acumulado.slice());
+        const validas = entradas.filter((r) => r.status === 'ok');
+        setSelecionados((prev) => {
+          const next = { ...prev };
+          for (const r of validas) next[r.productCode] = true;
+          return next;
+        });
+        setValores((prev) => {
+          const next = { ...prev };
+          for (const r of validas) next[r.productCode] = calcularRef.current(r.price);
+          return next;
+        });
+      };
+      const comFalha = (skusLote, msg) =>
+        skusLote.map((sku) => ({ sku, productCode: null, status: 'falha_consulta', erro: msg }));
+
+      for (let i = 0; i < lotes.length; i++) {
+        if (pararRef.current) {
+          registrar(comFalha(lotes.slice(i).flat(), 'Consulta interrompida'));
+          break;
+        }
+        setProgresso({
+          acao: 'Consultando o TOTVS',
+          feito: i * LOTE_CONSULTA,
+          total: lista.length,
+          lote: i + 1,
+          lotes: lotes.length,
+        });
+        try {
+          const j = await repetirLote(
+            () =>
+              apiMutate(
+                '/api/totvs/promocao-valores/preview',
+                'POST',
+                {
+                  branch: Number(empresa),
+                  promotionCode: Number(promocao),
+                  priceCode: Number(priceCode) || 1,
+                  skus: lotes[i],
+                  primeiroLote: i === 0,
+                },
+                {},
+                { timeout: TIMEOUT_CONSULTA },
+              ),
+            () => pararRef.current,
+          );
+          registrar(j?.data?.rows || []);
+        } catch (e) {
+          registrar(comFalha(lotes[i], e.message));
         }
       }
-      setSelecionados(sel);
-      setValores(vals);
-    } catch (e) {
-      setErro(e.message);
-    } finally {
+      setProgresso(null);
       setBuscando(false);
-    }
-  }, [empresa, promocao, skus, priceCode, apiMutate, calcular]);
+    },
+    [empresa, promocao, priceCode, apiMutate],
+  );
 
-  // Recalcula os valores quando o % ou o arredondamento mudam (mantém edição manual? não — % manda)
+  const buscar = useCallback(() => {
+    setSelecionados({});
+    setValores({});
+    return consultar([...new Set(skus)], []);
+  }, [consultar, skus]);
+
+  const reconsultarFalhas = useCallback(
+    () =>
+      consultar(
+        rows.filter((r) => r.status === 'falha_consulta').map((r) => r.sku),
+        rows.filter((r) => r.status !== 'falha_consulta'),
+      ),
+    [consultar, rows],
+  );
+
+  // % ou arredondamento novo recalcula tudo; sem depender de `rows`, a edição
+  // manual de uma linha não é apagada quando os lotes atualizam a tabela.
   useEffect(() => {
-    if (!rows.length) return;
     setValores((prev) => {
       const next = { ...prev };
       for (const r of rows) if (r.status === 'ok') next[r.productCode] = calcular(r.price);
       return next;
     });
-  }, [percentual, arredondamento, rows, calcular]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [percentual, arredondamento]);
+
+  // Fechar a aba no meio do loop deixaria os lotes seguintes sem enviar.
+  const emAndamento = buscando || aplicando;
+  useEffect(() => {
+    if (!emAndamento) return undefined;
+    const avisar = (e) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', avisar);
+    return () => window.removeEventListener('beforeunload', avisar);
+  }, [emAndamento]);
 
   const situacaoDe = (r) => {
     if (resultado) {
@@ -340,44 +454,103 @@ export default function PromocaoValores() {
   );
   const qtdInserir = itensParaGravar.length - qtdAtualizar;
 
-  const aplicar = useCallback(async () => {
-    setConfirmar(false);
-    if (!itensParaGravar.length) return;
-    setAplicando(true);
-    setErro(null);
-    try {
-      const j = await apiMutate(
-        '/api/totvs/promocao-valores/aplicar',
-        'POST',
-        { branch: Number(empresa), promotionCode: Number(promocao), items: itensParaGravar, incluirNovos },
-        {},
-        { timeout: 30 * 60 * 1000 },
-      );
-      const d = j?.data || {};
-      const errosPorCodigo = {};
-      for (const e of d.erros || []) errosPorCodigo[e.productCode] = e;
-      setResultado({
-        atualizados: d.atualizados || [],
-        inseridos: d.inseridos || [],
-        ignorados: d.ignorados || [],
-        erros: d.erros || [],
-        gravados: new Set([...(d.atualizados || []), ...(d.inseridos || [])]),
-        errosPorCodigo,
-      });
-      // marca os itens da promoção como existentes (pra uma 2ª aplicação virar update)
+  // Itens selecionados que ainda não foram gravados (falha, ou loop interrompido)
+  const pendentes = useMemo(
+    () => itensParaGravar.filter((i) => !resultado?.gravados.has(i.productCode)),
+    [itensParaGravar, resultado],
+  );
+
+  // Gravação em loop, de 5.000 em 5.000. Com `somentePendentes` mantém o que já
+  // foi gravado e envia só o restante.
+  const aplicar = useCallback(
+    async (somentePendentes = false) => {
+      setConfirmar(false);
+      const lista = somentePendentes ? pendentes : itensParaGravar;
+      if (!lista.length) return;
+      pararRef.current = false;
+      setAplicando(true);
+      setErro(null);
+      const acc = {
+        atualizados: somentePendentes ? [...(resultado?.atualizados || [])] : [],
+        inseridos: somentePendentes ? [...(resultado?.inseridos || [])] : [],
+        ignorados: [],
+        erros: [],
+        naoEnviados: 0,
+      };
+      const publicar = () => {
+        const errosPorCodigo = {};
+        for (const e of acc.erros) errosPorCodigo[e.productCode] = e;
+        setResultado({
+          ...acc,
+          atualizados: [...acc.atualizados],
+          inseridos: [...acc.inseridos],
+          ignorados: [...acc.ignorados],
+          erros: [...acc.erros],
+          gravados: new Set([...acc.atualizados, ...acc.inseridos]),
+          errosPorCodigo,
+        });
+      };
+      const lotes = emLotes(lista, LOTE_GRAVACAO);
+      for (let i = 0; i < lotes.length; i++) {
+        if (pararRef.current) {
+          acc.naoEnviados = lotes.slice(i).flat().length;
+          break;
+        }
+        setProgresso({
+          acao: 'Gravando no TOTVS',
+          feito: i * LOTE_GRAVACAO,
+          total: lista.length,
+          lote: i + 1,
+          lotes: lotes.length,
+        });
+        try {
+          const j = await repetirLote(
+            () =>
+              apiMutate(
+                '/api/totvs/promocao-valores/aplicar',
+                'POST',
+                {
+                  branch: Number(empresa),
+                  promotionCode: Number(promocao),
+                  items: lotes[i],
+                  incluirNovos,
+                  primeiroLote: i === 0,
+                },
+                {},
+                { timeout: TIMEOUT_GRAVACAO },
+              ),
+            () => pararRef.current,
+          );
+          const d = j?.data || {};
+          acc.atualizados.push(...(d.atualizados || []));
+          acc.inseridos.push(...(d.inseridos || []));
+          acc.ignorados.push(...(d.ignorados || []));
+          acc.erros.push(...(d.erros || []));
+        } catch (e) {
+          acc.erros.push(
+            ...lotes[i].map((it) => ({
+              productCode: it.productCode,
+              erro: `Lote ${i + 1} não gravado: ${e.message}`,
+            })),
+          );
+        }
+        publicar();
+      }
+      publicar();
+      // Marca como existentes: uma nova aplicação vira update
+      const gravados = new Set([...acc.atualizados, ...acc.inseridos]);
       setRows((prev) =>
         prev.map((r) =>
-          (d.inseridos || []).includes(r.productCode) || (d.atualizados || []).includes(r.productCode)
+          gravados.has(r.productCode)
             ? { ...r, naPromocao: true, valorPromocaoAtual: round2(valores[r.productCode]) }
             : r,
         ),
       );
-    } catch (e) {
-      setErro(e.message);
-    } finally {
+      setProgresso(null);
       setAplicando(false);
-    }
-  }, [itensParaGravar, empresa, promocao, incluirNovos, apiMutate, valores]);
+    },
+    [pendentes, itensParaGravar, resultado, empresa, promocao, incluirNovos, apiMutate, valores],
+  );
 
   const exportar = () => {
     const dados = rows.map((r) => ({
@@ -406,7 +579,37 @@ export default function PromocaoValores() {
     setSelecionados(sel);
   };
 
-  const pronto = empresa && promocao && skus.length > 0 && pctValido;
+  const pronto = empresa && promocao && skus.length > 0 && pctValido && !emAndamento;
+
+  const totalPaginas = Math.max(1, Math.ceil(rows.length / POR_PAGINA));
+  const paginaAtual = Math.min(pagina, totalPaginas);
+  const linhasPagina = rows.slice((paginaAtual - 1) * POR_PAGINA, paginaAtual * POR_PAGINA);
+
+  const barraProgresso = progresso && (
+    <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-900">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span>
+          {progresso.acao}: lote {fmtNum(progresso.lote)} de {fmtNum(progresso.lotes)} (
+          {fmtNum(progresso.feito)} de {fmtNum(progresso.total)} concluídos)
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            pararRef.current = true;
+          }}
+          className="rounded border border-rose-300 px-2 py-0.5 text-rose-700 hover:bg-rose-100"
+        >
+          Parar após este lote
+        </button>
+      </div>
+      <div className="mt-2 h-2 overflow-hidden rounded bg-rose-100">
+        <div
+          className="h-full bg-rose-600 transition-all"
+          style={{ width: `${Math.round((progresso.feito / progresso.total) * 100)}%` }}
+        />
+      </div>
+    </div>
+  );
 
   return (
     <div className="w-full max-w-7xl mx-auto px-4 py-6">
@@ -679,7 +882,7 @@ export default function PromocaoValores() {
             {buscando ? <Spinner size={16} className="animate-spin" /> : <MagnifyingGlass size={16} />}
             {buscando ? 'Consultando o TOTVS…' : 'Buscar preços no TOTVS'}
           </button>
-          {!pronto && (
+          {!pronto && !emAndamento && (
             <span className="text-xs text-gray-400">
               {!empresa
                 ? 'escolha a empresa'
@@ -691,6 +894,7 @@ export default function PromocaoValores() {
             </span>
           )}
         </div>
+        {buscando && barraProgresso}
       </div>
 
       {/* ── 4. Prévia ── */}
@@ -721,17 +925,35 @@ export default function PromocaoValores() {
             ))}
           </div>
 
+          {resumo.falhas > 0 && !buscando && (
+            <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+              <WarningCircle size={18} />
+              <span>{fmtNum(resumo.falhas)} SKUs não foram consultados.</span>
+              <button
+                type="button"
+                onClick={reconsultarFalhas}
+                disabled={emAndamento}
+                className="rounded border border-red-300 px-2 py-1 text-xs hover:bg-red-100 disabled:opacity-40"
+              >
+                Consultar de novo ({fmtNum(resumo.falhas)})
+              </button>
+            </div>
+          )}
+
           {resultado && (
             <div
               className={`mb-4 rounded-lg border px-4 py-3 text-sm ${
-                resultado.erros.length ? 'border-amber-300 bg-amber-50 text-amber-900' : 'border-emerald-300 bg-emerald-50 text-emerald-900'
+                resultado.erros.length || resultado.naoEnviados
+                  ? 'border-amber-300 bg-amber-50 text-amber-900'
+                  : 'border-emerald-300 bg-emerald-50 text-emerald-900'
               }`}
             >
               <div className="flex items-center gap-2 font-semibold">
-                {resultado.erros.length ? <WarningCircle size={18} /> : <CheckCircle size={18} />}
-                Gravação concluída: {resultado.atualizados.length} atualizados, {resultado.inseridos.length} inseridos
+                {resultado.erros.length || resultado.naoEnviados ? <WarningCircle size={18} /> : <CheckCircle size={18} />}
+                {aplicando ? 'Gravação em andamento' : 'Gravação concluída'}: {resultado.atualizados.length} atualizados, {resultado.inseridos.length} inseridos
                 {resultado.ignorados.length ? `, ${resultado.ignorados.length} ignorados (fora da promoção)` : ''}
                 {resultado.erros.length ? `, ${resultado.erros.length} com erro` : ''}
+                {resultado.naoEnviados ? `, ${resultado.naoEnviados} não enviados (interrompido)` : ''}
               </div>
               {resultado.erros.length > 0 && (
                 <ul className="mt-2 list-disc pl-5 text-xs">
@@ -764,7 +986,7 @@ export default function PromocaoValores() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {rows.map((r, i) => {
+                {linhasPagina.map((r, i) => {
                   const sit = situacaoDe(r);
                   const ok = r.status === 'ok';
                   const novo = ok ? Number(valores[r.productCode]) : null;
@@ -830,16 +1052,51 @@ export default function PromocaoValores() {
             </table>
           </div>
 
+          {totalPaginas > 1 && (
+            <div className="mt-2 flex flex-wrap items-center justify-end gap-2 text-xs text-gray-600">
+              <button
+                type="button"
+                onClick={() => setPagina(Math.max(1, paginaAtual - 1))}
+                disabled={paginaAtual === 1}
+                className="rounded border border-gray-300 px-2 py-1 hover:bg-gray-50 disabled:opacity-40"
+              >
+                Anterior
+              </button>
+              <span>
+                Página {fmtNum(paginaAtual)} de {fmtNum(totalPaginas)} ({fmtNum(rows.length)} SKUs)
+              </span>
+              <button
+                type="button"
+                onClick={() => setPagina(Math.min(totalPaginas, paginaAtual + 1))}
+                disabled={paginaAtual === totalPaginas}
+                className="rounded border border-gray-300 px-2 py-1 hover:bg-gray-50 disabled:opacity-40"
+              >
+                Próxima
+              </button>
+            </div>
+          )}
+
+          {aplicando && barraProgresso}
+
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <button
               type="button"
               onClick={() => setConfirmar(true)}
-              disabled={!itensParaGravar.length || aplicando}
+              disabled={!itensParaGravar.length || emAndamento}
               className="flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-40"
             >
               {aplicando ? <Spinner size={16} className="animate-spin" /> : <CheckCircle size={16} />}
-              {aplicando ? 'Gravando no TOTVS…' : `Aplicar no TOTVS (${itensParaGravar.length})`}
+              {aplicando ? 'Gravando no TOTVS…' : `Aplicar no TOTVS (${fmtNum(itensParaGravar.length)})`}
             </button>
+            {resultado && !emAndamento && pendentes.length > 0 && (
+              <button
+                type="button"
+                onClick={() => aplicar(true)}
+                className="flex items-center gap-2 rounded-lg border border-rose-300 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-50"
+              >
+                <ArrowsClockwise size={16} /> Enviar pendentes ({fmtNum(pendentes.length)})
+              </button>
+            )}
             <span className="text-xs text-gray-500">
               {qtdAtualizar} atualizar · {qtdInserir} inserir
               {!incluirNovos && rows.some((r) => r.status === 'ok' && !r.naPromocao)
@@ -865,6 +1122,10 @@ export default function PromocaoValores() {
                 <strong>{qtdInserir}</strong> itens serão inseridos na promoção
               </li>
               <li>
+                envio em <strong>{Math.ceil(itensParaGravar.length / LOTE_GRAVACAO)}</strong> lote(s) de até{' '}
+                {fmtNum(LOTE_GRAVACAO)} itens
+              </li>
+              <li>
                 desconto de <strong>{percentual}%</strong> sobre o preço tipo {priceCode}
                 {arredondamento !== 'exato' ? ` (${ARREDONDAMENTOS.find((a) => a.id === arredondamento)?.nome})` : ''}
               </li>
@@ -874,7 +1135,7 @@ export default function PromocaoValores() {
               <button type="button" onClick={() => setConfirmar(false)} className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
                 Cancelar
               </button>
-              <button type="button" onClick={aplicar} className="rounded-lg bg-rose-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-rose-700">
+              <button type="button" onClick={() => aplicar(false)} className="rounded-lg bg-rose-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-rose-700">
                 Gravar no TOTVS
               </button>
             </div>
