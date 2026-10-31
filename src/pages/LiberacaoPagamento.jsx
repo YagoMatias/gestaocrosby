@@ -54,7 +54,26 @@ import {
   ArrowsClockwise,
 } from '@phosphor-icons/react';
 
+// Contas Stone pelo final do CNPJ: título com esse banco e PIX vai para o bot ao aprovar
 const BANCOS = [
+  'STONE 0103',
+  'STONE 0116',
+  'STONE 0138',
+  'STONE 0205',
+  'STONE 0549',
+  'STONE 0891',
+  'STONE 0972',
+  'STONE 0973',
+  'STONE 1006',
+  'STONE 1007',
+  'STONE 1197',
+  'STONE 1198',
+  'STONE 1279',
+  'STONE 1430',
+];
+
+// Rótulos de antes de 31/10/2026: seguem nos títulos antigos, no filtro e nas transferências
+const BANCOS_ANTIGOS = [
   'SICREDI CROSBY',
   'SICREDI FÁBIO',
   'STONE FABIO',
@@ -66,6 +85,21 @@ const BANCOS = [
   'CAIXA IRMAOS',
   'MENTORE',
 ];
+
+const ehContaStone = (banco) => /^STONE \d{4}$/.test(banco || '');
+const opcoesBanco = (atual) =>
+  atual && !BANCOS.includes(atual) ? [atual, ...BANCOS] : BANCOS;
+
+const STATUS_STONE = {
+  fila: { label: 'Na fila da Stone', cor: 'bg-blue-50 text-blue-700 border-blue-200' },
+  processando: { label: 'Incluindo na Stone', cor: 'bg-blue-50 text-blue-700 border-blue-200' },
+  incluido: { label: 'Aguardando Fábio', cor: 'bg-green-50 text-green-700 border-green-200' },
+  erro: { label: 'Erro na Stone', cor: 'bg-red-50 text-red-700 border-red-200' },
+  bloqueado: { label: 'Stone bloqueou', cor: 'bg-red-50 text-red-700 border-red-200' },
+  verificar: { label: 'Conferir na Stone', cor: 'bg-amber-50 text-amber-700 border-amber-200' },
+  cancelada: { label: 'Inclusão cancelada', cor: 'bg-gray-50 text-gray-600 border-gray-200' },
+};
+const STONE_REPETIVEL = ['erro', 'bloqueado', 'cancelada'];
 
 const FORMAS_PAGAMENTO = [
   { value: 'PIX', label: 'PIX', detalheLabel: 'Chave PIX', campo: 'chave_pix' },
@@ -677,7 +711,7 @@ const ModalTransferencia = ({ onClose, onSalvo, userEmail }) => {
               onChange={(e) => setBancoOrigem(e.target.value)}
             >
               <option value="">— Selecione —</option>
-              {BANCOS.map((b) => (
+              {BANCOS_ANTIGOS.map((b) => (
                 <option key={b} value={b}>
                   {b}
                 </option>
@@ -692,7 +726,7 @@ const ModalTransferencia = ({ onClose, onSalvo, userEmail }) => {
               onChange={(e) => setBancoDestino(e.target.value)}
             >
               <option value="">— Selecione —</option>
-              {BANCOS.filter((b) => b !== bancoOrigem).map((b) => (
+              {BANCOS_ANTIGOS.filter((b) => b !== bancoOrigem).map((b) => (
                 <option key={b} value={b}>
                   {b}
                 </option>
@@ -1519,7 +1553,7 @@ const ModalDetalheDuplicata = ({
                   onChange={(e) => setBanco(e.target.value)}
                 >
                   <option value="">— Banco —</option>
-                  {BANCOS.map((b) => (
+                  {opcoesBanco(item.banco_pagamento).map((b) => (
                     <option key={b} value={b}>
                       {b}
                     </option>
@@ -1800,6 +1834,28 @@ const ThSortable = ({ label, coluna, ordenacao, onSort, className = '' }) => {
   );
 };
 
+// ─── Situação da inclusão na Stone ───────────────────
+const SeloStone = ({ item, onRepetir }) => {
+  const info = item.dados_completos?.stone_inclusao;
+  const cfg = STATUS_STONE[info?.status];
+  if (!cfg) return null;
+  return (
+    <div className="mt-1 flex items-center gap-1" title={info.erro || undefined}>
+      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${cfg.cor}`}>
+        {cfg.label}
+      </span>
+      {STONE_REPETIVEL.includes(info.status) && item.status === 'APROVADO' && (
+        <button
+          onClick={() => onRepetir([item.id])}
+          className="text-[10px] font-semibold text-[#000638] underline"
+        >
+          Repetir
+        </button>
+      )}
+    </div>
+  );
+};
+
 // ─── Linha da tabela ──────────────────────────────────
 const LinhaTitulo = React.memo(
   ({
@@ -1815,6 +1871,7 @@ const LinhaTitulo = React.memo(
     onAbrirDetalhe,
     onToggleBaixado,
     showBaixado,
+    onIncluirStone,
   }) => {
     const [forma, setForma] = useState(item.forma_pagamento || '');
     const [banco, setBanco] = useState(item.banco_pagamento || '');
@@ -2185,7 +2242,7 @@ const LinhaTitulo = React.memo(
               className="w-full border border-gray-300 rounded px-1.5 py-1 text-xs bg-white focus:ring-1 focus:ring-[#000638]"
             >
               <option value="">— Banco —</option>
-              {BANCOS.map((b) => (
+              {opcoesBanco(item.banco_pagamento).map((b) => (
                 <option key={b} value={b}>
                   {b}
                 </option>
@@ -2203,6 +2260,7 @@ const LinhaTitulo = React.memo(
               )}
             </div>
           )}
+          <SeloStone item={item} onRepetir={onIncluirStone} />
         </td>
         <td className="px-2 py-2">
           {podeEditar && !isTransferencia ? (
@@ -3514,6 +3572,73 @@ const LiberacaoPagamento = () => {
     }
   }, []);
 
+  // Aprovação de títulos "STONE 0000": o bot inclui na conta e o Fábio aprova no app
+  const incluirNaStone = useCallback(async (ids) => {
+    try {
+      const resp = await apiJson('/api/stone-bot/inclusoes', {
+        method: 'POST',
+        body: { ids },
+      });
+      const { itens = [], semPix = [] } = resp?.data || {};
+      setTitulos((prev) =>
+        prev.map((t) => {
+          const it = itens.find((i) => i.id === t.id && !i.jaExistia);
+          if (!it) return t;
+          return {
+            ...t,
+            dados_completos: {
+              ...(t.dados_completos || {}),
+              stone_inclusao: { status: it.status, conta: it.conta, erro: it.erro },
+            },
+          };
+        }),
+      );
+      const avisos = [
+        ...itens
+          .filter((i) => i.status === 'erro')
+          .map((i) => {
+            const t = titulos.find((x) => x.id === i.id);
+            return `${t?.nm_fornecedor || i.id}: ${i.erro}`;
+          }),
+        ...semPix.map(
+          (t) => `${t.fornecedor || t.id}: forma ${t.forma || 'vazia'} não é incluída pelo bot, só PIX.`,
+        ),
+      ];
+      if (avisos.length) alert(`Não foram para a Stone:\n\n${avisos.join('\n')}`);
+    } catch (e) {
+      alert(`Título aprovado, mas não entrou na fila da Stone: ${e.message}`);
+    }
+  }, [titulos]);
+
+  const idsNaFilaStone = useMemo(
+    () =>
+      titulos
+        .filter((t) =>
+          ['fila', 'processando'].includes(t.dados_completos?.stone_inclusao?.status),
+        )
+        .map((t) => t.id)
+        .join(','),
+    [titulos],
+  );
+
+  useEffect(() => {
+    if (!idsNaFilaStone) return undefined;
+    const timer = setInterval(async () => {
+      const { data } = await supabase
+        .from('pagamentos_liberacao')
+        .select('id,dados_completos')
+        .in('id', idsNaFilaStone.split(','));
+      if (!data) return;
+      const porId = new Map(data.map((d) => [d.id, d.dados_completos]));
+      setTitulos((prev) =>
+        prev.map((t) =>
+          porId.has(t.id) ? { ...t, dados_completos: porId.get(t.id) } : t,
+        ),
+      );
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [idsNaFilaStone]);
+
   const mudarStatusTitulo = useCallback(
     async (id, novoStatus, extra = {}, opts = {}) => {
       const titulo = titulos.find((t) => t.id === id);
@@ -3526,10 +3651,19 @@ const LiberacaoPagamento = () => {
         APROVADO: 'Aprovado',
         PAGO: 'Pago',
       };
+      // voltar de PAGO para APROVADO não inclui de novo
+      const bancoFinal = extra.banco_pagamento ?? titulo.banco_pagamento;
+      const vaiParaStone =
+        novoStatus === 'APROVADO' &&
+        ['PENDENTE', 'PROVISAO'].includes(oldStatus) &&
+        ehContaStone(bancoFinal);
+      const avisoStone = vaiParaStone
+        ? `\n\nO bot vai incluir na ${bancoFinal} para o Fábio aprovar.`
+        : '';
       if (
         !opts.skipConfirm &&
         !window.confirm(
-          `Mover este título de ${labels[oldStatus] || oldStatus} para ${labels[novoStatus] || novoStatus}?`,
+          `Mover este título de ${labels[oldStatus] || oldStatus} para ${labels[novoStatus] || novoStatus}?${avisoStone}`,
         )
       )
         return;
@@ -3578,8 +3712,9 @@ const LiberacaoPagamento = () => {
       setTitulos((prev) =>
         prev.map((t) => (t.id === id ? { ...t, ...patch } : t)),
       );
+      if (vaiParaStone) await incluirNaStone([id]);
     },
-    [titulos, user, sincronizarPagamentoFabrica],
+    [titulos, user, sincronizarPagamentoFabrica, incluirNaStone],
   );
 
   // Mudança de status em lote
@@ -3599,9 +3734,22 @@ const LiberacaoPagamento = () => {
         APROVADO: 'Aprovado',
         PAGO: 'Pago',
       };
+      const paraStone =
+        novoStatus === 'APROVADO'
+          ? ids.filter((id) => {
+              const t = titulos.find((x) => x.id === id);
+              return (
+                ['PENDENTE', 'PROVISAO'].includes(t.status) &&
+                ehContaStone(t.banco_pagamento)
+              );
+            })
+          : [];
+      const avisoStone = paraStone.length
+        ? `\n\nO bot vai incluir ${paraStone.length} na Stone para o Fábio aprovar.`
+        : '';
       if (
         !window.confirm(
-          `Mover ${ids.length} título(s) para ${labels[novoStatus]}?`,
+          `Mover ${ids.length} título(s) para ${labels[novoStatus]}?${avisoStone}`,
         )
       )
         return;
@@ -3653,8 +3801,9 @@ const LiberacaoPagamento = () => {
       }
       setProcessando(false);
       setSelecionados(new Set());
+      if (paraStone.length) await incluirNaStone(paraStone);
     },
-    [selecionados, titulos, user, sincronizarPagamentoFabrica],
+    [selecionados, titulos, user, sincronizarPagamentoFabrica, incluirNaStone],
   );
 
   const aprovarSelecionados = useCallback(async () => {
@@ -3662,12 +3811,25 @@ const LiberacaoPagamento = () => {
       alert('Selecione pelo menos um título.');
       return;
     }
+    const ids = Array.from(selecionados);
+    const paraStone = ids.filter((id) => {
+      const t = titulos.find((x) => x.id === id);
+      return (
+        t &&
+        ['PENDENTE', 'PROVISAO'].includes(t.status) &&
+        ehContaStone(t.banco_pagamento)
+      );
+    });
+    const avisoStone = paraStone.length
+      ? `\n\nO bot vai incluir ${paraStone.length} na Stone para o Fábio aprovar.`
+      : '';
     if (
-      !window.confirm(`Confirmar aprovação de ${selecionados.size} título(s)?`)
+      !window.confirm(
+        `Confirmar aprovação de ${selecionados.size} título(s)?${avisoStone}`,
+      )
     )
       return;
     setProcessando(true);
-    const ids = Array.from(selecionados);
     const now = new Date().toISOString();
     const { error } = await supabase
       .from('pagamentos_liberacao')
@@ -3695,7 +3857,8 @@ const LiberacaoPagamento = () => {
           : t,
       ),
     );
-  }, [selecionados, user]);
+    if (paraStone.length) await incluirNaStone(paraStone);
+  }, [selecionados, user, titulos, incluirNaStone]);
 
   // Recebe mapa { id: 'YYYY-MM-DD' } vindo do ModalPagarSelecionados
   const pagarSelecionados = useCallback(
@@ -4413,7 +4576,7 @@ const LiberacaoPagamento = () => {
               className="border border-gray-300 rounded px-2 py-1.5 text-xs bg-white focus:ring-1 focus:ring-[#000638] h-[30px]"
             >
               <option value="">Todos</option>
-              {BANCOS.map((b) => (
+              {[...BANCOS, ...BANCOS_ANTIGOS].map((b) => (
                 <option key={b} value={b}>
                   {b}
                 </option>
@@ -4935,6 +5098,7 @@ const LiberacaoPagamento = () => {
                               onAbrirModal={setModalItem}
                               onAbrirDetalhe={setModalDetalhe}
                               onToggleBaixado={toggleBaixado}
+                              onIncluirStone={incluirNaStone}
                               showBaixado={filtroStatus === 'PAGO'}
                             />
                           ))}
@@ -4954,6 +5118,7 @@ const LiberacaoPagamento = () => {
                         onAbrirModal={setModalItem}
                         onAbrirDetalhe={setModalDetalhe}
                         onToggleBaixado={toggleBaixado}
+                        onIncluirStone={incluirNaStone}
                         showBaixado={filtroStatus === 'PAGO'}
                       />
                     ))}
