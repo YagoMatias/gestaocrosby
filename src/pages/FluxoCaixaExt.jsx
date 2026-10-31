@@ -29,6 +29,8 @@ import {
   CreditCard,
   Storefront,
   CaretDown,
+  CaretLeft,
+  CaretRight,
   Robot,
   FilePdf,
 } from '@phosphor-icons/react';
@@ -171,6 +173,115 @@ const MultiSelect = ({ label, opcoes, valor, onChange, renderOpcao, placeholder 
   );
 };
 
+const LINHAS_POR_PAGINA = 100;
+const SEM_CNPJ = 'sem-cnpj';
+const docDaConta = (c) => {
+  const d = String(c?.titular_cnpj || '').replace(/\D/g, '');
+  return d.length >= 11 ? d : SEM_CNPJ;
+};
+const fmtRaiz = (r) => r.replace(/^(\d{2})(\d{3})(\d{3})$/, '$1.$2.$3');
+
+// Filtro por CNPJ do titular da conta, agrupado pela raiz (8 primeiros dígitos).
+// Marcar a raiz seleciona todos os CNPJs do grupo.
+const SeletorCnpj = ({ contas, valor, onChange }) => {
+  const [aberto, setAberto] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!aberto) return undefined;
+    const h = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setAberto(false);
+    };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [aberto]);
+
+  const grupos = useMemo(() => {
+    const porRaiz = new Map();
+    for (const c of contas) {
+      const doc = docDaConta(c);
+      const raiz = doc === SEM_CNPJ ? SEM_CNPJ : doc.slice(0, 8);
+      if (!porRaiz.has(raiz)) porRaiz.set(raiz, { raiz, nome: '', docs: new Map() });
+      const g = porRaiz.get(raiz);
+      if (!g.nome && doc !== SEM_CNPJ) g.nome = c.titular_nome || '';
+      g.docs.set(doc, (g.docs.get(doc) || 0) + 1);
+    }
+    return [...porRaiz.values()].sort((a, b) => (a.raiz === SEM_CNPJ ? 1 : b.raiz === SEM_CNPJ ? -1 : a.raiz.localeCompare(b.raiz)));
+  }, [contas]);
+
+  const toggle = (doc) => onChange(valor.includes(doc) ? valor.filter((d) => d !== doc) : [...valor, doc]);
+  const toggleGrupo = (docs) => {
+    const todos = docs.every((d) => valor.includes(d));
+    onChange(todos ? valor.filter((d) => !docs.includes(d)) : [...new Set([...valor, ...docs])]);
+  };
+  const grupoInteiro = valor.length ? grupos.find((g) => g.docs.size === valor.length && [...g.docs.keys()].every((d) => valor.includes(d))) : null;
+  const resumo = !valor.length
+    ? 'Todos'
+    : grupoInteiro
+      ? grupoInteiro.raiz === SEM_CNPJ
+        ? 'Sem CNPJ cadastrado'
+        : `Raiz ${fmtRaiz(grupoInteiro.raiz)}`
+      : valor.length === 1
+        ? fmtDoc(valor[0])
+        : `${valor.length} CNPJs`;
+
+  return (
+    <div ref={ref} className="relative w-full">
+      <label className="block text-xs font-semibold mb-0.5 text-[#000638]">CNPJ do titular</label>
+      <button
+        type="button"
+        onClick={() => setAberto((v) => !v)}
+        className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 text-xs border rounded-lg ${valor.length ? 'border-blue-400 bg-white text-blue-700 font-medium' : 'border-[#000638]/30 bg-[#f8f9fb] text-[#000638] hover:bg-white'}`}
+      >
+        <span className="truncate">{resumo}</span>
+        <CaretDown size={12} className={`shrink-0 transition-transform ${aberto ? 'rotate-180' : ''}`} />
+      </button>
+      {aberto && (
+        <div className="absolute z-40 mt-1 left-0 w-80 max-w-[90vw] bg-white border border-gray-200 rounded-lg shadow-xl p-2 text-[13px] text-gray-800">
+          <div className="flex justify-end mb-1 px-1 text-xs">
+            <button type="button" onClick={() => onChange([])} className="text-gray-500 hover:underline">
+              Limpar
+            </button>
+          </div>
+          <div className="max-h-72 overflow-auto">
+            {grupos.map((g) => {
+              const docs = [...g.docs.keys()];
+              const marcados = docs.filter((d) => valor.includes(d)).length;
+              const semCnpj = g.raiz === SEM_CNPJ;
+              return (
+                <div key={g.raiz} className="mb-1">
+                  <label className="flex items-center gap-2.5 px-2 py-2 rounded-md bg-gray-50 hover:bg-blue-50 cursor-pointer font-semibold text-[#000638]">
+                    <input
+                      type="checkbox"
+                      checked={marcados === docs.length}
+                      ref={(el) => {
+                        if (el) el.indeterminate = marcados > 0 && marcados < docs.length;
+                      }}
+                      onChange={() => toggleGrupo(docs)}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 shrink-0 w-4 h-4"
+                    />
+                    <span className="min-w-0 flex-1 truncate">{semCnpj ? `Sem CNPJ cadastrado (${g.docs.get(SEM_CNPJ)} contas)` : `Raiz ${fmtRaiz(g.raiz)}${g.nome ? ` · ${g.nome}` : ''}`}</span>
+                  </label>
+                  {!semCnpj &&
+                    docs.sort().map((d) => (
+                      <label key={d} className="flex items-center gap-2.5 pl-7 pr-2 py-1.5 rounded-md hover:bg-blue-50 cursor-pointer">
+                        <input type="checkbox" checked={valor.includes(d)} onChange={() => toggle(d)} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 shrink-0 w-4 h-4" />
+                        <span className="min-w-0 flex-1 truncate">{fmtDoc(d)}</span>
+                        <span className="text-[11px] text-gray-400 shrink-0">
+                          {g.docs.get(d)} conta{g.docs.get(d) > 1 ? 's' : ''}
+                        </span>
+                      </label>
+                    ))}
+                </div>
+              );
+            })}
+            {!grupos.length && <p className="px-2 py-3 text-gray-400">Nenhuma conta cadastrada.</p>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtitulo = SUBTITULO_PADRAO, mostrarBot = true } = {}) => {
   const API = API_POR_ESCOPO[escopo] || API_POR_ESCOPO.crosby;
   const inputRef = useRef(null);
@@ -178,13 +289,16 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
   const [ate, setAte] = useState(hoje());
   const [bancos, setBancos] = useState([]); // filtro
   const [contasSel, setContasSel] = useState([]);
+  const [cnpjsSel, setCnpjsSel] = useState([]);
   const [tipos, setTipos] = useState([]);
   const [formas, setFormas] = useState([]);
   const [contraparte, setContraparte] = useState('');
   const [busca, setBusca] = useState('');
-  const [buscaDeb, setBuscaDeb] = useState('');
 
+  const [contasLista, setContasLista] = useState([]); // só para os filtros, antes da 1ª busca
   const [dados, setDados] = useState(null);
+  const [pagina, setPagina] = useState(1);
+  const jaBuscou = useRef(false);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(null);
   const [migrationPendente, setMigrationPendente] = useState(false);
@@ -201,24 +315,47 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
   // edição de conta
   const [editConta, setEditConta] = useState(null); // { id, apelido, titular_cnpj }
 
-  useEffect(() => {
-    const t = setTimeout(() => setBuscaDeb(busca), 350);
-    return () => clearTimeout(t);
-  }, [busca]);
+  const carregarContas = useCallback(async () => {
+    try {
+      const r = await fetch(`${API}/contas`);
+      const j = await r.json();
+      if (j?.success) setContasLista(j.data || []);
+    } catch {
+      /* os filtros ficam vazios; a busca segue funcionando */
+    }
+  }, [API]);
 
-  const carregar = useCallback(async () => {
-    if (!de || !ate) return;
+  useEffect(() => {
+    carregarContas();
+  }, [carregarContas]);
+
+  // Só roda ao clicar em Buscar (ou para atualizar uma busca já feita).
+  const carregar = useCallback(async (periodo = {}) => {
+    const deBusca = periodo.de || de;
+    const ateBusca = periodo.ate || ate;
+    if (!deBusca || !ateBusca) return;
+    // o CNPJ do titular vira a lista de contas enviada à API
+    let idsContas = contasSel;
+    if (cnpjsSel.length) {
+      const doCnpj = contasLista.filter((c) => cnpjsSel.includes(docDaConta(c))).map((c) => c.id);
+      idsContas = contasSel.length ? contasSel.filter((id) => doCnpj.includes(id)) : doCnpj;
+      if (!idsContas.length) {
+        setErro('Nenhuma conta combina com o CNPJ e a conta selecionados.');
+        return;
+      }
+    }
+    jaBuscou.current = true;
     setCarregando(true);
     setErro(null);
     try {
-      const p = new URLSearchParams({ de, ate });
+      const p = new URLSearchParams({ de: deBusca, ate: ateBusca });
       if (bancos.length) p.set('bancos', bancos.join(','));
-      if (contasSel.length) p.set('contas', contasSel.join(','));
+      if (idsContas.length) p.set('contas', idsContas.join(','));
       if (tipos.length) p.set('tipos', tipos.join(','));
       if (tipos.length === 1) p.set('tipo', tipos[0]); // compat. com API sem suporte a 'tipos'
       if (formas.length) p.set('formas', formas.join(','));
       if (contraparte) p.set('contraparte', contraparte);
-      if (buscaDeb.trim()) p.set('busca', buscaDeb.trim());
+      if (busca.trim()) p.set('busca', busca.trim());
       const r = await fetch(`${API}/painel?${p.toString()}`);
       const j = await r.json();
       if (!j?.success) {
@@ -231,16 +368,22 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
       }
       setMigrationPendente(false);
       setDados(j.data);
+      setPagina(1);
     } catch (e) {
       setErro(e.message);
     } finally {
       setCarregando(false);
     }
-  }, [de, ate, bancos, contasSel, tipos, formas, contraparte, buscaDeb]);
+  }, [API, de, ate, bancos, contasSel, cnpjsSel, contasLista, tipos, formas, contraparte, busca]);
 
-  useEffect(() => {
-    carregar();
-  }, [carregar]);
+  // Depois de importar/editar: atualiza as contas e só refaz a busca se já houve uma.
+  const recarregar = useCallback(
+    (periodo) => {
+      carregarContas();
+      if (jaBuscou.current) carregar(periodo);
+    },
+    [carregarContas, carregar],
+  );
 
   const carregarImportacoes = useCallback(async () => {
     try {
@@ -257,8 +400,8 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
 
   // ─── importação de PDFs ────────────────────────────────────
   const importar = async (files) => {
-    const lista = Array.from(files || []).filter((f) => /\.pdf$/i.test(f.name));
-    if (!lista.length) return setErro('Selecione os PDFs dos extratos.');
+    const lista = Array.from(files || []).filter((f) => /\.(pdf|ofx|xlsx)$/i.test(f.name));
+    if (!lista.length) return setErro('Selecione os extratos (OFX, PDF ou planilha do Pagar.me).');
     setImportando(true);
     setResultadoImport(null);
     setErro(null);
@@ -277,9 +420,11 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
       setResultadoImport(j.data);
       // amplia o período para cobrir os extratos importados
       const p = j.data?.periodo;
-      if (p?.de && p.de < de) setDe(p.de);
-      if (p?.ate && p.ate > ate) setAte(p.ate);
-      carregar();
+      const novoDe = p?.de && p.de < de ? p.de : de;
+      const novoAte = p?.ate && p.ate > ate ? p.ate : ate;
+      setDe(novoDe);
+      setAte(novoAte);
+      recarregar({ de: novoDe, ate: novoAte });
       if (importacoes) carregarImportacoes();
     } catch (e) {
       setErro(e.message);
@@ -295,7 +440,7 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
       const j = await r.json();
       if (!j?.success) throw new Error(j?.message);
       carregarImportacoes();
-      carregar();
+      recarregar();
     } catch (e) {
       setErro(e.message);
     }
@@ -315,9 +460,9 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
 
   // chamado pela aba Bot Stone quando uma execução termina
   const aposBot = useCallback(() => {
-    carregar();
+    recarregar();
     carregarImportacoes();
-  }, [carregar, carregarImportacoes]);
+  }, [recarregar, carregarImportacoes]);
 
   const salvarConta = async () => {
     if (!editConta) return;
@@ -330,7 +475,7 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
       const j = await r.json();
       if (!j?.success) throw new Error(j?.message);
       setEditConta(null);
-      carregar();
+      recarregar();
     } catch (e) {
       setErro(e.message);
     }
@@ -341,7 +486,7 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
       const r = await fetch(`${API}/transferencias/recasar?de=${de}&ate=${ate}`, { method: 'POST' });
       const j = await r.json();
       if (!j?.success) throw new Error(j?.message);
-      carregar();
+      recarregar();
     } catch (e) {
       setErro(e.message);
     }
@@ -351,15 +496,20 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
   const limparFiltros = () => {
     setBancos([]);
     setContasSel([]);
+    setCnpjsSel([]);
     setTipos([]);
     setFormas([]);
     setContraparte('');
     setBusca('');
   };
-  const filtrosAtivos = bancos.length + contasSel.length + tipos.length + formas.length + (contraparte ? 1 : 0) + (busca ? 1 : 0);
+  const filtrosAtivos = bancos.length + contasSel.length + cnpjsSel.length + tipos.length + formas.length + (contraparte ? 1 : 0) + (busca ? 1 : 0);
 
-  const contas = dados?.contas || [];
+  const contas = dados?.contas || contasLista;
   const lancamentos = dados?.lancamentos || [];
+  const totalPaginas = Math.max(1, Math.ceil(lancamentos.length / LINHAS_POR_PAGINA));
+  const paginaAtual = Math.min(pagina, totalPaginas);
+  const inicioPagina = (paginaAtual - 1) * LINHAS_POR_PAGINA;
+  const lancamentosPagina = useMemo(() => lancamentos.slice(inicioPagina, inicioPagina + LINHAS_POR_PAGINA), [lancamentos, inicioPagina]);
   const resumo = dados?.resumo;
   const bancosPresentes = useMemo(() => [...new Set(contas.map((c) => c.banco))], [contas]);
   const saldoFinalTotal = useMemo(() => (dados?.porConta || []).reduce((s, c) => s + (c.saldoFinal || 0), 0), [dados]);
@@ -448,8 +598,8 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
               </button>
             )}
           </span>
-          <button onClick={carregar} disabled={carregando} className="px-3 py-1.5 text-xs rounded-lg border border-gray-300 bg-white text-gray-600 hover:bg-gray-50 flex items-center gap-1">
-            <ArrowsClockwise size={14} className={carregando ? 'animate-spin' : ''} /> Atualizar
+          <button onClick={() => carregar()} disabled={carregando || !de || !ate} className="px-4 py-1.5 text-xs rounded-lg bg-[#000638] text-white hover:bg-[#000638]/90 disabled:opacity-50 flex items-center gap-1 font-semibold">
+            {carregando ? <ArrowsClockwise size={14} className="animate-spin" /> : <MagnifyingGlass size={14} weight="bold" />} {carregando ? 'Buscando…' : 'Buscar'}
           </button>
           <button onClick={exportarExcel} disabled={!dados} className="px-3 py-1.5 text-xs rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 flex items-center gap-1">
             <Export size={14} /> Excel
@@ -474,6 +624,7 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
           <input
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && carregar()}
             placeholder="Pesquisar nome, CNPJ/CPF, histórico, documento ou valor…"
             className="w-full pl-8 pr-8 py-2 text-sm border border-[#000638]/30 rounded-lg bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#000638]"
           />
@@ -507,11 +658,13 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
             )}
             larguraMin="w-full"
           />
+          <SeletorCnpj contas={contasLista.filter((c) => c.qtdImportacoes > 0 && (!bancos.length || bancos.includes(c.banco)))} valor={cnpjsSel} onChange={setCnpjsSel} />
           <MultiSelect
             label="Conta"
             busca
-            opcoes={contas
-              .filter((c) => !bancos.length || bancos.includes(c.banco))
+            opcoes={contasLista
+              .filter((c) => c.qtdImportacoes > 0 && (!bancos.length || bancos.includes(c.banco)))
+              .filter((c) => !cnpjsSel.length || cnpjsSel.includes(docDaConta(c)))
               .map((c) => ({ value: c.id, label: c.apelido, banco: c.banco, sub: c.titular_nome }))}
             valor={contasSel}
             onChange={setContasSel}
@@ -522,7 +675,7 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
                 {o.sub && <span className="text-gray-400 truncate">· {o.sub}</span>}
               </span>
             )}
-            placeholder={contas.length ? 'Todas as contas' : 'Nenhuma conta importada'}
+            placeholder={contasLista.length ? 'Todas as contas' : 'Nenhuma conta importada'}
             larguraMin="w-full"
           />
           <MultiSelect
@@ -545,7 +698,7 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
             placeholder="Todas as formas"
             larguraMin="w-full"
           />
-          <div className="col-span-2 sm:col-span-3 lg:col-span-6">
+          <div className="col-span-2 lg:col-span-5">
             <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Fornecedor / contraparte</label>
             <input
               list="fc-contrapartes"
@@ -611,7 +764,7 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
         {!dados && !carregando && !migrationPendente && aba !== 'bot' && aba !== 'importacoes' && (
           <div className="p-12 text-center text-gray-400">
             <Bank size={40} className="mx-auto mb-3 opacity-40" />
-            <p className="text-sm">Nenhum dado no período. Importe os PDFs dos extratos para começar.</p>
+            <p className="text-sm">Escolha o período e os filtros e clique em Buscar.</p>
           </div>
         )}
 
@@ -635,7 +788,7 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
                   </tr>
                 </thead>
                 <tbody>
-                  {lancamentos.map((l) => {
+                  {lancamentosPagina.map((l) => {
                     const tcfg = TIPOS[l.tipo] || TIPOS.SAIDA;
                     const bcfg = bancoCfg(l.banco);
                     return (
@@ -706,7 +859,7 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
               </table>
             </div>
             <div className="md:hidden divide-y divide-gray-100">
-              {lancamentos.map((l) => {
+              {lancamentosPagina.map((l) => {
                 const tcfg = TIPOS[l.tipo] || TIPOS.SAIDA;
                 return (
                   <div key={l.id} className="p-3">
@@ -735,6 +888,24 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
                 );
               })}
             </div>
+            {lancamentos.length > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 border-t border-gray-200 text-xs text-gray-600">
+                <span>
+                  {inicioPagina + 1}–{inicioPagina + lancamentosPagina.length} de {lancamentos.length.toLocaleString('pt-BR')} lançamentos
+                </span>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setPagina(paginaAtual - 1)} disabled={paginaAtual <= 1} className="px-2 py-1 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40 flex items-center gap-1">
+                    <CaretLeft size={12} /> Anterior
+                  </button>
+                  <span className="font-medium">
+                    Página {paginaAtual} de {totalPaginas}
+                  </span>
+                  <button onClick={() => setPagina(paginaAtual + 1)} disabled={paginaAtual >= totalPaginas} className="px-2 py-1 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40 flex items-center gap-1">
+                    Próxima <CaretRight size={12} />
+                  </button>
+                </div>
+              </div>
+            )}
           </>
         )}
 
@@ -1157,7 +1328,7 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
                 onClick={() => inputRef.current?.click()}
                 className={`cursor-pointer rounded-xl border-2 border-dashed p-8 flex flex-col items-center justify-center text-center transition-colors ${arrastando ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-white hover:bg-gray-50'}`}
               >
-                <input ref={inputRef} type="file" accept=".pdf,.xlsx" multiple className="hidden" onChange={(e) => importar(e.target.files)} />
+                <input ref={inputRef} type="file" accept=".pdf,.ofx,.xlsx" multiple className="hidden" onChange={(e) => importar(e.target.files)} />
                 {importando ? <ArrowsClockwise size={30} className="animate-spin text-blue-600 mb-2" /> : <UploadSimple size={30} className="text-blue-600 mb-2" />}
                 <p className="text-sm font-medium text-gray-700">{importando ? 'Lendo e gravando os extratos…' : 'Arraste os PDFs dos extratos aqui (pode ser vários de uma vez), ou clique para escolher'}</p>
                 <p className="text-xs text-gray-400 mt-1">
