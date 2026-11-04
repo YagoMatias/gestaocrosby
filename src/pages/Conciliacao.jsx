@@ -311,8 +311,12 @@ const Conciliacao = () => {
   const hoje = new Date();
   const [ano] = useState(hoje.getFullYear());
   const [mes, setMes] = useState(MESES[hoje.getMonth()]);
-  const [de, setDe] = useState(iso(hoje.getFullYear(), hoje.getMonth() + 1, 1));
-  const [ate, setAte] = useState(iso(hoje.getFullYear(), hoje.getMonth() + 1, ultimoDia(hoje.getFullYear(), hoje.getMonth() + 1)));
+  // formulário (o que o usuário digita) × aplicado (o que foi buscado ao clicar em Buscar)
+  const [deForm, setDeForm] = useState(iso(hoje.getFullYear(), hoje.getMonth() + 1, 1));
+  const [ateForm, setAteForm] = useState(iso(hoje.getFullYear(), hoje.getMonth() + 1, ultimoDia(hoje.getFullYear(), hoje.getMonth() + 1)));
+  const [de, setDe] = useState(null);
+  const [ate, setAte] = useState(null);
+  const [filtrosAplicados, setFiltrosAplicados] = useState({ bancos: [], empresas: [], busca: '' });
 
   const [busca, setBusca] = useState('');
   const [empresasSel, setEmpresasSel] = useState([]); // [] = todas
@@ -332,13 +336,24 @@ const Conciliacao = () => {
   const escolherMes = (m) => {
     setMes(m);
     if (m === 'ANO') {
-      setDe(iso(ano, 1, 1));
-      setAte(iso(ano, 12, 31));
+      setDeForm(iso(ano, 1, 1));
+      setAteForm(iso(ano, 12, 31));
       return;
     }
     const n = MESES.indexOf(m) + 1;
-    setDe(iso(ano, n, 1));
-    setAte(iso(ano, n, ultimoDia(ano, n)));
+    setDeForm(iso(ano, n, 1));
+    setAteForm(iso(ano, n, ultimoDia(ano, n)));
+  };
+  const buscar = () => {
+    if (!deForm || !ateForm) return;
+    if (deForm > ateForm) {
+      setErro('A data inicial não pode ser maior que a final.');
+      return;
+    }
+    setErro(null);
+    setDe(deForm);
+    setAte(ateForm);
+    setFiltrosAplicados({ bancos: bancosSel, empresas: empresasSel, busca });
   };
 
   const carregarContas = useCallback(async () => {
@@ -460,8 +475,10 @@ const Conciliacao = () => {
   }, [dados]);
 
   const linhas = useMemo(() => {
-    const q = busca.trim().toLowerCase();
-    const sel = new Set(bancosSel);
+    if (!dados) return []; // nada carregado ainda: só depois de Buscar
+    const q = filtrosAplicados.busca.trim().toLowerCase();
+    const sel = new Set(filtrosAplicados.bancos);
+    const empresasSel = filtrosAplicados.empresas;
     return linhasBase
       .map((l) => ({ ...l, resumo: porContaId.get(l.fluxo.id) || null, cta: l.fluxo.cta_totvs || l.ctaPlanilha || null }))
       .filter((l) => {
@@ -470,7 +487,7 @@ const Conciliacao = () => {
         if (q && !`${l.cta || ''} ${l.cnpj} ${l.banco} ${l.codigo} ${l.ag} ${l.conta} ${l.titular || ''} ${l.fluxo.apelido || ''}`.toLowerCase().includes(q)) return false;
         return true;
       });
-  }, [linhasBase, porContaId, busca, empresasSel, bancosSel]);
+  }, [linhasBase, porContaId, dados, filtrosAplicados]);
 
   // grupos por empresa; dentro do grupo, contas com lançamentos primeiro
   const grupos = useMemo(
@@ -573,15 +590,17 @@ const Conciliacao = () => {
     <div className="min-h-screen bg-gray-50 px-3 py-4 md:p-6 pb-24 md:pb-6">
       <PageTitle title="Conciliação" subtitle="Contas bancárias do grupo e o extrato importado de cada uma no período" icon={Bank} />
 
-      {/* Filtros — mesmo padrão do Extrato Bancário (período em chips mantido) */}
+      {/* Filtros — mesmo padrão do Extrato Bancário: 1ª linha De/Até + período; 2ª linha Banco, Empresa, pesquisa e Buscar */}
       {(() => {
         const filtrosAtivos = bancosSel.length + empresasSel.length + (busca ? 1 : 0);
         const limparFiltros = () => {
           setBusca('');
           setBancosSel([]);
           setEmpresasSel([]);
+          setFiltrosAplicados({ bancos: [], empresas: [], busca: '' });
         };
         const inp = 'w-full px-2 py-1.5 text-xs border border-[#000638]/30 rounded-lg bg-[#f8f9fb] text-[#000638] focus:outline-none focus:ring-2 focus:ring-[#000638]';
+        const lbl = 'block text-xs font-semibold mb-0.5 text-[#000638]';
         return (
           <div className="bg-white rounded-lg shadow-lg border border-[#000638]/10 p-3 md:p-4 mb-4">
             <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -593,51 +612,58 @@ const Conciliacao = () => {
                   </button>
                 )}
               </span>
-              <span className="text-xs text-gray-500">
-                {linhas.length} conta{linhas.length === 1 ? '' : 's'} · {fmtData(de)} a {fmtData(ate)}
-              </span>
-            </div>
-
-            <div className="relative mb-3">
-              <MagnifyingGlass size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                value={busca}
-                onChange={(e) => setBusca(e.target.value)}
-                placeholder="Pesquisar CTA, CNPJ, banco, conta ou titular…"
-                className="w-full pl-8 pr-8 py-2 text-sm border border-[#000638]/30 rounded-lg bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#000638]"
-              />
-              {busca && (
-                <button onClick={() => setBusca('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                  <X size={14} />
-                </button>
+              {dados && (
+                <span className="text-xs text-gray-500">
+                  {linhas.length} conta{linhas.length === 1 ? '' : 's'} · {fmtData(de)} a {fmtData(ate)}
+                </span>
               )}
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-3 gap-y-2.5 items-end">
-              <div>
-                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">De</label>
+            {/* 1ª linha: De, Até e período */}
+            <div className="grid grid-cols-2 lg:grid-cols-12 gap-x-3 gap-y-2.5 items-end mb-2.5">
+              <div className="lg:col-span-2">
+                <label className={lbl}>De</label>
                 <input
                   type="date"
-                  value={de}
+                  value={deForm}
                   onChange={(e) => {
-                    setDe(e.target.value);
+                    setDeForm(e.target.value);
                     setMes(null);
                   }}
+                  onKeyDown={(e) => e.key === 'Enter' && buscar()}
                   className={inp}
                 />
               </div>
-              <div>
-                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Até</label>
+              <div className="lg:col-span-2">
+                <label className={lbl}>Até</label>
                 <input
                   type="date"
-                  value={ate}
+                  value={ateForm}
                   onChange={(e) => {
-                    setAte(e.target.value);
+                    setAteForm(e.target.value);
                     setMes(null);
                   }}
+                  onKeyDown={(e) => e.key === 'Enter' && buscar()}
                   className={inp}
                 />
               </div>
+              <div className="col-span-2 lg:col-span-8">
+                <label className={lbl}>Período ({ano})</label>
+                <div className="flex flex-wrap gap-1">
+                  <button onClick={() => escolherMes('ANO')} className={`${chip(mes === 'ANO')} px-3`}>
+                    ANO
+                  </button>
+                  {MESES.map((m) => (
+                    <button key={m} onClick={() => escolherMes(m)} className={chip(mes === m)}>
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* 2ª linha: Banco, Empresa, pesquisa e Buscar */}
+            <div className="grid grid-cols-2 lg:grid-cols-12 gap-x-3 gap-y-2.5 items-end">
               <MultiSelect
                 label="Banco"
                 opcoes={bancosDisponiveis.map((b) => ({ value: b, label: bancoCfg(b).label, banco: b }))}
@@ -650,7 +676,7 @@ const Conciliacao = () => {
                   </span>
                 )}
                 placeholder="Todos os bancos"
-                larguraMin="w-full"
+                larguraMin="w-full lg:col-span-3"
               />
               <MultiSelect
                 label="Empresa"
@@ -659,20 +685,34 @@ const Conciliacao = () => {
                 valor={empresasSel}
                 onChange={setEmpresasSel}
                 placeholder={`Todas (${linhasBase.length})`}
-                larguraMin="w-full"
+                larguraMin="w-full lg:col-span-3"
               />
-              <div className="col-span-2 sm:col-span-3 lg:col-span-2">
-                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Período ({ano})</label>
-                <div className="flex flex-wrap gap-1">
-                  <button onClick={() => escolherMes('ANO')} className={`${chip(mes === 'ANO')} px-3`}>
-                    ANO
-                  </button>
-                  {MESES.map((m) => (
-                    <button key={m} onClick={() => escolherMes(m)} className={chip(mes === m)}>
-                      {m}
+              <div className="col-span-2 lg:col-span-4">
+                <label className={lbl}>Pesquisar</label>
+                <div className="relative">
+                  <MagnifyingGlass size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    value={busca}
+                    onChange={(e) => setBusca(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && buscar()}
+                    placeholder="CTA, CNPJ, banco, conta ou titular…"
+                    className={`${inp} pl-8 pr-7`}
+                  />
+                  {busca && (
+                    <button onClick={() => setBusca('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                      <X size={13} />
                     </button>
-                  ))}
+                  )}
                 </div>
+              </div>
+              <div className="col-span-2 lg:col-span-2">
+                <button
+                  onClick={buscar}
+                  disabled={carregando || !deForm || !ateForm}
+                  className="w-full px-4 py-1.5 text-xs rounded-lg bg-[#000638] text-white hover:bg-[#000638]/90 disabled:opacity-50 flex items-center justify-center gap-1 font-semibold"
+                >
+                  {carregando ? <ArrowsClockwise size={14} className="animate-spin" /> : <MagnifyingGlass size={14} weight="bold" />} {carregando ? 'Buscando…' : 'Buscar'}
+                </button>
               </div>
             </div>
           </div>
@@ -741,7 +781,7 @@ const Conciliacao = () => {
               {grupos.length === 0 ? (
                 <tr>
                   <td colSpan={12} className="text-center py-10 text-gray-400">
-                    {linhasBase.length ? 'Nenhuma conta com esses filtros.' : 'Nenhuma conta com extrato importado. Importe os extratos na tela Extrato Bancário.'}
+                    {!dados ? (carregando ? 'Buscando…' : 'Escolha o período e os filtros e clique em Buscar.') : linhasBase.length ? 'Nenhuma conta com esses filtros.' : 'Nenhuma conta com extrato importado. Importe os extratos na tela Extrato Bancário.'}
                   </td>
                 </tr>
               ) : (
