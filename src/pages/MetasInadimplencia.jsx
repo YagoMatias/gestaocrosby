@@ -153,6 +153,20 @@ const foraDoRecuperado = (item) =>
     `${item.cd_empresa}-${item.cd_cliente}-${item.nr_fatura}-${item.nr_parcela}`,
   );
 
+// Títulos tirados do A VENCER (Valor Vencendo) por marcação manual do João: o
+// boleto vai ser abatido/resolvido por fora, então não deve contar como dívida
+// a vencer do mês. Lista específica (não há regra que distinga esse caso);
+// quando acontecer de novo, o João sinaliza e a chave entra aqui.
+const TITULOS_FORA_VENCENDO = new Set([
+  // 04/11/2026 — MONAISA MONARA DO NASCIMENTO (4824), venc 26/10 R$ 1.900,00,
+  // será abatido de outra forma.
+  '111-4824-734398-1',
+]);
+const foraDoVencendo = (item) =>
+  TITULOS_FORA_VENCENDO.has(
+    `${item.cd_empresa}-${item.cd_cliente}-${item.nr_fatura}-${item.nr_parcela}`,
+  );
+
 // Título que vence num mês mas foi PAGO num mês ANTERIOR não é "a vencer"
 // daquele mês futuro: por isso sai da série de VENCENDO (meta/base), e continua
 // no Valor Pago do mês em que foi pago (João, 04/11/2026). Compara o mês da
@@ -394,7 +408,7 @@ const MetasInadimplencia = () => {
 
       const itensVencendo = itensVencendoRaw
         .map(marcarCanal)
-        .filter((i) => valeParaMeta(i) && filialOk(i) && !pagoAntesDoMesDeVencimento(i));
+        .filter((i) => valeParaMeta(i) && filialOk(i) && !pagoAntesDoMesDeVencimento(i) && !foraDoVencendo(i));
       const itensPagos = itensPagosRaw
         .map(marcarCanal)
         .filter((i) => valeParaMeta(i) && filialOk(i) && !foraDoRecuperado(i));
