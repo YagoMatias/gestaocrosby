@@ -121,9 +121,10 @@ const ehRenegociacao = (item) =>
   Number(item.tp_baixa) === TP_BAIXA_RENEGOCIACAO;
 
 // dischargeType 17 = "Baixa por abatimento" (João, 04/11/2026). O título foi
-// quitado SEM entrada de dinheiro (valor pago = 0): é um perdão/desconto, não
-// uma recuperação. Some do recuperado/realizado — senão o fallback
-// vl_pago||vl_fatura (ver dadosPorMes) soma o valor da fatura como se fosse pago.
+// quitado SEM entrada de dinheiro (valor pago = 0): perdão/desconto, não é
+// dívida viva nem recuperação. Ele NÃO vem na consulta de pagos (recuperado),
+// mas vinha na série de VENCIDO (base/meta) sem valor pago — inflava a base e
+// derrubava a % de recuperado. Some das duas séries para a % refletir o real.
 const TP_BAIXA_ABATIMENTO = 17;
 const ehAbatimento = (item) =>
   Number(item.tp_baixa) === TP_BAIXA_ABATIMENTO;
@@ -345,10 +346,11 @@ const MetasInadimplencia = () => {
       const soFatura = (item) =>
         item.tp_documento === 1 || item.tp_documento === '1';
 
-      // Título quitado por renegociação não é meta cumprida nem dívida
-      // viva: o saldo virou outro título. Abatimento (tp_baixa 17) foi quitado
-      // sem entrada de dinheiro (perdão/desconto). Nenhum dos dois é
-      // recuperação: somem das duas séries para não inflar o pago.
+      // Título quitado por renegociação não é meta cumprida nem dívida viva:
+      // o saldo virou outro título. Abatimento (tp_baixa 17) foi quitado sem
+      // entrada de dinheiro (perdão/desconto) e contava como VENCIDO na base,
+      // derrubando a % de recuperado. Nenhum dos dois é dívida/recuperação:
+      // somem das duas séries (a % passa a refletir só o real).
       const valeParaMeta = (item) =>
         soFatura(item) && !ehRenegociacao(item) && !ehAbatimento(item);
 
