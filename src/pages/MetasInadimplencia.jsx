@@ -153,6 +153,20 @@ const foraDoRecuperado = (item) =>
     `${item.cd_empresa}-${item.cd_cliente}-${item.nr_fatura}-${item.nr_parcela}`,
   );
 
+// Título que vence num mês mas foi PAGO num mês ANTERIOR não é "a vencer"
+// daquele mês futuro: por isso sai da série de VENCENDO (meta/base), e continua
+// no Valor Pago do mês em que foi pago (João, 04/11/2026). Compara o mês da
+// baixa (dt_liq) com o mês do vencimento; só remove quando o pagamento é de um
+// mês estritamente anterior (pago no mesmo mês continua valendo como meta
+// cumprida). Faz a % Pago/Vencido do mês do vencimento refletir só o que de
+// fato estava em aberto naquele mês.
+const mesDe = (d) => String(d || '').slice(0, 7); // YYYY-MM
+const pagoAntesDoMesDeVencimento = (item) => {
+  const liq = mesDe(item.dt_liq);
+  const venc = mesDe(item.dt_vencimento);
+  return !!liq && !!venc && liq < venc;
+};
+
 // Tipo de carteira efetivo, igual ao Dashboard de Contas a Receber:
 // portador SAFRA/DALILA conta como DESCONTADA (2), senão vale o tp_cobranca
 // (0 = não está em cobrança, 1 = simples, 2 = descontada).
@@ -378,7 +392,9 @@ const MetasInadimplencia = () => {
       const valeParaMeta = (item) =>
         soFatura(item) && !ehRenegociacao(item) && !ehAbatimento(item);
 
-      const itensVencendo = itensVencendoRaw.map(marcarCanal).filter((i) => valeParaMeta(i) && filialOk(i));
+      const itensVencendo = itensVencendoRaw
+        .map(marcarCanal)
+        .filter((i) => valeParaMeta(i) && filialOk(i) && !pagoAntesDoMesDeVencimento(i));
       const itensPagos = itensPagosRaw
         .map(marcarCanal)
         .filter((i) => valeParaMeta(i) && filialOk(i) && !foraDoRecuperado(i));
