@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import PageTitle from '../components/ui/PageTitle';
-import { TotvsURL } from '../config/constants';
+import { TotvsURL, API_BASE_URL } from '../config/constants';
 import {
   Card,
   CardContent,
@@ -19,6 +19,7 @@ import {
   Spinner,
   X,
   FileXls,
+  ArrowsClockwise,
 } from '@phosphor-icons/react';
 import {
   Chart as ChartJS,
@@ -306,6 +307,11 @@ const MetasInadimplencia = () => {
   const [loading, setLoading] = useState(false);
   const [dadosCarregados, setDadosCarregados] = useState(false);
   const [erro, setErro] = useState(null);
+  // Snapshot salvo no banco do HeadCoach (João, 04/11/2026): a aba lê do banco
+  // (rápido) em vez de puxar tudo do TOTVS ao vivo. infoSnapshot = quando foi gerado.
+  const [infoSnapshot, setInfoSnapshot] = useState(null);
+  const [atualizandoBanco, setAtualizandoBanco] = useState(false);
+  const [msgAtualizacao, setMsgAtualizacao] = useState(null);
 
   // Drill-down: mês clicado na tabela e aba do modal
   const [mesSelecionado, setMesSelecionado] = useState(null);
@@ -315,6 +321,37 @@ const MetasInadimplencia = () => {
     if (!filtroDataInicial || !filtroDataFinal) return;
     setLoading(true);
     setErro(null);
+    setInfoSnapshot(null);
+
+    // 1º: tenta o SNAPSHOT salvo no banco do HeadCoach (rápido). Os títulos já
+    // vêm com canal marcado e com todas as regras aplicadas pelo servidor. Se
+    // não houver snapshot (404) ou falhar, cai no cálculo ao vivo (TOTVS) abaixo.
+    try {
+      const resSnap = await fetch(`${API_BASE_URL}/api/metas-inadimplencia`);
+      if (resSnap.ok) {
+        const snap = await resSnap.json();
+        if (snap && Array.isArray(snap.vencendo) && Array.isArray(snap.pagos)) {
+          setVencendo(snap.vencendo);
+          setPagos(snap.pagos);
+          setPessoasMap(snap.pessoas || {});
+          setInfoRevenda(null);
+          setAvisoCanais(
+            snap.canais_fora?.length
+              ? `Canais sem dado na geração do banco: ${snap.canais_fora.join(', ')}.`
+              : null,
+          );
+          setInfoSnapshot(
+            `Dados do banco do HeadCoach — gerado em ${snap.gerado_em ? new Date(snap.gerado_em).toLocaleString('pt-BR') : '?'}.`,
+          );
+          setDadosCarregados(true);
+          setLoading(false);
+          return;
+        }
+      }
+    } catch {
+      /* sem snapshot — segue para o cálculo ao vivo */
+    }
+
     try {
       // Meses completos: o gráfico é mensal, então uma data final no meio do
       // mês (o padrão "hoje", por exemplo) truncaria a última barra.
@@ -454,6 +491,24 @@ const MetasInadimplencia = () => {
       setLoading(false);
     }
   }, [filtroDataInicial, filtroDataFinal]);
+
+  // Botão "Atualizar dados": manda o servidor reprocessar o snapshot do banco
+  // (do TOTVS) em 2º plano. Depois o João clica em Buscar Dados pra ver o novo.
+  const atualizarBanco = useCallback(async () => {
+    setAtualizandoBanco(true);
+    setMsgAtualizacao(null);
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/metas-inadimplencia/gerar?bg=1`, { method: 'POST' });
+      if (!r.ok && r.status !== 202) throw new Error(`HTTP ${r.status}`);
+      setMsgAtualizacao(
+        'Atualização do banco iniciada. Passa por toda a base no servidor e leva alguns minutos — clique em "Buscar Dados" de novo daqui a pouco para ver os números novos.',
+      );
+    } catch (e) {
+      setMsgAtualizacao(`Não consegui iniciar a atualização: ${e.message}`);
+    } finally {
+      setAtualizandoBanco(false);
+    }
+  }, []);
 
   // João (29/10/2026): NÃO carrega ao entrar — abre com o período padrão
   // (01/01 do ano até o último dia do mês atual) e só busca quando clicar em
@@ -832,7 +887,17 @@ const MetasInadimplencia = () => {
               {infoRevenda}
             </div>
           )}
-          <div className="mt-4 flex gap-2">
+          {infoSnapshot && (
+            <div className="mt-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+              {infoSnapshot}
+            </div>
+          )}
+          {msgAtualizacao && (
+            <div className="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+              {msgAtualizacao}
+            </div>
+          )}
+          <div className="mt-4 flex flex-wrap gap-2">
             <button
               type="submit"
               disabled={loading}
@@ -847,6 +912,25 @@ const MetasInadimplencia = () => {
                 <>
                   <ChartBar size={16} />
                   Buscar Dados
+                </>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={atualizarBanco}
+              disabled={atualizandoBanco}
+              title="Reprocessa os dados do TOTVS e salva no banco do HeadCoach (leva alguns minutos). Use quando precisar atualizar algo passado."
+              className="flex items-center gap-1 bg-white text-[#000638] border border-[#000638]/40 px-3 py-1 rounded-lg hover:bg-[#f0f2f8] disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors h-7 text-xs font-bold shadow-sm tracking-wide uppercase"
+            >
+              {atualizandoBanco ? (
+                <>
+                  <CircleNotch size={16} className="animate-spin" />
+                  Iniciando...
+                </>
+              ) : (
+                <>
+                  <ArrowsClockwise size={16} />
+                  Atualizar dados (banco)
                 </>
               )}
             </button>
