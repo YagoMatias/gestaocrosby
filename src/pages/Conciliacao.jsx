@@ -189,11 +189,11 @@ const MultiSelect = ({ label, opcoes, valor, onChange, renderOpcao, placeholder 
   const resumo = !valor.length ? placeholder : valor.length === 1 ? opcoes.find((o) => o.value === valor[0])?.label || String(valor[0]) : `${valor.length} selecionados`;
   return (
     <div ref={ref} className={`relative ${larguraMin}`}>
-      <label className="block text-xs font-semibold mb-0.5 text-[#000638]">{label}</label>
+      <label className="block h-4 text-xs font-semibold mb-0.5 text-[#000638] leading-4">{label}</label>
       <button
         type="button"
         onClick={() => setAberto((v) => !v)}
-        className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 text-xs border rounded-lg ${valor.length ? 'border-blue-400 bg-white text-blue-700 font-medium' : 'border-[#000638]/30 bg-[#f8f9fb] text-[#000638] hover:bg-white'}`}
+        className={`w-full h-9 flex items-center justify-between gap-2 px-2 text-xs border rounded-lg ${valor.length ? 'border-blue-400 bg-white text-blue-700 font-medium' : 'border-[#000638]/30 bg-[#f8f9fb] text-[#000638] hover:bg-white'}`}
       >
         <span className="truncate">{resumo}</span>
         <CaretDown size={12} className={`shrink-0 transition-transform ${aberto ? 'rotate-180' : ''}`} />
@@ -599,8 +599,8 @@ const Conciliacao = () => {
           setEmpresasSel([]);
           setFiltrosAplicados({ bancos: [], empresas: [], busca: '' });
         };
-        const inp = 'w-full px-2 py-1.5 text-xs border border-[#000638]/30 rounded-lg bg-[#f8f9fb] text-[#000638] focus:outline-none focus:ring-2 focus:ring-[#000638]';
-        const lbl = 'block text-xs font-semibold mb-0.5 text-[#000638]';
+        const inp = 'w-full h-9 px-2 text-xs border border-[#000638]/30 rounded-lg bg-[#f8f9fb] text-[#000638] focus:outline-none focus:ring-2 focus:ring-[#000638]';
+        const lbl = 'block h-4 text-xs font-semibold mb-0.5 text-[#000638] leading-4';
         return (
           <div className="bg-white rounded-lg shadow-lg border border-[#000638]/10 p-3 md:p-4 mb-4">
             <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -620,7 +620,7 @@ const Conciliacao = () => {
             </div>
 
             {/* 1ª linha: De, Até e período */}
-            <div className="grid grid-cols-2 lg:grid-cols-12 gap-x-3 gap-y-2.5 items-end mb-2.5">
+            <div className="grid grid-cols-2 lg:grid-cols-12 gap-x-3 gap-y-2.5 items-center mb-2.5">
               <div className="lg:col-span-2">
                 <label className={lbl}>De</label>
                 <input
@@ -649,7 +649,7 @@ const Conciliacao = () => {
               </div>
               <div className="col-span-2 lg:col-span-8">
                 <label className={lbl}>Período ({ano})</label>
-                <div className="flex flex-wrap gap-1">
+                <div className="flex flex-wrap gap-1 min-h-9 items-center">
                   <button onClick={() => escolherMes('ANO')} className={`${chip(mes === 'ANO')} px-3`}>
                     ANO
                   </button>
@@ -663,7 +663,7 @@ const Conciliacao = () => {
             </div>
 
             {/* 2ª linha: Banco, Empresa, pesquisa e Buscar */}
-            <div className="grid grid-cols-2 lg:grid-cols-12 gap-x-3 gap-y-2.5 items-end">
+            <div className="grid grid-cols-2 lg:grid-cols-12 gap-x-3 gap-y-2.5 items-center">
               <MultiSelect
                 label="Banco"
                 opcoes={bancosDisponiveis.map((b) => ({ value: b, label: bancoCfg(b).label, banco: b }))}
@@ -706,10 +706,13 @@ const Conciliacao = () => {
                 </div>
               </div>
               <div className="col-span-2 lg:col-span-2">
+                <label className={lbl} aria-hidden="true">
+                  &nbsp;
+                </label>
                 <button
                   onClick={buscar}
                   disabled={carregando || !deForm || !ateForm}
-                  className="w-full px-4 py-1.5 text-xs rounded-lg bg-[#000638] text-white hover:bg-[#000638]/90 disabled:opacity-50 flex items-center justify-center gap-1 font-semibold"
+                  className="w-full h-9 px-4 text-xs rounded-lg bg-[#000638] text-white hover:bg-[#000638]/90 disabled:opacity-50 flex items-center justify-center gap-1 font-semibold"
                 >
                   {carregando ? <ArrowsClockwise size={14} className="animate-spin" /> : <MagnifyingGlass size={14} weight="bold" />} {carregando ? 'Buscando…' : 'Buscar'}
                 </button>
