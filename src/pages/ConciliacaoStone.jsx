@@ -469,7 +469,13 @@ const ConciliacaoStone = () => {
         Loja: l.loja.nome,
         Data: p.data,
         'ID pagamento': p.id,
-        Carteira: p.carteira,
+        Tipo: p.carteira,
+        'Qtd vendas': p.composicao?.qtd ?? '',
+        Antecipadas: p.composicao?.antecipadas ?? '',
+        'Composição': Object.entries(p.composicao?.bandeiras || {})
+          .map(([k, n]) => `${k} ${n}`)
+          .join('; '),
+        NSUs: (p.composicao?.nsus || []).join(', '),
         Valor: p.valorTotal,
         'Valor transações': p.valorTransacoes,
         'Saldo negativo anterior': p.saldoNegativoAnterior,
@@ -873,7 +879,7 @@ const ConciliacaoStone = () => {
                       ? [{ key: 'erro', label: 'Erro', sortable: false }]
                       : aba === 'pagamentos'
                         ? [
-                            { key: 'bandeira', label: 'Carteira' },
+                            { key: 'bandeira', label: 'Tipo do depósito' },
                             { key: 'id', label: 'ID pagamento', sortable: false },
                             { key: 'conta', label: 'Conta favorecida', sortable: false },
                             { key: 'valor', label: 'Valor depositado' },
@@ -1152,6 +1158,28 @@ const ConciliacaoStone = () => {
 };
 
 // ─── linha da tabela (desktop) ───────────────────────────────
+// em qual depósito da Stone a venda foi paga (pelo PaymentId das parcelas)
+const DepositoVenda = ({ s }) => {
+  // uma linha por depósito (as parcelas do mesmo depósito se juntam)
+  const porId = new Map();
+  for (const d of s?.depositos || []) {
+    const atual = porId.get(d.id);
+    if (atual) atual.parcelas += 1;
+    else porId.set(d.id, { ...d, parcelas: 1 });
+  }
+  const deps = [...porId.values()];
+  if (!deps.length) return null;
+  return (
+    <div className="text-[10px] text-indigo-700">
+      {deps
+        .slice(0, 3)
+        .map((d) => `Depositada ${fmtData(d.data)}${d.antecipada ? ' (antecipada)' : ''} · dep. ${d.id}${d.parcelas > 1 ? ` · ${d.parcelas} parc.` : ''}`)
+        .join(' | ')}
+      {deps.length > 3 ? ` +${deps.length - 3}` : ''}
+    </div>
+  );
+};
+
 // caixa de seleção + código do cliente + resultado do lançamento (Só na Stone)
 const LancarTotvsCampos = ({ ln, lanc, compacto = false }) => {
   if (!lanc || ln.kind !== 'stone' || ln.stone.cancelada) return null;
@@ -1212,8 +1240,25 @@ const LinhaTabela = ({ ln, onVincular, onDesfazer, podeVincular, lanc }) => {
       <tr className="border-b border-gray-100 hover:bg-gray-50">
         {lojaCell}
         <td className={tdc}>{fmtData(ln.data)}</td>
-        <td className={tdc}>{p.carteira}</td>
-        <td className={`${tdc} font-mono`}>{p.id}</td>
+        <td className={tdc}>
+          <div className={`font-medium ${/Antecipa/.test(p.carteira) ? 'text-indigo-700' : /Sem venda/.test(p.carteira) ? 'text-gray-500' : 'text-gray-800'}`}>
+            {p.carteira}
+          </div>
+          {p.composicao?.qtd > 0 && (
+            <div className="text-[10px] text-gray-500 whitespace-normal max-w-[300px]">
+              {p.composicao.qtd} venda(s) ·{' '}
+              {Object.entries(p.composicao.bandeiras || {})
+                .map(([k, n]) => `${k} ${n}`)
+                .join(' · ')}
+            </div>
+          )}
+        </td>
+        <td className={`${tdc} font-mono`}>
+          {p.id}
+          {p.composicao?.nsus?.length > 0 && p.composicao.nsus.length <= 3 && (
+            <div className="text-[10px] text-gray-500">NSU {p.composicao.nsus.join(', ')}</div>
+          )}
+        </td>
         <td className={tdc}>{p.banco ? `Banco ${p.banco} · ag ${p.agencia} · cc ${p.conta}` : '—'}</td>
         <td className={`${tdc} text-right font-semibold text-green-700`}>{fmt(p.valorTotal)}</td>
       </tr>
@@ -1234,6 +1279,7 @@ const LinhaTabela = ({ ln, onVincular, onDesfazer, podeVincular, lanc }) => {
           <div className="text-gray-400">
             {s.cartao} · {s.parcelas}x · líq. {fmt(s.valorLiquido)}
           </div>
+          <DepositoVenda s={s} />
         </td>
         <td className={tdc}>
           <div className="font-mono">
@@ -1283,6 +1329,7 @@ const LinhaTabela = ({ ln, onVincular, onDesfazer, podeVincular, lanc }) => {
           <div className="text-gray-400">
             {s.cartao} · {s.parcelas}x · POS {s.serialPos}
           </div>
+          <DepositoVenda s={s} />
         </td>
         <td className={`${tdc} text-gray-400`}>sem título</td>
         <td className={`${tdc} text-right font-semibold`}>{fmt(s.valorBruto)}</td>
@@ -1361,6 +1408,7 @@ const CardMobile = ({ ln, onVincular, onDesfazer, podeVincular, lanc }) => {
       {ln.kind === 'pagamento' && (
         <p className="text-[11px] text-gray-600 mt-1">
           {ln.pagamento.carteira} · ID {ln.pagamento.id}
+          {ln.pagamento.composicao?.qtd > 0 ? ` · ${ln.pagamento.composicao.qtd} venda(s)` : ''}
         </p>
       )}
       {s && (
