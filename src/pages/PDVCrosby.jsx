@@ -56,6 +56,8 @@ import {
   Gear,
   Cloud,
   Database,
+  LockKey,
+  Coins,
 } from '@phosphor-icons/react';
 import { API_BASE_URL } from '../config/constants';
 import useRfidReader from '../hooks/useRfidReader';
@@ -79,8 +81,9 @@ const PDV_VAREJO_CONFIG = {
   paymentConditionCode: 1,
   // Tipo de preço: 1 = VENDA VAREJO (16 = VAREJO SHOPPING, p/ lojas de shopping)
   priceCodes: '1',
+  // Desconto acima disso só para owner/admin ou com a senha de um deles
   maxDescontoPct: 15,
-  // Cashback (saldo bônus): a venda gera 20%; para consumir, a venda deve
+  // Cashback (no TOTVS é o "saldo bônus"): a venda gera 20%; para consumir, a venda deve
   // ser >= 3x o valor usado (ex.: R$ 200 de saldo exigem compra de R$ 600)
   cashbackGerarPct: 20,
   cashbackFatorMinimo: 3,
@@ -363,6 +366,90 @@ function SellerPicker({ sellers, value, onChange, disabled }) {
   );
 }
 
+// Desconto máximo da peça: o da promoção do PDV + o % permitido sobre o que
+// sobra (o limite de 15% vale para o desconto EXTRA, não para a promoção)
+const limiteDescontoItem = (i, pct) => {
+  const promo = i.promoDesconto || 0;
+  return Number((promo + ((i.unit - promo) * pct) / 100).toFixed(2));
+};
+
+// ─── Senha de owner/admin para desconto acima do limite ──────────────────────
+function SenhaDescontoModal({ pct, empresa, por, onLiberado, onCancelar }) {
+  const [email, setEmail] = useState('');
+  const [senha, setSenha] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState(null);
+
+  const liberar = async () => {
+    if (!email.trim() || !senha || busy) return;
+    setBusy(true);
+    setErro(null);
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/pdv-crosby/autorizar-desconto`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), senha, pct: Number(pct.toFixed(2)), empresa, por }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.success) throw new Error(j?.message || 'Não autorizado');
+      onLiberado(j.data);
+    } catch (e) {
+      setErro(e.message);
+      setSenha('');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-5">
+        <div className="flex items-center gap-2">
+          <LockKey size={26} weight="fill" className="text-amber-500" />
+          <h3 className="text-lg font-bold text-[#000638]">Liberar desconto</h3>
+        </div>
+        <p className="mt-1 text-sm text-gray-600">
+          Desconto de <b>{pct.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%</b> passa do limite de{' '}
+          {PDV_VAREJO_CONFIG.maxDescontoPct}%. Um <b>owner</b> ou <b>admin</b> precisa digitar o e-mail e a senha do HeadCoach.
+        </p>
+        <div className="mt-3 space-y-2">
+          <input
+            autoFocus
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="E-mail do owner/admin"
+            autoComplete="off"
+            className="w-full h-10 px-3 mb-0 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
+          />
+          <input
+            type="password"
+            value={senha}
+            onChange={(e) => setSenha(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && liberar()}
+            placeholder="Senha"
+            autoComplete="new-password"
+            className="w-full h-10 px-3 mb-0 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
+          />
+        </div>
+        {erro && <p className="mt-2 text-xs text-rose-700 bg-rose-50 rounded-lg p-2 ring-1 ring-rose-200">{erro}</p>}
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <button onClick={onCancelar} disabled={busy} className="h-10 rounded-lg ring-1 ring-gray-300 text-sm font-semibold text-gray-600 hover:bg-gray-50">
+            Cancelar
+          </button>
+          <button
+            onClick={liberar}
+            disabled={busy || !email.trim() || !senha}
+            className="h-10 rounded-lg bg-[#000638] text-white text-sm font-bold inline-flex items-center justify-center gap-1.5 disabled:opacity-40"
+          >
+            {busy ? <Spinner size={14} className="animate-spin" /> : <LockKey size={14} weight="bold" />} Liberar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Página ──────────────────────────────────────────────────────────────────
 const PDVCrosby = () => {
   const { user } = useAuth();
@@ -421,7 +508,7 @@ const PDVCrosby = () => {
   const operation = operacaoPara(tipoVenda, branch, fiscalCfg);
   const [customer, setCustomer] = useState(null);
 
-  // Cashback (saldo bônus do cliente na empresa da venda)
+  // Cashback (no TOTVS: saldo bônus do cliente na empresa da venda)
   const [cashback, setCashback] = useState(null); // { balance, cpf }
   const [cashbackUsar, setCashbackUsar] = useState(false);
   const cashbackGeradoRef = useRef(false); // evita gerar 2x na mesma venda
@@ -439,6 +526,16 @@ const PDVCrosby = () => {
   branchRef.current = branch;
 
   const [globalDiscount, setGlobalDiscount] = useState('');
+  // Desconto: até 15% para todos; acima disso só owner/admin, ou com a senha
+  // de um deles (a liberação vale até o fim desta venda)
+  const descontoSemLimite = ['admin', 'owner'].includes(user?.role);
+  const [descontoLiberado, setDescontoLiberado] = useState(null); // { nome, email, role }
+  const [senhaDesconto, setSenhaDesconto] = useState(null); // { pct, aplicar }
+  const maxDescPct = descontoSemLimite || descontoLiberado ? 100 : PDV_VAREJO_CONFIG.maxDescontoPct;
+  // Cashback não usado: pergunta ao finalizar (uma vez por cliente/venda)
+  const [perguntaCashback, setPerguntaCashback] = useState(false);
+  const [cashbackRecusado, setCashbackRecusado] = useState(false);
+  const [continuarFinalizacao, setContinuarFinalizacao] = useState(false);
   const [manualCode, setManualCode] = useState('');
   const [manualBusy, setManualBusy] = useState(false);
   const [toast, setToast] = useState(null);
@@ -550,6 +647,7 @@ const PDVCrosby = () => {
   useEffect(() => {
     setCashback(null);
     setCashbackUsar(false);
+    setCashbackRecusado(false);
     setClienteInfo(null);
     if (!customer || !branch) return;
     (async () => {
@@ -627,12 +725,21 @@ const PDVCrosby = () => {
 
   // ─── Produtos: merge por productCode (grade), preço varejo ───────────────
   const mergeProduto = useCallback((data, { epc = null, manual = 0 }) => {
-    const { product, prices } = data;
+    const { product, prices, promoPdv } = data;
     const padrao = (prices || []).find(
       (p) => p.promotionalPrice > 0 || p.price > 0,
     );
     const emPromo = padrao?.promotionalPrice > 0;
-    const unit = emPromo ? padrao.promotionalPrice : padrao?.price || 0;
+    // Promoção do PDV Crosby (tela Preço Promocional → GERAR NO PDV CROSBY):
+    // preço cheio + desconto até o valor promocional. Se a promoção do TOTVS
+    // já deixa mais barato, fica a do TOTVS.
+    const precoCheio = padrao?.price || padrao?.promotionalPrice || 0;
+    const usarPromoPdv =
+      promoPdv?.precoPromocional > 0 &&
+      precoCheio > promoPdv.precoPromocional &&
+      !(emPromo && padrao.promotionalPrice <= promoPdv.precoPromocional);
+    const unit = usarPromoPdv ? precoCheio : emPromo ? padrao.promotionalPrice : padrao?.price || 0;
+    const promoDesconto = usarPromoPdv ? Number((precoCheio - promoPdv.precoPromocional).toFixed(2)) : 0;
 
     setItems((prev) => {
       const idx = prev.findIndex((i) => i.productCode === product.productCode);
@@ -654,8 +761,10 @@ const PDVCrosby = () => {
           sku: product.productSku,
           referenceName: product.referenceName || null,
           unit,
-          discount: 0,
-          fonte: emPromo ? 'promo' : unit > 0 ? 'varejo' : 'sem-preco',
+          discount: promoDesconto,
+          promoDesconto,
+          promoNome: usarPromoPdv ? promoPdv.nome : null,
+          fonte: usarPromoPdv ? 'promo-pdv' : emPromo ? 'promo' : unit > 0 ? 'varejo' : 'sem-preco',
           epcs: epc ? [epc] : [],
           manualQty: manual,
         },
@@ -746,24 +855,43 @@ const PDVCrosby = () => {
 
   const aplicarDescontoGeral = useCallback(() => {
     const pct = parseFloat(String(globalDiscount).replace(',', '.'));
-    if (
-      Number.isNaN(pct) ||
-      pct < 0 ||
-      pct > PDV_VAREJO_CONFIG.maxDescontoPct
-    ) {
-      showToast(
-        'erro',
-        `Desconto geral inválido (0 a ${PDV_VAREJO_CONFIG.maxDescontoPct}%)`,
-      );
+    if (Number.isNaN(pct) || pct < 0 || pct > 100) {
+      showToast('erro', 'Desconto geral inválido (0 a 100%)');
       return;
     }
-    setItems((prev) =>
-      prev.map((i) => ({
-        ...i,
-        discount: Number(((i.unit * pct) / 100).toFixed(2)),
-      })),
-    );
-  }, [globalDiscount, showToast]);
+    const aplicar = () =>
+      setItems((prev) =>
+        prev.map((i) => ({
+          ...i,
+          discount: limiteDescontoItem(i, pct),
+        })),
+      );
+    if (pct > maxDescPct) setSenhaDesconto({ pct, aplicar });
+    else aplicar();
+  }, [globalDiscount, maxDescPct, showToast]);
+
+  // Desconto por peça (R$ no unitário): acima do limite pede a senha
+  const mudarDescontoItem = useCallback(
+    (item, valor) => {
+      const v = Math.min(Math.max(parseFloat(valor) || 0, 0), item.unit);
+      const limite = limiteDescontoItem(item, maxDescPct);
+      if (v <= limite) {
+        updateItem(item.productCode, { discount: v });
+        return;
+      }
+      updateItem(item.productCode, { discount: limite });
+      const promo = item.promoDesconto || 0;
+      setSenhaDesconto({
+        pct: ((v - promo) / (item.unit - promo)) * 100,
+        aplicar: () => updateItem(item.productCode, { discount: v }),
+      });
+    },
+    [maxDescPct, updateItem],
+  );
+
+  // Alguma peça com desconto acima do limite sem liberação (segurança extra)
+  const descontoForaDoLimite =
+    maxDescPct < 100 && items.some((i) => (i.discount || 0) > limiteDescontoItem(i, maxDescPct) + 0.005);
 
   const grupos = useMemo(() => {
     const map = new Map();
@@ -821,6 +949,9 @@ const PDVCrosby = () => {
     setTrxTrocaStatus(null);
     setCashback(null);
     setCashbackUsar(false);
+    setCashbackRecusado(false);
+    setDescontoLiberado(null);
+    setGlobalDiscount('');
     cashbackGeradoRef.current = false;
     processedEpcs.current = new Set();
   }, []);
@@ -962,6 +1093,10 @@ const PDVCrosby = () => {
         status: 1,
         totalAmountTransaction: totalExato,
         items: itensPayload,
+        ...(descontoLiberado &&
+        items.some((i) => (i.discount || 0) > limiteDescontoItem(i, PDV_VAREJO_CONFIG.maxDescontoPct) + 0.005)
+          ? { observations: [{ observation: `DESCONTO LIBERADO POR ${descontoLiberado.nome}`.toUpperCase().slice(0, 80) }] }
+          : {}),
       };
       const r = await fetch(`${API_BASE_URL}/api/totvs/pdv/transactions`, {
         method: 'POST',
@@ -1045,6 +1180,31 @@ const PDVCrosby = () => {
       setPosting(false);
     }
   }, [canGenerate, branch, customer, seller, operation, totals, items, showToast, trocaItens, trxTroca, operacaoTroca, sellers, user, tipoVenda]);
+
+  // ─── Antes de finalizar: desconto dentro do limite e cashback não usado ────
+  const finalizarAgora = () => (destino === 'totvs' ? gerarTransacao() : setPagamentoOpen(true));
+  const finalizarAgoraRef = useRef(finalizarAgora);
+  finalizarAgoraRef.current = finalizarAgora;
+
+  const iniciarFinalizacao = () => {
+    if (!canGenerate) return;
+    if (descontoForaDoLimite) {
+      showToast('erro', `Desconto acima de ${PDV_VAREJO_CONFIG.maxDescontoPct}% precisa da senha do owner/admin`);
+      return;
+    }
+    if (items.length > 0 && !cashbackUsar && !cashbackRecusado && totals.cashbackDisponivel > 0) {
+      setPerguntaCashback(true);
+      return;
+    }
+    finalizarAgora();
+  };
+
+  // "Sim, usar cashback": espera o total recalcular e segue a finalização
+  useEffect(() => {
+    if (!continuarFinalizacao) return;
+    setContinuarFinalizacao(false);
+    finalizarAgoraRef.current();
+  }, [continuarFinalizacao]);
 
   // ─── HEADCOACH: registra a venda aqui e emite a nota na SEFAZ ────────────
   const emitirNota = useCallback(async (vendaId) => {
@@ -1458,7 +1618,7 @@ const PDVCrosby = () => {
             </button>
           </div>
 
-          {/* Dados do cliente, saldo bônus e credev */}
+          {/* Dados do cliente, cashback e credev */}
           <div className="rounded-xl ring-1 ring-gray-200 bg-gray-50/60 p-3 flex flex-col">
             <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500 mb-1.5">Cliente</p>
             {!customer ? (
@@ -1483,7 +1643,7 @@ const PDVCrosby = () => {
                 </p>
                 <div className="mt-2 grid grid-cols-3 gap-1.5">
                   {[
-                    { label: 'Saldo bônus', valor: cashback?.balance, carregando: !cashback, cor: 'text-emerald-700' },
+                    { label: 'Cashback', valor: cashback?.balance, carregando: !cashback, cor: 'text-emerald-700' },
                     { label: 'Credev', valor: saldos?.credev, carregando: !saldos, cor: 'text-blue-700' },
                     { label: 'Adiantamento', valor: saldos?.adiantamento, carregando: !saldos, cor: 'text-purple-700' },
                   ].map((c) => (
@@ -1505,7 +1665,7 @@ const PDVCrosby = () => {
                       className="accent-emerald-600 w-4 h-4 p-0 mb-0 shrink-0"
                     />
                     <span>
-                      <b>Usar bônus</b>
+                      <b>Usar cashback</b>
                       {totals.cashbackAplicado > 0 && ` (−${fmtBRL(totals.cashbackAplicado)})`} — para usar tudo, a venda precisa ser de pelo menos{' '}
                       {fmtBRL(cashback.balance * PDV_VAREJO_CONFIG.cashbackFatorMinimo)}
                     </span>
@@ -1817,15 +1977,30 @@ const PDVCrosby = () => {
                         <td />
                       </tr>
                       {g.items.map((i) => (
-                        <tr key={i.productCode} className="hover:bg-gray-50/60">
+                        <tr
+                          key={i.productCode}
+                          className={i.fonte === 'promo-pdv' ? 'bg-emerald-50 border-l-4 border-emerald-500 hover:bg-emerald-100/60' : 'hover:bg-gray-50/60'}
+                        >
                           <td className="px-3 py-1.5">
                             <p className="font-medium text-[#000638] leading-tight text-[13px]">
+                              {i.fonte === 'promo-pdv' && (
+                                <span
+                                  className="mr-1.5 inline-flex px-1.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold align-middle"
+                                  title={`${i.promoNome} — de ${fmtBRL(i.unit)} por ${fmtBRL(i.unit - i.promoDesconto)}`}
+                                >
+                                  PROMOCIONAL
+                                </span>
+                              )}
                               {i.name}
                             </p>
                             <p className="text-[11px] text-gray-400">
                               cód. {i.productCode}
                               {i.sku ? ` · EAN ${i.sku}` : ''}
-                              {i.fonte === 'promo' ? (
+                              {i.fonte === 'promo-pdv' ? (
+                                <span className="ml-1.5 text-emerald-700 font-semibold">
+                                  {i.promoNome} · de {fmtBRL(i.unit)} por {fmtBRL(i.unit - i.promoDesconto)}
+                                </span>
+                              ) : i.fonte === 'promo' ? (
                                 <span className="ml-1.5 inline-flex px-1.5 rounded-full bg-purple-50 text-purple-600 ring-1 ring-purple-200">
                                   promoção
                                 </span>
@@ -1875,30 +2050,14 @@ const PDVCrosby = () => {
                             <input
                               type="number"
                               min="0"
-                              max={Number(
-                                (
-                                  (i.unit * PDV_VAREJO_CONFIG.maxDescontoPct) /
-                                  100
-                                ).toFixed(2),
-                              )}
                               step="0.01"
                               value={i.discount}
-                              title={`Máx. ${PDV_VAREJO_CONFIG.maxDescontoPct}%: ${fmtBRL((i.unit * PDV_VAREJO_CONFIG.maxDescontoPct) / 100)}`}
-                              onChange={(e) => {
-                                const v = parseFloat(e.target.value) || 0;
-                                updateItem(i.productCode, {
-                                  discount: Math.min(
-                                    Math.max(v, 0),
-                                    Number(
-                                      (
-                                        (i.unit *
-                                          PDV_VAREJO_CONFIG.maxDescontoPct) /
-                                        100
-                                      ).toFixed(2),
-                                    ),
-                                  ),
-                                });
-                              }}
+                              title={
+                                maxDescPct < 100
+                                  ? `Até ${fmtBRL(limiteDescontoItem(i, maxDescPct))}${i.promoDesconto ? ' (promoção + ' : ' ('}${maxDescPct}%); acima disso pede a senha do owner/admin`
+                                  : 'Desconto liberado'
+                              }
+                              onChange={(e) => mudarDescontoItem(i, e.target.value)}
                               className="w-20 h-7 rounded-md border border-gray-200 text-right text-[13px] px-1.5 focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
                             />
                           </td>
@@ -1933,8 +2092,9 @@ const PDVCrosby = () => {
                 <input
                   value={globalDiscount}
                   onChange={(e) => setGlobalDiscount(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && items.length > 0 && aplicarDescontoGeral()}
                   placeholder="%"
-                  title={`Desconto máximo: ${PDV_VAREJO_CONFIG.maxDescontoPct}%`}
+                  title={maxDescPct < 100 ? `Até ${maxDescPct}%; acima disso pede a senha do owner/admin` : 'Desconto liberado'}
                   className="h-9 w-14 px-1.5 mb-0 rounded-lg border border-gray-300 text-xs text-center focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
                 />
                 <button
@@ -1953,6 +2113,15 @@ const PDVCrosby = () => {
                   <Trash size={14} />
                 </button>
               </div>
+              {descontoLiberado ? (
+                <p className="mt-1 text-[10px] text-amber-700 inline-flex items-center gap-1">
+                  <LockKey size={11} weight="fill" /> Liberado por {descontoLiberado.nome} nesta venda
+                </p>
+              ) : (
+                !descontoSemLimite && (
+                  <p className="mt-1 text-[10px] text-gray-400">Até {PDV_VAREJO_CONFIG.maxDescontoPct}% — acima disso pede a senha do owner/admin.</p>
+                )
+              )}
             </div>
 
             {/* Resumo da transação */}
@@ -1973,7 +2142,7 @@ const PDVCrosby = () => {
                 </div>
                 {totals.cashbackAplicado > 0 && (
                   <div className="flex justify-between text-emerald-600 font-medium">
-                    <span>Bônus</span>
+                    <span>Cashback</span>
                     <span className="tabular-nums">− {fmtBRL(totals.cashbackAplicado)}</span>
                   </div>
                 )}
@@ -2002,7 +2171,7 @@ const PDVCrosby = () => {
 
             {/* Gerar transação */}
             <button
-              onClick={destino === 'totvs' ? gerarTransacao : () => setPagamentoOpen(true)}
+              onClick={iniciarFinalizacao}
               disabled={!canGenerate}
               className={`w-full h-14 rounded-lg text-white font-bold text-sm inline-flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed ${
                 destino === 'totvs' ? 'bg-[#000638] hover:bg-[#000638]/90' : 'bg-emerald-600 hover:bg-emerald-700'
@@ -2040,6 +2209,67 @@ const PDVCrosby = () => {
 
       </div>
       </div>
+
+        {/* Senha de owner/admin para desconto acima do limite */}
+        {senhaDesconto && (
+          <SenhaDescontoModal
+            pct={senhaDesconto.pct}
+            empresa={branch ? parseInt(branch, 10) : null}
+            por={user?.email || user?.name || null}
+            onCancelar={() => setSenhaDesconto(null)}
+            onLiberado={(aut) => {
+              setDescontoLiberado(aut);
+              senhaDesconto.aplicar();
+              setSenhaDesconto(null);
+              showToast('ok', `Desconto liberado por ${aut.nome}`);
+            }}
+          />
+        )}
+
+        {/* Cliente com cashback que não foi usado */}
+        {perguntaCashback && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
+              <Coins size={44} weight="fill" className="mx-auto mb-2 text-emerald-500" />
+              <h3 className="text-lg font-bold text-[#000638] uppercase">
+                Cliente possui {fmtBRL(cashback?.balance)} de cashback. Deseja utilizar?
+              </h3>
+              {totals.cashbackDisponivel < (cashback?.balance || 0) - 0.005 && (
+                <p className="mt-1 text-xs text-gray-500">
+                  Nesta venda dá para usar {fmtBRL(totals.cashbackDisponivel)} (a venda precisa ser de pelo menos{' '}
+                  {PDV_VAREJO_CONFIG.cashbackFatorMinimo}× o valor usado).
+                </p>
+              )}
+              <p className="mt-2 text-sm text-gray-600">
+                Total passa de <b>{fmtBRL(totals.total)}</b> para{' '}
+                <b className="text-emerald-700">{fmtBRL(totals.total - totals.cashbackDisponivel)}</b>.
+              </p>
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => {
+                    setPerguntaCashback(false);
+                    setCashbackRecusado(true);
+                    finalizarAgora();
+                  }}
+                  className="h-11 rounded-lg ring-1 ring-gray-300 text-sm font-semibold text-gray-600 hover:bg-gray-50"
+                >
+                  Não usar
+                </button>
+                <button
+                  autoFocus
+                  onClick={() => {
+                    setPerguntaCashback(false);
+                    setCashbackUsar(true);
+                    setContinuarFinalizacao(true);
+                  }}
+                  className="h-11 rounded-lg bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700"
+                >
+                  Sim, usar {fmtBRL(totals.cashbackDisponivel)}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Modal: transações geradas (troca e/ou venda) + acompanhamento até ATENDIDA */}
         {(trx || trxTroca) && (

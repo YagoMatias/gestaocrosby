@@ -3,9 +3,13 @@
 //
 // Fluxo: empresa + promoção + % de desconto → planilha (ou lista colada) com
 // os SKUs → "Buscar no TOTVS" mostra o preço atual e o valor calculado →
-// revisa (pode ajustar o valor linha a linha) → "Aplicar no TOTVS".
-// Produto que ainda não está na promoção é INSERIDO (promotion-items) quando
-// a opção "incluir novos" estiver marcada.
+// revisa (pode ajustar o valor linha a linha) → "GERAR NO TOTVS" ou
+// "GERAR NO PDV CROSBY".
+// TOTVS: produto que ainda não está na promoção é INSERIDO (promotion-items)
+// quando a opção "incluir novos" estiver marcada.
+// PDV CROSBY: não precisa de promoção do TOTVS — grava uma promoção própria
+// do HeadCoach (nome, período, lojas) e o PDV Crosby aplica o valor como
+// desconto ao bipar, com o selo PROMOCIONAL (/api/pdv-crosby/promocoes).
 //
 // Sem limite de SKUs: a planilha é dividida em lotes e enviada em loop (consulta
 // de 500 em 500, gravação de 5.000 em 5.000). Lote que falha é repetido e, se
@@ -31,9 +35,11 @@ import {
   ClipboardText,
   Trash,
   Megaphone,
+  CashRegister,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import useApiClient from '../hooks/useApiClient';
+import { useAuth } from '../components/AuthContext';
 import { API_BASE_URL } from '../config/constants';
 
 const API_KEY = import.meta.env.VITE_API_KEY || '';
@@ -119,6 +125,13 @@ function extrairSkusDaPlanilha(matriz) {
   return { skus, coluna: cab[idx] || `coluna ${idx + 1}` };
 }
 
+const hojeISO = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Recife' });
+const somarDias = (iso, dias) => {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setDate(d.getDate() + dias);
+  return d.toISOString().slice(0, 10);
+};
+
 const SITUACAO = {
   atualizar: { label: 'Atualizar', cls: 'bg-blue-50 text-blue-700 border-blue-200' },
   inserir: { label: 'Inserir na promoção', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
@@ -126,12 +139,14 @@ const SITUACAO = {
   nao_encontrado: { label: 'Não encontrado', cls: 'bg-red-50 text-red-700 border-red-200' },
   sem_preco: { label: 'Sem preço', cls: 'bg-amber-50 text-amber-700 border-amber-200' },
   falha_consulta: { label: 'Falha na consulta', cls: 'bg-red-50 text-red-700 border-red-200' },
+  pronto: { label: 'Pronto', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
   gravado: { label: 'Gravado', cls: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
   erro: { label: 'Erro', cls: 'bg-red-100 text-red-800 border-red-300' },
 };
 
 export default function PromocaoValores() {
   const { apiMutate } = useApiClient();
+  const { user } = useAuth();
   const fileRef = useRef(null);
   const pararRef = useRef(false);
 
@@ -165,6 +180,12 @@ export default function PromocaoValores() {
   const [aplicando, setAplicando] = useState(false);
   const [confirmar, setConfirmar] = useState(false);
   const [resultado, setResultado] = useState(null);
+
+  // ── PDV Crosby (promoção própria do HeadCoach) ──
+  const [promosPdv, setPromosPdv] = useState([]);
+  const [modalPdv, setModalPdv] = useState(null); // { promoId: 'nova' | id, nome, inicio, fim, todas }
+  const [gerandoPdv, setGerandoPdv] = useState(false);
+  const [resultadoPdv, setResultadoPdv] = useState(null);
 
   // Empresas do TOTVS
   useEffect(() => {
@@ -320,7 +341,7 @@ export default function PromocaoValores() {
   // Consulta em loop. `base` são as linhas já resolvidas ao reconsultar falhas.
   const consultar = useCallback(
     async (lista, base) => {
-      if (!empresa || !promocao || !lista.length) return;
+      if (!empresa || !lista.length) return;
       pararRef.current = false;
       setBuscando(true);
       setErro(null);
@@ -370,7 +391,7 @@ export default function PromocaoValores() {
                 'POST',
                 {
                   branch: Number(empresa),
-                  promotionCode: Number(promocao),
+                  promotionCode: promocao ? Number(promocao) : undefined,
                   priceCode: Number(priceCode) || 1,
                   skus: lotes[i],
                   primeiroLote: i === 0,
@@ -435,6 +456,7 @@ export default function PromocaoValores() {
       if (resultado.errosPorCodigo[r.productCode]) return 'erro';
     }
     if (r.status !== 'ok') return r.status;
+    if (!promocao) return 'pronto';
     if (r.naPromocao) return 'atualizar';
     return incluirNovos ? 'inserir' : 'ignorar';
   };
@@ -552,6 +574,106 @@ export default function PromocaoValores() {
     [pendentes, itensParaGravar, resultado, empresa, promocao, incluirNovos, apiMutate, valores],
   );
 
+  // ── GERAR NO PDV CROSBY ──
+  const itensPdv = useMemo(
+    () =>
+      rows
+        .filter((r) => r.status === 'ok' && selecionados[r.productCode])
+        .map((r) => ({
+          productCode: r.productCode,
+          sku: r.productSku || r.sku,
+          nome: r.productName || null,
+          precoBase: r.price,
+          precoPromocional: round2(valores[r.productCode]),
+        }))
+        .filter((i) => Number.isFinite(i.precoPromocional) && i.precoPromocional > 0),
+    [rows, selecionados, valores],
+  );
+
+  const carregarPromosPdv = useCallback(async () => {
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/pdv-crosby/promocoes`, { headers: { 'x-api-key': API_KEY } });
+      const j = await r.json();
+      if (j.success) setPromosPdv(j.data?.items || []);
+    } catch {
+      /* lista é só apoio */
+    }
+  }, []);
+  useEffect(() => {
+    carregarPromosPdv();
+  }, [carregarPromosPdv]);
+
+  const abrirModalPdv = () => {
+    const hoje = hojeISO();
+    setModalPdv({
+      promoId: 'nova',
+      nome: `${String(percentual).replace('.', ',')}% OFF`,
+      inicio: hoje,
+      fim: somarDias(hoje, 30),
+      todas: false,
+    });
+  };
+
+  const gerarNoPdv = useCallback(async () => {
+    const m = modalPdv;
+    if (!m || !itensPdv.length) return;
+    setGerandoPdv(true);
+    setErro(null);
+    pararRef.current = false;
+    const acc = { gravados: 0, recusados: [], erros: [] };
+    try {
+      let promo = promosPdv.find((p) => String(p.id) === String(m.promoId)) || null;
+      if (m.promoId === 'nova') {
+        const j = await apiMutate('/api/pdv-crosby/promocoes', 'POST', {
+          nome: m.nome,
+          inicio: m.inicio,
+          fim: m.fim,
+          empresas: m.todas ? null : [Number(empresa)],
+          descontoPct: Number(percentual),
+          criadoPor: user?.email || user?.name || null,
+        });
+        promo = j?.data;
+        if (!promo?.id) throw new Error(j?.message || 'Não consegui criar a promoção');
+      }
+      setModalPdv(null);
+      const lotes = emLotes(itensPdv, LOTE_GRAVACAO);
+      for (let i = 0; i < lotes.length; i++) {
+        if (pararRef.current) {
+          acc.erros.push(`${fmtNum(lotes.slice(i).flat().length)} itens não enviados (interrompido)`);
+          break;
+        }
+        setProgresso({ acao: 'Gravando no PDV Crosby', feito: i * LOTE_GRAVACAO, total: itensPdv.length, lote: i + 1, lotes: lotes.length });
+        try {
+          const j = await repetirLote(
+            () => apiMutate(`/api/pdv-crosby/promocoes/${promo.id}/itens`, 'POST', { items: lotes[i] }, {}, { timeout: TIMEOUT_GRAVACAO }),
+            () => pararRef.current,
+          );
+          acc.gravados += j?.data?.gravados?.length || 0;
+          acc.recusados.push(...(j?.data?.recusados || []));
+        } catch (e) {
+          acc.erros.push(`Lote ${i + 1} não gravado: ${e.message}`);
+        }
+        setResultadoPdv({ promo, ...acc });
+      }
+      setResultadoPdv({ promo, ...acc });
+      carregarPromosPdv();
+    } catch (e) {
+      setErro(`PDV Crosby: ${e.message}`);
+    } finally {
+      setProgresso(null);
+      setGerandoPdv(false);
+    }
+  }, [modalPdv, itensPdv, promosPdv, apiMutate, empresa, percentual, user, carregarPromosPdv]);
+
+  const alternarPromoPdv = async (p) => {
+    try {
+      await apiMutate(`/api/pdv-crosby/promocoes/${p.id}`, 'PUT', { ativa: !p.ativa });
+      carregarPromosPdv();
+    } catch (e) {
+      setErro(`PDV Crosby: ${e.message}`);
+    }
+  };
+
   const exportar = () => {
     const dados = rows.map((r) => ({
       SKU: r.sku,
@@ -569,7 +691,7 @@ export default function PromocaoValores() {
     const ws = XLSX.utils.json_to_sheet(dados);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Resultado');
-    XLSX.writeFile(wb, `preco-promocional-${empresa}-${promocao}.xlsx`);
+    XLSX.writeFile(wb, `preco-promocional-${empresa}-${promocao || 'pdv'}.xlsx`);
   };
 
   const todosSelecionados = rows.filter((r) => r.status === 'ok').every((r) => selecionados[r.productCode]);
@@ -579,7 +701,7 @@ export default function PromocaoValores() {
     setSelecionados(sel);
   };
 
-  const pronto = empresa && promocao && skus.length > 0 && pctValido && !emAndamento;
+  const pronto = empresa && skus.length > 0 && pctValido && !emAndamento && !gerandoPdv;
 
   const totalPaginas = Math.max(1, Math.ceil(rows.length / POR_PAGINA));
   const paginaAtual = Math.min(pagina, totalPaginas);
@@ -615,7 +737,7 @@ export default function PromocaoValores() {
     <div className="w-full max-w-7xl mx-auto px-4 py-6">
       <PageTitle
         title="Preço Promocional (Excel)"
-        subtitle="Importe a planilha com os SKUs, escolha a promoção do TOTVS e o percentual de desconto. O valor promocional é calculado sobre o preço atual e gravado item a item na promoção (PRDFM002)."
+        subtitle="Importe a planilha com os SKUs e o percentual de desconto. O valor promocional é calculado sobre o preço atual e gerado na promoção do TOTVS (PRDFM002) ou numa promoção própria do PDV Crosby."
         icon={Tag}
         iconColor="text-rose-600"
       />
@@ -651,7 +773,7 @@ export default function PromocaoValores() {
             </label>
             <label className="text-xs text-gray-600">
               <span className="flex items-center justify-between">
-                <span>Promoção</span>
+                <span>Promoção do TOTVS <span className="text-gray-400">(só para GERAR NO TOTVS)</span></span>
                 <span className="flex items-center gap-2">
                   <select
                     value={statusPromo}
@@ -686,7 +808,7 @@ export default function PromocaoValores() {
                     ? 'Lendo as promoções no TOTVS (pode levar até 1 min)…'
                     : empresa
                       ? promocoes.length
-                        ? 'Selecione…'
+                        ? 'Selecione… (deixe vazio para gerar só no PDV Crosby)'
                         : 'Nenhuma promoção nesta situação'
                       : 'Escolha a empresa primeiro'}
                 </option>
@@ -886,11 +1008,9 @@ export default function PromocaoValores() {
             <span className="text-xs text-gray-400">
               {!empresa
                 ? 'escolha a empresa'
-                : !promocao
-                  ? 'escolha a promoção'
-                  : !skus.length
-                    ? 'importe os SKUs'
-                    : 'informe um percentual entre 0 e 99,99'}
+                : !skus.length
+                  ? 'importe os SKUs'
+                  : 'informe um percentual entre 0 e 99,99'}
             </span>
           )}
         </div>
@@ -964,6 +1084,33 @@ export default function PromocaoValores() {
                   ))}
                   {resultado.erros.length > 20 && <li>… e mais {resultado.erros.length - 20}</li>}
                 </ul>
+              )}
+            </div>
+          )}
+
+          {resultadoPdv && (
+            <div
+              className={`mb-4 rounded-lg border px-4 py-3 text-sm ${
+                resultadoPdv.erros.length || resultadoPdv.recusados.length
+                  ? 'border-amber-300 bg-amber-50 text-amber-900'
+                  : 'border-emerald-300 bg-emerald-50 text-emerald-900'
+              }`}
+            >
+              <div className="flex items-center gap-2 font-semibold">
+                <CashRegister size={18} />
+                {gerandoPdv ? 'Gravando no PDV Crosby' : 'PDV Crosby'}: {fmtNum(resultadoPdv.gravados)} itens na promoção "
+                {resultadoPdv.promo?.nome}" ({fmtData(resultadoPdv.promo?.inicio)} a {fmtData(resultadoPdv.promo?.fim)})
+                {resultadoPdv.recusados.length ? `, ${resultadoPdv.recusados.length} recusados` : ''}
+              </div>
+              {resultadoPdv.erros.length > 0 && (
+                <ul className="mt-2 list-disc pl-5 text-xs">
+                  {resultadoPdv.erros.map((e, i) => (
+                    <li key={i}>{e}</li>
+                  ))}
+                </ul>
+              )}
+              {!gerandoPdv && !resultadoPdv.erros.length && (
+                <p className="mt-1 text-xs">Ao bipar esses produtos no PDV Crosby, eles já entram com o desconto e o selo PROMOCIONAL.</p>
               )}
             </div>
           )}
@@ -1076,17 +1223,27 @@ export default function PromocaoValores() {
             </div>
           )}
 
-          {aplicando && barraProgresso}
+          {(aplicando || gerandoPdv) && barraProgresso}
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <button
               type="button"
               onClick={() => setConfirmar(true)}
-              disabled={!itensParaGravar.length || emAndamento}
+              disabled={!promocao || !itensParaGravar.length || emAndamento || gerandoPdv}
+              title={!promocao ? 'Escolha a promoção do TOTVS no passo 1' : undefined}
               className="flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-40"
             >
               {aplicando ? <Spinner size={16} className="animate-spin" /> : <CheckCircle size={16} />}
-              {aplicando ? 'Gravando no TOTVS…' : `Aplicar no TOTVS (${fmtNum(itensParaGravar.length)})`}
+              {aplicando ? 'Gravando no TOTVS…' : `GERAR NO TOTVS (${fmtNum(promocao ? itensParaGravar.length : 0)})`}
+            </button>
+            <button
+              type="button"
+              onClick={abrirModalPdv}
+              disabled={!itensPdv.length || emAndamento || gerandoPdv}
+              className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-40"
+            >
+              {gerandoPdv ? <Spinner size={16} className="animate-spin" /> : <CashRegister size={16} />}
+              {gerandoPdv ? 'Gravando no PDV Crosby…' : `GERAR NO PDV CROSBY (${fmtNum(itensPdv.length)})`}
             </button>
             {resultado && !emAndamento && pendentes.length > 0 && (
               <button
@@ -1098,11 +1255,169 @@ export default function PromocaoValores() {
               </button>
             )}
             <span className="text-xs text-gray-500">
+              {!promocao && 'TOTVS: escolha a promoção no passo 1 · '}
               {qtdAtualizar} atualizar · {qtdInserir} inserir
               {!incluirNovos && rows.some((r) => r.status === 'ok' && !r.naPromocao)
                 ? ` · ${rows.filter((r) => r.status === 'ok' && !r.naPromocao).length} fora da promoção serão ignorados`
                 : ''}
             </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Promoções do PDV Crosby ── */}
+      {promosPdv.length > 0 && (
+        <div className="mt-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+          <h2 className="flex items-center gap-2 text-sm font-semibold text-[#000638] mb-3">
+            <CashRegister size={18} className="text-emerald-600" /> Promoções do PDV Crosby
+          </h2>
+          <div className="overflow-x-auto rounded-lg border border-gray-200">
+            <table className="min-w-full text-xs">
+              <thead className="bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">
+                <tr>
+                  <th className="px-2 py-2 text-left">Promoção</th>
+                  <th className="px-2 py-2 text-left">Lojas</th>
+                  <th className="px-2 py-2 text-left">Período</th>
+                  <th className="px-2 py-2 text-right">Itens</th>
+                  <th className="px-2 py-2 text-left">Situação</th>
+                  <th className="px-2 py-2" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {promosPdv.map((p) => (
+                  <tr key={p.id}>
+                    <td className="px-2 py-1.5">
+                      <div className="font-medium text-gray-800">{p.nome}</div>
+                      <div className="text-[11px] text-gray-400">
+                        nº {p.id}
+                        {p.criado_por ? ` · ${p.criado_por}` : ''}
+                      </div>
+                    </td>
+                    <td className="px-2 py-1.5">{p.empresas?.length ? p.empresas.join(', ') : 'Todas'}</td>
+                    <td className="px-2 py-1.5 whitespace-nowrap">
+                      {fmtData(p.inicio)} a {fmtData(p.fim)}
+                    </td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{fmtNum(p.qtdItens)}</td>
+                    <td className="px-2 py-1.5">
+                      <span
+                        className={`inline-block rounded-full border px-2 py-0.5 text-[11px] ${
+                          p.vigente
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : p.ativa
+                              ? 'bg-amber-50 text-amber-700 border-amber-200'
+                              : 'bg-gray-100 text-gray-600 border-gray-200'
+                        }`}
+                      >
+                        {p.vigente ? 'Vigente' : p.ativa ? (p.inicio > hojeISO() ? 'Agendada' : 'Vencida') : 'Encerrada'}
+                      </span>
+                    </td>
+                    <td className="px-2 py-1.5 text-right">
+                      <button
+                        type="button"
+                        onClick={() => alternarPromoPdv(p)}
+                        className={`text-xs hover:underline ${p.ativa ? 'text-red-600' : 'text-emerald-700'}`}
+                      >
+                        {p.ativa ? 'Encerrar' : 'Reativar'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {modalPdv && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+            <h3 className="flex items-center gap-2 text-base font-semibold text-[#000638] mb-1">
+              <CashRegister size={20} className="text-emerald-600" /> Gerar no PDV Crosby
+            </h3>
+            <p className="text-xs text-gray-500 mb-3">
+              {fmtNum(itensPdv.length)} produtos. Não altera o TOTVS: o PDV Crosby aplica o valor promocional como desconto ao bipar,
+              com o selo PROMOCIONAL.
+            </p>
+            <label className="text-xs text-gray-600 block">
+              Promoção
+              <select
+                value={modalPdv.promoId}
+                onChange={(e) => setModalPdv((m) => ({ ...m, promoId: e.target.value }))}
+                className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              >
+                <option value="nova">+ Nova promoção</option>
+                {promosPdv
+                  .filter((p) => p.ativa && p.fim >= hojeISO())
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      Adicionar em: {p.nome} ({fmtData(p.inicio)} a {fmtData(p.fim)}) · {fmtNum(p.qtdItens)} itens
+                    </option>
+                  ))}
+              </select>
+            </label>
+            {modalPdv.promoId === 'nova' && (
+              <div className="mt-3 space-y-3">
+                <label className="text-xs text-gray-600 block">
+                  Nome
+                  <input
+                    value={modalPdv.nome}
+                    onChange={(e) => setModalPdv((m) => ({ ...m, nome: e.target.value }))}
+                    maxLength={120}
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="text-xs text-gray-600 block">
+                    Início
+                    <input
+                      type="date"
+                      value={modalPdv.inicio}
+                      onChange={(e) => setModalPdv((m) => ({ ...m, inicio: e.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                    />
+                  </label>
+                  <label className="text-xs text-gray-600 block">
+                    Fim
+                    <input
+                      type="date"
+                      value={modalPdv.fim}
+                      min={modalPdv.inicio}
+                      onChange={(e) => setModalPdv((m) => ({ ...m, fim: e.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                    />
+                  </label>
+                </div>
+                <div className="text-xs text-gray-600">
+                  Vale para
+                  <div className="mt-1 flex flex-col gap-1">
+                    <label className="flex items-center gap-2">
+                      <input type="radio" checked={!modalPdv.todas} onChange={() => setModalPdv((m) => ({ ...m, todas: false }))} className="w-4 h-4 shrink-0 mb-0 p-0 accent-emerald-600" />
+                      só a empresa {empresa} — {empresas.find((e) => String(e.codigo) === String(empresa))?.nome || ''}
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <input type="radio" checked={modalPdv.todas} onChange={() => setModalPdv((m) => ({ ...m, todas: true }))} className="w-4 h-4 shrink-0 mb-0 p-0 accent-emerald-600" />
+                      todas as lojas
+                    </label>
+                  </div>
+                </div>
+              </div>
+            )}
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setModalPdv(null)} className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={gerarNoPdv}
+                disabled={
+                  modalPdv.promoId === 'nova' &&
+                  (!modalPdv.nome.trim() || !modalPdv.inicio || !modalPdv.fim || modalPdv.fim < modalPdv.inicio)
+                }
+                className="rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-40"
+              >
+                Gerar no PDV Crosby
+              </button>
+            </div>
           </div>
         </div>
       )}
