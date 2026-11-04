@@ -60,6 +60,7 @@ const headersUsuario = () => {
 const ORIGENS = {
   TRANSFERENCIA: { label: 'Transferência', cor: 'bg-amber-100 text-amber-800 border-amber-300' },
   BOLETO_TARIFA: { label: 'Boleto × tarifa', cor: 'bg-teal-100 text-teal-800 border-teal-300' },
+  PIX_DEVOLVIDO: { label: 'Pix devolvido', cor: 'bg-rose-100 text-rose-800 border-rose-300' },
   LIBERACAO: { label: 'Liberação de Pagamento', cor: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
   SOLICITACAO: { label: 'Solicitações Crosby', cor: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
   TOTVS_CP: { label: 'Contas a Pagar (TOTVS)', cor: 'bg-blue-100 text-blue-800 border-blue-300' },
@@ -1921,7 +1922,21 @@ const DetalheConciliacao = ({ detalhe, onClose, onAnexar, onRemoverAnexo }) => {
             </div>
           )}
 
-          {transferencia && transferencia.origem !== 'BOLETO_TARIFA' && (
+          {transferencia && transferencia.origem === 'PIX_DEVOLVIDO' && (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <Campo label="Tipo">{transferencia.referencia?.papel === 'SAIDA' ? 'Pix enviado que foi devolvido (estorno integral)' : 'Devolução de um Pix enviado'}</Campo>
+              <Campo label={transferencia.referencia?.papel === 'SAIDA' ? 'Devolução recebida' : 'Pix enviado'}>
+                {fmt(Math.abs(transferencia.referencia?.parValor))} em {fmtData(transferencia.referencia?.parData)}
+                {transferencia.referencia?.parSeq != null ? <span className="block text-[11px] text-gray-500">linha {transferencia.referencia.parSeq} do extrato</span> : null}
+              </Campo>
+              <Campo label="Contraparte">{transferencia.referencia?.contraparte || '—'}</Campo>
+              <div className="col-span-2 md:col-span-3">
+                <Campo label="Regra">Mesma conta, mesmo valor e mesma contraparte, devolução até 7 dias depois do envio; derivado na leitura do extrato, nada gravado</Campo>
+              </div>
+            </div>
+          )}
+
+          {transferencia && !['BOLETO_TARIFA', 'PIX_DEVOLVIDO'].includes(transferencia.origem) && (
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               <Campo label="Tipo">Transferência entre contas do grupo</Campo>
               <Campo label="Outra conta">{transferencia.referencia?.outraConta ? `${transferencia.referencia.outraConta.apelido} (${bancoCfg(transferencia.referencia.outraConta.banco).label})` : '—'}</Campo>
