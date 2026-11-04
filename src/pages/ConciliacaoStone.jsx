@@ -59,6 +59,14 @@ const fmt = (v) =>
 const fmtData = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '—');
 const fmtDataHora = (s) => (s ? `${fmtData(s)} ${String(s).slice(11, 16)}`.trim() : '—');
 
+// cliente da fatura: o digitado na linha; vazio → o padrão da loja (própria filial)
+const clienteDaVenda = (ln, clientes) => {
+  const k = chaveStone(ln);
+  const v = clientes[k];
+  if (v !== undefined && v !== '') return v;
+  return ln.loja?.clientePadrao?.code ? String(ln.loja.clientePadrao.code) : '';
+};
+
 // chave de uma venda "Só na Stone" (StoneCode de origem + NSU)
 const chaveStone = (ln) => `${ln.stone?.stonecode || ln.loja?.stonecode}|${ln.stone?.nsu}`;
 
@@ -517,7 +525,7 @@ const ConciliacaoStone = () => {
   const lancarNoTotvs = async (simular) => {
     const marcadas = selecionaveis.filter((ln) => selecionados.has(chaveStone(ln)));
     if (!marcadas.length) return;
-    const semCliente = marcadas.filter((ln) => !clientes[chaveStone(ln)]);
+    const semCliente = marcadas.filter((ln) => !clienteDaVenda(ln, clientes));
     if (semCliente.length) {
       setAviso(`Informe o código do cliente em ${semCliente.length} venda(s) marcada(s).`);
       return;
@@ -542,7 +550,7 @@ const ConciliacaoStone = () => {
             stonecode: ln.stone.stonecode || ln.loja.stonecode,
             nsu: ln.stone.nsu,
             dataArquivo: ln.stone.dataArquivo || ln.stone.dataVenda,
-            cliente: clientes[chaveStone(ln)],
+            cliente: clienteDaVenda(ln, clientes),
           })),
         }),
       });
@@ -1198,7 +1206,8 @@ const LancarTotvsCampos = ({ ln, lanc, compacto = false }) => {
         className="h-4 w-4 accent-blue-600 cursor-pointer"
       />
       <input
-        value={lanc.clientes[k] || ''}
+        value={lanc.clientes[k] ?? (ln.loja.clientePadrao?.code ? String(ln.loja.clientePadrao.code) : '')}
+        title={ln.loja.clientePadrao ? `Padrão: ${ln.loja.clientePadrao.code} ${ln.loja.clientePadrao.nome || ''}` : 'Código do cliente no TOTVS'}
         onChange={(e) => lanc.setCliente(k, e.target.value)}
         placeholder="Cód. cliente"
         inputMode="numeric"
