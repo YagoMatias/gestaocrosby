@@ -59,6 +59,9 @@ const fmt = (v) =>
 const fmtData = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().join('/') : '—');
 const fmtDataHora = (s) => (s ? `${fmtData(s)} ${String(s).slice(11, 16)}`.trim() : '—');
 
+// chave de uma venda "Só na Stone" (StoneCode de origem + NSU)
+const chaveStone = (ln) => `${ln.stone?.stonecode || ln.loja?.stonecode}|${ln.stone?.nsu}`;
+
 const diasAtrasISO = (n) => {
   const d = new Date();
   d.setDate(d.getDate() - n);
@@ -110,6 +113,12 @@ const ConciliacaoStone = () => {
   const [erroDia, setErroDia] = useState(null);
   const [mostrarTodasDia, setMostrarTodasDia] = useState(false);
   const [salvandoVinculo, setSalvandoVinculo] = useState(false);
+  // Lançar no TOTVS as vendas "Só na Stone" (fatura + baixa no cartão) — João, 04/11/2026
+  const [selecionados, setSelecionados] = useState(() => new Set());
+  const [clientes, setClientes] = useState({}); // chave → código do cliente TOTVS
+  const [clienteTodos, setClienteTodos] = useState('');
+  const [lancando, setLancando] = useState(false);
+  const [resultadosLanc, setResultadosLanc] = useState({}); // chave → resultado
 
   useEffect(() => {
     (async () => {
@@ -475,6 +484,89 @@ const ConciliacaoStone = () => {
     saveAs(new Blob([buf]), `conciliacao_stone_totvs_${inicio}_${fim}.xlsx`);
   };
 
+  // ─── lançar no TOTVS (aba Só na Stone) ─────────────────────
+  const selecionaveis = aba === 'stone'
+    ? linhas.filter((ln) => ln.kind === 'stone' && !ln.stone.cancelada && !resultadosLanc[chaveStone(ln)]?.ok)
+    : [];
+  const todasMarcadas = selecionaveis.length > 0 && selecionaveis.every((ln) => selecionados.has(chaveStone(ln)));
+  const toggleSel = (k) =>
+    setSelecionados((prev) => {
+      const n = new Set(prev);
+      if (n.has(k)) n.delete(k);
+      else n.add(k);
+      return n;
+    });
+  const toggleTodas = () =>
+    setSelecionados(todasMarcadas ? new Set() : new Set(selecionaveis.map(chaveStone)));
+  const setCliente = (k, v) => setClientes((prev) => ({ ...prev, [k]: String(v).replace(/\D/g, '').slice(0, 9) }));
+  const aplicarClienteTodos = () => {
+    const v = String(clienteTodos).replace(/\D/g, '');
+    if (!v) return;
+    setClientes((prev) => {
+      const n = { ...prev };
+      for (const k of selecionados) n[k] = v;
+      return n;
+    });
+  };
+  const lancarNoTotvs = async (simular) => {
+    const marcadas = selecionaveis.filter((ln) => selecionados.has(chaveStone(ln)));
+    if (!marcadas.length) return;
+    const semCliente = marcadas.filter((ln) => !clientes[chaveStone(ln)]);
+    if (semCliente.length) {
+      setAviso(`Informe o código do cliente em ${semCliente.length} venda(s) marcada(s).`);
+      return;
+    }
+    if (!simular) {
+      const total = marcadas.reduce((a, ln) => a + Number(ln.stone.valorBruto || 0), 0);
+      const okConf = window.confirm(
+        `Criar ${marcadas.length} fatura(s) no TOTVS (total ${fmt(total)}) e baixar cada uma no cartão com o NSU/AUT da Stone?`,
+      );
+      if (!okConf) return;
+    }
+    setLancando(true);
+    setAviso(null);
+    try {
+      const r = await fetch(`${API}/lancar-totvs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          simular,
+          usuario,
+          itens: marcadas.map((ln) => ({
+            stonecode: ln.stone.stonecode || ln.loja.stonecode,
+            nsu: ln.stone.nsu,
+            dataArquivo: ln.stone.dataArquivo || ln.stone.dataVenda,
+            cliente: clientes[chaveStone(ln)],
+          })),
+        }),
+      });
+      const j = await r.json();
+      if (!j?.success) throw new Error(j?.message || 'Falha ao lançar no TOTVS.');
+      const novos = {};
+      for (const res of j.data.resultados || []) {
+        novos[`${res.stonecode}|${res.nsu}`] = { ...res, ok: simular ? false : res.ok, validado: simular && res.ok };
+      }
+      setResultadosLanc((prev) => ({ ...prev, ...novos }));
+      if (!simular) {
+        setSelecionados((prev) => {
+          const n = new Set(prev);
+          for (const [k, v] of Object.entries(novos)) if (v.ok) n.delete(k);
+          return n;
+        });
+      }
+      setAviso(
+        simular
+          ? `Validação: ${j.data.ok} de ${j.data.resultados.length} pronta(s) para lançar.`
+          : `${j.data.ok} de ${j.data.resultados.length} venda(s) lançada(s) e baixada(s) no TOTVS. Consulte de novo para ver a conciliação.`,
+      );
+    } catch (e) {
+      setAviso(e.message || 'Erro ao lançar no TOTVS.');
+    } finally {
+      setLancando(false);
+    }
+  };
+  const lanc = { selecionados, toggleSel, clientes, setCliente, resultados: resultadosLanc };
+
   const lojasSemChave = lojas.filter((l) => !l.temChave || l.pendente);
   const lojaSelecionada = lojas.find((l) => l.stonecode === stonecode);
 
@@ -726,6 +818,49 @@ const ConciliacaoStone = () => {
             })}
           </div>
 
+          {/* Lançar no TOTVS: vendas Só na Stone → fatura + baixa no cartão */}
+          {aba === 'stone' && selecionaveis.length > 0 && (
+            <div className="flex flex-col md:flex-row md:flex-wrap md:items-center gap-2 px-3 py-2.5 border-b border-gray-200 bg-red-50/40 text-xs">
+              <label className="inline-flex items-center gap-2 font-medium text-gray-700 cursor-pointer">
+                <input type="checkbox" checked={todasMarcadas} onChange={toggleTodas} className="h-4 w-4 accent-blue-600" />
+                Selecionar todas ({selecionaveis.length})
+              </label>
+              <span className="text-gray-500">{selecionados.size} marcada(s)</span>
+              <div className="flex items-center gap-1.5 md:ml-2">
+                <input
+                  value={clienteTodos}
+                  onChange={(e) => setClienteTodos(e.target.value.replace(/\D/g, '').slice(0, 9))}
+                  placeholder="Cód. cliente"
+                  inputMode="numeric"
+                  className="w-28 px-2 py-1.5 border border-gray-300 rounded-md text-gray-800"
+                />
+                <button
+                  onClick={aplicarClienteTodos}
+                  disabled={!clienteTodos || !selecionados.size}
+                  className="px-2 py-1.5 rounded-md border border-gray-300 text-gray-700 hover:bg-white disabled:opacity-40"
+                >
+                  Aplicar nas marcadas
+                </button>
+              </div>
+              <div className="flex items-center gap-1.5 md:ml-auto">
+                <button
+                  onClick={() => lancarNoTotvs(true)}
+                  disabled={lancando || !selecionados.size}
+                  className="px-3 py-1.5 rounded-md border border-blue-300 text-blue-700 hover:bg-blue-50 disabled:opacity-40"
+                >
+                  Validar
+                </button>
+                <button
+                  onClick={() => lancarNoTotvs(false)}
+                  disabled={lancando || !selecionados.size}
+                  className="px-3 py-1.5 rounded-md bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-40"
+                >
+                  {lancando ? 'Lançando…' : `Criar fatura e baixar no TOTVS (${selecionados.size})`}
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Tabela (desktop) */}
           <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
@@ -777,7 +912,7 @@ const ConciliacaoStone = () => {
                     </td>
                   </tr>
                 ) : (
-                  linhas.map((ln, i) => <LinhaTabela key={i} ln={ln} onVincular={setVinculando} onDesfazer={desfazerVinculo} podeVincular={resultado.geral.vinculosDisponivel} />)
+                  linhas.map((ln, i) => <LinhaTabela key={i} ln={ln} onVincular={setVinculando} onDesfazer={desfazerVinculo} podeVincular={resultado.geral.vinculosDisponivel} lanc={lanc} />)
                 )}
               </tbody>
             </table>
@@ -788,7 +923,7 @@ const ConciliacaoStone = () => {
             {linhas.length === 0 ? (
               <div className="text-center py-10 text-gray-400 text-sm px-6">Nada nesta aba para o período.</div>
             ) : (
-              linhas.map((ln, i) => <CardMobile key={i} ln={ln} onVincular={setVinculando} onDesfazer={desfazerVinculo} podeVincular={resultado.geral.vinculosDisponivel} />)
+              linhas.map((ln, i) => <CardMobile key={i} ln={ln} onVincular={setVinculando} onDesfazer={desfazerVinculo} podeVincular={resultado.geral.vinculosDisponivel} lanc={lanc} />)
             )}
           </div>
 
@@ -988,7 +1123,42 @@ const ConciliacaoStone = () => {
 };
 
 // ─── linha da tabela (desktop) ───────────────────────────────
-const LinhaTabela = ({ ln, onVincular, onDesfazer, podeVincular }) => {
+// caixa de seleção + código do cliente + resultado do lançamento (Só na Stone)
+const LancarTotvsCampos = ({ ln, lanc, compacto = false }) => {
+  if (!lanc || ln.kind !== 'stone' || ln.stone.cancelada) return null;
+  const k = chaveStone(ln);
+  const res = lanc.resultados[k];
+  if (res?.ok) {
+    return <div className="text-[10px] text-green-700 mt-1 whitespace-normal max-w-[260px]">✔ {res.mensagem}</div>;
+  }
+  return (
+    <div className={`flex items-center gap-1.5 ${compacto ? 'mt-1.5' : 'mt-1'}`}>
+      <input
+        type="checkbox"
+        checked={lanc.selecionados.has(k)}
+        onChange={() => lanc.toggleSel(k)}
+        title="Selecionar para criar fatura e baixar no TOTVS"
+        className="h-4 w-4 accent-blue-600 cursor-pointer"
+      />
+      <input
+        value={lanc.clientes[k] || ''}
+        onChange={(e) => lanc.setCliente(k, e.target.value)}
+        placeholder="Cód. cliente"
+        inputMode="numeric"
+        className="w-24 px-1.5 py-0.5 border border-gray-300 rounded text-[11px] text-gray-800"
+      />
+      {res && !res.ok && (
+        <span className={`text-[10px] whitespace-normal max-w-[240px] ${res.validado ? 'text-blue-700' : 'text-red-600'}`}>
+          {res.validado
+            ? `✔ pronto: ${res.cliente?.nome || ''} · ${res.cartao?.cadastro || ''}`
+            : res.erro}
+        </span>
+      )}
+    </div>
+  );
+};
+
+const LinhaTabela = ({ ln, onVincular, onDesfazer, podeVincular, lanc }) => {
   const tdc = 'px-3 py-2.5 whitespace-nowrap text-xs';
   const lojaCell = (
     <td className={tdc}>
@@ -1093,6 +1263,7 @@ const LinhaTabela = ({ ln, onVincular, onDesfazer, podeVincular }) => {
           ) : (
             <Badge className="bg-red-50 text-red-700 border-red-200">Não lançada no TOTVS</Badge>
           )}
+          <LancarTotvsCampos ln={ln} lanc={lanc} />
         </td>
         <td className={`${tdc} text-right`}>
           {podeVincular && (
@@ -1142,7 +1313,7 @@ const LinhaTabela = ({ ln, onVincular, onDesfazer, podeVincular }) => {
 };
 
 // ─── card (mobile) ───────────────────────────────────────────
-const CardMobile = ({ ln, onVincular, onDesfazer, podeVincular }) => {
+const CardMobile = ({ ln, onVincular, onDesfazer, podeVincular, lanc }) => {
   const s = ln.kind === 'par' ? ln.par.stone : ln.stone;
   const t = ln.kind === 'par' ? ln.par.totvs : ln.totvs;
   return (
@@ -1177,6 +1348,7 @@ const CardMobile = ({ ln, onVincular, onDesfazer, podeVincular }) => {
       {ln.kind === 'par' && ln.par.divergencias.length > 0 && (
         <p className="text-[10px] text-amber-700 mt-1">{ln.par.divergencias.join('; ')}</p>
       )}
+      <LancarTotvsCampos ln={ln} lanc={lanc} compacto />
       <div className="flex justify-end mt-1.5">
         {ln.kind === 'stone' && podeVincular && (
           <button onClick={() => onVincular({ loja: ln.loja, stone: s })} className="text-[11px] inline-flex items-center gap-1 px-2 py-1 rounded-md border border-purple-300 text-purple-700">
