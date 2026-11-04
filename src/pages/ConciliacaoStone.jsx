@@ -883,7 +883,36 @@ const ConciliacaoStone = () => {
                             { key: 'stoneInfo', label: 'Stone', sortable: false },
                             { key: 'totvsInfo', label: 'TOTVS', sortable: false },
                             { key: 'valor', label: 'Valor' },
-                            { key: 'status', label: aba === 'conciliadas' || aba === 'divergencias' ? 'Batimento' : 'Situação', sortable: false },
+                            {
+                              key: 'status',
+                              label:
+                                aba === 'conciliadas' || aba === 'divergencias' ? (
+                                  'Batimento'
+                                ) : aba === 'stone' && selecionaveis.length > 0 ? (
+                                  <span className="inline-flex items-center gap-2">
+                                    Situação
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleTodas();
+                                      }}
+                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-medium ${
+                                        todasMarcadas
+                                          ? 'bg-blue-600 border-blue-600 text-white'
+                                          : 'bg-white border-blue-300 text-blue-700 hover:bg-blue-50'
+                                      }`}
+                                      title="Marca todas as vendas não lançadas desta aba"
+                                    >
+                                      <input type="checkbox" readOnly checked={todasMarcadas} className="h-3.5 w-3.5 accent-white pointer-events-none" />
+                                      {todasMarcadas ? 'Desmarcar todos' : `Selecionar todos (${selecionaveis.length})`}
+                                    </button>
+                                  </span>
+                                ) : (
+                                  'Situação'
+                                ),
+                              sortable: false,
+                            },
                             { key: 'acao', label: '', sortable: false },
                           ]),
                   ].map((col) => (
