@@ -1663,6 +1663,99 @@ const DetalheStone = ({ o }) => {
   );
 };
 
+// detalhe de duplicata/título (Liberação, Solicitação, Contas a Pagar, Contas a Receber)
+const KpiDoc = ({ label, children, destaque = false, sub = null }) => (
+  <div className="px-3 py-2.5 min-w-0">
+    <p className="text-[10px] uppercase tracking-wide text-gray-400">{label}</p>
+    <p className={`text-sm font-semibold whitespace-nowrap ${destaque ? 'text-[#000638]' : 'text-gray-800'}`}>{children ?? '—'}</p>
+    {sub}
+  </div>
+);
+const Linha = ({ label, children }) =>
+  children == null || children === '' || children === false ? null : (
+    <div className="flex gap-3 py-1.5 border-b border-gray-100 last:border-0 text-xs">
+      <span className="w-32 shrink-0 text-gray-400 uppercase tracking-wide text-[10px] pt-0.5">{label}</span>
+      <span className="text-gray-800 min-w-0 break-words">{children}</span>
+    </div>
+  );
+const DetalheOrigem = ({ o, l }) => {
+  const cliente = !!o.cliente;
+  const docTit = o.duplicata ? `${o.duplicata}${o.parcela ? ` / ${o.parcela}` : ''}` : null;
+  const recebido = Math.abs(Number(l?.valor) || 0);
+  return (
+    <div className="rounded-xl border border-gray-200 overflow-hidden bg-white">
+      <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex flex-wrap items-start gap-x-6 gap-y-2">
+        <div className="min-w-0 flex-1 basis-56">
+          <p className="text-[10px] uppercase tracking-wide text-gray-400">{cliente ? 'Cliente' : 'Fornecedor'}</p>
+          <p className="text-base font-bold text-gray-900 leading-tight">{o.fornecedor || '—'}</p>
+          <p className="text-[11px] text-gray-500">{[o.doc ? fmtDoc(o.doc) : null, o.fornecedorCodigo ? `cód. ${o.fornecedorCodigo}` : null].filter(Boolean).join(' · ')}</p>
+        </div>
+        <div className="min-w-0">
+          <p className="text-[10px] uppercase tracking-wide text-gray-400">Empresa</p>
+          <p className="text-sm font-semibold text-gray-800">{o.empresa || '—'}</p>
+        </div>
+        {docTit && (
+          <div className="min-w-0">
+            <p className="text-[10px] uppercase tracking-wide text-gray-400">{cliente ? 'Título / parcela' : 'Duplicata / parcela'}</p>
+            <p className="text-sm font-semibold font-mono text-gray-800">{docTit}</p>
+          </div>
+        )}
+        <div className="min-w-0">
+          <p className="text-[10px] uppercase tracking-wide text-gray-400">Origem</p>
+          <p className="text-sm font-semibold text-gray-800">{o.tipo}</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-3 md:grid-cols-6 divide-x divide-gray-100">
+        <KpiDoc label="Emissão">{fmtData(o.emissao)}</KpiDoc>
+        <KpiDoc label="Vencimento">{fmtData(o.vencimento)}</KpiDoc>
+        <KpiDoc label={cliente ? 'Recebimento' : 'Pagamento'}>{fmtData(o.dataPagamento)}</KpiDoc>
+        <KpiDoc label={cliente ? 'Valor do título' : 'Valor da duplicata'}>{fmt(o.valor)}</KpiDoc>
+        <KpiDoc
+          label={cliente ? 'Recebido' : 'Pago'}
+          destaque
+          sub={
+            o.taxa ? <span className="block text-[11px] text-orange-700">taxa Fiserv {fmt(o.taxa)}</span> : (o.juros || o.desconto) ? (
+              <span className="block text-[11px]">
+                {o.juros ? <span className="text-orange-700">juros {fmt(o.juros)}</span> : null}
+                {o.juros && o.desconto ? ' · ' : null}
+                {o.desconto ? <span className="text-emerald-700">desconto {fmt(o.desconto)}</span> : null}
+              </span>
+            ) : null
+          }
+        >
+          {fmt(o.taxa ? recebido : o.valorPago)}
+        </KpiDoc>
+        <KpiDoc label="No extrato" destaque>{fmt(recebido)}</KpiDoc>
+      </div>
+      <div className="px-4 py-2 border-t border-gray-200">
+        <Linha label="Despesa">
+          {o.despesas?.length ? (
+            <span className="space-y-0.5 block">
+              {o.despesas.map((d, i) => (
+                <span key={i} className="block">
+                  {d.nome}
+                  <span className="text-gray-400"> · cód. {d.codigo}{d.centroCusto ? ` · CC ${d.centroCusto}` : ''}{d.percentual && d.percentual !== 100 ? ` · ${d.percentual}%` : ''}{o.despesas.length > 1 ? ` · ${fmt(d.valor)}` : ''}</span>
+                </span>
+              ))}
+            </span>
+          ) : o.despesa}
+        </Linha>
+        <Linha label={cliente ? 'Tipo / portador' : 'Forma / banco'}>{[o.forma, o.banco, o.portadorCodigo && !o.banco ? `portador ${o.portadorCodigo}` : null].filter(Boolean).join(' · ') || null}</Linha>
+        <Linha label="Centro de custo">{o.centroCusto}</Linha>
+        <Linha label="Chave PIX">{o.chavePix}</Linha>
+        <Linha label="Código de barras">{o.codigoBarras ? <span className="font-mono text-[11px]">{o.codigoBarras}</span> : null}</Linha>
+        <Linha label="Chegada / entrada">{[o.chegada ? `NF ${fmtData(o.chegada)}` : null, o.entrada ? `lançada ${fmtData(o.entrada)}` : null].filter(Boolean).join(' · ') || null}</Linha>
+        <Linha label="Pago por">{o.pagoPor}</Linha>
+        <Linha label="Incluído por">{o.incluidoPor}</Linha>
+        <Linha label="Solicitante">{[o.solicitante, o.setor].filter(Boolean).join(' · ') || null}</Linha>
+        <Linha label="Status">{o.status}</Linha>
+        <Linha label="Observação">{o.observacao}</Linha>
+        {o.aviso && <p className="text-[11px] text-amber-700 pt-1">{o.aviso}</p>}
+      </div>
+    </div>
+  );
+};
+
 const Campo = ({ label, children }) => (
   <div className="min-w-0">
     <p className="text-[10px] uppercase tracking-wide text-gray-400">{label}</p>
@@ -1766,44 +1859,7 @@ const DetalheConciliacao = ({ detalhe, onClose, onAnexar, onRemoverAnexo }) => {
 
           {o && !o.stone && (
             <>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <Campo label="Origem">{o.tipo}</Campo>
-                <Campo label="Empresa">{o.empresa}</Campo>
-                <Campo label={o.cliente ? 'Cliente' : 'Fornecedor'}>
-                  {o.fornecedor || '—'}
-                  {o.doc ? <span className="block text-[11px] text-gray-500">{fmtDoc(o.doc)}</span> : null}
-                  {o.fornecedorCodigo ? <span className="block text-[11px] text-gray-400">cód. {o.fornecedorCodigo}</span> : null}
-                </Campo>
-                <Campo label={o.cliente ? 'Título / parcela' : 'Duplicata / parcela'}>{o.duplicata ? `${o.duplicata}${o.parcela ? ` / ${o.parcela}` : ''}` : '—'}</Campo>
-                <Campo label="Emissão">{fmtData(o.emissao)}</Campo>
-                <Campo label="Vencimento">{fmtData(o.vencimento)}</Campo>
-                <Campo label="Data de pagamento">{fmtData(o.dataPagamento)}</Campo>
-                <Campo label={o.cliente ? 'Valor do título' : 'Valor da duplicata'}>{fmt(o.valor)}</Campo>
-                <Campo label={o.cliente ? 'Valor recebido' : 'Valor pago'}>
-                  {o.taxa ? (
-                    <>
-                      {fmt(Math.abs(l.valor))}
-                      <span className="block text-[11px] text-orange-700">taxa Fiserv {fmt(o.taxa)} · título {fmt(o.valor)}</span>
-                    </>
-                  ) : (
-                    <>
-                      {fmt(o.valorPago)}
-                      {o.juros ? <span className="block text-[11px] text-orange-700">juros {fmt(o.juros)}</span> : null}
-                      {o.desconto ? <span className="block text-[11px] text-emerald-700">desconto {fmt(o.desconto)}</span> : null}
-                    </>
-                  )}
-                </Campo>
-                <Campo label={o.cliente ? 'Tipo / portador' : 'Forma / banco'}>{[o.forma, o.banco].filter(Boolean).join(' · ') || '—'}</Campo>
-                <Campo label="Despesa">{o.despesa || '—'}</Campo>
-                <Campo label="Pago por">{o.pagoPor || '—'}</Campo>
-                {o.chavePix && <Campo label="Chave PIX">{o.chavePix}</Campo>}
-                {o.codigoBarras && <Campo label="Código de barras">{o.codigoBarras}</Campo>}
-                {o.observacao && (
-                  <div className="col-span-2 md:col-span-4">
-                    <Campo label="Observação">{o.observacao}</Campo>
-                  </div>
-                )}
-              </div>
+              <DetalheOrigem o={o} l={l} />
 
               {dados.parcial?.valorDuplicata != null && (dados.usos?.length > 0 || c?.referencia?.parcial) && (
                 <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-900">
