@@ -1328,7 +1328,7 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
                 onClick={() => inputRef.current?.click()}
                 className={`cursor-pointer rounded-xl border-2 border-dashed p-8 flex flex-col items-center justify-center text-center transition-colors ${arrastando ? 'border-blue-500 bg-blue-50' : 'border-gray-300 bg-white hover:bg-gray-50'}`}
               >
-                <input ref={inputRef} type="file" accept=".pdf,.ofx,.xlsx" multiple className="hidden" onChange={(e) => importar(e.target.files)} />
+                <input ref={inputRef} type="file" accept=".pdf,.ofx,.xlsx,.csv" multiple className="hidden" onChange={(e) => importar(e.target.files)} />
                 {importando ? <ArrowsClockwise size={30} className="animate-spin text-blue-600 mb-2" /> : <UploadSimple size={30} className="text-blue-600 mb-2" />}
                 <p className="text-sm font-medium text-gray-700">{importando ? 'Lendo e gravando os extratos…' : 'Arraste os PDFs dos extratos aqui (pode ser vários de uma vez), ou clique para escolher'}</p>
                 <p className="text-xs text-gray-400 mt-1">
