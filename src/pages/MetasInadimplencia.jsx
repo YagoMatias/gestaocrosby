@@ -129,6 +129,30 @@ const TP_BAIXA_ABATIMENTO = 17;
 const ehAbatimento = (item) =>
   Number(item.tp_baixa) === TP_BAIXA_ABATIMENTO;
 
+// Títulos tirados do RECUPERADO por marcação manual do João: o cliente pagou em
+// MERCADORIA (não é recuperação em dinheiro). Não há tipo de baixa que
+// diferencie isso no TOTVS, então é lista específica — quando acontecer de
+// novo, o João sinaliza e a chave entra aqui. Chave: empresa-cliente-fatura-parcela.
+const TITULOS_FORA_RECUPERADO = new Set([
+  // 04/11/2026 — Crosby Catolé do Rocha (8445) e Crosby São Bento (45209),
+  // pagos em out/2026 com mercadoria. Total R$ 53.186,81 (11 títulos).
+  '101-8445-45685-24',
+  '101-8445-45685-205',
+  '101-45209-12315-3',
+  '101-45209-12315-20',
+  '101-45209-84575-3',
+  '101-45209-84575-4',
+  '101-45209-84575-203',
+  '101-45209-123456-2',
+  '101-45209-123456-3',
+  '101-45209-123456-4',
+  '101-45209-123456-207',
+]);
+const foraDoRecuperado = (item) =>
+  TITULOS_FORA_RECUPERADO.has(
+    `${item.cd_empresa}-${item.cd_cliente}-${item.nr_fatura}-${item.nr_parcela}`,
+  );
+
 // Tipo de carteira efetivo, igual ao Dashboard de Contas a Receber:
 // portador SAFRA/DALILA conta como DESCONTADA (2), senão vale o tp_cobranca
 // (0 = não está em cobrança, 1 = simples, 2 = descontada).
@@ -355,7 +379,9 @@ const MetasInadimplencia = () => {
         soFatura(item) && !ehRenegociacao(item) && !ehAbatimento(item);
 
       const itensVencendo = itensVencendoRaw.map(marcarCanal).filter((i) => valeParaMeta(i) && filialOk(i));
-      const itensPagos = itensPagosRaw.map(marcarCanal).filter((i) => valeParaMeta(i) && filialOk(i));
+      const itensPagos = itensPagosRaw
+        .map(marcarCanal)
+        .filter((i) => valeParaMeta(i) && filialOk(i) && !foraDoRecuperado(i));
 
       setVencendo(itensVencendo);
       setPagos(itensPagos);
