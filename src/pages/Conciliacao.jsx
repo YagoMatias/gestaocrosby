@@ -9,8 +9,7 @@
 //   • clique na conta abre o extrato linha a linha.
 // O CTA (código da conta no TOTVS) fica salvo na própria conta importada
 // (fluxo_caixa_contas.cta_totvs) e vale para todos os meses.
-import React, { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
-const FormularioSolicitacoes = lazy(() => import('./FormularioSolicitacoes'));
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
 import { supabaseAdmin } from '../lib/supabase';
@@ -18,6 +17,8 @@ import {
   Bank,
   MagnifyingGlass,
   Plus,
+  FunnelSimple,
+  CaretDown,
   CalendarBlank,
   ArrowsClockwise,
   ArrowDown,
@@ -41,6 +42,8 @@ import {
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
+
+const FormularioSolicitacoes = lazy(() => import('./FormularioSolicitacoes'));
 
 const API = `${API_BASE_URL}/api/fluxo-caixa-ext`;
 
@@ -168,6 +171,62 @@ const EMPRESA_POR_TITULAR = [
   [/CROSBY|FERREIRA COMERCIO/i, 'FERREIRA COMERCIO E CONFECCOES LTDA'],
 ];
 const OUTRAS = 'OUTRAS CONTAS IMPORTADAS';
+// Seletor com múltipla escolha (checkboxes) — mesmo do Extrato Bancário
+const MultiSelect = ({ label, opcoes, valor, onChange, renderOpcao, placeholder = 'Todos', larguraMin = 'min-w-[170px]', busca = false }) => {
+  const [aberto, setAberto] = useState(false);
+  const [q, setQ] = useState('');
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!aberto) return undefined;
+    const h = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setAberto(false);
+    };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [aberto]);
+  const visiveis = q ? opcoes.filter((o) => String(o.label).toLowerCase().includes(q.toLowerCase())) : opcoes;
+  const toggle = (v) => onChange(valor.includes(v) ? valor.filter((x) => x !== v) : [...valor, v]);
+  const resumo = !valor.length ? placeholder : valor.length === 1 ? opcoes.find((o) => o.value === valor[0])?.label || String(valor[0]) : `${valor.length} selecionados`;
+  return (
+    <div ref={ref} className={`relative ${larguraMin}`}>
+      <label className="block text-xs font-semibold mb-0.5 text-[#000638]">{label}</label>
+      <button
+        type="button"
+        onClick={() => setAberto((v) => !v)}
+        className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 text-xs border rounded-lg ${valor.length ? 'border-blue-400 bg-white text-blue-700 font-medium' : 'border-[#000638]/30 bg-[#f8f9fb] text-[#000638] hover:bg-white'}`}
+      >
+        <span className="truncate">{resumo}</span>
+        <CaretDown size={12} className={`shrink-0 transition-transform ${aberto ? 'rotate-180' : ''}`} />
+      </button>
+      {aberto && (
+        <div className="absolute z-40 mt-1 left-0 w-72 max-w-[90vw] bg-white border border-gray-200 rounded-lg shadow-xl p-2 text-[13px] text-gray-800">
+          {busca && (
+            <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar…" className="w-full mb-2 px-2.5 py-1.5 text-[13px] border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#000638]" />
+          )}
+          <div className="flex justify-between mb-1.5 px-1 text-xs">
+            <button type="button" onClick={() => onChange([...new Set([...valor, ...visiveis.map((o) => o.value)])])} className="text-blue-600 font-medium hover:underline">
+              Marcar todos
+            </button>
+            <button type="button" onClick={() => onChange([])} className="text-gray-500 hover:underline">
+              Limpar
+            </button>
+          </div>
+          <div className="max-h-64 overflow-auto -mx-1 px-1">
+            {visiveis.map((o) => (
+              <label key={String(o.value)} className="flex items-center gap-2.5 px-2 py-2 rounded-md hover:bg-blue-50 cursor-pointer text-gray-800 border-b border-gray-50 last:border-0">
+                <input type="checkbox" checked={valor.includes(o.value)} onChange={() => toggle(o.value)} className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 shrink-0 w-4 h-4" />
+                <span className="min-w-0 flex-1">{renderOpcao ? renderOpcao(o) : o.label}</span>
+              </label>
+            ))}
+            {!visiveis.length && <p className="px-2 py-3 text-gray-400">Nada encontrado.</p>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+const pontoBanco = (b) => (bancoCfg(b).cor.split(' ')[0] || 'bg-gray-100').replace('-100', '-500');
+
 const MESES = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
 const BANCOS_FORA = new Set(['PAGARME']); // adquirente, não entra na conciliação bancária
 
@@ -256,7 +315,7 @@ const Conciliacao = () => {
   const [ate, setAte] = useState(iso(hoje.getFullYear(), hoje.getMonth() + 1, ultimoDia(hoje.getFullYear(), hoje.getMonth() + 1)));
 
   const [busca, setBusca] = useState('');
-  const [empresaFiltro, setEmpresaFiltro] = useState('todas');
+  const [empresasSel, setEmpresasSel] = useState([]); // [] = todas
   const [bancosSel, setBancosSel] = useState([]); // [] = todos
 
   const [fluxoContas, setFluxoContas] = useState([]);
@@ -406,12 +465,12 @@ const Conciliacao = () => {
     return linhasBase
       .map((l) => ({ ...l, resumo: porContaId.get(l.fluxo.id) || null, cta: l.fluxo.cta_totvs || l.ctaPlanilha || null }))
       .filter((l) => {
-        if (empresaFiltro !== 'todas' && l.empresa !== empresaFiltro) return false;
+        if (empresasSel.length && !empresasSel.includes(l.empresa)) return false;
         if (sel.size && !sel.has(l.fluxo.banco)) return false;
         if (q && !`${l.cta || ''} ${l.cnpj} ${l.banco} ${l.codigo} ${l.ag} ${l.conta} ${l.titular || ''} ${l.fluxo.apelido || ''}`.toLowerCase().includes(q)) return false;
         return true;
       });
-  }, [linhasBase, porContaId, busca, empresaFiltro, bancosSel]);
+  }, [linhasBase, porContaId, busca, empresasSel, bancosSel]);
 
   // grupos por empresa; dentro do grupo, contas com lançamentos primeiro
   const grupos = useMemo(
@@ -514,107 +573,111 @@ const Conciliacao = () => {
     <div className="min-h-screen bg-gray-50 px-3 py-4 md:p-6 pb-24 md:pb-6">
       <PageTitle title="Conciliação" subtitle="Contas bancárias do grupo e o extrato importado de cada uma no período" icon={Bank} />
 
-      {/* Filtros */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 md:p-4 mb-4 flex flex-col gap-3">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
-          <div className="grid grid-cols-2 gap-2 md:flex md:gap-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1 flex items-center gap-1">
-                <CalendarBlank size={13} /> Data inicial
-              </label>
-              <input
-                type="date"
-                value={de}
-                onChange={(e) => {
-                  setDe(e.target.value);
-                  setMes(null);
-                }}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1 flex items-center gap-1">
-                <CalendarBlank size={13} /> Data final
-              </label>
-              <input
-                type="date"
-                value={ate}
-                onChange={(e) => {
-                  setAte(e.target.value);
-                  setMes(null);
-                }}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-          </div>
-          <div className="flex-1">
-            <label className="block text-xs font-medium text-gray-500 mb-1">Período ({ano})</label>
-            <div className="flex flex-wrap gap-1">
-              <button onClick={() => escolherMes('ANO')} className={`${chip(mes === 'ANO')} px-4`}>
-                ANO
-              </button>
-              {MESES.map((m) => (
-                <button key={m} onClick={() => escolherMes(m)} className={chip(mes === m)}>
-                  {m}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
-          <div className="flex-1">
-            <label className="block text-xs font-medium text-gray-500 mb-1">
-              Bancos {bancosSel.length ? `(${bancosSel.length} selecionado${bancosSel.length > 1 ? 's' : ''})` : '(todos)'}
-            </label>
-            <div className="flex flex-wrap gap-1">
-              <button onClick={() => setBancosSel([])} className={chip(!bancosSel.length)}>
-                Todos
-              </button>
-              {bancosDisponiveis.map((b) => {
-                const ativo = bancosSel.includes(b);
-                return (
-                  <button
-                    key={b}
-                    onClick={() => setBancosSel((prev) => (prev.includes(b) ? prev.filter((x) => x !== b) : [...prev, b]))}
-                    className={`px-2.5 py-1.5 text-[0.7rem] font-medium rounded-md border ${ativo ? `${bancoCfg(b).cor} ring-2 ring-offset-1 ring-blue-400` : 'bg-white text-gray-600 hover:bg-gray-100 border-gray-300'}`}
-                  >
-                    {bancoCfg(b).label}
+      {/* Filtros — mesmo padrão do Extrato Bancário (período em chips mantido) */}
+      {(() => {
+        const filtrosAtivos = bancosSel.length + empresasSel.length + (busca ? 1 : 0);
+        const limparFiltros = () => {
+          setBusca('');
+          setBancosSel([]);
+          setEmpresasSel([]);
+        };
+        const inp = 'w-full px-2 py-1.5 text-xs border border-[#000638]/30 rounded-lg bg-[#f8f9fb] text-[#000638] focus:outline-none focus:ring-2 focus:ring-[#000638]';
+        return (
+          <div className="bg-white rounded-lg shadow-lg border border-[#000638]/10 p-3 md:p-4 mb-4">
+            <div className="flex flex-wrap items-center gap-2 mb-3">
+              <span className="text-sm font-bold text-[#000638] flex items-center gap-1.5 mr-auto">
+                <FunnelSimple size={16} weight="bold" /> Filtros
+                {filtrosAtivos > 0 && (
+                  <button onClick={limparFiltros} className="ml-2 text-xs font-normal text-blue-600 hover:underline">
+                    limpar ({filtrosAtivos})
                   </button>
-                );
-              })}
+                )}
+              </span>
+              <span className="text-xs text-gray-500">
+                {linhas.length} conta{linhas.length === 1 ? '' : 's'} · {fmtData(de)} a {fmtData(ate)}
+              </span>
             </div>
-          </div>
-          <div className="grid grid-cols-2 gap-2 md:flex md:gap-3">
-            <div className="md:w-56">
-              <label className="block text-xs font-medium text-gray-500 mb-1">Empresa</label>
-              <select
-                value={empresaFiltro}
-                onChange={(e) => setEmpresaFiltro(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white"
-              >
-                <option value="todas">Todas ({linhasBase.length})</option>
-                {empresasTodas.map((e) => (
-                  <option key={e} value={e}>
-                    {e}
-                  </option>
-                ))}
-              </select>
+
+            <div className="relative mb-3">
+              <MagnifyingGlass size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                placeholder="Pesquisar CTA, CNPJ, banco, conta ou titular…"
+                className="w-full pl-8 pr-8 py-2 text-sm border border-[#000638]/30 rounded-lg bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#000638]"
+              />
+              {busca && (
+                <button onClick={() => setBusca('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  <X size={14} />
+                </button>
+              )}
             </div>
-            <div className="md:w-56">
-              <label className="block text-xs font-medium text-gray-500 mb-1">Buscar</label>
-              <div className="relative">
-                <MagnifyingGlass size={14} className="absolute left-2.5 top-2.5 text-gray-400" />
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-3 gap-y-2.5 items-end">
+              <div>
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">De</label>
                 <input
-                  value={busca}
-                  onChange={(e) => setBusca(e.target.value)}
-                  placeholder="CTA, CNPJ, banco, conta…"
-                  className="w-full pl-8 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  type="date"
+                  value={de}
+                  onChange={(e) => {
+                    setDe(e.target.value);
+                    setMes(null);
+                  }}
+                  className={inp}
                 />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Até</label>
+                <input
+                  type="date"
+                  value={ate}
+                  onChange={(e) => {
+                    setAte(e.target.value);
+                    setMes(null);
+                  }}
+                  className={inp}
+                />
+              </div>
+              <MultiSelect
+                label="Banco"
+                opcoes={bancosDisponiveis.map((b) => ({ value: b, label: bancoCfg(b).label, banco: b }))}
+                valor={bancosSel}
+                onChange={setBancosSel}
+                renderOpcao={(o) => (
+                  <span className="flex items-center gap-2">
+                    <span className={`inline-block w-2.5 h-2.5 rounded-full shrink-0 ${pontoBanco(o.banco)}`} />
+                    <span className="truncate">{o.label}</span>
+                  </span>
+                )}
+                placeholder="Todos os bancos"
+                larguraMin="w-full"
+              />
+              <MultiSelect
+                label="Empresa"
+                busca
+                opcoes={empresasTodas.map((e) => ({ value: e, label: e }))}
+                valor={empresasSel}
+                onChange={setEmpresasSel}
+                placeholder={`Todas (${linhasBase.length})`}
+                larguraMin="w-full"
+              />
+              <div className="col-span-2 sm:col-span-3 lg:col-span-2">
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">Período ({ano})</label>
+                <div className="flex flex-wrap gap-1">
+                  <button onClick={() => escolherMes('ANO')} className={`${chip(mes === 'ANO')} px-3`}>
+                    ANO
+                  </button>
+                  {MESES.map((m) => (
+                    <button key={m} onClick={() => escolherMes(m)} className={chip(mes === m)}>
+                      {m}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      </div>
+        );
+      })()}
 
       {migrationPendente && (
         <div className="flex items-start gap-2 px-4 py-3 mb-4 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
