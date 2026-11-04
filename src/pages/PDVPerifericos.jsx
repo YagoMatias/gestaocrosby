@@ -17,7 +17,7 @@ import {
 
 const CFG_PADRAO = {
   impressora: '',
-  rfid: { host: '192.168.99.202', porta: 8888, modelo: 'Chainway UR4', portaSerial: '' },
+  rfid: { host: '192.168.0.202', porta: 8888, modelo: 'Chainway UR4', portaSerial: '' },
   tef: { provedor: 'Stone', serie: '' },
 };
 
@@ -161,7 +161,7 @@ Se você leu isto, está tudo certo.
     setBusyK('portal', true);
     const r = await pdv.rfidConectar(cfg.rfid);
     setBusyK('portal', false);
-    setStatus('portal', r.ok, r.ok ? `${r.mensagem}\nLeituras: ${(r.leituras || []).join(', ') || '—'}` : r.mensagem);
+    setStatus('portal', r.ok, r.mensagem);
     if (r.ok) salvar(cfg);
   };
 
@@ -247,11 +247,14 @@ Se você leu isto, está tudo certo.
           </div>
           <div>
             <button className={btnPrim} onClick={testarPortal} disabled={busy.portal}>
-              <Broadcast size={16} /> Conectar e testar leitura
+              <Broadcast size={16} /> Salvar e testar conexão
             </button>
           </div>
           <Status {...(st.portal || {})} />
-          <p className="text-[11px] text-amber-600">Conexão com o portal ainda em modo demonstração no app.</p>
+          <p className="text-[11px] text-gray-500">
+            O app liga o portal sozinho: com ele aberto, LIGAR PORTAL funciona no Orçamento RFID e na Devolução RFID — inclusive no
+            navegador deste computador. Use o IP do portal da sua loja.
+          </p>
         </Card>
 
         <Card icon={CreditCard} titulo="TEF / Pinpad" subtitulo="Cartão no caixa, sem digitar valor na maquininha">
