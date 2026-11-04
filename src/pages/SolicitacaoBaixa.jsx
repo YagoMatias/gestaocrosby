@@ -164,6 +164,13 @@ const SolicitacaoBaixa = () => {
   };
   const nsuDaData = ddmmaaaa;
   const autorizacaoDaData = ddmmaaaa;
+  // NSU real da transação Pagar.me, quando a Solicitação trouxe o ID gerado
+  // (tag [nsu-pagarme:<id>] na observação). A baixa por cartão usa esse ID como
+  // NSU/autorização, em vez da data (João, 04/11/2026). Vazio = usa a data.
+  const nsuExternoDe = (s) => {
+    const m = /\[nsu-pagarme:(\d+)\]/.exec(String(s?.observacao || ''));
+    return m ? m[1].slice(0, 20) : '';
+  };
 
   const FORMAS_PAGAMENTO_LABELS = {
     confianca: 'Confiança',
@@ -595,8 +602,9 @@ const SolicitacaoBaixa = () => {
           ...(formaSelecionada?.cardAuto
             ? {
                 card: {
-                  nsu: nsuDaData(dataBaixa),
-                  autorizacao: autorizacaoDaData(dataBaixa),
+                  // NSU = ID real da transação Pagar.me quando houver; senão a data.
+                  nsu: nsuExternoDe(s) || nsuDaData(dataBaixa),
+                  autorizacao: nsuExternoDe(s) || autorizacaoDaData(dataBaixa),
                   bandeira: formaSelecionada.bandeira,
                   operadora: formaSelecionada.operadora,
                   parcelas: 1,
