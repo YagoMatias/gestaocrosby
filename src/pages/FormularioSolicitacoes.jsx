@@ -415,7 +415,10 @@ const PortadorCombobox = ({ value, onChange }) => {
 // COMPONENTE PRINCIPAL
 // =====================================================================
 
-const FormularioSolicitacoes = () => {
+// Também é usado EMBUTIDO (sem cabeçalho) dentro da Conciliação bancária, para
+// criar a duplicata direto da saída do extrato: `inicial` pré-preenche valor,
+// datas, fornecedor e descrição; `onCriada(solicitacao)` devolve a linha criada.
+const FormularioSolicitacoes = ({ embutido = false, inicial = null, onCriada = null } = {}) => {
   // Página protegida: o solicitante é sempre o usuário logado.
   const { user } = useAuth();
   const solicitante = (user?.name || user?.email || '').trim();
@@ -535,6 +538,26 @@ const FormularioSolicitacoes = () => {
   const [loteEnviando, setLoteEnviando] = useState(false);
   const [loteErro, setLoteErro] = useState(null);
   const [loteResultado, setLoteResultado] = useState(null);
+
+  // Pré-preenchimento vindo da Conciliação bancária (embutido)
+  useEffect(() => {
+    if (!inicial) return;
+    try {
+      setTipo(inicial.tipo || 'pagamento');
+      if (inicial.valor != null) setValorUnico(String(Number(inicial.valor).toFixed(2)));
+      if (inicial.dtVencimento) setDtVencimentoUnica(String(inicial.dtVencimento).slice(0, 10));
+      if (inicial.dtEmissao) setDtEmissaoUnica(String(inicial.dtEmissao).slice(0, 10));
+      if (inicial.descricao) setDescricao(inicial.descricao);
+      if (inicial.observacao) setObservacao(inicial.observacao);
+      if (inicial.fornecedorNome) setFornecedorNome(inicial.fornecedorNome);
+      if (inicial.fornecedorCpfCnpj) setFornecedorCpfCnpj(onlyDigits(inicial.fornecedorCpfCnpj));
+      if (inicial.formaPagamento) setFormaPagamento(inicial.formaPagamento);
+      if (inicial.chavePix) setChavePix(inicial.chavePix);
+    } catch {
+      /* ignora */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inicial]);
 
   // Pré-preenchimento vindo da Cotação de Compras (botão "Solicitar Pagamento").
   // Lê query params da URL e monta a solicitação de pagamento já com os dados.
@@ -1448,12 +1471,15 @@ const FormularioSolicitacoes = () => {
         insertData.payload_totvs = payloadTotvs;
       }
 
-      const { error } = await supabaseAdmin
+      const { data: criada, error } = await supabaseAdmin
         .from('solicitacoes_crosby')
-        .insert([insertData]);
+        .insert([insertData])
+        .select()
+        .single();
 
       if (error) throw error;
       setEnviado(true);
+      if (onCriada) onCriada(criada);
     } catch (err) {
       console.error('Erro ao enviar solicitação:', err);
       setErro(
@@ -1503,8 +1529,9 @@ const FormularioSolicitacoes = () => {
   }
 
   return (
-    <div className="w-full py-6 px-2">
+    <div className={embutido ? 'w-full py-2 px-1' : 'w-full py-6 px-2'}>
       <div className="max-w-3xl mx-auto">
+        {!embutido && (
         <div className="text-center mb-6">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-gradient-to-br from-blue-50 to-blue-100 shadow-sm mb-3">
             <ClipboardText
@@ -1521,6 +1548,7 @@ const FormularioSolicitacoes = () => {
             financeiro, a duplicata será criada no TOTVS.
           </p>
         </div>
+        )}
 
         {/* ===== GERADOR EM LOTE (?lote=1) ===== */}
         {loteAtivo && (

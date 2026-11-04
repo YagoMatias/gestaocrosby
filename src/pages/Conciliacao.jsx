@@ -9,13 +9,15 @@
 //   • clique na conta abre o extrato linha a linha.
 // O CTA (código da conta no TOTVS) fica salvo na própria conta importada
 // (fluxo_caixa_contas.cta_totvs) e vale para todos os meses.
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+const FormularioSolicitacoes = lazy(() => import('./FormularioSolicitacoes'));
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
 import { supabaseAdmin } from '../lib/supabase';
 import {
   Bank,
   MagnifyingGlass,
+  Plus,
   CalendarBlank,
   ArrowsClockwise,
   ArrowDown,
@@ -859,6 +861,35 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
     }
   };
   const [justificando, setJustificando] = useState(null); // { lancamento, texto }
+  const [criandoSol, setCriandoSol] = useState(null); // { lancamento } — formulário de Solicitação Crosby embutido
+  const solicitacaoCriada = async (sol) => {
+    const l = criandoSol?.lancamento;
+    if (!l || !sol) return;
+    setOcupado(l.id);
+    try {
+      const ref = {
+        origem: 'SOLICITACAO',
+        id: sol.id,
+        nome: sol.supplier_name || null,
+        doc: sol.supplier_cpf_cnpj || null,
+        valor: Number(sol.valor_total) || Math.abs(l.valor),
+        valorDuplicata: Number(sol.valor_total) || Math.abs(l.valor),
+        data: sol.dt_vencimento ? String(sol.dt_vencimento).slice(0, 10) : l.data,
+        vencimento: sol.dt_vencimento ? String(sol.dt_vencimento).slice(0, 10) : null,
+        empresa: sol.nm_empresa || null,
+        detalhe: [sol.tipo_solicitacao, 'criada na conciliação', sol.forma_pagamento].filter(Boolean).join(' · '),
+        duplicata: null,
+        motivos: ['duplicata criada a partir desta saída'],
+      };
+      await salvar(l.id, 'SOLICITACAO', refDe(ref), `Duplicata criada na conciliação · ${sol.supplier_name || ''} · ${sol.tipo_solicitacao || ''}`.trim(), null);
+      setCriandoSol(null);
+      setPicker(null);
+    } catch (e) {
+      setErroModal(e.message);
+    } finally {
+      setOcupado(null);
+    }
+  };
   const [ocupado, setOcupado] = useState(null); // id do lançamento em processamento
   const [erroModal, setErroModal] = useState(null);
   const [detalhe, setDetalhe] = useState(null); // { lancamento, carregando, dados }
@@ -1228,7 +1259,7 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
         {(picker || justificando) && (
           <div className="absolute inset-0 z-20 bg-black/40 flex items-center justify-center p-4" onClick={() => (picker ? setPicker(null) : setJustificando(null))}>
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[80vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
-              {picker && !justificando && (
+              {picker && !justificando && !criandoSol && (
                 <>
                   <div className="px-4 py-3 border-b border-gray-200">
                     <h4 className="text-sm font-bold text-gray-800">Conciliar saída de {fmt(Math.abs(picker.lancamento.valor))} em {fmtData(picker.lancamento.data)}</h4>
@@ -1320,6 +1351,11 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
                     <button onClick={() => setJustificando({ lancamento: picker.lancamento, texto: '' })} className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50">
                       <ChatText size={13} /> Justificar manualmente
                     </button>
+                    {picker.lancamento.valor < 0 && (
+                      <button onClick={() => setCriandoSol({ lancamento: picker.lancamento })} className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-md border border-indigo-300 text-indigo-800 bg-indigo-50 hover:bg-indigo-100" title="Abre o formulário de Solicitação Crosby já com valor, data e fornecedor desta saída; ao enviar, a saída fica conciliada com a solicitação (pendente até o pagamento)">
+                        <Plus size={13} weight="bold" /> Criar duplicata
+                      </button>
+                    )}
                     <div className="ml-auto flex items-center gap-3">
                       {selecao.length > 0 && (() => {
                         const alvo = Math.abs(picker.lancamento.valor);
@@ -1346,6 +1382,43 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
                   </div>
                 </>
               )}
+              {/* criar duplicata (Solicitação Crosby) a partir da saída */}
+              {criandoSol && (
+                <div className="absolute inset-0 z-30 bg-black/50 overflow-auto p-4" onClick={() => setCriandoSol(null)}>
+                  <div className="bg-gray-50 rounded-xl shadow-2xl w-full max-w-4xl mx-auto my-2" onClick={(e) => e.stopPropagation()}>
+                    <div className="px-4 py-3 border-b border-gray-200 bg-white rounded-t-xl flex items-start gap-2 sticky top-0 z-10">
+                      <div className="min-w-0 flex-1">
+                        <h4 className="text-sm font-bold text-gray-800">
+                          Criar duplicata para a saída de {fmt(Math.abs(criandoSol.lancamento.valor))} em {fmtData(criandoSol.lancamento.data)}
+                        </h4>
+                        <p className="text-xs text-gray-500 truncate">
+                          {criandoSol.lancamento.descricao} · {criandoSol.lancamento.nomeExibicao || criandoSol.lancamento.memo} — ao enviar, a saída fica conciliada com a solicitação e segue PENDENTE até constar como PAGO na Liberação de Pagamento ou no TOTVS.
+                        </p>
+                      </div>
+                      <button onClick={() => setCriandoSol(null)} className="text-gray-400 hover:text-gray-600">
+                        <X size={18} />
+                      </button>
+                    </div>
+                    <Suspense fallback={<p className="p-6 text-sm text-gray-400 flex items-center gap-2"><ArrowsClockwise size={14} className="animate-spin" /> Carregando o formulário…</p>}>
+                      <FormularioSolicitacoes
+                        embutido
+                        inicial={{
+                          tipo: 'pagamento',
+                          valor: Math.abs(criandoSol.lancamento.valor),
+                          dtVencimento: criandoSol.lancamento.data,
+                          dtEmissao: criandoSol.lancamento.data,
+                          fornecedorNome: criandoSol.lancamento.nomeExibicao || criandoSol.lancamento.contraparte_nome || '',
+                          fornecedorCpfCnpj: criandoSol.lancamento.contraparte_doc || '',
+                          formaPagamento: criandoSol.lancamento.categoria === 'pix' ? 'pix' : criandoSol.lancamento.categoria === 'boleto' ? 'boleto' : '',
+                          descricao: `Pagamento já realizado em ${fmtData(criandoSol.lancamento.data)} (extrato ${c.banco} ${c.apelido || ''}): ${criandoSol.lancamento.memo || criandoSol.lancamento.descricao || ''}`.trim(),
+                        }}
+                        onCriada={solicitacaoCriada}
+                      />
+                    </Suspense>
+                  </div>
+                </div>
+              )}
+
               {justificando && (
                 <>
                   <div className="px-4 py-3 border-b border-gray-200">
@@ -1425,6 +1498,11 @@ const CelulaConciliacao = ({ l, podeConciliar = l.valor < 0, ocupado, onConcilia
             {temAnexo && <Paperclip size={11} className="text-gray-400" />}
             <BotaoComprovanteBot comp={l.comprovante} />
             {c.automatico && c.origem !== 'TRANSFERENCIA' && <span className="text-[10px] text-gray-400">auto {c.pontuacao != null ? `· ${c.pontuacao} pts` : ''}</span>}
+            {c.situacao && (c.situacao.pago ? (
+              <span className="px-1 rounded bg-green-100 text-green-800 text-[10px] font-semibold" title={c.situacao.detalhe || ''}>PAGO · {c.situacao.via}</span>
+            ) : (
+              <span className="px-1 rounded bg-amber-100 text-amber-800 text-[10px] font-semibold" title={c.situacao.detalhe || ''}>PENDENTE · {c.situacao.etapa}</span>
+            ))}
             {c.referencia?.taxaFixa && !c.referencia?.stone && (
               <span className="px-1 rounded bg-orange-100 text-orange-800 text-[10px]" title="Taxa fixa por Pix descontada pela Fiserv (título do TOTVS = valor recebido + taxa)">
                 taxa {fmt(c.referencia.taxaFixa)}
