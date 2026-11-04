@@ -120,6 +120,14 @@ const TP_BAIXA_RENEGOCIACAO = 9;
 const ehRenegociacao = (item) =>
   Number(item.tp_baixa) === TP_BAIXA_RENEGOCIACAO;
 
+// dischargeType 17 = "Baixa por abatimento" (João, 04/11/2026). O título foi
+// quitado SEM entrada de dinheiro (valor pago = 0): é um perdão/desconto, não
+// uma recuperação. Some do recuperado/realizado — senão o fallback
+// vl_pago||vl_fatura (ver dadosPorMes) soma o valor da fatura como se fosse pago.
+const TP_BAIXA_ABATIMENTO = 17;
+const ehAbatimento = (item) =>
+  Number(item.tp_baixa) === TP_BAIXA_ABATIMENTO;
+
 // Tipo de carteira efetivo, igual ao Dashboard de Contas a Receber:
 // portador SAFRA/DALILA conta como DESCONTADA (2), senão vale o tp_cobranca
 // (0 = não está em cobrança, 1 = simples, 2 = descontada).
@@ -338,9 +346,11 @@ const MetasInadimplencia = () => {
         item.tp_documento === 1 || item.tp_documento === '1';
 
       // Título quitado por renegociação não é meta cumprida nem dívida
-      // viva: o saldo virou outro título. Some das duas séries para não
-      // inflar o pago nem contar a dívida duas vezes.
-      const valeParaMeta = (item) => soFatura(item) && !ehRenegociacao(item);
+      // viva: o saldo virou outro título. Abatimento (tp_baixa 17) foi quitado
+      // sem entrada de dinheiro (perdão/desconto). Nenhum dos dois é
+      // recuperação: somem das duas séries para não inflar o pago.
+      const valeParaMeta = (item) =>
+        soFatura(item) && !ehRenegociacao(item) && !ehAbatimento(item);
 
       const itensVencendo = itensVencendoRaw.map(marcarCanal).filter((i) => valeParaMeta(i) && filialOk(i));
       const itensPagos = itensPagosRaw.map(marcarCanal).filter((i) => valeParaMeta(i) && filialOk(i));
@@ -694,7 +704,7 @@ const MetasInadimplencia = () => {
           </div>
           <span className="text-xs text-gray-500 mt-1">
             Considera faturas de clientes Multimarcas, Franquias, Revenda e
-            BlueCard (crediário do app), fora as baixadas por renegociação. O período filtra o vencimento e
+            BlueCard (crediário do app), fora as baixadas por renegociação e por abatimento. O período filtra o vencimento e
             o pagamento dos boletos, e é sempre expandido para meses completos
           </span>
 
