@@ -59,6 +59,7 @@ const headersUsuario = () => {
 };
 const ORIGENS = {
   TRANSFERENCIA: { label: 'Transferência', cor: 'bg-amber-100 text-amber-800 border-amber-300' },
+  BOLETO_TARIFA: { label: 'Boleto × tarifa', cor: 'bg-teal-100 text-teal-800 border-teal-300' },
   LIBERACAO: { label: 'Liberação de Pagamento', cor: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
   SOLICITACAO: { label: 'Solicitações Crosby', cor: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
   TOTVS_CP: { label: 'Contas a Pagar (TOTVS)', cor: 'bg-blue-100 text-blue-800 border-blue-300' },
@@ -1603,7 +1604,7 @@ const CelulaConciliacao = ({ l, podeConciliar = l.valor < 0, ocupado, onConcilia
             {c.referencia?.parcial && <span className="px-1 rounded bg-orange-100 text-orange-800 text-[10px]">parcial</span>}
             {temAnexo && <Paperclip size={11} className="text-gray-400" />}
             <BotaoComprovanteBot comp={l.comprovante} />
-            {c.automatico && c.origem !== 'TRANSFERENCIA' && <span className="text-[10px] text-gray-400">auto {c.pontuacao != null ? `· ${c.pontuacao} pts` : ''}</span>}
+            {c.automatico && c.id && <span className="text-[10px] text-gray-400">auto {c.pontuacao != null ? `· ${c.pontuacao} pts` : ''}</span>}
             {c.situacao && (c.situacao.pago ? (
               <span className="px-1 rounded bg-green-100 text-green-800 text-[10px] font-semibold" title={c.situacao.detalhe || ''}>PAGO · {c.situacao.via}</span>
             ) : (
@@ -1909,7 +1910,18 @@ const DetalheConciliacao = ({ detalhe, onClose, onAnexar, onRemoverAnexo }) => {
             </p>
           )}
 
-          {transferencia && (
+          {transferencia && transferencia.origem === 'BOLETO_TARIFA' && (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <Campo label="Tipo">{transferencia.referencia?.papel === 'TARIFA' ? 'Tarifa de boleto da Stone (R$ 1,99 por depósito)' : 'Depósito por boleto com tarifa cobrada'}</Campo>
+              <Campo label={transferencia.referencia?.papel === 'TARIFA' ? 'Depósito pareado' : 'Tarifa pareada'}>
+                {fmt(Math.abs(transferencia.referencia?.parValor))} em {fmtData(transferencia.referencia?.parData)}
+                {transferencia.referencia?.parSeq != null ? <span className="block text-[11px] text-gray-500">linha {transferencia.referencia.parSeq} do extrato</span> : null}
+              </Campo>
+              <Campo label="Regra">Mesmo dia e mesmo saldo após; derivado na leitura do extrato, nada gravado</Campo>
+            </div>
+          )}
+
+          {transferencia && transferencia.origem !== 'BOLETO_TARIFA' && (
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               <Campo label="Tipo">Transferência entre contas do grupo</Campo>
               <Campo label="Outra conta">{transferencia.referencia?.outraConta ? `${transferencia.referencia.outraConta.apelido} (${bancoCfg(transferencia.referencia.outraConta.banco).label})` : '—'}</Campo>
