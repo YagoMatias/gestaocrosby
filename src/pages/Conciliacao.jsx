@@ -61,6 +61,7 @@ const ORIGENS = {
   TRANSFERENCIA: { label: 'Transferência', cor: 'bg-amber-100 text-amber-800 border-amber-300' },
   BOLETO_TARIFA: { label: 'Boleto × tarifa', cor: 'bg-teal-100 text-teal-800 border-teal-300' },
   PIX_DEVOLVIDO: { label: 'Pix devolvido', cor: 'bg-rose-100 text-rose-800 border-rose-300' },
+  PAGARME_SAQUE: { label: 'Saque Pagar.me', cor: 'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-300' },
   LIBERACAO: { label: 'Liberação de Pagamento', cor: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
   SOLICITACAO: { label: 'Solicitações Crosby', cor: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
   TOTVS_CP: { label: 'Contas a Pagar (TOTVS)', cor: 'bg-blue-100 text-blue-800 border-blue-300' },
@@ -1979,7 +1980,18 @@ const DetalheConciliacao = ({ detalhe, onClose, onAnexar, onRemoverAnexo }) => {
             </div>
           )}
 
-          {transferencia && !['BOLETO_TARIFA', 'PIX_DEVOLVIDO'].includes(transferencia.origem) && (
+          {transferencia && transferencia.origem === 'PAGARME_SAQUE' && (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <Campo label="Tipo">Saque automático da Pagar.me para a conta Stone da mesma empresa</Campo>
+              <Campo label="Conta Pagar.me">{transferencia.referencia?.pagarmeApelido || '—'}{transferencia.referencia?.cnpj ? <span className="block text-[11px] text-gray-500">{fmtDoc(transferencia.referencia.cnpj)}</span> : null}</Campo>
+              <Campo label="Como aparece no extrato">{transferencia.referencia?.contraparte || '—'}</Campo>
+              <div className="col-span-2 md:col-span-3">
+                <Campo label="Regra">A Pagar.me transfere o saldo disponível todo dia; o extrato Stone mostra a entrada com o nome do próprio titular. As vendas que compõem o saque estão no extrato Pagar.me da empresa, no Extrato Bancário.</Campo>
+              </div>
+            </div>
+          )}
+
+          {transferencia && !['BOLETO_TARIFA', 'PIX_DEVOLVIDO', 'PAGARME_SAQUE'].includes(transferencia.origem) && (
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               <Campo label="Tipo">Transferência entre contas do grupo</Campo>
               <Campo label="Outra conta">{transferencia.referencia?.outraConta ? `${transferencia.referencia.outraConta.apelido} (${bancoCfg(transferencia.referencia.outraConta.banco).label})` : '—'}</Campo>
