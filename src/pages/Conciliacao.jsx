@@ -996,14 +996,16 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
   const [busca, setBusca] = useState('');
   const [picker, setPicker] = useState(null); // { lancamento, candidatos, avisos, decisao }
   const [selecao, setSelecao] = useState([]); // candidatos marcados (podem somar a saída)
-  const [buscaCp, setBuscaCp] = useState({ aberta: false, duplicata: '', fornecedor: '', de: '', ate: '', emissaoDe: '', emissaoAte: '', valorMin: '', valorMax: '', carregando: false, resultados: null, avisos: [] });
+  // busca manual (mesmos filtros das telas Contas a Pagar / Receber): devolve só o que foi pesquisado
+  const BUSCA_VAZIA = { aberta: false, duplicata: '', codigo: '', cnpj: '', nome: '', tipoData: 'vencimento', de: '', ate: '', status: 'todos', valorMin: '', valorMax: '', carregando: false, resultados: null, avisos: [] };
+  const [buscaCp, setBuscaCp] = useState(BUSCA_VAZIA);
   const keyCand = (c) => `${c.origem}:${c.id}`;
   const toggleSel = (c) => setSelecao((prev) => (prev.some((x) => keyCand(x) === keyCand(c)) ? prev.filter((x) => keyCand(x) !== keyCand(c)) : [...prev, c]));
   const somaSel = selecao.reduce((s, c) => s + Number(c.restante ?? c.valor ?? 0), 0);
   const abrirPicker = (dados) => {
     setPicker(dados);
     setSelecao([]);
-    setBuscaCp((b) => ({ ...b, aberta: false, resultados: null, avisos: [], fornecedor: dados.lancamento?.nomeExibicao || dados.lancamento?.contraparte_nome || '', valorMin: '', valorMax: '', duplicata: '', de: '', ate: '', emissaoDe: '', emissaoAte: '' }));
+    setBuscaCp({ ...BUSCA_VAZIA }); // sem pré-preenchimento: a consulta mostra só o que o usuário pesquisar
   };
   const pesquisarCp = async () => {
     if (!picker) return;
@@ -1011,8 +1013,8 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
     try {
       const receber = picker.lancamento.valor > 0;
       const q = new URLSearchParams({ lancamentoId: picker.lancamento.id });
-      const nomes = receber ? { duplicata: 'titulo', fornecedor: 'cliente' } : {};
-      for (const k of ['duplicata', 'fornecedor', 'de', 'ate', 'emissaoDe', 'emissaoAte', 'valorMin', 'valorMax']) if (String(buscaCp[k] || '').trim()) q.set(nomes[k] || k, String(buscaCp[k]).trim());
+      const nomes = receber ? { duplicata: 'titulo' } : {};
+      for (const k of ['duplicata', 'codigo', 'cnpj', 'nome', 'tipoData', 'de', 'ate', 'status', 'valorMin', 'valorMax']) if (String(buscaCp[k] || '').trim()) q.set(nomes[k] || k, String(buscaCp[k]).trim());
       const r = await fetch(`${API}/conciliacao/${receber ? 'buscar-cr' : 'buscar-cp'}?${q}`);
       const j = await r.json();
       if (!j?.success) throw new Error(j?.message || 'Falha na busca.');
@@ -1506,39 +1508,56 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
                             const Lbl = ({ children }) => <label className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-0.5">{children}</label>;
                             const set = (k) => (e) => setBuscaCp({ ...buscaCp, [k]: e.target.value });
                             const receber = picker.lancamento.valor > 0;
+                            const pessoa = receber ? 'cliente' : 'fornecedor';
                             return (
-                              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2">
+                              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                                <div>
+                                  <Lbl>Código do {pessoa}</Lbl>
+                                  <input value={buscaCp.codigo} onChange={set('codigo')} placeholder="código no TOTVS" className={inp} inputMode="numeric" />
+                                </div>
+                                <div>
+                                  <Lbl>CNPJ / CPF</Lbl>
+                                  <input value={buscaCp.cnpj} onChange={set('cnpj')} placeholder="só números" className={inp} inputMode="numeric" />
+                                </div>
+                                <div className="col-span-2">
+                                  <Lbl>Nome do {pessoa}</Lbl>
+                                  <input value={buscaCp.nome} onChange={set('nome')} placeholder={receber ? 'nome do cliente (exige período)' : 'nome ou parte do nome'} className={inp} />
+                                </div>
                                 <div>
                                   <Lbl>{receber ? 'Nº título' : 'Nº duplicata'}</Lbl>
-                                  <input value={buscaCp.duplicata} onChange={set('duplicata')} placeholder={receber ? 'ex.: 249711' : 'ex.: 160605'} className={inp} />
-                                </div>
-                                <div className="md:col-span-3 lg:col-span-3">
-                                  <Lbl>{receber ? 'Cliente' : 'Fornecedor'}</Lbl>
-                                  <input value={buscaCp.fornecedor} onChange={set('fornecedor')} placeholder={receber ? 'nome (do mês), CPF/CNPJ ou código do cliente' : 'nome, CNPJ/CPF ou código no TOTVS'} className={inp} />
+                                  <input value={buscaCp.duplicata} onChange={set('duplicata')} placeholder={receber ? 'ex.: 249711' : 'ex.: 160605'} className={inp} inputMode="numeric" />
                                 </div>
                                 <div>
-                                  <Lbl>Emissão de</Lbl>
-                                  <input type="date" value={buscaCp.emissaoDe} onChange={set('emissaoDe')} className={inp} />
+                                  <Lbl>Status</Lbl>
+                                  <select value={buscaCp.status} onChange={set('status')} className={inp}>
+                                    <option value="todos">TODOS</option>
+                                    <option value="aberto">EM ABERTO</option>
+                                    <option value="pago">PAGO</option>
+                                  </select>
                                 </div>
                                 <div>
-                                  <Lbl>Emissão até</Lbl>
-                                  <input type="date" value={buscaCp.emissaoAte} onChange={set('emissaoAte')} className={inp} />
+                                  <Lbl>Tipo de data</Lbl>
+                                  <select value={buscaCp.tipoData} onChange={set('tipoData')} className={inp}>
+                                    <option value="vencimento">VENCIMENTO</option>
+                                    <option value="emissao">EMISSÃO</option>
+                                    <option value="pagamento">PAGAMENTO</option>
+                                  </select>
                                 </div>
                                 <div>
-                                  <Lbl>Vencimento de</Lbl>
+                                  <Lbl>Data início</Lbl>
                                   <input type="date" value={buscaCp.de} onChange={set('de')} className={inp} />
                                 </div>
                                 <div>
-                                  <Lbl>Vencimento até</Lbl>
+                                  <Lbl>Data fim</Lbl>
                                   <input type="date" value={buscaCp.ate} onChange={set('ate')} className={inp} />
                                 </div>
                                 <div>
-                                  <Lbl>Valor de</Lbl>
-                                  <input value={buscaCp.valorMin} onChange={set('valorMin')} placeholder="0,00" className={inp} />
+                                  <Lbl>Valor mínimo</Lbl>
+                                  <input value={buscaCp.valorMin} onChange={set('valorMin')} placeholder="0,00" className={inp} inputMode="decimal" />
                                 </div>
                                 <div>
-                                  <Lbl>Valor até</Lbl>
-                                  <input value={buscaCp.valorMax} onChange={set('valorMax')} placeholder="0,00" className={inp} />
+                                  <Lbl>Valor máximo</Lbl>
+                                  <input value={buscaCp.valorMax} onChange={set('valorMax')} placeholder="0,00" className={inp} inputMode="decimal" />
                                 </div>
                               </div>
                             );
@@ -1547,11 +1566,15 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
                             <button onClick={pesquisarCp} disabled={buscaCp.carregando} className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-md bg-[#000638] text-white hover:bg-blue-900 disabled:opacity-50">
                               {buscaCp.carregando ? <ArrowsClockwise size={12} className="animate-spin" /> : <MagnifyingGlass size={12} />} Buscar
                             </button>
-                            <span className="text-[11px] text-gray-400">Traz títulos pagos e em aberto; marque um ou mais para somar o valor {picker.lancamento.valor > 0 ? 'do Pix' : 'da saída'}.</span>
+                            <button onClick={() => setBuscaCp({ ...BUSCA_VAZIA, aberta: true })} disabled={buscaCp.carregando} className="px-3 py-1.5 text-xs rounded-md border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50">
+                              Limpar
+                            </button>
+                            <span className="text-[11px] text-gray-400">Mostra só o que bate com os filtros (sem sugestão); marque um ou mais para somar o valor {picker.lancamento.valor > 0 ? 'do Pix' : 'da saída'}.</span>
                           </div>
                           {buscaCp.avisos?.length > 0 && <p className="text-[11px] text-amber-700">{buscaCp.avisos.join(' · ')}</p>}
                           {buscaCp.resultados && (buscaCp.resultados.length ? (
                             <div className="border border-gray-200 rounded-lg overflow-hidden max-h-72 overflow-y-auto">
+                              <div className="px-3 py-1 text-[10px] text-gray-500 bg-gray-50 border-b border-gray-200">{buscaCp.resultados.length} resultado(s) da consulta</div>
                               <TabelaCandidatos candidatos={buscaCp.resultados} selecao={selecao} onToggle={toggleSel} onUsar={escolher} ocupado={ocupado} keyCand={keyCand} />
                             </div>
                           ) : (
@@ -1948,7 +1971,7 @@ const TabelaCandidatos = ({ candidatos, selecao, onToggle, onUsar, ocupado, keyC
         return (
           <tr key={keyCand(cand)} className={`border-b border-gray-100 hover:bg-gray-50 ${marcado ? 'bg-emerald-50' : ''}`}>
             <td className="px-2 py-2 text-center">
-              <input type="checkbox" checked={marcado} onChange={() => onToggle(cand)} className="accent-green-600" title="Marcar para somar" />
+              <input type="checkbox" checked={marcado} disabled={!!cand.esgotada} onChange={() => onToggle(cand)} className="accent-green-600" title={cand.esgotada ? 'Já conciliada em outra linha' : 'Marcar para somar'} />
             </td>
             <td className="px-3 py-2 whitespace-nowrap">
               <Badge cfg={origemCfg(cand.origem)}>{origemCfg(cand.origem).label}</Badge>
@@ -1964,11 +1987,11 @@ const TabelaCandidatos = ({ candidatos, selecao, onToggle, onUsar, ocupado, keyC
             <td className="px-3 py-2 text-right whitespace-nowrap font-semibold">{fmt(cand.valorDuplicata ?? cand.valor)}</td>
             <td className={`px-3 py-2 text-right whitespace-nowrap ${cand.usado > 0 ? 'text-orange-700' : 'text-gray-600'}`}>
               {fmt(disponivel)}
-              {cand.usado > 0 && <span className="block text-[10px]">já usado {fmt(cand.usado)}</span>}
+              {cand.usado > 0 && <span className="block text-[10px]">{cand.esgotada ? 'já conciliada' : `já usado ${fmt(cand.usado)}`}</span>}
             </td>
             {mostrarPontos && <td className="px-3 py-2 text-right whitespace-nowrap">{cand.score}</td>}
             <td className="px-3 py-2 text-right">
-              <button disabled={ocupado} onClick={() => onUsar(cand)} className="px-2.5 py-1 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50" title="Conciliar só com esta">
+              <button disabled={ocupado || !!cand.esgotada} onClick={() => onUsar(cand)} className="px-2.5 py-1 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50" title={cand.esgotada ? 'Já conciliada em outra linha' : 'Conciliar só com esta'}>
                 Usar
               </button>
             </td>
