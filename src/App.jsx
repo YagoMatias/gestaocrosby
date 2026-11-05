@@ -148,6 +148,7 @@ const InventarioPatrimonio = lazy(() => import('./pages/InventarioPatrimonio'));
 const OrcamentoRFID = lazy(() => import('./pages/OrcamentoRFID'));
 const DevolucaoRFID = lazy(() => import('./pages/DevolucaoRFID'));
 const DevolucoesMercadoria = lazy(() => import('./pages/DevolucoesMercadoria'));
+const TransferenciasMercadoria = lazy(() => import('./pages/TransferenciasMercadoria'));
 const DevolucaoPublica = lazy(() => import('./pages/DevolucaoPublica'));
 const PDVCrosby = lazy(() => import('./pages/PDVCrosby'));
 const PDVPerifericos = lazy(() => import('./pages/PDVPerifericos'));
@@ -195,6 +196,7 @@ const DuplicataVendas = lazy(() => import('./pages/DuplicataVendas'));
 const PagamentosFabricas = lazy(() => import('./pages/PagamentosFabricas'));
 const ConciliacaoStone = lazy(() => import('./pages/ConciliacaoStone'));
 const Conciliacao = lazy(() => import('./pages/Conciliacao'));
+const ProLabore = lazy(() => import('./pages/ProLabore'));
 const FluxoCaixaExt = lazy(() => import('./pages/FluxoCaixaExt'));
 const DrYgorExtratosBancarios = lazy(() => import('./pages/DrYgorExtratosBancarios'));
 const CrosbyBot = lazy(() => import('./pages/CrosbyBot'));
@@ -233,6 +235,7 @@ const protectedRoutes = [
   { path: '/tecnologia/orcamento-rfid', component: OrcamentoRFID },
   { path: '/tecnologia/devolucao-rfid', component: DevolucaoRFID },
   { path: '/devolucoes-mercadoria', component: DevolucoesMercadoria },
+  { path: '/transferencias-mercadoria', component: TransferenciasMercadoria },
   { path: '/tecnologia/pdv-crosby', component: PDVCrosby },
   { path: '/tecnologia/pdv-perifericos', component: PDVPerifericos },
   { path: '/balanco-rfid/arquivos', component: BalancoRfidArquivos },
@@ -258,6 +261,7 @@ const protectedRoutes = [
   { path: '/dash-contas-a-pagar', component: DashContasAPagar },
   { path: '/pagamentos-fabricas', component: PagamentosFabricas },
   { path: '/conciliacao', component: Conciliacao },
+  { path: '/pro-labore', component: ProLabore },
   { path: '/conciliacao-stone', component: ConciliacaoStone },
   { path: '/fluxo-caixa-ext', component: FluxoCaixaExt },
   { path: '/dr-ygor/extratos-bancarios', component: DrYgorExtratosBancarios },

@@ -562,8 +562,9 @@ const Conciliacao = () => {
     }
   };
   const salvarConciliacao = async (lancamentoId, origem, referencia, justificativa, pontuacao) => {
-    await apiConc(`${API}/conciliacao`, { method: 'POST', body: JSON.stringify({ lancamentoId, origem, referencia, justificativa, pontuacao }) });
+    const j = await apiConc(`${API}/conciliacao`, { method: 'POST', body: JSON.stringify({ lancamentoId, origem, referencia, justificativa, pontuacao }) });
     await carregar();
+    return j?.data || null;
   };
   const desfazerConciliacao = async (id) => {
     await apiConc(`${API}/conciliacao/${id}`, { method: 'DELETE' });
@@ -1032,13 +1033,25 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
 
   const abrirDetalhe = async (l) => {
     if (!l.conciliacao) return;
-    if (!l.conciliacao.id) {
-      setDetalhe({ lancamento: l, carregando: false, dados: null, transferencia: l.conciliacao });
+    let conc = l.conciliacao;
+    // pró-labore reconhecido automaticamente ainda não está gravado: grava para
+    // poder anexar comprovante e justificar no detalhe
+    if (!conc.id && conc.origem === 'PRO_LABORE') {
+      try {
+        const row = await salvar(l.id, 'PRO_LABORE', { pessoaId: conc.referencia?.pessoaId, cpf: conc.referencia?.cpf }, null, null);
+        if (row?.id) conc = { ...conc, id: row.id };
+      } catch (e) {
+        setErroModal(e.message);
+        return;
+      }
+    }
+    if (!conc.id) {
+      setDetalhe({ lancamento: l, carregando: false, dados: null, transferencia: conc });
       return;
     }
     setDetalhe({ lancamento: l, carregando: true, dados: null });
     try {
-      const r = await fetch(`${API}/conciliacao/${l.conciliacao.id}/detalhe`);
+      const r = await fetch(`${API}/conciliacao/${conc.id}/detalhe`);
       const j = await r.json();
       if (!j?.success) throw new Error(j?.message || 'Falha ao carregar o detalhe.');
       setDetalhe({ lancamento: l, carregando: false, dados: j.data });
@@ -1281,7 +1294,7 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
         </div>
 
         <div className="flex-1 overflow-auto">
-          {situacao === 'PROLABORE' && <PainelProLabore linhas={proLabore} salvar={salvar} justificar={justificar} desfazer={desfazer} setErro={setErroModal} />}
+          {situacao === 'PROLABORE' && <PainelProLabore linhas={proLabore} salvar={salvar} justificar={justificar} desfazer={desfazer} setErro={setErroModal} onDetalhe={abrirDetalhe} />}
           <table className={`w-full text-sm hidden ${situacao === 'PROLABORE' ? '' : 'md:table'}`}>
             <thead className="sticky top-0 bg-gray-50 z-10">
               <tr className="border-b border-gray-200">
@@ -1704,12 +1717,15 @@ const CelulaConciliacao = ({ l, podeConciliar = l.valor < 0, ocupado, onConcilia
 };
 
 // ─── painel Pró-labore: transferências aos sócios, com justificativa por linha ─
-const PainelProLabore = ({ linhas, salvar, justificar, desfazer, setErro }) => {
+const PainelProLabore = ({ linhas, salvar, justificar, desfazer, setErro, onDetalhe, semCards = false, filtroExterno = null }) => {
   const [textos, setTextos] = useState({});
   const [salvando, setSalvando] = useState(null);
+  const [filtroLocal, setFiltroLocal] = useState(null); // 'fabio' | 'felipe' | null
+  const filtro = filtroExterno ?? filtroLocal;
   const pessoaDe = (l) => l.proLabore?.pessoaId || l.conciliacao?.referencia?.pessoaId || PESSOAS_PRO_LABORE.find((p) => p.cpf === l.conciliacao?.referencia?.cpf)?.id || null;
   const porPessoa = PESSOAS_PRO_LABORE.map((p) => ({ ...p, linhas: linhas.filter((l) => pessoaDe(l) === p.id) }));
   const total = linhas.reduce((s, l) => s + Math.abs(l.valor), 0);
+  const visiveis = filtro ? linhas.filter((l) => pessoaDe(l) === filtro) : linhas;
   const gravarJust = async (l) => {
     const texto = (textos[l.id] ?? '').trim();
     if (!texto) return;
@@ -1738,22 +1754,24 @@ const PainelProLabore = ({ linhas, salvar, justificar, desfazer, setErro }) => {
     }
   };
   return (
-    <div className="p-4 space-y-4">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div className="rounded-lg border border-purple-200 bg-purple-50 px-3 py-2">
-          <p className="text-[10px] uppercase tracking-wide text-purple-700">Pró-labore no período</p>
-          <p className="text-lg font-bold text-purple-900">{fmt(total)}</p>
-          <p className="text-[11px] text-purple-700">{linhas.length} transferência(s)</p>
+    <div className={semCards ? 'space-y-3' : 'p-4 space-y-4'}>
+      {!semCards && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <button onClick={() => setFiltroLocal(null)} className={`text-left rounded-lg border px-3 py-2 ${!filtro ? 'border-purple-400 bg-purple-50 ring-2 ring-purple-300' : 'border-purple-200 bg-purple-50/60 hover:bg-purple-50'}`}>
+            <p className="text-[10px] uppercase tracking-wide text-purple-700">Pró-labore no período · todos</p>
+            <p className="text-lg font-bold text-purple-900">{fmt(total)}</p>
+            <p className="text-[11px] text-purple-700">{linhas.length} transferência(s)</p>
+          </button>
+          {porPessoa.map((p) => (
+            <button key={p.id} onClick={() => setFiltroLocal(filtro === p.id ? null : p.id)} className={`text-left rounded-lg border px-3 py-2 ${filtro === p.id ? 'border-purple-400 bg-purple-50 ring-2 ring-purple-300' : 'border-gray-200 bg-white hover:bg-gray-50'}`} title="Clique para ver só este sócio">
+              <p className="text-[10px] uppercase tracking-wide text-gray-400">{p.pessoa}</p>
+              <p className="text-lg font-bold text-gray-800">{fmt(p.linhas.reduce((s, l) => s + Math.abs(l.valor), 0))}</p>
+              <p className="text-[11px] text-gray-500">{fmtDoc(p.cpf)} · {p.linhas.length} transferência(s)</p>
+            </button>
+          ))}
         </div>
-        {porPessoa.map((p) => (
-          <div key={p.id} className="rounded-lg border border-gray-200 bg-white px-3 py-2">
-            <p className="text-[10px] uppercase tracking-wide text-gray-400">{p.pessoa}</p>
-            <p className="text-lg font-bold text-gray-800">{fmt(p.linhas.reduce((s, l) => s + Math.abs(l.valor), 0))}</p>
-            <p className="text-[11px] text-gray-500">{fmtDoc(p.cpf)} · {p.linhas.length} transferência(s)</p>
-          </div>
-        ))}
-      </div>
-      {linhas.length === 0 ? (
+      )}
+      {visiveis.length === 0 ? (
         <p className="text-sm text-gray-400 py-6 text-center">Nenhuma transferência para os sócios neste período. Marque saídas na lista (caixa à esquerda) e mande para o pró-labore de Fabio ou Felipe.</p>
       ) : (
         <div className="border border-gray-200 rounded-lg overflow-hidden">
@@ -1767,12 +1785,15 @@ const PainelProLabore = ({ linhas, salvar, justificar, desfazer, setErro }) => {
                 <Th right>Valor</Th>
                 <Th>Origem</Th>
                 <Th>O que foi essa saída (justificativa)</Th>
+                <Th>Comprovante</Th>
                 <Th />
               </tr>
             </thead>
             <tbody>
-              {linhas.map((l) => {
+              {visiveis.map((l) => {
                 const c = l.conciliacao || { id: null, origem: null, referencia: {}, justificativa: '' };
+                const anexoComp = (c.anexos || []).find((a) => a.tipo === 'comprovante');
+                const abrir = () => onDetalhe && c.origem && onDetalhe(l);
                 const auto = !c.id;
                 const pessoaId = pessoaDe(l);
                 const pessoaObj = PESSOAS_PRO_LABORE.find((p) => p.id === pessoaId);
@@ -1785,9 +1806,10 @@ const PainelProLabore = ({ linhas, salvar, justificar, desfazer, setErro }) => {
                       <span className="font-medium text-gray-800">{pessoaObj?.curto || c.referencia?.pessoa || '—'}</span>
                       <span className="block text-[10px] text-gray-400">{pessoaObj?.cpf ? fmtDoc(pessoaObj.cpf) : ''}</span>
                     </td>
-                    <td className="px-3 py-2 max-w-[260px]">
+                    <td className={`px-3 py-2 max-w-[260px] ${c.origem ? 'cursor-pointer hover:underline decoration-dotted' : ''}`} onClick={abrir} title={c.origem ? 'Ver os detalhes desta conciliação' : l.memo}>
                       <span className="text-gray-700">{l.forma}</span>
-                      <span className="block text-[11px] text-gray-500 truncate" title={l.memo}>{l.descricao} · {l.nomeExibicao || l.contraparte_nome || ''}</span>
+                      <span className="block text-[11px] text-gray-500 truncate">{l.descricao} · {l.nomeExibicao || l.contraparte_nome || ''}</span>
+                      {!semCards ? null : <span className="block text-[10px] text-gray-400">{bancoCfg(l.banco).label} {l.conta_apelido || ''}</span>}
                     </td>
                     <td className="px-3 py-2 text-gray-500 max-w-[150px] truncate" title={l.contraparte_banco || ''}>{l.contraparte_banco || '—'}</td>
                     <td className="px-3 py-2 text-right font-semibold text-red-600 whitespace-nowrap">{fmt(Math.abs(l.valor))}</td>
@@ -1803,7 +1825,7 @@ const PainelProLabore = ({ linhas, salvar, justificar, desfazer, setErro }) => {
                     <td className="px-3 py-2 min-w-[260px]">
                       {c.id && textos[l.id] === undefined ? (
                         <div className="flex items-start gap-2">
-                          <span className="text-gray-800 flex-1">{c.justificativa}</span>
+                          <span className="text-gray-800 flex-1 cursor-pointer hover:underline decoration-dotted" onClick={abrir} title="Ver os detalhes desta conciliação">{c.justificativa}</span>
                           <button onClick={() => setTextos((t) => ({ ...t, [l.id]: c.justificativa || '' }))} className="text-[11px] text-blue-700 hover:underline shrink-0">
                             editar
                           </button>
@@ -1823,7 +1845,27 @@ const PainelProLabore = ({ linhas, salvar, justificar, desfazer, setErro }) => {
                         </div>
                       )}
                     </td>
-                    <td className="px-2 py-2 text-right">
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {l.comprovante ? (
+                        <BotaoComprovanteBot comp={l.comprovante} />
+                      ) : anexoComp ? (
+                        <a href={anexoComp.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-blue-700 hover:underline">
+                          <Paperclip size={11} /> anexo
+                        </a>
+                      ) : c.origem ? (
+                        <button onClick={abrir} className="inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-blue-700" title="Abrir o detalhe e anexar o comprovante">
+                          <UploadSimple size={11} /> anexar
+                        </button>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-2 py-2 text-right whitespace-nowrap">
+                      {c.origem && (
+                        <button onClick={abrir} title="Detalhes" className="text-gray-300 hover:text-blue-700 mr-1">
+                          <Eye size={13} />
+                        </button>
+                      )}
                       {c.id && (
                         <button onClick={() => tirar(l)} title="Tirar do pró-labore (volta a pendente)" className="text-gray-300 hover:text-red-600">
                           <ArrowCounterClockwise size={13} />
@@ -2363,4 +2405,5 @@ const DetalheConciliacao = ({ detalhe, onClose, onAnexar, onRemoverAnexo }) => {
   );
 };
 
+export { PainelProLabore, DetalheConciliacao, BotaoComprovanteBot, uploadAnexo, headersUsuario, API, fmt, fmtData, fmtDoc, Badge, Th, origemCfg, bancoCfg, PESSOAS_PRO_LABORE, MESES, iso, ultimoDia };
 export default Conciliacao;

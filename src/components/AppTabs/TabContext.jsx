@@ -139,6 +139,11 @@ const TABBED_PAGES = {
     group: 'Conciliação',
     dot: 'bg-blue-500',
   },
+  '/pro-labore': {
+    label: 'Pró-labore',
+    group: 'Conciliação',
+    dot: 'bg-purple-500',
+  },
   '/conciliacao-stone': {
     label: 'Conciliação Stone',
     group: 'Conciliação',

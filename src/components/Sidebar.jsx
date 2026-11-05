@@ -111,6 +111,12 @@ const solicitacoesCrosby = [
     color: 'text-rose-600',
   },
   {
+    name: 'Transferências de Mercadoria',
+    href: '/transferencias-mercadoria',
+    icon: ArrowsLeftRight,
+    color: 'text-sky-600',
+  },
+  {
     name: 'Chamados Dryland',
     href: '/tecnologia/chamados-dryland',
     icon: Ticket,
@@ -231,6 +237,13 @@ const financeiro = [
         name: 'Conciliação',
         href: '/conciliacao',
         icon: CheckCircle,
+        color: 'text-blue-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
+        name: 'Pró-labore',
+        href: '/pro-labore',
+        icon: Bank,
         color: 'text-blue-600',
         roles: ['owner', 'admin', 'manager', 'user'],
       },

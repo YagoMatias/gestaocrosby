@@ -55,6 +55,11 @@ const AVAILABLE_PAGES = [
     category: 'Solicitações Crosby',
   },
   {
+    path: '/transferencias-mercadoria',
+    name: 'Transferências de Mercadoria',
+    category: 'Solicitações Crosby',
+  },
+  {
     path: '/solicitacoes-crosby/compras-manutencao',
     name: 'Compras & Manutenção',
     category: 'Solicitações Crosby',
@@ -249,6 +254,11 @@ const AVAILABLE_PAGES = [
   {
     path: '/conciliacao',
     name: 'Conciliação (contas bancárias)',
+    category: 'Financeiro',
+  },
+  {
+    path: '/pro-labore',
+    name: 'Pró-labore (transferências aos sócios)',
     category: 'Financeiro',
   },
   {
