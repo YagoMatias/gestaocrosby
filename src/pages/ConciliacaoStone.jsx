@@ -44,6 +44,7 @@ const NIVEL_COLORS = {
   manual: 'bg-purple-100 text-purple-800 border-purple-300',
   exato: 'bg-green-100 text-green-800 border-green-300',
   agrupado: 'bg-green-100 text-green-800 border-green-300',
+  digitado_errado: 'bg-amber-100 text-amber-800 border-amber-300',
   valor_diverge: 'bg-red-100 text-red-800 border-red-300',
   nsu_diverge: 'bg-amber-100 text-amber-800 border-amber-300',
   aut_diverge: 'bg-amber-100 text-amber-800 border-amber-300',
@@ -1394,6 +1395,13 @@ const LinhaTabela = ({ ln, onVincular, onDesfazer, podeVincular, lanc }) => {
       <td className={tdc}>
         {t.cancelado ? (
           <Badge className="bg-gray-200 text-gray-700 border-gray-300">Cancelado no TOTVS</Badge>
+        ) : t.origemProvavel === 'pagarme' ? (
+          <>
+            <Badge className="bg-orange-50 text-orange-700 border-orange-200">Sem captura na Stone</Badge>
+            <div className="text-[10px] text-orange-700 mt-1 whitespace-normal max-w-[240px]">
+              NSU {t.nsu} tem formato de ID da Pagar.me/link — provável venda Pagar.me lançada no portador STONE
+            </div>
+          </>
         ) : (
           <Badge className="bg-orange-50 text-orange-700 border-orange-200">Sem captura na Stone</Badge>
         )}
