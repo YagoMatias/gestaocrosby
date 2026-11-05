@@ -63,6 +63,7 @@ const ORIGENS = {
   PIX_DEVOLVIDO: { label: 'Pix devolvido', cor: 'bg-rose-100 text-rose-800 border-rose-300' },
   PAGARME_SAQUE: { label: 'Saque Pagar.me', cor: 'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-300' },
   CARTAO_ESTORNADO: { label: 'Compra estornada', cor: 'bg-orange-100 text-orange-800 border-orange-300' },
+  APLICACAO_STONE: { label: 'Aplicação Stone', cor: 'bg-sky-100 text-sky-800 border-sky-300' },
   LIBERACAO: { label: 'Liberação de Pagamento', cor: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
   SOLICITACAO: { label: 'Solicitações Crosby', cor: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
   TOTVS_CP: { label: 'Contas a Pagar (TOTVS)', cor: 'bg-blue-100 text-blue-800 border-blue-300' },
@@ -2006,7 +2007,26 @@ const DetalheConciliacao = ({ detalhe, onClose, onAnexar, onRemoverAnexo }) => {
             </div>
           )}
 
-          {transferencia && !['BOLETO_TARIFA', 'PIX_DEVOLVIDO', 'PAGARME_SAQUE', 'CARTAO_ESTORNADO'].includes(transferencia.origem) && (
+          {transferencia && transferencia.origem === 'APLICACAO_STONE' && (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <Campo label="Tipo">
+                {transferencia.referencia?.papel === 'RESGATE' ? 'Resgate da caixinha Stone (Dinheiro Resgatado)' : 'Aplicação na caixinha Stone (Dinheiro Guardado) para carregar o cartão pré-pago'}
+              </Campo>
+              <Campo label={transferencia.referencia?.papel === 'RESGATE' ? 'Aplicação de origem' : 'Resgate'}>
+                {transferencia.referencia?.parData ? (
+                  <>
+                    {fmt(Math.abs(transferencia.referencia.parValor))} em {fmtData(transferencia.referencia.parData)}
+                    {transferencia.referencia.parSeq != null ? <span className="block text-[11px] text-gray-500">linha {transferencia.referencia.parSeq} do extrato</span> : null}
+                  </>
+                ) : (
+                  <span className="text-amber-700">ainda sem resgate (dinheiro aplicado)</span>
+                )}
+              </Campo>
+              <Campo label="Regra">Mesma conta e mesmo valor, resgate depois da aplicação; derivado na leitura do extrato, nada gravado</Campo>
+            </div>
+          )}
+
+          {transferencia && !['BOLETO_TARIFA', 'PIX_DEVOLVIDO', 'PAGARME_SAQUE', 'CARTAO_ESTORNADO', 'APLICACAO_STONE'].includes(transferencia.origem) && (
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               <Campo label="Tipo">Transferência entre contas do grupo</Campo>
               <Campo label="Outra conta">{transferencia.referencia?.outraConta ? `${transferencia.referencia.outraConta.apelido} (${bancoCfg(transferencia.referencia.outraConta.banco).label})` : '—'}</Campo>
