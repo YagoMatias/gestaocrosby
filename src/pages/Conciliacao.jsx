@@ -69,6 +69,7 @@ const ORIGENS = {
   SOLICITACAO: { label: 'Solicitações Crosby', cor: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
   TOTVS_CP: { label: 'Contas a Pagar (TOTVS)', cor: 'bg-blue-100 text-blue-800 border-blue-300' },
   STONE: { label: 'Vendas Stone', cor: 'bg-green-100 text-green-800 border-green-300' },
+  REDE_DEPOSITO: { label: 'Depósito Rede', cor: 'bg-orange-100 text-orange-800 border-orange-300' },
   TOTVS_CR: { label: 'Contas a Receber (TOTVS)', cor: 'bg-cyan-100 text-cyan-800 border-cyan-300' },
   MANUAL: { label: 'Justificado', cor: 'bg-gray-100 text-gray-700 border-gray-300' },
   MULTIPLO: { label: 'Várias duplicatas', cor: 'bg-violet-100 text-violet-800 border-violet-300' },
@@ -2277,7 +2278,7 @@ const DetalheConciliacao = ({ detalhe, onClose, onAnexar, onRemoverAnexo }) => {
             </div>
           )}
 
-          {dados && !o && ['MANUAL', 'PRO_LABORE'].includes(c?.origem) && (
+          {dados && !o && ['MANUAL', 'PRO_LABORE', 'REDE_DEPOSITO'].includes(c?.origem) && (
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               <Campo label="Justificativa">{c.justificativa}</Campo>
               <Campo label="Por">{c.usuario || '—'}</Campo>
