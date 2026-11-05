@@ -997,7 +997,12 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
   const [picker, setPicker] = useState(null); // { lancamento, candidatos, avisos, decisao }
   const [selecao, setSelecao] = useState([]); // candidatos marcados (podem somar a saída)
   // busca manual (mesmos filtros das telas Contas a Pagar / Receber): devolve só o que foi pesquisado
-  const BUSCA_VAZIA = { aberta: false, duplicata: '', codigo: '', cnpj: '', nome: '', tipoData: 'vencimento', de: '', ate: '', status: 'todos', valorMin: '', valorMax: '', carregando: false, resultados: null, avisos: [] };
+  const BUSCA_VAZIA = { aberta: false, duplicata: '', codigo: '', cnpj: '', nome: '', tipoData: 'vencimento', de: '', ate: '', status: 'todos', valorMin: '', valorMax: '', fontes: ['totvs', 'liberacao', 'solicitacoes'], carregando: false, resultados: null, avisos: [] };
+  const FONTES_CP = [
+    { id: 'totvs', label: 'Contas a Pagar (TOTVS)' },
+    { id: 'liberacao', label: 'Liberação de Pagamento' },
+    { id: 'solicitacoes', label: 'Solicitações Crosby' },
+  ];
   const [buscaCp, setBuscaCp] = useState(BUSCA_VAZIA);
   const keyCand = (c) => `${c.origem}:${c.id}`;
   const toggleSel = (c) => setSelecao((prev) => (prev.some((x) => keyCand(x) === keyCand(c)) ? prev.filter((x) => keyCand(x) !== keyCand(c)) : [...prev, c]));
@@ -1015,6 +1020,10 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
       const q = new URLSearchParams({ lancamentoId: picker.lancamento.id });
       const nomes = receber ? { duplicata: 'titulo' } : {};
       for (const k of ['duplicata', 'codigo', 'cnpj', 'nome', 'tipoData', 'de', 'ate', 'status', 'valorMin', 'valorMax']) if (String(buscaCp[k] || '').trim()) q.set(nomes[k] || k, String(buscaCp[k]).trim());
+      if (!receber) {
+        if (!buscaCp.fontes?.length) throw new Error('Marque pelo menos uma fonte: Contas a Pagar, Liberação de Pagamento ou Solicitações Crosby.');
+        q.set('fontes', buscaCp.fontes.join(','));
+      }
       const r = await fetch(`${API}/conciliacao/${receber ? 'buscar-cr' : 'buscar-cp'}?${q}`);
       const j = await r.json();
       if (!j?.success) throw new Error(j?.message || 'Falha na busca.');
@@ -1497,7 +1506,7 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
                     {(picker.lancamento.valor < 0 || ehPixCliente(picker.lancamento)) && <div className="border-t border-gray-200">
                       <button onClick={() => setBuscaCp((b) => ({ ...b, aberta: !b.aberta }))} className="w-full flex items-center justify-between px-4 py-2 text-xs font-semibold text-gray-700 bg-gray-50 hover:bg-gray-100">
                         <span className="inline-flex items-center gap-1">
-                          <MagnifyingGlass size={13} /> {picker.lancamento.valor > 0 ? 'Procurar no Contas a Receber (título, cliente, emissão, vencimento, valor)' : 'Procurar no Contas a Pagar (duplicata, fornecedor, emissão, vencimento, valor)'}
+                          <MagnifyingGlass size={13} /> {picker.lancamento.valor > 0 ? 'Procurar no Contas a Receber (título, cliente, período, valor)' : 'Procurar no Contas a Pagar, Solicitações Crosby e Liberação de Pagamento'}
                         </span>
                         <span className="text-gray-400">{buscaCp.aberta ? 'ocultar' : 'abrir'}</span>
                       </button>
@@ -1509,7 +1518,19 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
                             const set = (k) => (e) => setBuscaCp({ ...buscaCp, [k]: e.target.value });
                             const receber = picker.lancamento.valor > 0;
                             const pessoa = receber ? 'cliente' : 'fornecedor';
+                            const toggleFonte = (id) => setBuscaCp((b) => ({ ...b, fontes: b.fontes.includes(id) ? b.fontes.filter((x) => x !== id) : [...b.fontes, id] }));
                             return (
+                              <>
+                              {!receber && (
+                                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-2">
+                                  <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">Procurar em</span>
+                                  {FONTES_CP.map((f) => (
+                                    <label key={f.id} className="inline-flex items-center gap-1 text-xs text-gray-700 cursor-pointer">
+                                      <input type="checkbox" checked={buscaCp.fontes.includes(f.id)} onChange={() => toggleFonte(f.id)} className="accent-[#000638]" /> {f.label}
+                                    </label>
+                                  ))}
+                                </div>
+                              )}
                               <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
                                 <div>
                                   <Lbl>Código do {pessoa}</Lbl>
@@ -1560,6 +1581,7 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
                                   <input value={buscaCp.valorMax} onChange={set('valorMax')} placeholder="0,00" className={inp} inputMode="decimal" />
                                 </div>
                               </div>
+                              </>
                             );
                           })()}
                           <div className="flex items-center gap-2">
