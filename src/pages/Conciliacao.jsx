@@ -1092,7 +1092,9 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
     setErroModal(null);
     try {
       const d = await buscar(l.id);
-      if (d.decisao?.automatico && d.decisao.escolhido) {
+      if (d.decisao?.automatico && d.decisao.lote?.length) {
+        await salvar(l.id, 'MULTIPLO', { itens: d.decisao.lote }, d.decisao.justificativa || null, null);
+      } else if (d.decisao?.automatico && d.decisao.escolhido) {
         const esc = d.decisao.escolhido;
         await salvar(l.id, esc.origem, refDe(esc), justDe(esc), esc.score);
       } else {
