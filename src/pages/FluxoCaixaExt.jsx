@@ -29,6 +29,7 @@ import {
   CreditCard,
   Storefront,
   CaretDown,
+  CaretUp,
   CaretLeft,
   CaretRight,
   Robot,
@@ -298,6 +299,12 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
   const [contasLista, setContasLista] = useState([]); // só para os filtros, antes da 1ª busca
   const [dados, setDados] = useState(null);
   const [pagina, setPagina] = useState(1);
+  // ordenação das colunas Entrada / Saída (clique no cabeçalho: crescente → decrescente → desliga)
+  const [ordem, setOrdem] = useState({ campo: null, dir: 'asc' });
+  const alternarOrdem = (campo) => {
+    setPagina(1);
+    setOrdem((o) => (o.campo !== campo ? { campo, dir: 'asc' } : o.dir === 'asc' ? { campo, dir: 'desc' } : { campo: null, dir: 'asc' }));
+  };
   const jaBuscou = useRef(false);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(null);
@@ -505,7 +512,17 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
   const filtrosAtivos = bancos.length + contasSel.length + cnpjsSel.length + tipos.length + formas.length + (contraparte ? 1 : 0) + (busca ? 1 : 0);
 
   const contas = dados?.contas || contasLista;
-  const lancamentos = dados?.lancamentos || [];
+  const lancamentosBrutos = dados?.lancamentos || [];
+  const lancamentos = useMemo(() => {
+    if (!ordem.campo) return lancamentosBrutos;
+    const valorDe = (l) => (ordem.campo === 'entrada' ? (l.valor > 0 ? l.valor : null) : l.valor < 0 ? -l.valor : null);
+    const sinal = ordem.dir === 'asc' ? 1 : -1;
+    // linhas sem valor na coluna ordenada ficam no fim; empate mantém a ordem por data
+    return lancamentosBrutos
+      .map((l, i) => ({ l, i, v: valorDe(l) }))
+      .sort((a, b) => (a.v == null) - (b.v == null) || (a.v != null && b.v != null && a.v !== b.v ? (a.v - b.v) * sinal : a.i - b.i))
+      .map((x) => x.l);
+  }, [lancamentosBrutos, ordem]);
   const totalPaginas = Math.max(1, Math.ceil(lancamentos.length / LINHAS_POR_PAGINA));
   const paginaAtual = Math.min(pagina, totalPaginas);
   const inicioPagina = (paginaAtual - 1) * LINHAS_POR_PAGINA;
@@ -782,8 +799,22 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
                     <Th>Histórico</Th>
                     <Th>Contraparte / fornecedor</Th>
                     <Th>Documento</Th>
-                    <Th right>Entrada</Th>
-                    <Th right>Saída</Th>
+                    {[
+                      ['entrada', 'Entrada'],
+                      ['saida', 'Saída'],
+                    ].map(([campo, rotulo]) => (
+                      <Th key={campo} right>
+                        <button
+                          type="button"
+                          onClick={() => alternarOrdem(campo)}
+                          className={`inline-flex items-center gap-1 hover:text-[#000638] ${ordem.campo === campo ? 'text-[#000638]' : ''}`}
+                          title={ordem.campo === campo ? (ordem.dir === 'asc' ? 'Do menor para o maior · clique para inverter' : 'Do maior para o menor · clique para desligar') : 'Ordenar pelo valor'}
+                        >
+                          {rotulo}
+                          {ordem.campo === campo ? (ordem.dir === 'asc' ? <CaretUp size={11} weight="bold" /> : <CaretDown size={11} weight="bold" />) : <CaretDown size={11} className="opacity-30" />}
+                        </button>
+                      </Th>
+                    ))}
                     <Th right>Saldo após</Th>
                   </tr>
                 </thead>
