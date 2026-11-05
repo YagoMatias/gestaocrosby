@@ -2268,7 +2268,18 @@ const DetalheConciliacao = ({ detalhe, onClose, onAnexar, onRemoverAnexo }) => {
             </div>
           )}
 
-          {transferencia && !['BOLETO_TARIFA', 'PIX_DEVOLVIDO', 'PAGARME_SAQUE', 'CARTAO_ESTORNADO', 'APLICACAO_STONE', 'PRO_LABORE'].includes(transferencia.origem) && (
+          {transferencia && transferencia.origem === 'REDE_DEPOSITO' && (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <Campo label="Tipo">Depósito da Rede ({transferencia.referencia?.antecipacao ? 'antecipação de recebíveis' : 'liquidação de vendas'} na maquininha Rede)</Campo>
+              <Campo label="Bandeira / loja">{[transferencia.referencia?.bandeira, transferencia.referencia?.loja ? `loja ${transferencia.referencia.loja}` : null].filter(Boolean).join(' · ') || '—'}</Campo>
+              <Campo label="Histórico">{transferencia.referencia?.memo || '—'}</Campo>
+              <div className="col-span-2 md:col-span-3">
+                <Campo label="Conferência">Totais por dia batem com o relatório de recebimentos da Rede; a taxa por depósito depende do relatório detalhado da Rede</Campo>
+              </div>
+            </div>
+          )}
+
+          {transferencia && !['BOLETO_TARIFA', 'PIX_DEVOLVIDO', 'PAGARME_SAQUE', 'CARTAO_ESTORNADO', 'APLICACAO_STONE', 'PRO_LABORE', 'REDE_DEPOSITO'].includes(transferencia.origem) && (
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               <Campo label="Tipo">Transferência entre contas do grupo</Campo>
               <Campo label="Outra conta">{transferencia.referencia?.outraConta ? `${transferencia.referencia.outraConta.apelido} (${bancoCfg(transferencia.referencia.outraConta.banco).label})` : '—'}</Campo>
