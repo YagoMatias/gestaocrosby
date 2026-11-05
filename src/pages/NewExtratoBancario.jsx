@@ -1,17 +1,28 @@
 // Página: Financeiro → New Extrato Bancário
 // Reconstrução do Extrato Bancário do zero (pedido do Yago, 05/11/2026).
-// Por enquanto: os MESMOS filtros e o MESMO visual da página atual
-// (FluxoCaixaExt), mas a tabela fica vazia — nenhum dado é carregado ainda.
-// Só as opções dos seletores (bancos/contas/CNPJs) vêm da API, para o filtro
-// já funcionar igual.
-import React, { useEffect, useMemo, useState } from 'react';
+// Backend próprio: /api/novo-extrato (routes/novoExtrato.routes.js) com
+// tabelas neb_importacoes / neb_lancamentos. Por enquanto lê só o PDF do
+// Banco do Brasil; a importação só é aceita quando o saldo recalculado bate
+// com o saldo impresso (dia a dia e final).
+// Mesmos filtros e visual da página antiga (componentes reaproveitados).
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
-import { Wallet, X, ArrowsClockwise, MagnifyingGlass, FunnelSimple, Export, UploadSimple, Info } from '@phosphor-icons/react';
-import { MultiSelect, SeletorCnpj, BANCOS, bancoCfg, docDaConta, fmtDoc, Th, hoje, primeiroDiaMes } from './FluxoCaixaExt';
+import { Wallet, X, ArrowsClockwise, MagnifyingGlass, FunnelSimple, Export, UploadSimple, Info, ArrowDown, ArrowUp, Receipt, Bank, Warning, CheckCircle, CaretLeft, CaretRight } from '@phosphor-icons/react';
+import { MultiSelect, SeletorCnpj, BANCOS, bancoCfg, docDaConta, fmt, fmtData, Th, Kpi, Badge, TIPOS, hoje, primeiroDiaMes } from './FluxoCaixaExt';
 
-const API = `${API_BASE_URL}/api/fluxo-caixa-ext`;
-const SUBTITULO = 'Nova versão do Extrato Bancário, montada do zero. Por enquanto só os filtros; a tabela ainda não traz dados.';
+const API = `${API_BASE_URL}/api/novo-extrato`;
+const SUBTITULO = 'Nova versão do Extrato Bancário, montada do zero. Entradas, saídas e resultado somam só as linhas de lançamento; o saldo fica na última coluna. Por enquanto lê o PDF do Banco do Brasil.';
+const LINHAS_POR_PAGINA = 100;
+const headersUsuario = () => {
+  try {
+    const u = JSON.parse(localStorage.getItem('user') || localStorage.getItem('usuario') || 'null');
+    const nome = u?.name || u?.nome || u?.email || null;
+    return nome ? { 'x-user-name': nome } : {};
+  } catch {
+    return {};
+  }
+};
 
 const NewExtratoBancario = () => {
   const [de, setDe] = useState(primeiroDiaMes());
@@ -25,23 +36,41 @@ const NewExtratoBancario = () => {
   const [busca, setBusca] = useState('');
   const [contasLista, setContasLista] = useState([]);
   const [carregando, setCarregando] = useState(false);
+  const [dados, setDados] = useState(null);
+  const [erro, setErro] = useState(null);
+  const [aviso, setAviso] = useState(null);
+  const [importando, setImportando] = useState(false);
+  const [pagina, setPagina] = useState(1);
+  const inputRef = useRef(null);
 
-  // só as contas cadastradas, para os seletores de Banco / CNPJ / Conta
-  useEffect(() => {
-    let vivo = true;
-    (async () => {
-      try {
-        const r = await fetch(`${API}/contas`);
-        const j = await r.json();
-        if (vivo && j?.success) setContasLista(j.data || []);
-      } catch {
-        /* sem opções por enquanto */
+  // contas = importações já gravadas (agrupadas por banco + conta)
+  const carregarContas = useCallback(async () => {
+    try {
+      const r = await fetch(`${API}/contas`);
+      const j = await r.json();
+      if (j?.success) {
+        setContasLista(
+          (j.data || []).map((c) => ({
+            id: c.chave,
+            conta: c.conta,
+            apelido: `${bancoCfg(c.banco).label} ${c.conta}${c.contaDv ? `-${c.contaDv}` : ''}`,
+            banco: c.banco,
+            titular_nome: c.titular,
+            titular_cnpj: null,
+            qtdImportacoes: c.importacoes.length,
+            periodoInicio: c.periodoInicio,
+            periodoFim: c.periodoFim,
+            importacoes: c.importacoes,
+          })),
+        );
       }
-    })();
-    return () => {
-      vivo = false;
-    };
+    } catch {
+      /* sem opções por enquanto */
+    }
   }, []);
+  useEffect(() => {
+    carregarContas();
+  }, [carregarContas]);
 
   const bancosPresentes = useMemo(() => [...new Set(contasLista.map((c) => c.banco))], [contasLista]);
   const limparFiltros = () => {
@@ -54,11 +83,79 @@ const NewExtratoBancario = () => {
     setBusca('');
   };
   const filtrosAtivos = bancos.length + contasSel.length + cnpjsSel.length + tipos.length + formas.length + (contraparte ? 1 : 0) + (busca ? 1 : 0);
-  const buscar = () => {
-    // ainda não carrega nada: a tabela fica vazia de propósito
+
+  const buscar = async () => {
     setCarregando(true);
-    setTimeout(() => setCarregando(false), 300);
+    setErro(null);
+    try {
+      const q = new URLSearchParams({ de, ate });
+      if (bancos.length) q.set('bancos', bancos.join(','));
+      if (contasSel.length) q.set('contas', contasSel.map((k) => contasLista.find((c) => c.id === k)?.conta || k).join(','));
+      if (tipos.length) q.set('tipos', tipos.join(','));
+      if (busca.trim()) q.set('busca', busca.trim());
+      const r = await fetch(`${API}/lancamentos?${q}`);
+      const j = await r.json();
+      if (!j?.success) throw new Error(j?.message || 'Falha ao buscar.');
+      setDados(j.data);
+      setPagina(1);
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setCarregando(false);
+    }
   };
+
+  const importar = async (files) => {
+    if (!files?.length) return;
+    setImportando(true);
+    setErro(null);
+    setAviso(null);
+    try {
+      const fd = new FormData();
+      for (const f of files) fd.append('arquivos', f);
+      const r = await fetch(`${API}/importar`, { method: 'POST', body: fd, headers: headersUsuario() });
+      const j = await r.json();
+      if (!j?.success) throw new Error(j?.message || 'Falha ao importar.');
+      const linhas = j.data.resultados.map((x) =>
+        x.ok
+          ? `${x.arquivo}: ${x.conta} ${x.titular || ''} · ${x.mesReferencia || ''} · ${x.qtd} lançamentos · saldo inicial ${fmt(x.saldoInicial)} → final ${fmt(x.saldoFinal)} ✔ bateu${x.substituidas ? ' (substituiu importação anterior)' : ''}`
+          : `${x.arquivo}: ${x.erro}`,
+      );
+      setAviso({ ok: j.data.falhas === 0, texto: linhas.join('\n') });
+      await carregarContas();
+      if (j.data.ok) {
+        const okImp = j.data.resultados.find((x) => x.ok);
+        if (okImp?.periodo?.inicio && okImp?.periodo?.fim) {
+          setDe(okImp.periodo.inicio);
+          setAte(okImp.periodo.fim);
+        }
+      }
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setImportando(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  };
+
+  // depois da importação, com o período já ajustado, carrega a tabela
+  useEffect(() => {
+    if (aviso?.ok && !dados) buscar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aviso]);
+
+  const lancamentos = dados?.lancamentos || [];
+  const resumo = dados?.resumo;
+  const totalPaginas = Math.max(1, Math.ceil(lancamentos.length / LINHAS_POR_PAGINA));
+  const paginaAtual = Math.min(pagina, totalPaginas);
+  const inicio = (paginaAtual - 1) * LINHAS_POR_PAGINA;
+  const lancamentosPagina = lancamentos.slice(inicio, inicio + LINHAS_POR_PAGINA);
+  const saldoFinal = useMemo(() => {
+    // último saldo após de cada conta no período
+    const porConta = new Map();
+    for (const l of lancamentos) porConta.set(`${l.banco}|${l.conta}`, l.saldo_apos);
+    return [...porConta.values()].reduce((s, v) => s + (Number(v) || 0), 0);
+  }, [lancamentos]);
 
   return (
     <div className="min-h-screen bg-gray-50 px-3 py-4 md:p-6 pb-24 md:pb-6">
@@ -78,12 +175,13 @@ const NewExtratoBancario = () => {
           <button onClick={buscar} disabled={carregando || !de || !ate} className="px-4 py-1.5 text-xs rounded-lg bg-[#000638] text-white hover:bg-[#000638]/90 disabled:opacity-50 flex items-center gap-1 font-semibold">
             {carregando ? <ArrowsClockwise size={14} className="animate-spin" /> : <MagnifyingGlass size={14} weight="bold" />} {carregando ? 'Buscando…' : 'Buscar'}
           </button>
-          <button disabled className="px-3 py-1.5 text-xs rounded-lg bg-green-600 text-white disabled:opacity-50 flex items-center gap-1">
+          <button disabled className="px-3 py-1.5 text-xs rounded-lg bg-green-600 text-white disabled:opacity-50 flex items-center gap-1" title="Em breve">
             <Export size={14} /> Excel
           </button>
-          <button disabled className="px-3 py-1.5 text-xs rounded-lg bg-blue-600 text-white disabled:opacity-50 flex items-center gap-1 font-medium">
-            <UploadSimple size={14} weight="bold" /> Importar extratos
-          </button>
+          <label className={`px-3 py-1.5 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-1 font-medium cursor-pointer ${importando ? 'opacity-60 pointer-events-none' : ''}`} title="PDF do extrato de conta corrente do Banco do Brasil (um ou vários)">
+            {importando ? <ArrowsClockwise size={14} className="animate-spin" /> : <UploadSimple size={14} weight="bold" />} {importando ? 'Importando…' : 'Importar extratos'}
+            <input ref={inputRef} type="file" accept=".pdf,application/pdf" multiple className="hidden" onChange={(e) => importar(Array.from(e.target.files || []))} />
+          </label>
         </div>
 
         {/* busca */}
@@ -93,7 +191,7 @@ const NewExtratoBancario = () => {
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && buscar()}
-            placeholder="Pesquisar nome, CNPJ/CPF, histórico, documento ou valor…"
+            placeholder="Pesquisar histórico, documento ou valor…"
             className="w-full pl-8 pr-8 py-2 text-sm border border-[#000638]/30 rounded-lg bg-[#f8f9fb] text-[#000638] placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#000638]"
           />
           {busca && (
@@ -126,12 +224,12 @@ const NewExtratoBancario = () => {
             )}
             larguraMin="w-full"
           />
-          <SeletorCnpj contas={contasLista.filter((c) => c.qtdImportacoes > 0 && (!bancos.length || bancos.includes(c.banco)))} valor={cnpjsSel} onChange={setCnpjsSel} />
+          <SeletorCnpj contas={contasLista.filter((c) => !bancos.length || bancos.includes(c.banco))} valor={cnpjsSel} onChange={setCnpjsSel} />
           <MultiSelect
             label="Conta"
             busca
             opcoes={contasLista
-              .filter((c) => c.qtdImportacoes > 0 && (!bancos.length || bancos.includes(c.banco)))
+              .filter((c) => !bancos.length || bancos.includes(c.banco))
               .filter((c) => !cnpjsSel.length || cnpjsSel.includes(docDaConta(c)))
               .map((c) => ({ value: c.id, label: c.apelido, banco: c.banco, sub: c.titular_nome }))}
             valor={contasSel}
@@ -172,11 +270,51 @@ const NewExtratoBancario = () => {
         </div>
       </div>
 
-      {/* Tabela — mesmo visual, sem dados por enquanto */}
+      {erro && (
+        <div className="flex items-start gap-2 px-4 py-3 mb-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          <Warning size={18} className="shrink-0 mt-0.5" />
+          <span className="flex-1 whitespace-pre-line">{erro}</span>
+          <button onClick={() => setErro(null)} className="text-red-400 hover:text-red-600">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+      {aviso && (
+        <div className={`flex items-start gap-2 px-4 py-3 mb-4 rounded-lg text-sm border ${aviso.ok ? 'bg-green-50 border-green-200 text-green-800' : 'bg-amber-50 border-amber-300 text-amber-800'}`}>
+          {aviso.ok ? <CheckCircle size={18} className="shrink-0 mt-0.5" /> : <Warning size={18} className="shrink-0 mt-0.5" />}
+          <span className="flex-1 whitespace-pre-line">{aviso.texto}</span>
+          <button onClick={() => setAviso(null)} className="opacity-60 hover:opacity-100">
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
+      {/* KPIs — só linhas de lançamento; saldo na coluna da tabela */}
+      {resumo && (
+        <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3 mb-4">
+          <Kpi label="Recebido (entradas)" value={fmt(resumo.entradas)} sub={`${resumo.qtdEntradas} lançamentos`} tone="text-green-600" Icon={ArrowDown} accent="bg-green-50 text-green-600" />
+          <Kpi label="Pago (saídas)" value={fmt(resumo.saidas)} sub={`${resumo.qtdSaidas} lançamentos`} tone="text-red-600" Icon={ArrowUp} accent="bg-red-50 text-red-600" />
+          <Kpi label="Resultado" value={fmt(resumo.resultado)} sub="entradas − saídas" tone={resumo.resultado >= 0 ? 'text-blue-700' : 'text-red-700'} Icon={Receipt} accent="bg-blue-50 text-blue-600" />
+          <Kpi label="Saldo final (contas)" value={fmt(saldoFinal)} sub="último saldo após do período" Icon={Bank} accent="bg-slate-100 text-slate-600" />
+        </div>
+      )}
+
+      {/* Tabela */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="flex flex-wrap items-center gap-1.5 px-3 py-2 border-b border-gray-200 bg-gray-50">
-          <button className="px-3 py-1.5 text-xs font-medium rounded-lg bg-white shadow-sm text-blue-700 border border-gray-200">Lançamentos (0)</button>
+          <button className="px-3 py-1.5 text-xs font-medium rounded-lg bg-white shadow-sm text-blue-700 border border-gray-200">Lançamentos ({lancamentos.length})</button>
           {carregando && <ArrowsClockwise size={14} className="animate-spin text-blue-600 ml-2" />}
+          {totalPaginas > 1 && (
+            <span className="ml-auto flex items-center gap-1 text-xs text-gray-500">
+              <button onClick={() => setPagina((p) => Math.max(1, p - 1))} disabled={paginaAtual <= 1} className="p-1 rounded hover:bg-gray-200 disabled:opacity-40">
+                <CaretLeft size={14} />
+              </button>
+              página {paginaAtual} de {totalPaginas}
+              <button onClick={() => setPagina((p) => Math.min(totalPaginas, p + 1))} disabled={paginaAtual >= totalPaginas} className="p-1 rounded hover:bg-gray-200 disabled:opacity-40">
+                <CaretRight size={14} />
+              </button>
+            </span>
+          )}
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -195,17 +333,68 @@ const NewExtratoBancario = () => {
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td colSpan={10} className="px-3 py-10 text-center text-xs text-gray-400">
-                  <span className="inline-flex items-center gap-1.5">
-                    <Info size={14} /> Página em construção: os dados ainda não são carregados aqui.
-                  </span>
-                </td>
-              </tr>
+              {!dados && (
+                <tr>
+                  <td colSpan={10} className="px-3 py-10 text-center text-xs text-gray-400">
+                    <span className="inline-flex items-center gap-1.5">
+                      <Info size={14} /> Importe um extrato ou clique em Buscar.
+                    </span>
+                  </td>
+                </tr>
+              )}
+              {dados && !lancamentos.length && (
+                <tr>
+                  <td colSpan={10} className="px-3 py-10 text-center text-xs text-gray-400">
+                    Nenhum lançamento no período com esses filtros.
+                  </td>
+                </tr>
+              )}
+              {lancamentosPagina.map((l) => {
+                const cfg = TIPOS[l.tipo] || TIPOS.ENTRADA;
+                return (
+                  <tr key={l.id} className="border-b border-gray-100 hover:bg-gray-50 text-xs">
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {fmtData(l.data)} <span className="text-gray-400">{l.seq}</span>
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <Badge cfg={bancoCfg(l.banco)} title={l.titular || ''}>
+                        {bancoCfg(l.banco).label} {l.conta}
+                        {l.conta_dv ? `-${l.conta_dv}` : ''}
+                      </Badge>
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <Badge cfg={cfg}>
+                        <cfg.Icon size={11} weight="bold" /> {cfg.label}
+                      </Badge>
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap text-gray-500">{l.historico_codigo || '—'}</td>
+                    <td className="px-3 py-2 font-medium text-gray-800">{l.historico}</td>
+                    <td className="px-3 py-2 text-gray-400">—</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-gray-500 font-mono">{l.documento || '—'}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap text-green-700 font-semibold">{l.valor > 0 ? fmt(l.valor) : ''}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap text-red-600 font-semibold">{l.valor < 0 ? fmt(-l.valor) : ''}</td>
+                    <td className={`px-3 py-2 text-right whitespace-nowrap ${l.saldo_apos < 0 ? 'text-red-600' : 'text-gray-600'}`}>{l.saldo_apos != null ? fmt(l.saldo_apos) : '—'}</td>
+                  </tr>
+                );
+              })}
             </tbody>
+            {resumo && lancamentos.length > 0 && (
+              <tfoot>
+                <tr className="bg-gray-50 border-t border-gray-200 text-xs font-semibold text-gray-700">
+                  <td className="px-3 py-2" colSpan={7}>
+                    Total do filtro ({lancamentos.length})
+                  </td>
+                  <td className="px-3 py-2 text-right text-green-700">{fmt(resumo.entradas)}</td>
+                  <td className="px-3 py-2 text-right text-red-600">{fmt(resumo.saidas)}</td>
+                  <td className="px-3 py-2 text-right text-gray-700">{fmt(saldoFinal)}</td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
-        <div className="px-4 py-3 border-t border-gray-200 bg-gray-50 text-xs text-gray-500">0 lançamentos</div>
+        <div className="px-4 py-3 border-t border-gray-200 bg-gray-50 text-xs text-gray-500">
+          {lancamentos.length} lançamentos{resumo ? ` · entradas ${fmt(resumo.entradas)} · saídas ${fmt(resumo.saidas)}` : ''}
+        </div>
       </div>
     </div>
   );
