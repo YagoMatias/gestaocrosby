@@ -1707,9 +1707,17 @@ const TabelaCandidatos = ({ candidatos, selecao, onToggle, onUsar, ocupado, keyC
 
 // ─── detalhe da conciliação ────────────────────────────────────
 const pct = (v) => (v == null ? '—' : `${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`);
+const SITUACAO_CRUZ = {
+  batida: { label: 'Batida', cor: 'bg-green-100 text-green-800' },
+  divergente: { label: 'Divergente', cor: 'bg-amber-100 text-amber-800' },
+  sem_titulo: { label: 'Sem título', cor: 'bg-red-100 text-red-800' },
+  venda_nao_localizada: { label: 'Venda não localizada', cor: 'bg-gray-100 text-gray-600' },
+};
 const DetalheStone = ({ o }) => {
   const st = o.stone || {};
   const parcelas = st.parcelas || [];
+  const cruz = st.cruzamento || null;
+  const cruzPor = new Map((cruz?.parcelas || []).map((q) => [`${q.nsu}|${q.parcela}`, q]));
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -1730,6 +1738,17 @@ const DetalheStone = ({ o }) => {
         {st.saldoNegativoAnterior ? <Campo label="Saldo negativo anterior">{fmt(st.saldoNegativoAnterior)}</Campo> : null}
       </div>
       {st.erroParcelas && <p className="text-xs text-amber-700">Não foi possível carregar as parcelas agora: {st.erroParcelas}</p>}
+      {cruz?.resumo && (
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="font-semibold text-gray-700">Contas a receber (TOTVS):</span>
+          <span className="px-2 py-0.5 rounded bg-green-100 text-green-800">{cruz.resumo.batidas} batida(s)</span>
+          {cruz.resumo.divergentes > 0 && <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800">{cruz.resumo.divergentes} divergente(s)</span>}
+          {cruz.resumo.semTitulo > 0 && <span className="px-2 py-0.5 rounded bg-red-100 text-red-800">{cruz.resumo.semTitulo} sem título</span>}
+          {cruz.resumo.vendaNaoLocalizada > 0 && <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-600">{cruz.resumo.vendaNaoLocalizada} venda não localizada</span>}
+          <span className="text-gray-400">de {cruz.resumo.parcelas} parcela(s) · empresas {cruz.filiais?.join(', ')}</span>
+        </div>
+      )}
+      {cruz?.aviso && <p className="text-xs text-amber-700">{cruz.aviso}</p>}
       {parcelas.length > 0 && (
         <div className="border border-green-200 rounded-lg overflow-hidden">
           <div className="px-3 py-2 bg-green-50 text-xs font-semibold text-green-900">Vendas que compõem o depósito</div>
@@ -1746,10 +1765,14 @@ const DetalheStone = ({ o }) => {
                   <Th right>Taxa</Th>
                   <Th right>%</Th>
                   <Th>Antecipada</Th>
+                  {cruz && <Th>Título no TOTVS</Th>}
                 </tr>
               </thead>
               <tbody>
-                {parcelas.map((x, i) => (
+                {parcelas.map((x, i) => {
+                  const q = cruzPor.get(`${x.nsu}|${x.parcela}`);
+                  const sc = q ? SITUACAO_CRUZ[q.situacao] || SITUACAO_CRUZ.venda_nao_localizada : null;
+                  return (
                   <tr key={i} className="border-t border-gray-100">
                     <td className="px-3 py-1.5 font-mono">{x.nsu || '—'}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap">{x.dataCaptura ? `${fmtData(String(x.dataCaptura).slice(0, 10))} ${String(x.dataCaptura).slice(11, 16)}` : '—'}</td>
@@ -1760,8 +1783,28 @@ const DetalheStone = ({ o }) => {
                     <td className="px-3 py-1.5 text-right text-orange-700 font-semibold">{fmt(x.taxa)}</td>
                     <td className="px-3 py-1.5 text-right">{x.bruto ? pct((x.taxa / x.bruto) * 100) : '—'}</td>
                     <td className="px-3 py-1.5 whitespace-nowrap">{x.antecipada ? `sim · venceria ${fmtData(x.dataOriginal)}` : 'não'}</td>
+                    {cruz && (
+                      <td className="px-3 py-1.5">
+                        {q ? (
+                          <div className="min-w-[180px]">
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${sc.cor}`} title={[q.rotulo, ...(q.divergencias || [])].filter(Boolean).join(' · ')}>{sc.label}</span>
+                            {q.titulo && (
+                              <div className="text-[11px] text-gray-700 mt-0.5">
+                                <span className="font-mono">{q.titulo.numero}</span>
+                                {q.titulo.parcela ? <span className="text-gray-500"> parc. {q.titulo.parcela.numero} · {fmt(q.titulo.parcela.valor)}</span> : null}
+                                <span className="block text-[10px] text-gray-500 truncate max-w-[220px]">{[q.titulo.filial ? `emp. ${q.titulo.filial}` : null, q.titulo.cliente, q.titulo.nf ? `NF ${q.titulo.nf}` : null, q.titulo.portador].filter(Boolean).join(' · ')}</span>
+                              </div>
+                            )}
+                            {q.situacao === 'divergente' && q.divergencias?.length > 0 && <span className="block text-[10px] text-amber-700">{q.divergencias.join(' · ')}</span>}
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-gray-400">—</span>
+                        )}
+                      </td>
+                    )}
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
