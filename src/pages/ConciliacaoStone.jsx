@@ -43,6 +43,7 @@ const BRAND_COLORS = {
 const NIVEL_COLORS = {
   manual: 'bg-purple-100 text-purple-800 border-purple-300',
   exato: 'bg-green-100 text-green-800 border-green-300',
+  agrupado: 'bg-green-100 text-green-800 border-green-300',
   valor_diverge: 'bg-red-100 text-red-800 border-red-300',
   nsu_diverge: 'bg-amber-100 text-amber-800 border-amber-300',
   aut_diverge: 'bg-amber-100 text-amber-800 border-amber-300',
@@ -188,7 +189,7 @@ const ConciliacaoStone = () => {
       const loja = l.loja;
       if (aba === 'conciliadas' || aba === 'divergencias') {
         for (const p of l.pares) {
-          if (aba === 'divergencias' && (p.tipo === 'exato' || p.tipo === 'manual')) continue;
+          if (aba === 'divergencias' && (p.tipo === 'exato' || p.tipo === 'manual' || p.tipo === 'agrupado')) continue;
           out.push({
             kind: 'par',
             loja,
@@ -1296,6 +1297,11 @@ const LinhaTabela = ({ ln, onVincular, onDesfazer, podeVincular, lanc }) => {
             {t.nf ? <span className="text-gray-400"> · NF {t.nf}</span> : null}
             {t.transacao ? <span className="text-gray-600"> · Trans. {t.transacao}</span> : null}
           </div>
+          {(ln.par.totvsExtras || []).map((x) => (
+            <div key={x.chave} className="font-mono text-green-700">
+              + Tít. {x.filial}/{x.titulo} · {fmt(x.valor)}
+            </div>
+          ))}
           {t.nomeCliente && <div className="text-gray-700 truncate max-w-[260px]" title={t.nomeCliente}>{t.nomeCliente}</div>}
           <div className="text-gray-400">
             {fmtData(t.dataEmissao)} · {t.portador} · {t.parcelas}x
