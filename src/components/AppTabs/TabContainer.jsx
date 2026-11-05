@@ -38,6 +38,7 @@ const PAGE_COMPONENTS = {
   '/pro-labore': lazy(() => import('../../pages/ProLabore')),
   '/conciliacao-stone': lazy(() => import('../../pages/ConciliacaoStone')),
   '/fluxo-caixa-ext': lazy(() => import('../../pages/FluxoCaixaExt')),
+  '/new-extrato-bancario': lazy(() => import('../../pages/NewExtratoBancario')),
   '/dr-ygor/extratos-bancarios': lazy(() => import('../../pages/DrYgorExtratosBancarios')),
   '/dre': lazy(() => import('../../pages/DRE')),
 

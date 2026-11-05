@@ -261,6 +261,13 @@ const financeiro = [
         color: 'text-blue-600',
         roles: ['owner', 'admin', 'manager', 'user'],
       },
+      {
+        name: 'New Extrato Bancário',
+        href: '/new-extrato-bancario',
+        icon: Wallet,
+        color: 'text-blue-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
     ],
   },
   {

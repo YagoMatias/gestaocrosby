@@ -1403,4 +1403,5 @@ const FluxoCaixaExt = ({ escopo = 'crosby', titulo = 'Extrato Bancário', subtit
   );
 };
 
+export { MultiSelect, SeletorCnpj, BANCOS, bancoCfg, docDaConta, fmtDoc, fmt, fmtData, Th, Kpi, Badge, TIPOS, hoje, primeiroDiaMes };
 export default FluxoCaixaExt;
