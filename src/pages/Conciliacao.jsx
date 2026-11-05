@@ -73,6 +73,7 @@ const ORIGENS = {
   TOTVS_CR: { label: 'Contas a Receber (TOTVS)', cor: 'bg-cyan-100 text-cyan-800 border-cyan-300' },
   MANUAL: { label: 'Justificado', cor: 'bg-gray-100 text-gray-700 border-gray-300' },
   MULTIPLO: { label: 'Várias duplicatas', cor: 'bg-violet-100 text-violet-800 border-violet-300' },
+  TECHFIN: { label: 'Pix Techfin', cor: 'bg-teal-100 text-teal-800 border-teal-300' },
 };
 const origemCfg = (o) => ORIGENS[o] || { label: o || '—', cor: 'bg-gray-100 text-gray-700 border-gray-300' };
 // referência gravada na conciliação (mesmos campos que o backend usa no lote)
@@ -562,6 +563,35 @@ const Conciliacao = () => {
       setConciliando(false);
     }
   };
+  const [importandoTechfin, setImportandoTechfin] = useState(false);
+  const importarTechfin = async (arquivos) => {
+    if (!arquivos?.length) return;
+    setImportandoTechfin(true);
+    setErro(null);
+    try {
+      const fd = new FormData();
+      for (const f of arquivos) fd.append('arquivos', f);
+      const r = await fetch(`${API}/conciliacao/techfin`, { method: 'POST', body: fd, headers: headersUsuario() });
+      const j = await r.json();
+      if (!j?.success) throw new Error(j?.message || 'Falha ao importar o relatório da Techfin.');
+      const d = j.data;
+      const partes = [
+        `Techfin: ${d.repasses} repasse(s) e ${d.pix} Pix em ${d.arquivos.length} arquivo(s) (${d.periodo.de} a ${d.periodo.ate})`,
+        `${d.totais.conciliadas} linha(s) conciliada(s) agora (${fmt(d.totais.valorConciliado)})`,
+        `${d.totais.jaConciliadas} já estavam conciliadas`,
+        d.totais.semLinha ? `${d.totais.semLinha} repasse(s) sem crédito no extrato: ${d.semLinha.slice(0, 6).map((x) => `${fmtData(x.data)} ${x.conta} ${fmt(x.valor)}`).join('; ')}${d.semLinha.length > 6 ? '…' : ''}` : null,
+        d.totais.semConta ? `${d.totais.semConta} repasse(s) sem conta cadastrada` : null,
+        d.titulosNaoLocalizados ? `${d.titulosNaoLocalizados} Pix sem título PIX no TOTVS (conciliados como Pix Techfin)` : null,
+        ...(d.avisos || []),
+      ].filter(Boolean);
+      setAviso(partes.join(' · '));
+      await carregar();
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setImportandoTechfin(false);
+    }
+  };
   const salvarConciliacao = async (lancamentoId, origem, referencia, justificativa, pontuacao) => {
     const j = await apiConc(`${API}/conciliacao`, { method: 'POST', body: JSON.stringify({ lancamentoId, origem, referencia, justificativa, pontuacao }) });
     await carregar();
@@ -904,10 +934,17 @@ const Conciliacao = () => {
           <span className="flex items-center gap-1 text-gray-400">
             <Info size={13} /> Só aparecem contas com extrato importado. O CTA é salvo na conta e vale para todos os meses.
           </span>
+          <label
+            className={`ml-auto inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-teal-300 bg-teal-50 text-teal-900 hover:bg-teal-100 text-[11px] font-medium cursor-pointer ${importandoTechfin ? 'opacity-50 pointer-events-none' : ''}`}
+            title="Relatórios da Techfin Pagamentos (Pix TOTVS): Relatório de Transações e/ou extrato da conta de cada loja (CSV). Cada repasse vira a conciliação do crédito 'RECEBIMENTO PIX … FISERV' com os títulos PIX do contas a receber"
+          >
+            {importandoTechfin ? <ArrowsClockwise size={12} className="animate-spin" /> : <Lightning size={12} weight="fill" />} Importar relatórios Techfin (Pix TOTVS)
+            <input type="file" accept=".csv,text/csv" multiple className="hidden" disabled={importandoTechfin} onChange={(e) => { importarTechfin(Array.from(e.target.files || [])); e.target.value = ''; }} />
+          </label>
           <button
             onClick={() => conciliarAutomatico(null)}
             disabled={conciliando || !totais.pendSaidas}
-            className="ml-auto inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-[#000638] text-white hover:bg-blue-900 disabled:opacity-40 text-[11px] font-medium"
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-[#000638] text-white hover:bg-blue-900 disabled:opacity-40 text-[11px] font-medium"
             title="Procura cada saída pendente de todas as contas em Liberação de Pagamento, Solicitações Crosby e Contas a Pagar; grava só as que batem com segurança"
           >
             {conciliando ? <ArrowsClockwise size={12} className="animate-spin" /> : <Lightning size={12} weight="fill" />} Conciliar saídas pendentes (todas as contas)
@@ -2299,10 +2336,25 @@ const DetalheConciliacao = ({ detalhe, onClose, onAnexar, onRemoverAnexo }) => {
             </div>
           )}
 
+          {c?.referencia?.techfin && (
+            <div className="rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-xs text-teal-900">
+              <p className="font-semibold mb-1">Repasse da Techfin (Pix TOTVS via Fiserv)</p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-1">
+                <span><span className="text-teal-700">Liquidado</span> {c.referencia.techfin.liquidacao ? String(c.referencia.techfin.liquidacao).slice(0, 16).replace('T', ' ') : '—'}</span>
+                <span><span className="text-teal-700">Pix</span> {c.referencia.techfin.pix}</span>
+                <span><span className="text-teal-700">Bruto</span> {fmt(c.referencia.techfin.bruto)}</span>
+                <span><span className="text-teal-700">Taxas</span> {fmt(c.referencia.techfin.taxas)} → líquido {fmt(c.referencia.techfin.valor)}</span>
+                {c.referencia.techfin.apelido && <span><span className="text-teal-700">Conta Techfin</span> {c.referencia.techfin.apelido}</span>}
+                <span className="col-span-2 md:col-span-3 font-mono text-[10px] break-all"><span className="text-teal-700 font-sans">E2E</span> {c.referencia.techfin.repasse}</span>
+              </div>
+              {c.referencia.techfin.naoLocalizados > 0 && <p className="mt-1 text-orange-800">{c.referencia.techfin.naoLocalizados} Pix sem título PIX correspondente no TOTVS (filial/valor/data).</p>}
+            </div>
+          )}
+
           {dados?.itens?.length > 1 && (
             <div className="border border-violet-200 rounded-lg overflow-hidden">
               <div className="px-3 py-2 bg-violet-50 text-xs font-semibold text-violet-900">
-                {dados.itens.length} duplicatas somando {fmt(dados.parcial?.totalUsado)}
+                {dados.itens.length} {dados.itens.every((it) => it.techfin) ? 'Pix do repasse' : 'duplicatas'} somando {fmt(dados.parcial?.totalUsado)}
               </div>
               <table className="w-full text-xs">
                 <thead className="bg-gray-50 text-gray-600">
@@ -2321,9 +2373,9 @@ const DetalheConciliacao = ({ detalhe, onClose, onAnexar, onRemoverAnexo }) => {
                     <tr key={i} className="border-t border-gray-100">
                       <td className="px-3 py-1.5"><Badge cfg={origemCfg(it.origem)}>{origemCfg(it.origem).label}</Badge></td>
                       <td className="px-3 py-1.5">{it.nome || '—'}{it.doc ? <span className="block text-[10px] text-gray-400">{fmtDoc(it.doc)}</span> : null}</td>
-                      <td className="px-3 py-1.5 font-mono">{it.duplicata ? String(it.duplicata).replace('|', '/') : '—'}</td>
+                      <td className="px-3 py-1.5 font-mono">{it.duplicata ? String(it.duplicata).replace('|', '/') : '—'}{it.techfin?.nsu ? <span className="block text-[9px] text-gray-400 break-all font-mono">{it.techfin.nsu}</span> : null}</td>
                       <td className="px-3 py-1.5">{fmtData(it.vencimento)}</td>
-                      <td className="px-3 py-1.5">{fmtData(it.data)}</td>
+                      <td className="px-3 py-1.5">{it.techfin?.pagamento ? <span>{String(it.techfin.pagamento).slice(0, 16).replace('T', ' ')}<span className="block text-[10px] text-gray-400">bruto {fmt(it.techfin.bruto)} − {fmt(it.techfin.taxa)}</span></span> : fmtData(it.data)}</td>
                       <td className="px-3 py-1.5 text-right">{fmt(it.valorDuplicata)}</td>
                       <td className="px-3 py-1.5 text-right font-semibold">{fmt(it.valorUsado)}{it.parcial ? <span className="ml-1 text-[10px] text-orange-700">parcial</span> : null}</td>
                     </tr>
