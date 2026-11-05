@@ -376,6 +376,13 @@ const financeiro = [
         roles: ['owner', 'admin', 'manager', 'user'],
       },
       {
+        name: 'Fluxo de Saldos',
+        href: '/fluxo-saldos',
+        icon: Money,
+        color: 'text-emerald-600',
+        roles: ['owner', 'admin', 'manager', 'user'],
+      },
+      {
         name: 'Esteira de Protesto',
         href: '/esteira-protesto',
         icon: Gavel,
