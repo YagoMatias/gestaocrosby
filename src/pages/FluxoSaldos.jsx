@@ -20,6 +20,9 @@ const FluxoSaldos = () => {
   const [edit, setEdit] = useState({}); // cd_empresa -> valor digitado do saldo contado
   const [salvando, setSalvando] = useState(null);
   const [pedindo, setPedindo] = useState(null);
+  const [puxandoVendas, setPuxandoVendas] = useState(false);
+  const [detalhe, setDetalhe] = useState({}); // cd_empresa -> { carregando, notas }
+  const [vendasPuxadas, setVendasPuxadas] = useState(false);
 
   const carregar = useCallback(async () => {
     setLoading(true);
@@ -41,7 +44,40 @@ const FluxoSaldos = () => {
 
   useEffect(() => {
     carregar();
+    setVendasPuxadas(false);
+    setDetalhe({});
   }, [carregar]);
+
+  // Puxa o dinheiro do dia das NFC-e (lento na 1ª vez; cacheado por nota).
+  const puxarVendas = async () => {
+    setPuxandoVendas(true);
+    setErro(null);
+    try {
+      const r = await fetch(`${BASE}/?dia=${dia}&vendas=1`);
+      if (!r.ok) throw new Error(`vendas HTTP ${r.status}`);
+      setDados(await r.json());
+      setVendasPuxadas(true);
+    } catch (e) {
+      setErro(`Não consegui puxar as vendas do dia: ${e.message}`);
+    } finally {
+      setPuxandoVendas(false);
+    }
+  };
+
+  const verNotas = async (loja) => {
+    if (detalhe[loja.cd_empresa]?.notas) {
+      setDetalhe((p) => ({ ...p, [loja.cd_empresa]: undefined }));
+      return;
+    }
+    setDetalhe((p) => ({ ...p, [loja.cd_empresa]: { carregando: true } }));
+    try {
+      const r = await fetch(`${BASE}/dia-detalhe?loja=${loja.cd_empresa}&dia=${dia}`);
+      const j = await r.json();
+      setDetalhe((p) => ({ ...p, [loja.cd_empresa]: { notas: j.detalhe || [], qtd: j.qtd_notas, dinheiro: j.dinheiro } }));
+    } catch (e) {
+      setDetalhe((p) => ({ ...p, [loja.cd_empresa]: { erro: e.message } }));
+    }
+  };
 
   const salvarPartida = async (loja) => {
     const valor = parseFloat(String(edit[loja.cd_empresa]).replace(',', '.'));
@@ -133,11 +169,11 @@ const FluxoSaldos = () => {
         iconColor="text-emerald-600"
       />
 
-      <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-        A fonte do <b>dinheiro do dia</b> (vendas em dinheiro das NFC-e) ainda está sendo configurada
-        com o Tadeu (filtro de data e de/para das lojas). Por enquanto o <b>saldo em caixa</b> usa o
-        <b> valor contado</b> que você informar por loja. O cálculo da <b>sangria</b> e o
-        <b> pedido de retirada</b> já funcionam.
+      <div className="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+        O <b>saldo em caixa</b> = <b>saldo contado</b> (que você informa por loja) + <b>dinheiro do dia</b>
+        (vendas em dinheiro das NFC-e). Clique em <b>"Puxar vendas do dia"</b> para calcular o dinheiro do
+        dia (demora um pouco na 1ª vez; depois fica em cache). A <b>sangria</b> e o <b>pedido de retirada</b>
+        usam esse saldo.
       </div>
 
       <div className="mt-4 flex flex-wrap items-end gap-2">
@@ -159,6 +195,17 @@ const FluxoSaldos = () => {
           {loading ? <CircleNotch size={16} className="animate-spin" /> : <ArrowsClockwise size={16} />}
           Atualizar
         </button>
+        <button
+          type="button"
+          onClick={puxarVendas}
+          disabled={puxandoVendas}
+          title="Calcula o dinheiro do dia das NFC-e por loja (demora um pouco na 1ª vez)"
+          className="flex items-center gap-1 bg-emerald-600 text-white px-3 py-1.5 rounded-lg hover:bg-emerald-700 disabled:opacity-50 font-bold text-xs uppercase tracking-wide shadow-md h-8"
+        >
+          {puxandoVendas ? <CircleNotch size={16} className="animate-spin" /> : <Money size={16} />}
+          {vendasPuxadas ? 'Recalcular vendas' : 'Puxar vendas do dia'}
+        </button>
+        {puxandoVendas && <span className="text-xs text-amber-700">Puxando vendas (pode levar alguns minutos)…</span>}
         <div className="ml-auto text-xs text-gray-600">
           Sangria disponível (total): <b className="text-emerald-700">{brl(totalSangria)}</b>
         </div>
@@ -184,10 +231,14 @@ const FluxoSaldos = () => {
           <tbody>
             {lojas.map((l) => {
               const emEdicao = edit[l.cd_empresa] !== undefined;
+              const det = detalhe[l.cd_empresa];
               return (
-                <tr key={l.cd_empresa} className="border-t border-gray-100 hover:bg-[#f8f9fb]">
+              <React.Fragment key={l.cd_empresa}>
+                <tr className="border-t border-gray-100 hover:bg-[#f8f9fb]">
                   <td className="px-3 py-2 font-medium text-[#000638]">
-                    {l.loja} <span className="text-gray-400 text-xs">({l.cd_empresa})</span>
+                    <button type="button" onClick={() => verNotas(l)} className="hover:underline text-left" title="Ver as vendas em dinheiro do dia">
+                      {l.loja} <span className="text-gray-400 text-xs">({l.cd_empresa})</span>
+                    </button>
                   </td>
                   <td className="px-3 py-2 text-right">
                     <div className="flex items-center justify-end gap-1">
@@ -227,6 +278,33 @@ const FluxoSaldos = () => {
                     </button>
                   </td>
                 </tr>
+                {det && (
+                  <tr className="bg-[#f8f9fb]">
+                    <td colSpan={7} className="px-4 py-2">
+                      {det.carregando && <span className="text-xs text-gray-500">Carregando vendas em dinheiro…</span>}
+                      {det.erro && <span className="text-xs text-red-600">Erro: {det.erro}</span>}
+                      {det.notas && (
+                        <div className="text-xs">
+                          <div className="font-semibold text-[#000638] mb-1">
+                            Vendas em dinheiro de {l.loja} em {dados?.dia}: {det.qtd} nota(s), total {brl(det.dinheiro)}
+                          </div>
+                          {det.notas.length ? (
+                            <div className="flex flex-wrap gap-x-4 gap-y-0.5">
+                              {det.notas.map((n) => (
+                                <span key={n.accessKey} className="text-gray-600">
+                                  NF {n.invoiceCode}: <b>{brl(n.dinheiro)}</b>{n.troco ? ` (troco ${brl(n.troco)})` : ''}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-gray-400">Nenhuma venda em dinheiro no dia.</span>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
               );
             })}
             {!lojas.length && (
