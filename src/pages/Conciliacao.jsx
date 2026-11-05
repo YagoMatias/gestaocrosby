@@ -64,6 +64,7 @@ const ORIGENS = {
   PAGARME_SAQUE: { label: 'Saque Pagar.me', cor: 'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-300' },
   CARTAO_ESTORNADO: { label: 'Compra estornada', cor: 'bg-orange-100 text-orange-800 border-orange-300' },
   APLICACAO_STONE: { label: 'Aplicação Stone', cor: 'bg-sky-100 text-sky-800 border-sky-300' },
+  PRO_LABORE: { label: 'Pró-labore', cor: 'bg-purple-100 text-purple-800 border-purple-300' },
   LIBERACAO: { label: 'Liberação de Pagamento', cor: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
   SOLICITACAO: { label: 'Solicitações Crosby', cor: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
   TOTVS_CP: { label: 'Contas a Pagar (TOTVS)', cor: 'bg-blue-100 text-blue-800 border-blue-300' },
@@ -78,6 +79,10 @@ const ehPixMaquininha = (l) => l.categoria === 'pix' && /MAQUININHA/i.test(`${l.
 const ehPixTotvs = (l) => l.categoria === 'pix' && /FISERV/i.test(l.contraparte_banco || ''); // QR Code gerado no TOTVS (líquido da taxa 0,79)
 const ehPixCliente = (l) => l.valor > 0 && l.categoria === 'pix' && !l.transferencia_id && !/DEVOLU/i.test(l.descricao || '');
 const podeConciliarLinha = (l, conta) => l.valor < 0 || ehPixCliente(l) || (String(conta?.banco || '').toUpperCase() === 'STONE' && ['antecipacao', 'cartao'].includes(l.categoria));
+const PESSOAS_PRO_LABORE = [
+  { id: 'fabio', pessoa: 'FABIO FERREIRA DE LIMA AZEVEDO', cpf: '06704197451', curto: 'Fabio' },
+  { id: 'felipe', pessoa: 'FELIPE FERREIRA DE LIMA AZEVEDO', cpf: '06451367435', curto: 'Felipe' },
+];
 const refDe = (c) => ({ id: c.id, nome: c.nome, doc: c.doc, valor: c.valor, valorDuplicata: c.valorDuplicata ?? c.valor, parcial: !!c.parcial, restanteDepois: c.restanteDepois ?? null, data: c.data, vencimento: c.vencimento, empresa: c.empresa, detalhe: c.detalhe, duplicata: c.duplicata, motivos: c.motivos });
 const justDe = (c) => [c.parcial ? 'PARCIAL' : null, c.nome, c.detalhe].filter(Boolean).join(' · ');
 const STORAGE_BUCKET = 'solicitacoes-crosby';
@@ -564,6 +569,10 @@ const Conciliacao = () => {
     await apiConc(`${API}/conciliacao/${id}`, { method: 'DELETE' });
     await carregar();
   };
+  const justificarConciliacao = async (id, justificativa) => {
+    await apiConc(`${API}/conciliacao/${id}/justificativa`, { method: 'PATCH', body: JSON.stringify({ justificativa }) });
+    await carregar();
+  };
   const buscarCandidatos = async (lancamentoId) => (await apiConc(`${API}/conciliacao/candidatos?lancamentoId=${lancamentoId}`)).data;
 
   // ── CTA editável (salvo na conta importada) ──
@@ -915,6 +924,7 @@ const Conciliacao = () => {
           conciliando={conciliando}
           salvar={salvarConciliacao}
           desfazer={desfazerConciliacao}
+          justificar={justificarConciliacao}
           buscar={buscarCandidatos}
         />
       )}
@@ -923,11 +933,26 @@ const Conciliacao = () => {
 };
 
 // ─── modal: extrato da conta, linha a linha ────────────────────
-const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, conciliando, salvar, desfazer, buscar }) => {
+const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, conciliando, salvar, desfazer, justificar, buscar }) => {
   const fc = c.fluxo;
   const r = resumo || { lancamentos: [], entradas: 0, saidas: 0, transfEntradas: 0, transfSaidas: 0, qtd: 0, pendencias: 0, pendSaidas: 0, pendEntradas: 0 };
   const [tipo, setTipo] = useState('TODOS');
-  const [situacao, setSituacao] = useState('PENDENTES'); // PENDENTES | OK | TODAS
+  const [situacao, setSituacao] = useState('PENDENTES'); // PENDENTES | OK | TODAS | PROLABORE
+  const [selLinhas, setSelLinhas] = useState([]); // ids de saídas pendentes marcadas para mandar ao pró-labore
+  const proLabore = useMemo(() => (r.lancamentos || []).filter((l) => l.proLabore || l.conciliacao?.origem === 'PRO_LABORE'), [r]);
+  const mandarProLabore = async (pessoaId) => {
+    if (!selLinhas.length) return;
+    const pessoa = PESSOAS_PRO_LABORE.find((p) => p.id === pessoaId);
+    setOcupado('lote');
+    try {
+      for (const id of selLinhas) await salvar(id, 'PRO_LABORE', { pessoaId: pessoa.id, pessoa: pessoa.pessoa, cpf: pessoa.cpf }, null, null);
+      setSelLinhas([]);
+    } catch (e) {
+      setErroModal(e.message);
+    } finally {
+      setOcupado(null);
+    }
+  };
   const [busca, setBusca] = useState('');
   const [picker, setPicker] = useState(null); // { lancamento, candidatos, avisos, decisao }
   const [selecao, setSelecao] = useState([]); // candidatos marcados (podem somar a saída)
@@ -1114,6 +1139,7 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
     const q = busca.trim().toLowerCase();
     return (r.lancamentos || []).filter((l) => {
       if (tipo !== 'TODOS' && l.tipo !== tipo) return false;
+      if (situacao === 'PROLABORE') return false;
       if (situacao === 'PENDENTES' && !l.pendente) return false;
       if (situacao === 'OK' && l.pendente) return false;
       if (q && !`${l.descricao} ${l.memo} ${l.nomeExibicao || ''} ${l.contraparte_nome || ''} ${l.documento || ''} ${l.forma} ${Math.abs(l.valor)} ${l.conciliacao?.justificativa || ''}`.toLowerCase().includes(q)) return false;
@@ -1210,7 +1236,23 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
           <button onClick={() => setSituacao('TODAS')} className={chip(situacao === 'TODAS')}>
             Todas ({r.lancamentos?.length || 0})
           </button>
+          <button onClick={() => setSituacao('PROLABORE')} className={chip(situacao === 'PROLABORE', 'bg-purple-600 text-white')} title="Transferências para os sócios (pessoa física): Fabio e Felipe">
+            Pró-labore ({proLabore.length})
+          </button>
           <span className="w-px h-5 bg-gray-200 mx-1" />
+          {selLinhas.length > 0 && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-purple-50 border border-purple-200 text-[11px] text-purple-900">
+              {selLinhas.length} marcada(s) → pró-labore de
+              {PESSOAS_PRO_LABORE.map((p) => (
+                <button key={p.id} onClick={() => mandarProLabore(p.id)} disabled={ocupado === 'lote'} className="px-2 py-0.5 rounded bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 font-medium">
+                  {p.curto}
+                </button>
+              ))}
+              <button onClick={() => setSelLinhas([])} className="ml-1 text-purple-700 hover:underline">
+                limpar
+              </button>
+            </span>
+          )}
           <button onClick={() => setTipo('TODOS')} className={chip(tipo === 'TODOS')}>
             Todos tipos
           </button>
@@ -1239,9 +1281,11 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
         </div>
 
         <div className="flex-1 overflow-auto">
-          <table className="w-full text-sm hidden md:table">
+          {situacao === 'PROLABORE' && <PainelProLabore linhas={proLabore} salvar={salvar} justificar={justificar} desfazer={desfazer} setErro={setErroModal} />}
+          <table className={`w-full text-sm hidden ${situacao === 'PROLABORE' ? '' : 'md:table'}`}>
             <thead className="sticky top-0 bg-gray-50 z-10">
               <tr className="border-b border-gray-200">
+                <Th className="w-6" />
                 <Th>Data</Th>
                 <Th>Tipo</Th>
                 <Th>Forma</Th>
@@ -1259,7 +1303,12 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
               {lancamentos.map((l) => {
                 const tcfg = TIPOS[l.tipo] || TIPOS.SAIDA;
                 return (
-                  <tr key={l.id} className={`border-b border-gray-100 hover:bg-gray-50 text-xs ${l.tipo === 'TRANSFERENCIA' ? 'bg-amber-50/40' : ''} ${!l.pendente ? 'opacity-90' : ''}`}>
+                  <tr key={l.id} className={`border-b border-gray-100 hover:bg-gray-50 text-xs ${l.tipo === 'TRANSFERENCIA' ? 'bg-amber-50/40' : ''} ${!l.pendente ? 'opacity-90' : ''} ${selLinhas.includes(l.id) ? 'bg-purple-50' : ''}`}>
+                    <td className="px-2 py-2 text-center">
+                      {l.pendente && l.valor < 0 && (
+                        <input type="checkbox" checked={selLinhas.includes(l.id)} onChange={() => setSelLinhas((prev) => (prev.includes(l.id) ? prev.filter((x) => x !== l.id) : [...prev, l.id]))} className="accent-purple-600" title="Marcar para mandar ao pró-labore" />
+                      )}
+                    </td>
                     <td className="px-3 py-2 whitespace-nowrap">
                       {fmtData(l.data)} <span className="text-gray-400">{l.hora?.slice(0, 5)}</span>
                     </td>
@@ -1311,7 +1360,7 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
               {!lancamentos.length && (
                 <tr>
                   <td colSpan={11} className="px-3 py-8 text-center text-gray-400">
-                    {situacao === 'PENDENTES' ? 'Nenhuma pendência com esses filtros — tudo conciliado.' : 'Nenhum lançamento com esses filtros.'}
+                    {situacao === 'PENDENTES' ? 'Nenhuma pendência com esses filtros — tudo conciliado.' : situacao === 'PROLABORE' ? '' : 'Nenhum lançamento com esses filtros.'}
                   </td>
                 </tr>
               )}
@@ -1650,6 +1699,145 @@ const CelulaConciliacao = ({ l, podeConciliar = l.valor < 0, ocupado, onConcilia
       <button onClick={onJustificar} className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 text-[11px]" title="Justificar manualmente">
         <ChatText size={11} /> Justificar
       </button>
+    </div>
+  );
+};
+
+// ─── painel Pró-labore: transferências aos sócios, com justificativa por linha ─
+const PainelProLabore = ({ linhas, salvar, justificar, desfazer, setErro }) => {
+  const [textos, setTextos] = useState({});
+  const [salvando, setSalvando] = useState(null);
+  const pessoaDe = (l) => l.proLabore?.pessoaId || l.conciliacao?.referencia?.pessoaId || PESSOAS_PRO_LABORE.find((p) => p.cpf === l.conciliacao?.referencia?.cpf)?.id || null;
+  const porPessoa = PESSOAS_PRO_LABORE.map((p) => ({ ...p, linhas: linhas.filter((l) => pessoaDe(l) === p.id) }));
+  const total = linhas.reduce((s, l) => s + Math.abs(l.valor), 0);
+  const gravarJust = async (l) => {
+    const texto = (textos[l.id] ?? '').trim();
+    if (!texto) return;
+    setSalvando(l.id);
+    try {
+      const c = l.conciliacao;
+      if (c?.id) await justificar(c.id, texto);
+      else await salvar(l.id, 'PRO_LABORE', { pessoaId: l.proLabore?.pessoaId || c?.referencia?.pessoaId, cpf: l.proLabore?.cpf || c?.referencia?.cpf }, texto, null);
+      setTextos((t) => ({ ...t, [l.id]: undefined }));
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setSalvando(null);
+    }
+  };
+  const tirar = async (l) => {
+    if (!l.conciliacao?.id) return;
+    if (!window.confirm('Tirar esta saída do pró-labore? Ela volta a ficar pendente.')) return;
+    setSalvando(l.id);
+    try {
+      await desfazer(l.conciliacao.id);
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setSalvando(null);
+    }
+  };
+  return (
+    <div className="p-4 space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="rounded-lg border border-purple-200 bg-purple-50 px-3 py-2">
+          <p className="text-[10px] uppercase tracking-wide text-purple-700">Pró-labore no período</p>
+          <p className="text-lg font-bold text-purple-900">{fmt(total)}</p>
+          <p className="text-[11px] text-purple-700">{linhas.length} transferência(s)</p>
+        </div>
+        {porPessoa.map((p) => (
+          <div key={p.id} className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+            <p className="text-[10px] uppercase tracking-wide text-gray-400">{p.pessoa}</p>
+            <p className="text-lg font-bold text-gray-800">{fmt(p.linhas.reduce((s, l) => s + Math.abs(l.valor), 0))}</p>
+            <p className="text-[11px] text-gray-500">{fmtDoc(p.cpf)} · {p.linhas.length} transferência(s)</p>
+          </div>
+        ))}
+      </div>
+      {linhas.length === 0 ? (
+        <p className="text-sm text-gray-400 py-6 text-center">Nenhuma transferência para os sócios neste período. Marque saídas na lista (caixa à esquerda) e mande para o pró-labore de Fabio ou Felipe.</p>
+      ) : (
+        <div className="border border-gray-200 rounded-lg overflow-hidden">
+          <table className="w-full text-xs">
+            <thead className="bg-gray-50 text-gray-600">
+              <tr>
+                <Th>Data</Th>
+                <Th>Sócio</Th>
+                <Th>Forma / histórico</Th>
+                <Th>Banco destino</Th>
+                <Th right>Valor</Th>
+                <Th>Origem</Th>
+                <Th>O que foi essa saída (justificativa)</Th>
+                <Th />
+              </tr>
+            </thead>
+            <tbody>
+              {linhas.map((l) => {
+                const c = l.conciliacao || { id: null, origem: null, referencia: {}, justificativa: '' };
+                const auto = !c.id;
+                const pessoaId = pessoaDe(l);
+                const pessoaObj = PESSOAS_PRO_LABORE.find((p) => p.id === pessoaId);
+                const ocfg = c.origem ? origemCfg(c.origem) : null;
+                const atual = textos[l.id] ?? '';
+                return (
+                  <tr key={l.id} className="border-t border-gray-100 align-top">
+                    <td className="px-3 py-2 whitespace-nowrap">{fmtData(l.data)}</td>
+                    <td className="px-3 py-2">
+                      <span className="font-medium text-gray-800">{pessoaObj?.curto || c.referencia?.pessoa || '—'}</span>
+                      <span className="block text-[10px] text-gray-400">{pessoaObj?.cpf ? fmtDoc(pessoaObj.cpf) : ''}</span>
+                    </td>
+                    <td className="px-3 py-2 max-w-[260px]">
+                      <span className="text-gray-700">{l.forma}</span>
+                      <span className="block text-[11px] text-gray-500 truncate" title={l.memo}>{l.descricao} · {l.nomeExibicao || l.contraparte_nome || ''}</span>
+                    </td>
+                    <td className="px-3 py-2 text-gray-500 max-w-[150px] truncate" title={l.contraparte_banco || ''}>{l.contraparte_banco || '—'}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-red-600 whitespace-nowrap">{fmt(Math.abs(l.valor))}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {!c.origem ? (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-100 text-amber-800">pendente</span>
+                      ) : c.origem === 'PRO_LABORE' ? (
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] ${auto ? 'bg-gray-100 text-gray-600' : 'bg-purple-100 text-purple-800'}`}>{auto ? 'pró-labore automático' : `marcado${c.usuario ? ` por ${c.usuario}` : ''}`}</span>
+                      ) : (
+                        <Badge cfg={ocfg}>{ocfg.label}</Badge>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 min-w-[260px]">
+                      {c.id && textos[l.id] === undefined ? (
+                        <div className="flex items-start gap-2">
+                          <span className="text-gray-800 flex-1">{c.justificativa}</span>
+                          <button onClick={() => setTextos((t) => ({ ...t, [l.id]: c.justificativa || '' }))} className="text-[11px] text-blue-700 hover:underline shrink-0">
+                            editar
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <input
+                            value={atual}
+                            onChange={(e) => setTextos((t) => ({ ...t, [l.id]: e.target.value }))}
+                            onKeyDown={(e) => e.key === 'Enter' && gravarJust(l)}
+                            placeholder="ex.: retirada de outubro, reembolso de despesa…"
+                            className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded-md"
+                          />
+                          <button onClick={() => gravarJust(l)} disabled={salvando === l.id || !atual.trim()} className="px-2 py-1 rounded-md bg-[#000638] text-white text-[11px] disabled:opacity-40">
+                            {salvando === l.id ? <ArrowsClockwise size={11} className="animate-spin" /> : 'Salvar'}
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-2 py-2 text-right">
+                      {c.id && (
+                        <button onClick={() => tirar(l)} title="Tirar do pró-labore (volta a pendente)" className="text-gray-300 hover:text-red-600">
+                          <ArrowCounterClockwise size={13} />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="text-[11px] text-gray-400">Entram aqui, automaticamente, as saídas para o CPF ou o nome completo de Fabio e Felipe (pessoa física). Transferências para as empresas dos sócios ou para contas Stone/Mêntore do grupo não entram. Para incluir outra saída, marque a caixa dela na lista e use o botão do sócio.</p>
     </div>
   );
 };
@@ -2026,7 +2214,18 @@ const DetalheConciliacao = ({ detalhe, onClose, onAnexar, onRemoverAnexo }) => {
             </div>
           )}
 
-          {transferencia && !['BOLETO_TARIFA', 'PIX_DEVOLVIDO', 'PAGARME_SAQUE', 'CARTAO_ESTORNADO', 'APLICACAO_STONE'].includes(transferencia.origem) && (
+          {transferencia && transferencia.origem === 'PRO_LABORE' && (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              <Campo label="Tipo">Pró-labore (transferência para sócio, pessoa física)</Campo>
+              <Campo label="Sócio">{transferencia.referencia?.pessoa || '—'}{transferencia.referencia?.cpf ? <span className="block text-[11px] text-gray-500">{fmtDoc(transferencia.referencia.cpf)}</span> : null}</Campo>
+              <Campo label="Justificativa">{transferencia.justificativa}</Campo>
+              <div className="col-span-2 md:col-span-3">
+                <Campo label="Regra">Reconhecido pelo CPF ou pelo nome completo do sócio na contraparte; para justificar o que foi essa saída, use a aba Pró-labore do extrato</Campo>
+              </div>
+            </div>
+          )}
+
+          {transferencia && !['BOLETO_TARIFA', 'PIX_DEVOLVIDO', 'PAGARME_SAQUE', 'CARTAO_ESTORNADO', 'APLICACAO_STONE', 'PRO_LABORE'].includes(transferencia.origem) && (
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               <Campo label="Tipo">Transferência entre contas do grupo</Campo>
               <Campo label="Outra conta">{transferencia.referencia?.outraConta ? `${transferencia.referencia.outraConta.apelido} (${bancoCfg(transferencia.referencia.outraConta.banco).label})` : '—'}</Campo>
@@ -2036,7 +2235,7 @@ const DetalheConciliacao = ({ detalhe, onClose, onAnexar, onRemoverAnexo }) => {
             </div>
           )}
 
-          {dados && !o && c?.origem === 'MANUAL' && (
+          {dados && !o && ['MANUAL', 'PRO_LABORE'].includes(c?.origem) && (
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               <Campo label="Justificativa">{c.justificativa}</Campo>
               <Campo label="Por">{c.usuario || '—'}</Campo>
