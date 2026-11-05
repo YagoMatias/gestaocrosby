@@ -74,6 +74,7 @@ const ORIGENS = {
   MANUAL: { label: 'Justificado', cor: 'bg-gray-100 text-gray-700 border-gray-300' },
   MULTIPLO: { label: 'Várias duplicatas', cor: 'bg-violet-100 text-violet-800 border-violet-300' },
   TECHFIN: { label: 'Pix Techfin', cor: 'bg-teal-100 text-teal-800 border-teal-300' },
+  FOLHA: { label: 'Folha (Dryland)', cor: 'bg-lime-100 text-lime-800 border-lime-300' },
 };
 const origemCfg = (o) => ORIGENS[o] || { label: o || '—', cor: 'bg-gray-100 text-gray-700 border-gray-300' };
 // referência gravada na conciliação (mesmos campos que o backend usa no lote)
@@ -85,7 +86,7 @@ const PESSOAS_PRO_LABORE = [
   { id: 'fabio', pessoa: 'FABIO FERREIRA DE LIMA AZEVEDO', cpf: '06704197451', curto: 'Fabio' },
   { id: 'felipe', pessoa: 'FELIPE FERREIRA DE LIMA AZEVEDO', cpf: '06451367435', curto: 'Felipe' },
 ];
-const refDe = (c) => ({ id: c.id, nome: c.nome, doc: c.doc, valor: c.valor, valorDuplicata: c.valorDuplicata ?? c.valor, parcial: !!c.parcial, restanteDepois: c.restanteDepois ?? null, data: c.data, vencimento: c.vencimento, empresa: c.empresa, detalhe: c.detalhe, duplicata: c.duplicata, motivos: c.motivos });
+const refDe = (c) => ({ id: c.id, nome: c.nome, doc: c.doc, valor: c.valor, valorDuplicata: c.valorDuplicata ?? c.valor, parcial: !!c.parcial, restanteDepois: c.restanteDepois ?? null, data: c.data, vencimento: c.vencimento, empresa: c.empresa, detalhe: c.detalhe, duplicata: c.duplicata, motivos: c.motivos, ...(c.folha ? { folha: c.folha } : {}) });
 const justDe = (c) => [c.parcial ? 'PARCIAL' : null, c.nome, c.detalhe].filter(Boolean).join(' · ');
 const STORAGE_BUCKET = 'solicitacoes-crosby';
 const uploadAnexo = async (file, prefix) => {
@@ -1978,6 +1979,95 @@ const TabelaCandidatos = ({ candidatos, selecao, onToggle, onUsar, ocupado, keyC
   </table>
 );
 
+// ─── folha do Dryland (contas Mêntore) ─────────────────────────
+const fmtComp = (c) => (c ? String(c).slice(0, 7).split('-').reverse().join('/') : '—');
+const DetalheFolha = ({ folha, valorLinha }) => {
+  const ev = folha.eventos || [];
+  const prov = ev.filter((e) => e.tipo === 'P');
+  const desc = ev.filter((e) => e.tipo === 'D');
+  const somaP = prov.reduce((s, e) => s + Number(e.valor || 0), 0);
+  const somaD = desc.reduce((s, e) => s + Number(e.valor || 0), 0);
+  const r = folha.rescisao;
+  const esperado = folha.esperado;
+  const bate = esperado != null && valorLinha != null && Math.abs(Math.abs(valorLinha) - esperado) <= 0.051;
+  const tipoLabel = { salario: 'Salário', ferias: 'Férias', adiantamento: 'Adiantamento', decimo: '13º salário', rescisao: 'Rescisão' }[folha.tipo] || folha.tipo;
+  return (
+    <div className="rounded-lg border border-lime-200 overflow-hidden">
+      <div className="px-3 py-2 bg-lime-50 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-lime-900">
+        <span className="font-semibold">{tipoLabel} · {folha.nome}</span>
+        <span>competência {fmtComp(folha.competencia)}</span>
+        {folha.empresa && <span>{folha.empresa}</span>}
+        {folha.secao && <span>loja {folha.secao}</span>}
+        {folha.funcao && <span>{folha.funcao}</span>}
+        {folha.chapa && <span>chapa {folha.chapa}</span>}
+        {folha.admissao && <span>admissão {folha.admissao}</span>}
+        <span className="ml-auto text-[10px] text-lime-700">fonte: Dryland DP/RH</span>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-3">
+        {folha.tipo !== 'rescisao' && (
+          <>
+            <Campo label="Salário contratual">{folha.salario != null ? fmt(folha.salario) : '—'}</Campo>
+            <Campo label="Proventos">{fmt(folha.proventos)}</Campo>
+            <Campo label="Descontos">{fmt(folha.descontos)}</Campo>
+            <Campo label="Líquido da folha">{fmt(folha.liquido)}</Campo>
+          </>
+        )}
+        {r && (
+          <>
+            <Campo label="Verbas líquidas">{fmt(r.valorRescisao)}</Campo>
+            <Campo label="Aviso prévio indenizado">{fmt(r.avisoPrevio)}</Campo>
+            <Campo label="Multa FGTS (guia, não vai ao funcionário)">{fmt(r.multa)}</Campo>
+            <Campo label="Total da rescisão">{fmt(r.total)}</Campo>
+          </>
+        )}
+        <div className="col-span-2 md:col-span-4">
+          <Campo label="Valor esperado × pago">
+            <span className={bate ? 'text-green-700 font-semibold' : 'text-orange-700 font-semibold'}>
+              {esperado != null ? fmt(esperado) : '—'} × {valorLinha != null ? fmt(Math.abs(valorLinha)) : '—'} {bate ? '· bate' : esperado != null ? `· diferença ${fmt(Math.abs(valorLinha) - esperado)}` : ''}
+            </span>
+            {folha.comoCalculado && <span className="block text-[10px] text-gray-500">{folha.comoCalculado}</span>}
+            {folha.nomeExtrato && folha.nomeExtrato !== folha.nome && <span className="block text-[10px] text-gray-500">no extrato: {folha.nomeExtrato}</span>}
+          </Campo>
+        </div>
+      </div>
+      {ev.length > 0 && (
+        <table className="w-full text-xs border-t border-lime-100">
+          <thead className="bg-gray-50 text-gray-600">
+            <tr>
+              <Th>Cód.</Th>
+              <Th>Rubrica</Th>
+              <Th>Ref.</Th>
+              <Th right>Provento</Th>
+              <Th right>Desconto</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {ev.map((e, i) => (
+              <tr key={i} className="border-t border-gray-100">
+                <td className="px-3 py-1 font-mono text-gray-500">{e.cod || '—'}</td>
+                <td className="px-3 py-1">{e.desc}</td>
+                <td className="px-3 py-1 text-gray-500">{e.ref ?? '—'}</td>
+                <td className="px-3 py-1 text-right text-green-700">{e.tipo === 'P' ? fmt(e.valor) : ''}</td>
+                <td className="px-3 py-1 text-right text-red-700">{e.tipo === 'D' ? fmt(e.valor) : ''}</td>
+              </tr>
+            ))}
+            <tr className="border-t border-gray-200 bg-gray-50 font-semibold">
+              <td className="px-3 py-1" colSpan={3}>Totais {folha.tipo === 'rescisao' ? '(bruto − deduções)' : '(proventos − descontos = líquido)'}</td>
+              <td className="px-3 py-1 text-right text-green-700">{fmt(somaP)}</td>
+              <td className="px-3 py-1 text-right text-red-700">{fmt(somaD)}</td>
+            </tr>
+            <tr className="bg-gray-50 font-semibold">
+              <td className="px-3 py-1" colSpan={3}>Líquido</td>
+              <td className="px-3 py-1 text-right" colSpan={2}>{fmt(somaP - somaD)}</td>
+            </tr>
+          </tbody>
+        </table>
+      )}
+      {r?.obs && <p className="px-3 py-2 text-[11px] text-gray-500 border-t border-lime-100">{r.obs}</p>}
+    </div>
+  );
+};
+
 // ─── detalhe da conciliação ────────────────────────────────────
 const pct = (v) => (v == null ? '—' : `${Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`);
 const SITUACAO_CRUZ = {
@@ -2384,6 +2474,8 @@ const DetalheConciliacao = ({ detalhe, onClose, onAnexar, onRemoverAnexo }) => {
               </table>
             </div>
           )}
+
+          {dados?.folha && <DetalheFolha folha={dados.folha} valorLinha={l?.valor} />}
 
           {o?.stone && <DetalheStone o={o} />}
 
