@@ -150,12 +150,13 @@ const NewExtratoBancario = () => {
   const paginaAtual = Math.min(pagina, totalPaginas);
   const inicio = (paginaAtual - 1) * LINHAS_POR_PAGINA;
   const lancamentosPagina = lancamentos.slice(inicio, inicio + LINHAS_POR_PAGINA);
-  const saldoFinal = useMemo(() => {
-    // último saldo após de cada conta no período
+  // último "saldo após" de CADA conta no período; o card soma as contas do filtro
+  const saldosPorConta = useMemo(() => {
     const porConta = new Map();
-    for (const l of lancamentos) porConta.set(`${l.banco}|${l.conta}`, l.saldo_apos);
-    return [...porConta.values()].reduce((s, v) => s + (Number(v) || 0), 0);
+    for (const l of lancamentos) porConta.set(`${l.banco}|${l.conta}`, { banco: l.banco, conta: l.conta, dv: l.conta_dv, titular: l.titular, data: l.data, saldo: Number(l.saldo_apos) || 0 });
+    return [...porConta.values()];
   }, [lancamentos]);
+  const saldoFinal = useMemo(() => saldosPorConta.reduce((s, c) => s + c.saldo, 0), [saldosPorConta]);
 
   return (
     <div className="min-h-screen bg-gray-50 px-3 py-4 md:p-6 pb-24 md:pb-6">
@@ -295,7 +296,49 @@ const NewExtratoBancario = () => {
           <Kpi label="Recebido (entradas)" value={fmt(resumo.entradas)} sub={`${resumo.qtdEntradas} lançamentos`} tone="text-green-600" Icon={ArrowDown} accent="bg-green-50 text-green-600" />
           <Kpi label="Pago (saídas)" value={fmt(resumo.saidas)} sub={`${resumo.qtdSaidas} lançamentos`} tone="text-red-600" Icon={ArrowUp} accent="bg-red-50 text-red-600" />
           <Kpi label="Resultado" value={fmt(resumo.resultado)} sub="entradas − saídas" tone={resumo.resultado >= 0 ? 'text-blue-700' : 'text-red-700'} Icon={Receipt} accent="bg-blue-50 text-blue-600" />
-          <Kpi label="Saldo final (contas)" value={fmt(saldoFinal)} sub="último saldo após do período" Icon={Bank} accent="bg-slate-100 text-slate-600" />
+          <Kpi
+            label={saldosPorConta.length > 1 ? `Saldo final (soma de ${saldosPorConta.length} contas)` : 'Saldo final da conta'}
+            value={fmt(saldoFinal)}
+            sub={saldosPorConta.length > 1 ? saldosPorConta.map((c) => `${bancoCfg(c.banco).label} ${c.conta}: ${fmt(c.saldo)}`).join(' · ') : saldosPorConta[0] ? `último lançamento em ${fmtData(saldosPorConta[0].data)}` : ''}
+            Icon={Bank}
+            accent="bg-slate-100 text-slate-600"
+          />
+        </div>
+      )}
+
+      {/* saldo final por conta (o card acima é a soma; aqui cada conta separada) */}
+      {resumo && saldosPorConta.length > 1 && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-4">
+          <div className="px-3 py-2 border-b border-gray-200 bg-gray-50 text-xs font-semibold text-gray-700">Saldo final por conta no período</div>
+          <table className="w-full text-xs">
+            <thead className="bg-gray-50 text-gray-600">
+              <tr>
+                <Th>Conta</Th>
+                <Th>Titular</Th>
+                <Th>Último lançamento</Th>
+                <Th right>Saldo após</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {saldosPorConta.map((c) => (
+                <tr key={`${c.banco}|${c.conta}`} className="border-t border-gray-100">
+                  <td className="px-3 py-1.5 whitespace-nowrap">
+                    <Badge cfg={bancoCfg(c.banco)}>
+                      {bancoCfg(c.banco).label} {c.conta}
+                      {c.dv ? `-${c.dv}` : ''}
+                    </Badge>
+                  </td>
+                  <td className="px-3 py-1.5">{c.titular || '—'}</td>
+                  <td className="px-3 py-1.5 whitespace-nowrap">{fmtData(c.data)}</td>
+                  <td className={`px-3 py-1.5 text-right font-semibold ${c.saldo < 0 ? 'text-red-600' : 'text-gray-800'}`}>{fmt(c.saldo)}</td>
+                </tr>
+              ))}
+              <tr className="border-t border-gray-200 bg-gray-50 font-semibold">
+                <td className="px-3 py-1.5" colSpan={3}>Soma das contas</td>
+                <td className="px-3 py-1.5 text-right">{fmt(saldoFinal)}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       )}
 
