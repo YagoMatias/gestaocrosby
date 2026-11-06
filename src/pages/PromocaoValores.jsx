@@ -15,8 +15,13 @@
 // de 500 em 500, gravação de 5.000 em 5.000). Lote que falha é repetido e, se
 // continuar falhando, o loop segue e os itens ficam para reenviar depois.
 //
+// Sem planilha: "Buscar produtos por nome e tamanho" monta lotes (nome com
+// qualquer termo E tamanho em qualquer um dos escolhidos) e vai somando na
+// mesma promoção. A base é o erp_produtos + o relatório de produtos acabados
+// do TOTVS importado em CSV (dá para atualizar pela própria tela).
+//
 // Backend: totvsrouter/promocaoValores.js (apigestaocrosby) em
-// /api/totvs/promocao-valores/{promocoes,preview,aplicar}.
+// /api/totvs/promocao-valores/{promocoes,preview,aplicar,buscar-produtos,base-produtos}.
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import {
@@ -36,6 +41,8 @@ import {
   Trash,
   Megaphone,
   CashRegister,
+  Plus,
+  X,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import useApiClient from '../hooks/useApiClient';
@@ -144,6 +151,317 @@ const SITUACAO = {
   erro: { label: 'Erro', cls: 'bg-red-100 text-red-800 border-red-300' },
 };
 
+// ─── Busca de produtos por nome / tamanho ────────────────────────────────────
+const TAMANHOS = [
+  { grupo: 'Infantil', itens: ['2', '4', '6', '8', '10', '12', '14', '16'] },
+  { grupo: 'Adulto', itens: ['PP', 'P', 'M', 'G', 'GG', 'XG', 'XGG', 'XGG2', 'U'] },
+  { grupo: 'King', itens: ['XL1', 'XL2', 'XL3', 'XL4'] },
+  { grupo: 'Numeração', itens: ['28', '30', '32', '34', '36', '38', '40', '42', '44', '46', '48', '50', '52', '54', '56', '58', '60'] },
+];
+const ATALHOS_TAMANHO = [
+  { nome: 'Infantis', tamanhos: ['2', '4', '6', '8', '10', '12', '14', 'P', 'PP'] },
+  { nome: 'King', tamanhos: ['GG', 'XG', 'XL1', 'XL2', 'XL3'] },
+];
+const separarTermos = (t) =>
+  String(t || '')
+    .split(/[,;\n]+/)
+    .map((x) => x.trim().toUpperCase())
+    .filter(Boolean);
+
+function BuscaProdutos({ apiMutate, codigosNaLista, ocupado, onAdicionar }) {
+  const [termos, setTermos] = useState([]);
+  const [termoTxt, setTermoTxt] = useState('');
+  const [tamanhos, setTamanhos] = useState([]);
+  const [outroTam, setOutroTam] = useState('');
+  const [buscandoProd, setBuscandoProd] = useState(false);
+  const [achados, setAchados] = useState(null); // { itens, filtro }
+  const [erroBusca, setErroBusca] = useState(null);
+  const [aviso, setAviso] = useState(null);
+  const [base, setBase] = useState(null);
+  const [importandoBase, setImportandoBase] = useState(null); // texto do progresso
+  const baseRef = useRef(null);
+
+  const carregarBase = useCallback(async () => {
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/totvs/promocao-valores/base-produtos`, { headers: { 'x-api-key': API_KEY } });
+      const j = await r.json();
+      if (j.success) setBase(j.data);
+    } catch {
+      /* só informativo */
+    }
+  }, []);
+  useEffect(() => {
+    carregarBase();
+  }, [carregarBase]);
+
+  const incluirTermos = (txt) => {
+    const novos = separarTermos(txt);
+    if (novos.length) setTermos((t) => [...new Set([...t, ...novos])]);
+    setTermoTxt('');
+  };
+  const alternarTam = (t) => setTamanhos((l) => (l.includes(t) ? l.filter((x) => x !== t) : [...l, t]));
+  const aplicarAtalho = (lista) =>
+    setTamanhos((l) => (lista.every((t) => l.includes(t)) ? l.filter((t) => !lista.includes(t)) : [...new Set([...l, ...lista])]));
+
+  const buscarProdutos = async () => {
+    const tTermos = [...new Set([...termos, ...separarTermos(termoTxt)])];
+    if (termoTxt.trim()) {
+      setTermos(tTermos);
+      setTermoTxt('');
+    }
+    if (!tTermos.length && !tamanhos.length) {
+      setErroBusca('Digite um termo do nome ou escolha um tamanho.');
+      return;
+    }
+    setBuscandoProd(true);
+    setErroBusca(null);
+    setAviso(null);
+    try {
+      const j = await apiMutate('/api/totvs/promocao-valores/buscar-produtos', 'POST', { termos: tTermos, tamanhos }, {}, { timeout: TIMEOUT_CONSULTA });
+      setAchados({ itens: j?.data?.itens || [], termos: tTermos, tamanhos: [...tamanhos] });
+    } catch (e) {
+      setErroBusca(e.message);
+      setAchados(null);
+    } finally {
+      setBuscandoProd(false);
+    }
+  };
+
+  const novos = useMemo(() => (achados ? achados.itens.filter((i) => !codigosNaLista.has(String(i.code))) : []), [achados, codigosNaLista]);
+
+  const adicionar = () => {
+    if (!achados || !novos.length) return;
+    const partes = [];
+    if (achados.termos.length) partes.push(achados.termos.join(' / '));
+    if (achados.tamanhos.length) partes.push(`tam. ${achados.tamanhos.join(',')}`);
+    onAdicionar(novos, partes.join(' · '));
+    setAviso(`${fmtNum(novos.length)} produto(s) adicionados à lista. Pode fazer outra busca e somar mais um lote.`);
+    setAchados(null);
+  };
+
+  // Atualiza a base com o relatório de produtos do TOTVS (CSV ; em ISO-8859-1)
+  const importarBase = async (file) => {
+    if (!file) return;
+    try {
+      const texto = new TextDecoder('iso-8859-1').decode(await file.arrayBuffer());
+      const num = (v) => {
+        const n = Number(String(v || '').replace(/\./g, '').replace(',', '.'));
+        return Number.isFinite(n) ? n : null;
+      };
+      const linhas = texto
+        .split(/\r?\n/)
+        .slice(1)
+        .map((l) => l.split(';'))
+        .filter((c) => /^\d+$/.test((c[0] || '').trim()) && (c[1] || '').trim())
+        .map((c) => ({
+          code: Number(c[0]),
+          nome: c[1].trim(),
+          unidade: c[2],
+          referencia_code: c[3],
+          fisico: num(c[4]),
+          cor_code: c[5],
+          cor_nome: c[6],
+          tamanho: c[7],
+        }));
+      if (!linhas.length) throw new Error('Não reconheci o arquivo. Use o relatório: Produto;Descrição;Espécie;Grupo;Físico;Cd.Cor;Ds.Cor;Ds.Tamanho');
+      const lotes = emLotes(linhas, 5000);
+      for (let i = 0; i < lotes.length; i++) {
+        setImportandoBase(`enviando ${fmtNum(i * 5000)} de ${fmtNum(linhas.length)}…`);
+        await apiMutate('/api/totvs/promocao-valores/base-produtos', 'POST', { linhas: lotes[i], fonte: `${file.name} (${new Date().toLocaleDateString('pt-BR')})` }, {}, { timeout: TIMEOUT_CONSULTA });
+      }
+      setAviso(`Base atualizada: ${fmtNum(linhas.length)} produtos de ${file.name}.`);
+      carregarBase();
+    } catch (e) {
+      setErroBusca(`Base não atualizada: ${e.message}`);
+    } finally {
+      setImportandoBase(null);
+      if (baseRef.current) baseRef.current.value = '';
+    }
+  };
+
+  return (
+    <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50/30 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <p className="flex items-center gap-1.5 text-sm font-semibold text-[#000638]">
+          <MagnifyingGlass size={16} className="text-rose-600" /> …ou busque os produtos por nome e tamanho
+        </p>
+        <span className="text-[11px] text-gray-500">
+          {base ? `Base: ${fmtNum(base.total)} produtos${base.fonte ? ` · ${base.fonte}` : ''} · ` : ''}
+          <button type="button" onClick={() => baseRef.current?.click()} disabled={!!importandoBase} className="text-rose-700 hover:underline disabled:opacity-50">
+            {importandoBase || 'atualizar base (CSV de produtos do TOTVS)'}
+          </button>
+          <input ref={baseRef} type="file" accept=".csv,.txt" className="hidden" onChange={(e) => importarBase(e.target.files?.[0])} />
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.4fr] gap-3">
+        <div>
+          <label className="text-xs text-gray-600 block">
+            Nome contém (qualquer um destes)
+            <input
+              value={termoTxt}
+              onChange={(e) => setTermoTxt(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ',') {
+                  e.preventDefault();
+                  if (termoTxt.trim()) incluirTermos(termoTxt);
+                  else if (e.key === 'Enter') buscarProdutos();
+                }
+              }}
+              onBlur={() => termoTxt.trim() && incluirTermos(termoTxt)}
+              placeholder="Ex.: FEM, FEMININO, VESTIDO, GOLA"
+              className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm uppercase focus:border-rose-500 focus:ring-1 focus:ring-rose-500"
+            />
+          </label>
+          {termos.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {termos.map((t) => (
+                <span key={t} className="inline-flex items-center gap-1 rounded-full bg-[#000638] px-2 py-0.5 text-[11px] font-semibold text-white">
+                  {t}
+                  <button type="button" onClick={() => setTermos((l) => l.filter((x) => x !== t))} className="text-white/70 hover:text-white">
+                    <X size={10} weight="bold" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <p className="mt-1 text-[11px] text-gray-400">Separe por vírgula ou Enter. O produto entra se o nome tiver qualquer um dos termos.</p>
+        </div>
+
+        <div>
+          <div className="flex flex-wrap items-center gap-1.5 text-xs text-gray-600">
+            <span>Tamanhos (qualquer um destes)</span>
+            {ATALHOS_TAMANHO.map((a) => {
+              const ativo = a.tamanhos.every((t) => tamanhos.includes(t));
+              return (
+                <button
+                  key={a.nome}
+                  type="button"
+                  onClick={() => aplicarAtalho(a.tamanhos)}
+                  title={a.tamanhos.join(', ')}
+                  className={`rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${ativo ? 'border-rose-600 bg-rose-600 text-white' : 'border-rose-300 text-rose-700 hover:bg-rose-50'}`}
+                >
+                  {a.nome}: {a.tamanhos.join(', ')}
+                </button>
+              );
+            })}
+            {tamanhos.length > 0 && (
+              <button type="button" onClick={() => setTamanhos([])} className="text-[11px] text-gray-400 hover:text-red-600 hover:underline">
+                limpar tamanhos
+              </button>
+            )}
+          </div>
+          <div className="mt-1.5 space-y-1">
+            {TAMANHOS.map((g) => (
+              <div key={g.grupo} className="flex flex-wrap items-center gap-1">
+                <span className="w-20 text-[10px] uppercase tracking-wide text-gray-400">{g.grupo}</span>
+                {g.itens.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => alternarTam(t)}
+                    className={`min-w-[2.1rem] rounded border px-1.5 py-0.5 text-[11px] font-semibold ${tamanhos.includes(t) ? 'border-[#000638] bg-[#000638] text-white' : 'border-gray-300 text-gray-600 hover:border-gray-400'}`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            ))}
+            <div className="flex flex-wrap items-center gap-1">
+              <span className="w-20 text-[10px] uppercase tracking-wide text-gray-400">Outro</span>
+              <input
+                value={outroTam}
+                onChange={(e) => setOutroTam(e.target.value.toUpperCase())}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && outroTam.trim()) {
+                    e.preventDefault();
+                    if (!tamanhos.includes(outroTam.trim())) alternarTam(outroTam.trim());
+                    setOutroTam('');
+                  }
+                }}
+                placeholder="ex.: 37/38 + Enter"
+                className="w-32 rounded border border-gray-300 px-1.5 py-0.5 text-[11px] mb-0"
+              />
+              {tamanhos
+                .filter((t) => !TAMANHOS.some((g) => g.itens.includes(t)))
+                .map((t) => (
+                  <button key={t} type="button" onClick={() => alternarTam(t)} className="rounded border border-[#000638] bg-[#000638] px-1.5 py-0.5 text-[11px] font-semibold text-white">
+                    {t} ×
+                  </button>
+                ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={buscarProdutos}
+          disabled={buscandoProd || ocupado}
+          className="flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-40"
+        >
+          {buscandoProd ? <Spinner size={16} className="animate-spin" /> : <MagnifyingGlass size={16} />}
+          {buscandoProd ? 'Buscando…' : 'Buscar produtos'}
+        </button>
+        <span className="text-[11px] text-gray-500">
+          {termos.length && tamanhos.length ? 'nome com qualquer termo E tamanho entre os escolhidos' : termos.length ? 'qualquer tamanho' : tamanhos.length ? 'qualquer nome' : ''}
+        </span>
+        {erroBusca && <span className="text-xs text-red-600">{erroBusca}</span>}
+        {aviso && <span className="text-xs text-emerald-700">{aviso}</span>}
+      </div>
+
+      {achados && (
+        <div className="mt-3 rounded-lg border border-gray-200 bg-white">
+          <div className="flex flex-wrap items-center gap-3 border-b border-gray-100 px-3 py-2 text-xs">
+            <span className="font-semibold text-[#000638]">{fmtNum(achados.itens.length)} produto(s) encontrados</span>
+            {achados.itens.length - novos.length > 0 && <span className="text-gray-500">{fmtNum(achados.itens.length - novos.length)} já estão na lista</span>}
+            <div className="flex-1" />
+            <button type="button" onClick={() => setAchados(null)} className="text-gray-500 hover:underline">
+              descartar busca
+            </button>
+            <button
+              type="button"
+              onClick={adicionar}
+              disabled={!novos.length || ocupado}
+              className="flex items-center gap-1.5 rounded-lg bg-[#000638] px-3 py-1.5 font-semibold text-white hover:bg-[#1a2060] disabled:opacity-40"
+            >
+              <Plus size={14} weight="bold" /> Adicionar {fmtNum(novos.length)} à promoção
+            </button>
+          </div>
+          {achados.itens.length > 0 && (
+            <div className="max-h-64 overflow-y-auto">
+              <table className="min-w-full text-xs">
+                <thead className="sticky top-0 bg-gray-50 text-[10px] uppercase tracking-wide text-gray-500">
+                  <tr>
+                    <th className="px-2 py-1.5 text-left">Cód.</th>
+                    <th className="px-2 py-1.5 text-left">Produto</th>
+                    <th className="px-2 py-1.5 text-left">Cor</th>
+                    <th className="px-2 py-1.5 text-left">Tam.</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {achados.itens.slice(0, 200).map((i) => (
+                    <tr key={i.code} className={codigosNaLista.has(String(i.code)) ? 'text-gray-400' : ''}>
+                      <td className="px-2 py-1 font-mono">{i.code}</td>
+                      <td className="px-2 py-1">{i.nome}</td>
+                      <td className="px-2 py-1">{i.cor_nome || '—'}</td>
+                      <td className="px-2 py-1 font-semibold">{i.tamanho || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {achados.itens.length > 200 && (
+                <p className="px-3 py-1.5 text-[11px] text-gray-400">mostrando 200 de {fmtNum(achados.itens.length)} — todos entram ao adicionar</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function PromocaoValores() {
   const { apiMutate } = useApiClient();
   const { user } = useAuth();
@@ -167,6 +485,7 @@ export default function PromocaoValores() {
   // ── skus ──
   const [skus, setSkus] = useState([]);
   const [origemSkus, setOrigemSkus] = useState(null); // { arquivo, coluna }
+  const [lotesBusca, setLotesBusca] = useState([]); // lotes somados pela busca por nome/tamanho
   const [textoSkus, setTextoSkus] = useState('');
 
   // ── prévia / gravação ──
@@ -276,6 +595,7 @@ export default function PromocaoValores() {
           return;
         }
         setSkus(lidos);
+        setLotesBusca([]);
         consultaPendente.current = true;
         setOrigemSkus({ arquivo: file.name, coluna, aba: wb.SheetNames[0] });
         setTextoSkus('');
@@ -299,6 +619,7 @@ export default function PromocaoValores() {
     }
     setErro(null);
     setSkus(lidos);
+    setLotesBusca([]);
     consultaPendente.current = true;
     setOrigemSkus({ arquivo: 'lista colada', coluna: null });
     setRows([]);
@@ -307,6 +628,7 @@ export default function PromocaoValores() {
 
   const limparSkus = () => {
     setSkus([]);
+    setLotesBusca([]);
     setOrigemSkus(null);
     setRows([]);
     setResultado(null);
@@ -432,6 +754,24 @@ export default function PromocaoValores() {
         rows.filter((r) => r.status !== 'falha_consulta'),
       ),
     [consultar, rows],
+  );
+
+  // Lote da busca por nome/tamanho: soma na lista e consulta só os novos
+  // (a promoção vai acumulando lotes). Sem empresa ainda, consulta tudo depois.
+  const codigosNaLista = useMemo(() => new Set(skus.map(String)), [skus]);
+  const adicionarLote = useCallback(
+    (itensLote, descricao) => {
+      const novos = itensLote.map((i) => String(i.code)).filter((c) => !codigosNaLista.has(c));
+      if (!novos.length) return;
+      setSkus((prev) => [...prev, ...novos]);
+      setLotesBusca((l) => [...l, { descricao, qtd: novos.length }]);
+      setOrigemSkus({ arquivo: 'busca por nome e tamanho', coluna: null });
+      setResultado(null);
+      rolarParaConferencia.current = true;
+      if (empresa && rows.length) consultar(novos, rows);
+      else consultaPendente.current = true;
+    },
+    [codigosNaLista, empresa, rows, consultar],
   );
 
   // % ou arredondamento novo recalcula tudo; sem depender de `rows`, a edição
@@ -950,7 +1290,7 @@ export default function PromocaoValores() {
       <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm mb-4">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <h2 className="flex items-center gap-2 text-sm font-semibold text-[#000638]">
-            <FileXls size={18} className="text-rose-600" /> 3. SKUs da planilha
+            <FileXls size={18} className="text-rose-600" /> 3. SKUs (planilha, lista ou busca)
           </h2>
           <button
             type="button"
@@ -1020,8 +1360,19 @@ export default function PromocaoValores() {
             <button type="button" onClick={limparSkus} className="ml-auto flex items-center gap-1 text-red-600 hover:underline">
               <Trash size={14} /> limpar
             </button>
+            {lotesBusca.length > 0 && (
+              <div className="w-full flex flex-wrap gap-1">
+                {lotesBusca.map((l, i) => (
+                  <span key={i} className="rounded-full bg-white px-2 py-0.5 text-[11px] text-gray-600 ring-1 ring-gray-200">
+                    lote {i + 1}: {l.descricao} · <b>{fmtNum(l.qtd)}</b>
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         )}
+
+        <BuscaProdutos apiMutate={apiMutate} codigosNaLista={codigosNaLista} ocupado={buscando || aplicando || gerandoPdv} onAdicionar={adicionarLote} />
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button
