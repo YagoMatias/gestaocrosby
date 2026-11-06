@@ -1121,9 +1121,11 @@ export default function PromocaoValores() {
   // valor atual (nada marcado para gravar). A API não exclui item de promoção;
   // para tirar o desconto, "Zerar" grava o valor = preço cheio (0%).
   const [carregandoItens, setCarregandoItens] = useState(false);
-  const carregarItensPromocao = async () => {
+  const [origemItens, setOrigemItens] = useState(null); // { fonte, lidoEm }
+  // refresh: relê a promoção no TOTVS (lento) e atualiza a cópia do banco
+  const carregarItensPromocao = async (refresh = false) => {
     if (!empresa || !promocao) return;
-    if (rows.length && !window.confirm('Trocar a lista atual pelos itens da promoção?')) return;
+    if (rows.length && !refresh && !window.confirm('Trocar a lista atual pelos itens da promoção?')) return;
     setCarregandoItens(true);
     setErro(null);
     try {
@@ -1131,10 +1133,12 @@ export default function PromocaoValores() {
       url.searchParams.set('branch', empresa);
       url.searchParams.set('promotionCode', promocao);
       url.searchParams.set('priceCode', Number(priceCode) || 1);
+      if (refresh) url.searchParams.set('refresh', '1');
       const r = await fetch(url.toString(), { headers: { 'x-api-key': API_KEY } });
       const j = await r.json();
       if (!r.ok || !j.success) throw new Error(j?.message || 'Falha ao ler os itens da promoção');
       const lista = j.data?.rows || [];
+      setOrigemItens({ fonte: j.data?.fonte || null, lidoEm: j.data?.lidoEm || null });
       consultaPendente.current = false;
       setSkus(lista.map((x) => x.sku));
       setRows(lista);
@@ -1288,7 +1292,7 @@ export default function PromocaoValores() {
               {erroPromos && <span className="text-red-600">{erroPromos}</span>}
               {promoCache && !erroPromos && (
                 <span className="text-[11px] text-gray-400">
-                  lista do cache ({new Date(promoCache).toLocaleTimeString('pt-BR')}) — clique no ícone para recarregar
+                  lista do banco (lida do TOTVS em {new Date(promoCache).toLocaleString('pt-BR')}) — clique no ícone para recarregar
                 </span>
               )}
             </label>
@@ -1302,14 +1306,29 @@ export default function PromocaoValores() {
               <span>· {promoSelecionada.itens} itens hoje</span>
               <button
                 type="button"
-                onClick={carregarItensPromocao}
+                onClick={() => carregarItensPromocao(false)}
                 disabled={carregandoItens || emAndamento}
                 className="ml-auto flex items-center gap-1 rounded-lg bg-rose-600 px-2.5 py-1 font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
-                title="Mostra todos os produtos da promoção para pesquisar e zerar o desconto"
+                title="Mostra todos os produtos da promoção (do banco; na primeira vez lê o TOTVS)"
               >
                 {carregandoItens ? <Spinner size={13} className="animate-spin" /> : <MagnifyingGlass size={13} />}
-                {carregandoItens ? 'Lendo os itens no TOTVS…' : `Ver os ${promoSelecionada.itens} itens desta promoção`}
+                {carregandoItens ? 'Carregando os itens…' : `Ver os ${promoSelecionada.itens} itens desta promoção`}
               </button>
+              <button
+                type="button"
+                onClick={() => carregarItensPromocao(true)}
+                disabled={carregandoItens || emAndamento}
+                className="flex items-center gap-1 rounded-lg border border-rose-300 px-2 py-1 text-rose-700 hover:bg-rose-100 disabled:opacity-50"
+                title="Relê a promoção no TOTVS (lento) e atualiza o banco — use se alguém mexeu direto no PRDFM002"
+              >
+                <ArrowsClockwise size={13} /> atualizar do TOTVS
+              </button>
+              {origemItens?.lidoEm && (
+                <span className="w-full text-[11px] text-rose-700/80">
+                  Itens {origemItens.fonte === 'totvs' ? 'lidos agora do TOTVS' : 'do banco'} · última leitura do TOTVS em{' '}
+                  {new Date(origemItens.lidoEm).toLocaleString('pt-BR')} (gravações feitas por esta tela já entram no banco)
+                </span>
+              )}
             </div>
           )}
         </div>
