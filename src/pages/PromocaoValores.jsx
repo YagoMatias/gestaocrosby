@@ -486,6 +486,10 @@ export default function PromocaoValores() {
   const [skus, setSkus] = useState([]);
   const [origemSkus, setOrigemSkus] = useState(null); // { arquivo, coluna }
   const [lotesBusca, setLotesBusca] = useState([]); // lotes somados pela busca por nome/tamanho
+  // Lista da conferência: pesquisa por nome/SKU e remoção (o que sai não volta
+  // nos próximos lotes da busca)
+  const [filtroLista, setFiltroLista] = useState('');
+  const [removidos, setRemovidos] = useState(() => new Set()); // códigos/SKUs tirados da lista
   const [textoSkus, setTextoSkus] = useState('');
 
   // ── prévia / gravação ──
@@ -596,6 +600,7 @@ export default function PromocaoValores() {
         }
         setSkus(lidos);
         setLotesBusca([]);
+        setRemovidos(new Set());
         consultaPendente.current = true;
         setOrigemSkus({ arquivo: file.name, coluna, aba: wb.SheetNames[0] });
         setTextoSkus('');
@@ -620,6 +625,7 @@ export default function PromocaoValores() {
     setErro(null);
     setSkus(lidos);
     setLotesBusca([]);
+    setRemovidos(new Set());
     consultaPendente.current = true;
     setOrigemSkus({ arquivo: 'lista colada', coluna: null });
     setRows([]);
@@ -629,6 +635,8 @@ export default function PromocaoValores() {
   const limparSkus = () => {
     setSkus([]);
     setLotesBusca([]);
+    setRemovidos(new Set());
+    setFiltroLista('');
     setOrigemSkus(null);
     setRows([]);
     setResultado(null);
@@ -761,7 +769,7 @@ export default function PromocaoValores() {
   const codigosNaLista = useMemo(() => new Set(skus.map(String)), [skus]);
   const adicionarLote = useCallback(
     (itensLote, descricao) => {
-      const novos = itensLote.map((i) => String(i.code)).filter((c) => !codigosNaLista.has(c));
+      const novos = itensLote.map((i) => String(i.code)).filter((c) => !codigosNaLista.has(c) && !removidos.has(c));
       if (!novos.length) return;
       setSkus((prev) => [...prev, ...novos]);
       setLotesBusca((l) => [...l, { descricao, qtd: novos.length }]);
@@ -771,7 +779,7 @@ export default function PromocaoValores() {
       if (empresa && rows.length) consultar(novos, rows);
       else consultaPendente.current = true;
     },
-    [codigosNaLista, empresa, rows, consultar],
+    [codigosNaLista, removidos, empresa, rows, consultar],
   );
 
   // % ou arredondamento novo recalcula tudo; sem depender de `rows`, a edição
@@ -1072,9 +1080,53 @@ export default function PromocaoValores() {
     conferenciaRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [rows.length]);
 
-  const totalPaginas = Math.max(1, Math.ceil(rows.length / POR_PAGINA));
+  // Pesquisa na lista: vários termos separados por vírgula (qualquer um)
+  const termosLista = useMemo(
+    () =>
+      filtroLista
+        .split(/[,;]+/)
+        .map((t) => t.trim().toUpperCase())
+        .filter(Boolean),
+    [filtroLista],
+  );
+  const rowsFiltradas = useMemo(() => {
+    if (!termosLista.length) return rows;
+    return rows.filter((r) => {
+      const nome = String(r.productName || '').toUpperCase();
+      return termosLista.some((t) => nome.includes(t) || String(r.sku).toUpperCase() === t || String(r.productCode) === t);
+    });
+  }, [rows, termosLista]);
+
+  const chaveSku = (v) => String(v ?? '').trim().toUpperCase();
+  const removerDaLista = (lista) => {
+    if (!lista.length) return;
+    const tirar = new Set();
+    for (const r of lista) {
+      tirar.add(chaveSku(r.sku));
+      if (r.productCode != null) tirar.add(String(r.productCode));
+    }
+    setRows((prev) => prev.filter((r) => !tirar.has(chaveSku(r.sku))));
+    setSkus((prev) => prev.filter((x) => !tirar.has(chaveSku(x))));
+    const limpar = (obj) => {
+      const next = { ...obj };
+      for (const r of lista) delete next[r.productCode];
+      return next;
+    };
+    setSelecionados(limpar);
+    setValores(limpar);
+    setRemovidos((prev) => new Set([...prev, ...tirar]));
+    setResultado(null);
+  };
+  const removerFiltrados = () => {
+    if (!rowsFiltradas.length) return;
+    if (!window.confirm(`Remover ${fmtNum(rowsFiltradas.length)} produto(s) com "${termosLista.join(', ')}" da lista desta promoção?`)) return;
+    removerDaLista(rowsFiltradas);
+    setFiltroLista('');
+  };
+
+  const totalPaginas = Math.max(1, Math.ceil(rowsFiltradas.length / POR_PAGINA));
   const paginaAtual = Math.min(pagina, totalPaginas);
-  const linhasPagina = rows.slice((paginaAtual - 1) * POR_PAGINA, paginaAtual * POR_PAGINA);
+  const linhasPagina = rowsFiltradas.slice((paginaAtual - 1) * POR_PAGINA, paginaAtual * POR_PAGINA);
 
   const barraProgresso = progresso && (
     <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-900">
@@ -1497,6 +1549,49 @@ export default function PromocaoValores() {
             </div>
           )}
 
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <MagnifyingGlass size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                value={filtroLista}
+                onChange={(e) => {
+                  setFiltroLista(e.target.value);
+                  setPagina(1);
+                }}
+                placeholder="Pesquisar na lista: nome, SKU ou código (ex.: PIMA)"
+                className="w-80 rounded-lg border border-gray-300 py-1.5 pl-8 pr-7 text-xs mb-0 focus:border-rose-500 focus:ring-1 focus:ring-rose-500"
+              />
+              {filtroLista && (
+                <button type="button" onClick={() => setFiltroLista('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  <X size={12} weight="bold" />
+                </button>
+              )}
+            </div>
+            {termosLista.length > 0 && (
+              <>
+                <span className="text-xs text-gray-600">
+                  <b>{fmtNum(rowsFiltradas.length)}</b> de {fmtNum(rows.length)} na lista
+                </span>
+                <button
+                  type="button"
+                  onClick={removerFiltrados}
+                  disabled={!rowsFiltradas.length || emAndamento || gerandoPdv}
+                  className="flex items-center gap-1 rounded-lg border border-red-300 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 disabled:opacity-40"
+                >
+                  <Trash size={13} /> Remover os {fmtNum(rowsFiltradas.length)} da lista
+                </button>
+              </>
+            )}
+            {removidos.size > 0 && (
+              <span className="ml-auto text-[11px] text-gray-500">
+                {fmtNum(removidos.size)} código(s) removidos — não voltam nas próximas buscas ·{' '}
+                <button type="button" onClick={() => setRemovidos(new Set())} className="text-rose-700 hover:underline" title="Deixa os removidos voltarem nas próximas buscas">
+                  liberar
+                </button>
+              </span>
+            )}
+          </div>
+
           <div className="overflow-x-auto rounded-lg border border-gray-200">
             <table className="min-w-full text-xs">
               <thead className="bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">
@@ -1512,9 +1607,17 @@ export default function PromocaoValores() {
                   <th className="px-2 py-2 text-right">Novo valor</th>
                   <th className="px-2 py-2 text-right">% efetivo</th>
                   <th className="px-2 py-2 text-left">Situação</th>
+                  <th className="px-2 py-2" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
+                {termosLista.length > 0 && rowsFiltradas.length === 0 && (
+                  <tr>
+                    <td colSpan={10} className="px-2 py-6 text-center text-gray-400">
+                      Nenhum produto da lista com "{termosLista.join(', ')}".
+                    </td>
+                  </tr>
+                )}
                 {linhasPagina.map((r, i) => {
                   const sit = situacaoDe(r);
                   const ok = r.status === 'ok';
@@ -1574,6 +1677,17 @@ export default function PromocaoValores() {
                           {SITUACAO[sit]?.label || sit}
                         </span>
                       </td>
+                      <td className="px-2 py-1.5 text-right">
+                        <button
+                          type="button"
+                          onClick={() => removerDaLista([r])}
+                          disabled={emAndamento || gerandoPdv}
+                          className="text-gray-300 hover:text-red-600 disabled:opacity-40"
+                          title="Tirar da lista desta promoção"
+                        >
+                          <Trash size={14} />
+                        </button>
+                      </td>
                     </tr>
                   );
                 })}
@@ -1592,7 +1706,7 @@ export default function PromocaoValores() {
                 Anterior
               </button>
               <span>
-                Página {fmtNum(paginaAtual)} de {fmtNum(totalPaginas)} ({fmtNum(rows.length)} SKUs)
+                Página {fmtNum(paginaAtual)} de {fmtNum(totalPaginas)} ({fmtNum(rowsFiltradas.length)} SKUs{termosLista.length ? ' filtrados' : ''})
               </span>
               <button
                 type="button"
