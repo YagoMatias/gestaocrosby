@@ -255,6 +255,11 @@ export default function PromocaoValores() {
     [promocoes, promocao],
   );
 
+  // SKUs novos (ou empresa trocada) → consulta os preços sozinha, sem botão
+  const consultaPendente = useRef(false);
+  const rolarParaConferencia = useRef(false);
+  const conferenciaRef = useRef(null);
+
   // ── leitura da planilha ──
   const lerArquivo = useCallback((file) => {
     if (!file) return;
@@ -271,6 +276,7 @@ export default function PromocaoValores() {
           return;
         }
         setSkus(lidos);
+        consultaPendente.current = true;
         setOrigemSkus({ arquivo: file.name, coluna, aba: wb.SheetNames[0] });
         setTextoSkus('');
         setRows([]);
@@ -293,6 +299,7 @@ export default function PromocaoValores() {
     }
     setErro(null);
     setSkus(lidos);
+    consultaPendente.current = true;
     setOrigemSkus({ arquivo: 'lista colada', coluna: null });
     setRows([]);
     setResultado(null);
@@ -703,6 +710,28 @@ export default function PromocaoValores() {
 
   const pronto = empresa && skus.length > 0 && pctValido && !emAndamento && !gerandoPdv;
 
+  // Preço é por empresa: trocou a empresa com SKUs carregados, consulta de novo
+  const empresaConsultada = useRef(empresa);
+  useEffect(() => {
+    if (empresaConsultada.current === empresa) return;
+    empresaConsultada.current = empresa;
+    if (skus.length) consultaPendente.current = true;
+  }, [empresa, skus.length]);
+
+  useEffect(() => {
+    if (!consultaPendente.current || !pronto || buscando) return;
+    consultaPendente.current = false;
+    rolarParaConferencia.current = true;
+    buscar();
+  }, [pronto, buscando, buscar]);
+
+  // Leva a tela para a conferência assim que as primeiras linhas chegam
+  useEffect(() => {
+    if (!rolarParaConferencia.current || !rows.length || !conferenciaRef.current) return;
+    rolarParaConferencia.current = false;
+    conferenciaRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [rows.length]);
+
   const totalPaginas = Math.max(1, Math.ceil(rows.length / POR_PAGINA));
   const paginaAtual = Math.min(pagina, totalPaginas);
   const linhasPagina = rows.slice((paginaAtual - 1) * POR_PAGINA, paginaAtual * POR_PAGINA);
@@ -1002,14 +1031,16 @@ export default function PromocaoValores() {
             className="flex items-center gap-2 rounded-lg bg-[#000638] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1a2060] disabled:opacity-40"
           >
             {buscando ? <Spinner size={16} className="animate-spin" /> : <MagnifyingGlass size={16} />}
-            {buscando ? 'Consultando o TOTVS…' : 'Buscar preços no TOTVS'}
+            {buscando ? 'Consultando o TOTVS…' : rows.length ? 'Consultar os preços de novo' : 'Buscar preços no TOTVS'}
           </button>
           {!pronto && !emAndamento && (
             <span className="text-xs text-gray-400">
               {!empresa
-                ? 'escolha a empresa'
+                ? skus.length
+                  ? 'escolha a empresa — os preços carregam sozinhos'
+                  : 'escolha a empresa'
                 : !skus.length
-                  ? 'importe os SKUs'
+                  ? 'importe os SKUs — os preços carregam sozinhos'
                   : 'informe um percentual entre 0 e 99,99'}
             </span>
           )}
@@ -1019,7 +1050,7 @@ export default function PromocaoValores() {
 
       {/* ── 4. Prévia ── */}
       {rows.length > 0 && (
-        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        <div ref={conferenciaRef} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm scroll-mt-4">
           <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
             <h2 className="flex items-center gap-2 text-sm font-semibold text-[#000638]">
               <Tag size={18} className="text-rose-600" /> 4. Conferência e gravação

@@ -3,6 +3,7 @@ import { Link, Navigate } from 'react-router-dom';
 import {
   Storefront,
   ArrowUUpLeft,
+  ArrowsLeftRight,
   Gear,
   Trophy,
   ChartLineUp,
@@ -15,6 +16,7 @@ import LoginNoticesModal from '../components/LoginNoticesModal';
 const ATALHOS_PDV = [
   { nome: 'PDV Crosby', desc: 'Vender, trocar e emitir NFC-e', href: '/tecnologia/pdv-crosby', icon: Storefront, cor: 'text-emerald-600 bg-emerald-50' },
   { nome: 'Devoluções de Mercadoria', desc: 'Abrir, conferir e gerar no TOTVS', href: '/devolucoes-mercadoria', icon: ArrowUUpLeft, cor: 'text-rose-600 bg-rose-50' },
+  { nome: 'Transferências de Mercadoria', desc: 'Transferir entre filiais pelo POP', href: '/transferencias-mercadoria', icon: ArrowsLeftRight, cor: 'text-sky-600 bg-sky-50' },
   { nome: 'Configurações dos Aparelhos', desc: 'Impressora, RFID portal, RFID .bat e TEF', href: '/tecnologia/pdv-perifericos', icon: Gear, cor: 'text-slate-700 bg-slate-100' },
   { nome: 'Ranking de Faturamento', desc: 'Desempenho das lojas', href: '/ranking-faturamento', icon: Trophy, cor: 'text-amber-600 bg-amber-50' },
   { nome: 'New Forecast', desc: 'Previsto x realizado e projeção', href: '/new-forecast', icon: ChartLineUp, cor: 'text-cyan-700 bg-cyan-50' },
