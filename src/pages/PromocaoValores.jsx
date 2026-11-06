@@ -151,6 +151,92 @@ const SITUACAO = {
   erro: { label: 'Erro', cls: 'bg-red-100 text-red-800 border-red-300' },
 };
 
+// ─── Filtros da lista da conferência ─────────────────────────────────────────
+// Gênero: do cadastro do TOTVS (classificação GENERO) quando veio; sem ele,
+// pelo nome (a maior parte do catálogo é masculina).
+const generoDe = (r) => {
+  if (r.genero) return String(r.genero).toUpperCase();
+  const n = ` ${String(r.productName || '').toUpperCase()} `;
+  if (/[^A-Z](INF|INFANTIL|KIDS|JUVENIL|BABY|BEBE)[^A-Z]/.test(n)) return 'INFANTIL';
+  if (/[^A-Z](FEM|FEMININO|FEMININA|VESTIDO|SAIA|BLUSA|CROPPED|BODY|LEGGING)[^A-Z]/.test(n)) return 'FEMININO';
+  return 'MASCULINO';
+};
+// Tipo = primeira palavra do nome (sem o prefixo NPV): CAMISA, BERMUDA…
+const tipoDe = (r) =>
+  String(r.productName || '')
+    .toUpperCase()
+    .replace(/^\s*NPV\s+/, '')
+    .split(/\s+/)[0] || '—';
+const corDe = (r) => String(r.colorName || '—').toUpperCase();
+const tamanhoDe = (r) => String(r.sizeName || '—').toUpperCase();
+// Palavras pesquisáveis da linha: nome, cor, tamanho, gênero, SKU e código
+const palavrasDe = (r) =>
+  [
+    ...String(r.productName || '').toUpperCase().split(/[^A-Z0-9À-Ü/]+/),
+    ...String(r.colorName || '').toUpperCase().split(/[^A-Z0-9À-Ü/]+/),
+    tamanhoDe(r),
+    generoDe(r),
+    String(r.sku || '').toUpperCase(),
+    String(r.productCode ?? ''),
+  ].filter(Boolean);
+
+// Botão com lista de opções marcáveis (com busca e contagem)
+function FiltroMulti({ rotulo, opcoes, marcados, onChange }) {
+  const [aberto, setAberto] = useState(false);
+  const [q, setQ] = useState('');
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!aberto) return undefined;
+    const fora = (e) => ref.current && !ref.current.contains(e.target) && setAberto(false);
+    document.addEventListener('mousedown', fora);
+    return () => document.removeEventListener('mousedown', fora);
+  }, [aberto]);
+  const visiveis = q ? opcoes.filter(([v]) => v.includes(q.toUpperCase())) : opcoes;
+  const alternar = (v) => onChange(marcados.includes(v) ? marcados.filter((x) => x !== v) : [...marcados, v]);
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setAberto((a) => !a)}
+        className={`flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-semibold ${
+          marcados.length ? 'border-[#000638] bg-[#000638] text-white' : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+        }`}
+        title={marcados.length ? marcados.join(', ') : `Filtrar por ${rotulo.toLowerCase()}`}
+      >
+        {rotulo}
+        {marcados.length > 0 && <span className="rounded-full bg-white/20 px-1.5">{marcados.length === 1 ? marcados[0] : marcados.length}</span>}
+        <span className="text-[9px]">▼</span>
+      </button>
+      {aberto && (
+        <div className="absolute z-30 mt-1 w-60 rounded-lg border border-gray-200 bg-white p-2 shadow-lg">
+          <input
+            autoFocus
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder={`Procurar ${rotulo.toLowerCase()}…`}
+            className="mb-1.5 w-full rounded border border-gray-300 px-2 py-1 text-xs"
+          />
+          <div className="max-h-60 overflow-y-auto">
+            {visiveis.length === 0 && <p className="px-1 py-1 text-[11px] text-gray-400">Nada com "{q}".</p>}
+            {visiveis.map(([v, n]) => (
+              <label key={v} className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-xs hover:bg-gray-50">
+                <input type="checkbox" checked={marcados.includes(v)} onChange={() => alternar(v)} className="w-3.5 h-3.5 p-0 mb-0 shrink-0" />
+                <span className="flex-1 truncate">{v}</span>
+                <span className="text-[10px] text-gray-400 tabular-nums">{fmtNum(n)}</span>
+              </label>
+            ))}
+          </div>
+          {marcados.length > 0 && (
+            <button type="button" onClick={() => onChange([])} className="mt-1 text-[11px] text-red-600 hover:underline">
+              limpar {rotulo.toLowerCase()}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Busca de produtos por nome / tamanho ────────────────────────────────────
 const TAMANHOS = [
   { grupo: 'Infantil', itens: ['2', '4', '6', '8', '10', '12', '14', '16'] },
@@ -489,6 +575,10 @@ export default function PromocaoValores() {
   // Lista da conferência: pesquisa por nome/SKU e remoção (o que sai não volta
   // nos próximos lotes da busca)
   const [filtroLista, setFiltroLista] = useState('');
+  const [filtroTipo, setFiltroTipo] = useState([]);
+  const [filtroGenero, setFiltroGenero] = useState([]);
+  const [filtroTam, setFiltroTam] = useState([]);
+  const [filtroCor, setFiltroCor] = useState([]);
   const [removidos, setRemovidos] = useState(() => new Set()); // códigos/SKUs tirados da lista
   const [textoSkus, setTextoSkus] = useState('');
 
@@ -672,6 +762,7 @@ export default function PromocaoValores() {
       semPreco: conta((r) => r.status === 'sem_preco'),
       falhas: conta((r) => r.status === 'falha_consulta'),
       jaNaPromocao: conta((r) => r.naPromocao),
+      novos: conta((r) => r.status === 'ok' && !r.naPromocao),
     };
   }, [rows]);
 
@@ -1080,22 +1171,64 @@ export default function PromocaoValores() {
     conferenciaRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [rows.length]);
 
-  // Pesquisa na lista: vários termos separados por vírgula (qualquer um)
+  // Pesquisa na lista. Texto: grupos separados por vírgula (qualquer grupo);
+  // dentro do grupo, todas as palavras precisam bater (FEMININO P AZUL). Palavra
+  // de 1–2 letras só bate inteira (P, PP, G); maior pode ser o começo (FEM).
+  // Os filtros de Tipo/Gênero/Tamanho/Cor se somam ao texto.
   const termosLista = useMemo(
     () =>
       filtroLista
         .split(/[,;]+/)
-        .map((t) => t.trim().toUpperCase())
-        .filter(Boolean),
+        .map((g) => g.trim().toUpperCase().split(/\s+/).filter(Boolean))
+        .filter((g) => g.length),
     [filtroLista],
   );
+  const filtrando = termosLista.length > 0 || filtroTipo.length > 0 || filtroGenero.length > 0 || filtroTam.length > 0 || filtroCor.length > 0;
+  const descricaoFiltro = [
+    termosLista.map((g) => g.join(' ')).join(' ou '),
+    filtroTipo.join('/'),
+    filtroGenero.join('/'),
+    filtroTam.length ? `tam. ${filtroTam.join('/')}` : '',
+    filtroCor.join('/'),
+  ]
+    .filter(Boolean)
+    .join(' · ');
   const rowsFiltradas = useMemo(() => {
-    if (!termosLista.length) return rows;
+    if (!filtrando) return rows;
     return rows.filter((r) => {
-      const nome = String(r.productName || '').toUpperCase();
-      return termosLista.some((t) => nome.includes(t) || String(r.sku).toUpperCase() === t || String(r.productCode) === t);
+      if (filtroTipo.length && !filtroTipo.includes(tipoDe(r))) return false;
+      if (filtroGenero.length && !filtroGenero.includes(generoDe(r))) return false;
+      if (filtroTam.length && !filtroTam.includes(tamanhoDe(r))) return false;
+      if (filtroCor.length && !filtroCor.includes(corDe(r))) return false;
+      if (!termosLista.length) return true;
+      const palavras = palavrasDe(r);
+      return termosLista.some((grupo) => grupo.every((t) => palavras.some((w) => (t.length >= 3 ? w.startsWith(t) : w === t))));
     });
-  }, [rows, termosLista]);
+  }, [rows, filtrando, termosLista, filtroTipo, filtroGenero, filtroTam, filtroCor]);
+  // Opções dos filtros (com quantos há de cada), tiradas da própria lista
+  const opcoesFiltro = useMemo(() => {
+    const contar = (fn) => {
+      const m = new Map();
+      for (const r of rows) m.set(fn(r), (m.get(fn(r)) || 0) + 1);
+      return [...m.entries()];
+    };
+    const ordemTam = ['2', '4', '6', '8', '10', '12', '14', '16', 'PP', 'P', 'M', 'G', 'GG', 'XG', 'XGG', 'XGG2', 'XL1', 'XL2', 'XL3', 'XL4', 'U'];
+    const posTam = (t) => (ordemTam.includes(t) ? ordemTam.indexOf(t) : 100 + (parseInt(t, 10) || 999));
+    return {
+      tipo: contar(tipoDe).sort((a, b) => b[1] - a[1]),
+      genero: contar(generoDe).sort((a, b) => b[1] - a[1]),
+      tamanho: contar(tamanhoDe).sort((a, b) => posTam(a[0]) - posTam(b[0]) || a[0].localeCompare(b[0])),
+      cor: contar(corDe).sort((a, b) => a[0].localeCompare(b[0])),
+    };
+  }, [rows]);
+  const limparFiltros = () => {
+    setFiltroLista('');
+    setFiltroTipo([]);
+    setFiltroGenero([]);
+    setFiltroTam([]);
+    setFiltroCor([]);
+    setPagina(1);
+  };
 
   const chaveSku = (v) => String(v ?? '').trim().toUpperCase();
   const removerDaLista = (lista) => {
@@ -1169,9 +1302,9 @@ export default function PromocaoValores() {
 
   const removerFiltrados = () => {
     if (!rowsFiltradas.length) return;
-    if (!window.confirm(`Remover ${fmtNum(rowsFiltradas.length)} produto(s) com "${termosLista.join(', ')}" da lista desta promoção?`)) return;
+    if (!window.confirm(`Remover ${fmtNum(rowsFiltradas.length)} produto(s) (${descricaoFiltro}) da lista desta promoção?`)) return;
     removerDaLista(rowsFiltradas);
-    setFiltroLista('');
+    limparFiltros();
   };
 
   const totalPaginas = Math.max(1, Math.ceil(rowsFiltradas.length / POR_PAGINA));
@@ -1543,7 +1676,7 @@ export default function PromocaoValores() {
               { k: 'SKUs', v: resumo?.total ?? rows.length, c: 'text-[#000638]' },
               { k: 'Encontrados', v: resumo?.ok ?? 0, c: 'text-emerald-700' },
               { k: 'Já na promoção', v: resumo?.jaNaPromocao ?? 0, c: 'text-blue-700' },
-              { k: 'Novos', v: (resumo?.ok ?? 0) - (resumo?.jaNaPromocao ?? 0), c: 'text-emerald-700' },
+              { k: 'Novos', v: resumo?.novos ?? 0, c: 'text-emerald-700' },
               { k: 'Não encontrados', v: resumo?.naoEncontrados ?? 0, c: 'text-red-700' },
               { k: 'Sem preço', v: resumo?.semPreco ?? 0, c: 'text-amber-700' },
             ].map((t) => (
@@ -1633,7 +1766,8 @@ export default function PromocaoValores() {
                   setFiltroLista(e.target.value);
                   setPagina(1);
                 }}
-                placeholder="Pesquisar na lista: nome, SKU ou código (ex.: PIMA)"
+                placeholder="Pesquisar: FEMININO P AZUL · vírgula = ou (PIMA, LINHO)"
+                title="Todas as palavras precisam bater (nome, cor, tamanho, gênero, SKU). P/PP/G só inteiros. Vírgula separa alternativas."
                 className="w-80 rounded-lg border border-gray-300 py-1.5 pl-8 pr-7 text-xs mb-0 focus:border-rose-500 focus:ring-1 focus:ring-rose-500"
               />
               {filtroLista && (
@@ -1642,7 +1776,16 @@ export default function PromocaoValores() {
                 </button>
               )}
             </div>
-            {termosLista.length > 0 && (
+            <FiltroMulti rotulo="Produto" opcoes={opcoesFiltro.tipo} marcados={filtroTipo} onChange={(v) => { setFiltroTipo(v); setPagina(1); }} />
+            <FiltroMulti rotulo="Gênero" opcoes={opcoesFiltro.genero} marcados={filtroGenero} onChange={(v) => { setFiltroGenero(v); setPagina(1); }} />
+            <FiltroMulti rotulo="Tamanho" opcoes={opcoesFiltro.tamanho} marcados={filtroTam} onChange={(v) => { setFiltroTam(v); setPagina(1); }} />
+            <FiltroMulti rotulo="Cor" opcoes={opcoesFiltro.cor} marcados={filtroCor} onChange={(v) => { setFiltroCor(v); setPagina(1); }} />
+            {filtrando && (
+              <button type="button" onClick={limparFiltros} className="text-[11px] text-gray-500 hover:text-red-600 hover:underline">
+                limpar filtros
+              </button>
+            )}
+            {filtrando && (
               <>
                 <span className="text-xs text-gray-600">
                   <b>{fmtNum(rowsFiltradas.length)}</b> de {fmtNum(rows.length)} na lista
@@ -1665,7 +1808,7 @@ export default function PromocaoValores() {
                 title="A API do TOTVS não tira item de promoção: grava o valor promocional igual ao preço cheio"
                 className="flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-40"
               >
-                <Percent size={13} /> Zerar desconto (0%) {termosLista.length ? `dos ${fmtNum(rowsFiltradas.length)} filtrados` : 'de todos'}
+                <Percent size={13} /> Zerar desconto (0%) {filtrando ? `dos ${fmtNum(rowsFiltradas.length)} filtrados` : 'de todos'}
               </button>
             )}
             {removidos.size > 0 && (
@@ -1697,10 +1840,10 @@ export default function PromocaoValores() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {termosLista.length > 0 && rowsFiltradas.length === 0 && (
+                {filtrando && rowsFiltradas.length === 0 && (
                   <tr>
                     <td colSpan={10} className="px-2 py-6 text-center text-gray-400">
-                      Nenhum produto da lista com "{termosLista.join(', ')}".
+                      Nenhum produto da lista com {descricaoFiltro}.
                     </td>
                   </tr>
                 )}
@@ -1792,7 +1935,7 @@ export default function PromocaoValores() {
                 Anterior
               </button>
               <span>
-                Página {fmtNum(paginaAtual)} de {fmtNum(totalPaginas)} ({fmtNum(rowsFiltradas.length)} SKUs{termosLista.length ? ' filtrados' : ''})
+                Página {fmtNum(paginaAtual)} de {fmtNum(totalPaginas)} ({fmtNum(rowsFiltradas.length)} SKUs{filtrando ? ' filtrados' : ''})
               </span>
               <button
                 type="button"
