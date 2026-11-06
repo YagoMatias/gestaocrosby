@@ -1117,6 +1117,52 @@ export default function PromocaoValores() {
     setRemovidos((prev) => new Set([...prev, ...tirar]));
     setResultado(null);
   };
+  // Itens que já estão na promoção do TOTVS: carrega todos na conferência com o
+  // valor atual (nada marcado para gravar). A API não exclui item de promoção;
+  // para tirar o desconto, "Zerar" grava o valor = preço cheio (0%).
+  const [carregandoItens, setCarregandoItens] = useState(false);
+  const carregarItensPromocao = async () => {
+    if (!empresa || !promocao) return;
+    if (rows.length && !window.confirm('Trocar a lista atual pelos itens da promoção?')) return;
+    setCarregandoItens(true);
+    setErro(null);
+    try {
+      const url = new URL('/api/totvs/promocao-valores/itens', API_BASE_URL);
+      url.searchParams.set('branch', empresa);
+      url.searchParams.set('promotionCode', promocao);
+      url.searchParams.set('priceCode', Number(priceCode) || 1);
+      const r = await fetch(url.toString(), { headers: { 'x-api-key': API_KEY } });
+      const j = await r.json();
+      if (!r.ok || !j.success) throw new Error(j?.message || 'Falha ao ler os itens da promoção');
+      const lista = j.data?.rows || [];
+      consultaPendente.current = false;
+      setSkus(lista.map((x) => x.sku));
+      setRows(lista);
+      setLotesBusca([]);
+      setRemovidos(new Set());
+      setFiltroLista('');
+      setOrigemSkus({ arquivo: `promoção ${promocao} do TOTVS`, coluna: null });
+      setResultado(null);
+      setSelecionados({});
+      setValores(Object.fromEntries(lista.filter((x) => x.status === 'ok').map((x) => [x.productCode, round2(x.valorPromocaoAtual ?? x.price)])));
+      setPagina(1);
+      rolarParaConferencia.current = true;
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setCarregandoItens(false);
+    }
+  };
+
+  // Zera o desconto (valor = preço cheio) dos exibidos e marca só eles para gravar
+  const zerarFiltrados = () => {
+    const alvo = rowsFiltradas.filter((r) => r.status === 'ok' && r.price > 0);
+    if (!alvo.length) return;
+    if (!window.confirm(`Zerar o desconto (0%) de ${fmtNum(alvo.length)} produto(s)? Só eles ficam marcados para gravar.`)) return;
+    setValores((v) => ({ ...v, ...Object.fromEntries(alvo.map((r) => [r.productCode, round2(r.price)])) }));
+    setSelecionados(Object.fromEntries(alvo.map((r) => [r.productCode, true])));
+  };
+
   const removerFiltrados = () => {
     if (!rowsFiltradas.length) return;
     if (!window.confirm(`Remover ${fmtNum(rowsFiltradas.length)} produto(s) com "${termosLista.join(', ')}" da lista desta promoção?`)) return;
@@ -1254,6 +1300,16 @@ export default function PromocaoValores() {
               <span>· {fmtData(promoSelecionada.startDate)} a {fmtData(promoSelecionada.endDate)}</span>
               <span>· {promoSelecionada.statusLabel}</span>
               <span>· {promoSelecionada.itens} itens hoje</span>
+              <button
+                type="button"
+                onClick={carregarItensPromocao}
+                disabled={carregandoItens || emAndamento}
+                className="ml-auto flex items-center gap-1 rounded-lg bg-rose-600 px-2.5 py-1 font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
+                title="Mostra todos os produtos da promoção para pesquisar e zerar o desconto"
+              >
+                {carregandoItens ? <Spinner size={13} className="animate-spin" /> : <MagnifyingGlass size={13} />}
+                {carregandoItens ? 'Lendo os itens no TOTVS…' : `Ver os ${promoSelecionada.itens} itens desta promoção`}
+              </button>
             </div>
           )}
         </div>
@@ -1581,6 +1637,17 @@ export default function PromocaoValores() {
                   <Trash size={13} /> Remover os {fmtNum(rowsFiltradas.length)} da lista
                 </button>
               </>
+            )}
+            {promocao && rows.some((r) => r.naPromocao) && (
+              <button
+                type="button"
+                onClick={zerarFiltrados}
+                disabled={!rowsFiltradas.length || emAndamento || gerandoPdv}
+                title="A API do TOTVS não tira item de promoção: grava o valor promocional igual ao preço cheio"
+                className="flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-40"
+              >
+                <Percent size={13} /> Zerar desconto (0%) {termosLista.length ? `dos ${fmtNum(rowsFiltradas.length)} filtrados` : 'de todos'}
+              </button>
             )}
             {removidos.size > 0 && (
               <span className="ml-auto text-[11px] text-gray-500">
