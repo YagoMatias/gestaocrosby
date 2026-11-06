@@ -8,8 +8,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
-import { Wallet, X, ArrowsClockwise, MagnifyingGlass, FunnelSimple, Export, UploadSimple, Info, ArrowDown, ArrowUp, Receipt, Bank, Warning, CheckCircle, CaretLeft, CaretRight } from '@phosphor-icons/react';
-import { MultiSelect, SeletorCnpj, BANCOS, bancoCfg, docDaConta, fmt, fmtData, Th, Kpi, Badge, TIPOS, hoje, primeiroDiaMes } from './FluxoCaixaExt';
+import { Wallet, X, ArrowsClockwise, MagnifyingGlass, FunnelSimple, Export, UploadSimple, Info, ArrowDown, ArrowUp, ArrowsLeftRight, ArrowRight, Receipt, Bank, Warning, CheckCircle, CaretLeft, CaretRight } from '@phosphor-icons/react';
+import { MultiSelect, SeletorCnpj, BANCOS, bancoCfg, docDaConta, fmt, fmtData, fmtDoc, Th, Kpi, Badge, TIPOS, hoje, primeiroDiaMes } from './FluxoCaixaExt';
 
 const API = `${API_BASE_URL}/api/novo-extrato`;
 const SUBTITULO = 'Nova versão do Extrato Bancário, montada do zero. Entradas, saídas e resultado somam só as linhas de lançamento; o saldo fica na última coluna. Por enquanto lê o PDF do Banco do Brasil.';
@@ -41,6 +41,8 @@ const NewExtratoBancario = () => {
   const [aviso, setAviso] = useState(null);
   const [importando, setImportando] = useState(false);
   const [pagina, setPagina] = useState(1);
+  const [aba, setAba] = useState('lancamentos'); // lancamentos | transferencias
+  const [recasando, setRecasando] = useState(false);
   const inputRef = useRef(null);
 
   // contas = importações já gravadas (agrupadas por banco + conta)
@@ -146,6 +148,24 @@ const NewExtratoBancario = () => {
 
   const lancamentos = dados?.lancamentos || [];
   const resumo = dados?.resumo;
+  const transferencias = dados?.transferencias || [];
+  const semPar = dados?.semPar || [];
+  const nomeConta = (banco, conta, dv) => `${bancoCfg(banco).label} ${conta}${dv ? `-${dv}` : ''}`;
+  const recasar = async () => {
+    setRecasando(true);
+    setErro(null);
+    try {
+      const r = await fetch(`${API}/transferencias/recasar`, { method: 'POST', headers: headersUsuario() });
+      const j = await r.json();
+      if (!j?.success) throw new Error(j?.message || 'Falha ao recasar.');
+      setAviso({ ok: true, texto: `${j.data.pares} par(es) entre contas importadas (${fmt(j.data.valor)}) · ${j.data.atualizados} linha(s) atualizada(s)` });
+      await buscar();
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setRecasando(false);
+    }
+  };
   const totalPaginas = Math.max(1, Math.ceil(lancamentos.length / LINHAS_POR_PAGINA));
   const paginaAtual = Math.min(pagina, totalPaginas);
   const inicio = (paginaAtual - 1) * LINHAS_POR_PAGINA;
@@ -292,10 +312,18 @@ const NewExtratoBancario = () => {
 
       {/* KPIs — só linhas de lançamento; saldo na coluna da tabela */}
       {resumo && (
-        <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3 mb-4">
-          <Kpi label="Recebido (entradas)" value={fmt(resumo.entradas)} sub={`${resumo.qtdEntradas} lançamentos`} tone="text-green-600" Icon={ArrowDown} accent="bg-green-50 text-green-600" />
-          <Kpi label="Pago (saídas)" value={fmt(resumo.saidas)} sub={`${resumo.qtdSaidas} lançamentos`} tone="text-red-600" Icon={ArrowUp} accent="bg-red-50 text-red-600" />
-          <Kpi label="Resultado" value={fmt(resumo.resultado)} sub="entradas − saídas" tone={resumo.resultado >= 0 ? 'text-blue-700' : 'text-red-700'} Icon={Receipt} accent="bg-blue-50 text-blue-600" />
+        <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 lg:grid-cols-5 md:gap-3 mb-4">
+          <Kpi label="Recebido (entradas)" value={fmt(resumo.entradas)} sub={`${resumo.qtdEntradas} lançamentos · sem transferências`} tone="text-green-600" Icon={ArrowDown} accent="bg-green-50 text-green-600" />
+          <Kpi label="Pago (saídas)" value={fmt(resumo.saidas)} sub={`${resumo.qtdSaidas} lançamentos · sem transferências`} tone="text-red-600" Icon={ArrowUp} accent="bg-red-50 text-red-600" />
+          <Kpi label="Resultado" value={fmt(resumo.resultado)} sub="entradas − saídas (sem transferências)" tone={resumo.resultado >= 0 ? 'text-blue-700' : 'text-red-700'} Icon={Receipt} accent="bg-blue-50 text-blue-600" />
+          <Kpi
+            label="Transferido entre contas"
+            value={fmt(resumo.transfEnviadas)}
+            sub={`${transferencias.length} par(es), contado uma vez${resumo.transfSemParEnviadas || resumo.transfSemParRecebidas ? ` · sem par: ${fmt(resumo.transfSemParEnviadas)} enviado / ${fmt(resumo.transfSemParRecebidas)} recebido` : ''}`}
+            tone="text-amber-700"
+            Icon={ArrowsLeftRight}
+            accent="bg-amber-50 text-amber-600"
+          />
           <Kpi
             label={saldosPorConta.length > 1 ? `Saldo final (soma de ${saldosPorConta.length} contas)` : 'Saldo final da conta'}
             value={fmt(saldoFinal)}
@@ -345,9 +373,21 @@ const NewExtratoBancario = () => {
       {/* Tabela */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <div className="flex flex-wrap items-center gap-1.5 px-3 py-2 border-b border-gray-200 bg-gray-50">
-          <button className="px-3 py-1.5 text-xs font-medium rounded-lg bg-white shadow-sm text-blue-700 border border-gray-200">Lançamentos ({lancamentos.length})</button>
+          {[
+            { id: 'lancamentos', label: `Lançamentos (${lancamentos.length})` },
+            { id: 'transferencias', label: `Transferências (${transferencias.length}${semPar.length ? ` + ${semPar.length} sem par` : ''})` },
+          ].map((a) => (
+            <button key={a.id} onClick={() => setAba(a.id)} className={`px-3 py-1.5 text-xs font-medium rounded-lg ${aba === a.id ? 'bg-white shadow-sm text-blue-700 border border-gray-200' : 'text-gray-500 hover:text-gray-700'}`}>
+              {a.label}
+            </button>
+          ))}
           {carregando && <ArrowsClockwise size={14} className="animate-spin text-blue-600 ml-2" />}
-          {totalPaginas > 1 && (
+          {aba === 'transferencias' && (
+            <button onClick={recasar} disabled={recasando} className="ml-auto inline-flex items-center gap-1 px-2.5 py-1 text-[11px] rounded-md border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 disabled:opacity-50" title="Refaz o casamento entre todas as contas importadas">
+              {recasando ? <ArrowsClockwise size={12} className="animate-spin" /> : <ArrowsLeftRight size={12} />} Recasar transferências
+            </button>
+          )}
+          {aba === 'lancamentos' && totalPaginas > 1 && (
             <span className="ml-auto flex items-center gap-1 text-xs text-gray-500">
               <button onClick={() => setPagina((p) => Math.max(1, p - 1))} disabled={paginaAtual <= 1} className="p-1 rounded hover:bg-gray-200 disabled:opacity-40">
                 <CaretLeft size={14} />
@@ -359,6 +399,83 @@ const NewExtratoBancario = () => {
             </span>
           )}
         </div>
+        {aba === 'transferencias' && (
+          <div className="p-3 space-y-4">
+            <div>
+              <p className="text-xs font-semibold text-gray-700 mb-1.5">Entre contas importadas — saiu de uma conta e entrou em outra ({transferencias.length})</p>
+              {transferencias.length ? (
+                <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50 text-gray-600">
+                      <tr>
+                        <Th>Data</Th>
+                        <Th right>Valor</Th>
+                        <Th>Saiu da conta</Th>
+                        <Th />
+                        <Th>Entrou na conta</Th>
+                        <Th>Como aparece nos extratos</Th>
+                        <Th>Evidência</Th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {transferencias.map((t) => (
+                        <tr key={t.id} className="border-t border-gray-100 hover:bg-amber-50/40">
+                          <td className="px-3 py-1.5 whitespace-nowrap">{fmtData(t.data)}{t.data_entrada && t.data_entrada !== t.data ? <span className="block text-[10px] text-gray-400">entrou {fmtData(t.data_entrada)}</span> : null}</td>
+                          <td className="px-3 py-1.5 text-right font-semibold text-amber-700 whitespace-nowrap">{fmt(t.valor)}</td>
+                          <td className="px-3 py-1.5 whitespace-nowrap">{t.origem ? <Badge cfg={bancoCfg(t.origem.banco)} title={t.origem.titular || ''}>{nomeConta(t.origem.banco, t.origem.conta, t.origem.conta_dv)}</Badge> : '—'}</td>
+                          <td className="px-1 py-1.5 text-gray-400"><ArrowRight size={14} /></td>
+                          <td className="px-3 py-1.5 whitespace-nowrap">{t.destino ? <Badge cfg={bancoCfg(t.destino.banco)} title={t.destino.titular || ''}>{nomeConta(t.destino.banco, t.destino.conta, t.destino.conta_dv)}</Badge> : '—'}</td>
+                          <td className="px-3 py-1.5 text-gray-600">
+                            <span className="block">− {t.origem?.historico || '—'}</span>
+                            <span className="block">+ {t.destino?.historico || '—'}</span>
+                          </td>
+                          <td className="px-3 py-1.5 text-gray-500">{t.evidencia}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400 px-1 py-2">Nenhuma transferência entre as contas importadas no período.</p>
+              )}
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-gray-700 mb-1.5">Para empresas do grupo em conta ainda não importada — só uma ponta ({semPar.length})</p>
+              <p className="text-[11px] text-gray-400 mb-1.5">Ficam fora de Recebido/Pago. Quando o extrato da outra conta for importado, viram pares automaticamente. Entrada vinda do próprio CNPJ fica como entrada, porque pode ser Pix de cliente pelo QR Code do TOTVS.</p>
+              {semPar.length ? (
+                <div className="overflow-x-auto border border-gray-200 rounded-lg max-h-96 overflow-y-auto">
+                  <table className="w-full text-xs">
+                    <thead className="bg-gray-50 text-gray-600 sticky top-0">
+                      <tr>
+                        <Th>Data</Th>
+                        <Th>Conta</Th>
+                        <Th>Sentido</Th>
+                        <Th>Histórico</Th>
+                        <Th>Contraparte (empresa do grupo)</Th>
+                        <Th right>Valor</Th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {semPar.map((l) => (
+                        <tr key={l.id} className="border-t border-gray-100 hover:bg-amber-50/40">
+                          <td className="px-3 py-1.5 whitespace-nowrap">{fmtData(l.data)}{l.hora ? <span className="text-gray-400"> {l.hora}</span> : null}</td>
+                          <td className="px-3 py-1.5 whitespace-nowrap"><Badge cfg={bancoCfg(l.banco)} title={l.titular || ''}>{nomeConta(l.banco, l.conta, l.conta_dv)}</Badge></td>
+                          <td className="px-3 py-1.5 whitespace-nowrap">{l.valor < 0 ? <span className="text-red-600">enviou</span> : <span className="text-green-700">recebeu</span>}</td>
+                          <td className="px-3 py-1.5 text-gray-700">{l.historico_base || l.historico}</td>
+                          <td className="px-3 py-1.5">{l.contraparte_nome || '—'}{l.contraparte_doc ? <span className="block text-[10px] text-gray-400">{fmtDoc(l.contraparte_doc)}</span> : null}</td>
+                          <td className={`px-3 py-1.5 text-right font-semibold whitespace-nowrap ${l.valor < 0 ? 'text-red-600' : 'text-green-700'}`}>{fmt(Math.abs(l.valor))}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400 px-1 py-2">Nenhuma.</p>
+              )}
+            </div>
+          </div>
+        )}
+        {aba === 'lancamentos' && (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -395,7 +512,7 @@ const NewExtratoBancario = () => {
               {lancamentosPagina.map((l) => {
                 const cfg = TIPOS[l.tipo] || TIPOS.ENTRADA;
                 return (
-                  <tr key={l.id} className="border-b border-gray-100 hover:bg-gray-50 text-xs">
+                  <tr key={l.id} className={`border-b border-gray-100 hover:bg-gray-50 text-xs ${l.tipo === 'TRANSFERENCIA' ? 'bg-amber-50/40' : ''}`}>
                     <td className="px-3 py-2 whitespace-nowrap">
                       {fmtData(l.data)} <span className="text-gray-400">{l.seq}</span>
                     </td>
@@ -411,8 +528,12 @@ const NewExtratoBancario = () => {
                       </Badge>
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap text-gray-500">{l.historico_codigo || '—'}</td>
-                    <td className="px-3 py-2 font-medium text-gray-800">{l.historico}</td>
-                    <td className="px-3 py-2 text-gray-400">—</td>
+                    <td className="px-3 py-2 font-medium text-gray-800">{l.historico_base || l.historico}{l.hora ? <span className="text-gray-400 font-normal"> {l.hora}</span> : null}</td>
+                    <td className="px-3 py-2 text-gray-700">
+                      {l.contraparte_nome || (l.contraparte_doc ? '' : '—')}
+                      {l.contraparte_doc ? <span className="block text-[10px] text-gray-400">{fmtDoc(l.contraparte_doc)}</span> : null}
+                      {l.tipo === 'TRANSFERENCIA' && !l.transferencia_id ? <span className="block text-[10px] text-amber-700">entre contas · outra ponta não importada</span> : null}
+                    </td>
                     <td className="px-3 py-2 whitespace-nowrap text-gray-500 font-mono">{l.documento || '—'}</td>
                     <td className="px-3 py-2 text-right whitespace-nowrap text-green-700 font-semibold">{l.valor > 0 ? fmt(l.valor) : ''}</td>
                     <td className="px-3 py-2 text-right whitespace-nowrap text-red-600 font-semibold">{l.valor < 0 ? fmt(-l.valor) : ''}</td>
@@ -435,6 +556,7 @@ const NewExtratoBancario = () => {
             )}
           </table>
         </div>
+        )}
         <div className="px-4 py-3 border-t border-gray-200 bg-gray-50 text-xs text-gray-500">
           {lancamentos.length} lançamentos{resumo ? ` · entradas ${fmt(resumo.entradas)} · saídas ${fmt(resumo.saidas)}` : ''}
         </div>
