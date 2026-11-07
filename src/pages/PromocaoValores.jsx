@@ -22,7 +22,7 @@
 //
 // Backend: totvsrouter/promocaoValores.js (apigestaocrosby) em
 // /api/totvs/promocao-valores/{promocoes,preview,aplicar,buscar-produtos,base-produtos}.
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, useDeferredValue } from 'react';
 import * as XLSX from 'xlsx';
 import {
   Tag,
@@ -68,6 +68,8 @@ const fmtNum = (n) => Number(n || 0).toLocaleString('pt-BR');
 const LOTE_CONSULTA = 500;
 const LOTE_GRAVACAO = 5000;
 const POR_PAGINA = 200; // linhas desenhadas na tabela (o resto fica só em memória)
+const POR_PAGINA_CELULAR = 40; // no celular, em cartões: menos por página para abrir rápido
+const ehCelularAgora = () => typeof window !== 'undefined' && window.matchMedia?.('(max-width: 767px)').matches;
 const TIMEOUT_CONSULTA = 10 * 60 * 1000;
 const TIMEOUT_GRAVACAO = 60 * 60 * 1000;
 const ESPERAS_LOTE_MS = [5000, 15000];
@@ -208,7 +210,7 @@ function FiltroMulti({ rotulo, opcoes, marcados, onChange }) {
         <span className="text-[9px]">▼</span>
       </button>
       {aberto && (
-        <div className="absolute z-30 mt-1 w-60 rounded-lg border border-gray-200 bg-white p-2 shadow-lg">
+        <div className="absolute z-30 mt-1 w-60 max-w-[calc(100vw-2rem)] rounded-lg border border-gray-200 bg-white p-2 shadow-lg">
           <input
             autoFocus
             value={q}
@@ -1175,13 +1177,15 @@ export default function PromocaoValores() {
   // dentro do grupo, todas as palavras precisam bater (FEMININO P AZUL). Palavra
   // de 1–2 letras só bate inteira (P, PP, G); maior pode ser o começo (FEM).
   // Os filtros de Tipo/Gênero/Tamanho/Cor se somam ao texto.
+  // texto adiado: digitar não trava a tela enquanto a lista grande filtra
+  const filtroListaAdiado = useDeferredValue(filtroLista);
   const termosLista = useMemo(
     () =>
-      filtroLista
+      filtroListaAdiado
         .split(/[,;]+/)
         .map((g) => g.trim().toUpperCase().split(/\s+/).filter(Boolean))
         .filter((g) => g.length),
-    [filtroLista],
+    [filtroListaAdiado],
   );
   const filtrando = termosLista.length > 0 || filtroTipo.length > 0 || filtroGenero.length > 0 || filtroTam.length > 0 || filtroCor.length > 0;
   const descricaoFiltro = [
@@ -1193,18 +1197,25 @@ export default function PromocaoValores() {
   ]
     .filter(Boolean)
     .join(' · ');
+  // tipo/gênero/cor/tamanho/palavras calculados uma vez por linha (não a cada tecla)
+  const indiceLinhas = useMemo(() => {
+    const m = new Map();
+    for (const r of rows) m.set(r, { tipo: tipoDe(r), genero: generoDe(r), tam: tamanhoDe(r), cor: corDe(r), palavras: palavrasDe(r) });
+    return m;
+  }, [rows]);
   const rowsFiltradas = useMemo(() => {
     if (!filtrando) return rows;
     return rows.filter((r) => {
-      if (filtroTipo.length && !filtroTipo.includes(tipoDe(r))) return false;
-      if (filtroGenero.length && !filtroGenero.includes(generoDe(r))) return false;
-      if (filtroTam.length && !filtroTam.includes(tamanhoDe(r))) return false;
-      if (filtroCor.length && !filtroCor.includes(corDe(r))) return false;
+      const x = indiceLinhas.get(r);
+      if (!x) return false;
+      if (filtroTipo.length && !filtroTipo.includes(x.tipo)) return false;
+      if (filtroGenero.length && !filtroGenero.includes(x.genero)) return false;
+      if (filtroTam.length && !filtroTam.includes(x.tam)) return false;
+      if (filtroCor.length && !filtroCor.includes(x.cor)) return false;
       if (!termosLista.length) return true;
-      const palavras = palavrasDe(r);
-      return termosLista.some((grupo) => grupo.every((t) => palavras.some((w) => (t.length >= 3 ? w.startsWith(t) : w === t))));
+      return termosLista.some((grupo) => grupo.every((t) => x.palavras.some((w) => (t.length >= 3 ? w.startsWith(t) : w === t))));
     });
-  }, [rows, filtrando, termosLista, filtroTipo, filtroGenero, filtroTam, filtroCor]);
+  }, [rows, indiceLinhas, filtrando, termosLista, filtroTipo, filtroGenero, filtroTam, filtroCor]);
   // Opções dos filtros (com quantos há de cada), tiradas da própria lista
   const opcoesFiltro = useMemo(() => {
     const contar = (fn) => {
@@ -1307,9 +1318,27 @@ export default function PromocaoValores() {
     limparFiltros();
   };
 
-  const totalPaginas = Math.max(1, Math.ceil(rowsFiltradas.length / POR_PAGINA));
+  // Celular: cartões e menos linhas por página
+  const [ehCelular, setEhCelular] = useState(ehCelularAgora);
+  useEffect(() => {
+    const mq = window.matchMedia?.('(max-width: 767px)');
+    if (!mq) return undefined;
+    const mudar = () => setEhCelular(mq.matches);
+    mq.addEventListener?.('change', mudar);
+    return () => mq.removeEventListener?.('change', mudar);
+  }, []);
+  const porPagina = ehCelular ? POR_PAGINA_CELULAR : POR_PAGINA;
+
+  // 0% num item só: valor = preço cheio e marcado para gravar
+  const zerarUm = (r) => {
+    if (r.status !== 'ok' || !(r.price > 0)) return;
+    setValores((v) => ({ ...v, [r.productCode]: round2(r.price) }));
+    setSelecionados((sel) => ({ ...sel, [r.productCode]: true }));
+  };
+
+  const totalPaginas = Math.max(1, Math.ceil(rowsFiltradas.length / porPagina));
   const paginaAtual = Math.min(pagina, totalPaginas);
-  const linhasPagina = rowsFiltradas.slice((paginaAtual - 1) * POR_PAGINA, paginaAtual * POR_PAGINA);
+  const linhasPagina = rowsFiltradas.slice((paginaAtual - 1) * porPagina, paginaAtual * porPagina);
 
   const barraProgresso = progresso && (
     <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-900">
@@ -1338,7 +1367,7 @@ export default function PromocaoValores() {
   );
 
   return (
-    <div className="w-full max-w-7xl mx-auto px-4 py-6">
+    <div className={`w-full max-w-7xl mx-auto px-2 sm:px-4 py-3 sm:py-6 ${rows.length ? 'pb-28 md:pb-6' : ''}`}>
       <PageTitle
         title="Preço Promocional (Excel)"
         subtitle="Importe a planilha com os SKUs e o percentual de desconto. O valor promocional é calculado sobre o preço atual e gerado na promoção do TOTVS (PRDFM002) ou numa promoção própria do PDV Crosby."
@@ -1661,7 +1690,7 @@ export default function PromocaoValores() {
 
       {/* ── 4. Prévia ── */}
       {rows.length > 0 && (
-        <div ref={conferenciaRef} className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm scroll-mt-4">
+        <div ref={conferenciaRef} className="rounded-xl border border-gray-200 bg-white p-3 sm:p-4 shadow-sm scroll-mt-4">
           <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
             <h2 className="flex items-center gap-2 text-sm font-semibold text-[#000638]">
               <Tag size={18} className="text-rose-600" /> 4. Conferência e gravação
@@ -1671,7 +1700,7 @@ export default function PromocaoValores() {
             </button>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-2 mb-4">
+          <div className="grid grid-cols-3 md:grid-cols-6 gap-1.5 sm:gap-2 mb-3 sm:mb-4">
             {[
               { k: 'SKUs', v: resumo?.total ?? rows.length, c: 'text-[#000638]' },
               { k: 'Encontrados', v: resumo?.ok ?? 0, c: 'text-emerald-700' },
@@ -1680,9 +1709,9 @@ export default function PromocaoValores() {
               { k: 'Não encontrados', v: resumo?.naoEncontrados ?? 0, c: 'text-red-700' },
               { k: 'Sem preço', v: resumo?.semPreco ?? 0, c: 'text-amber-700' },
             ].map((t) => (
-              <div key={t.k} className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-                <div className="text-[11px] uppercase tracking-wide text-gray-500">{t.k}</div>
-                <div className={`text-xl font-bold ${t.c}`}>{t.v}</div>
+              <div key={t.k} className="rounded-lg border border-gray-200 bg-gray-50 px-2 sm:px-3 py-1.5 sm:py-2">
+                <div className="text-[10px] sm:text-[11px] uppercase tracking-wide text-gray-500 truncate">{t.k}</div>
+                <div className={`text-base sm:text-xl font-bold ${t.c}`}>{fmtNum(t.v)}</div>
               </div>
             ))}
           </div>
@@ -1768,7 +1797,7 @@ export default function PromocaoValores() {
                 }}
                 placeholder="Pesquisar: FEMININO P AZUL · vírgula = ou (PIMA, LINHO)"
                 title="Todas as palavras precisam bater (nome, cor, tamanho, gênero, SKU). P/PP/G só inteiros. Vírgula separa alternativas."
-                className="w-80 rounded-lg border border-gray-300 py-1.5 pl-8 pr-7 text-xs mb-0 focus:border-rose-500 focus:ring-1 focus:ring-rose-500"
+                className="w-full sm:w-80 rounded-lg border border-gray-300 py-2 sm:py-1.5 pl-8 pr-7 text-sm sm:text-xs mb-0 focus:border-rose-500 focus:ring-1 focus:ring-rose-500"
               />
               {filtroLista && (
                 <button type="button" onClick={() => setFiltroLista('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
@@ -1821,7 +1850,91 @@ export default function PromocaoValores() {
             )}
           </div>
 
-          <div className="overflow-x-auto rounded-lg border border-gray-200">
+          {/* Celular: cartões */}
+          <div className="md:hidden space-y-2">
+            {filtrando && rowsFiltradas.length === 0 && (
+              <p className="py-6 text-center text-sm text-gray-400">Nenhum produto da lista com {descricaoFiltro}.</p>
+            )}
+            {linhasPagina.map((r, i) => {
+              const sit = situacaoDe(r);
+              const ok = r.status === 'ok';
+              const novo = ok ? Number(valores[r.productCode]) : null;
+              const pctEf = ok && r.price > 0 && Number.isFinite(novo) ? (1 - novo / r.price) * 100 : null;
+              const marcado = !!selecionados[r.productCode];
+              return (
+                <div
+                  key={`c-${r.sku}-${i}`}
+                  className={`rounded-xl border p-2.5 ${marcado ? 'border-rose-300 bg-rose-50/40' : 'border-gray-200 bg-white'} ${ok ? '' : 'opacity-60'}`}
+                >
+                  <div className="flex items-start gap-2">
+                    {ok && (
+                      <input
+                        type="checkbox"
+                        checked={marcado}
+                        onChange={(e) => setSelecionados((sel) => ({ ...sel, [r.productCode]: e.target.checked }))}
+                        className="mt-0.5 h-5 w-5 shrink-0 p-0 mb-0 accent-rose-600"
+                      />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-semibold leading-tight text-gray-800">{r.productName || r.erro || '—'}</p>
+                      <p className="mt-0.5 text-[11px] text-gray-500">
+                        {[r.colorName, r.sizeName && `tam. ${r.sizeName}`, `cód. ${r.productCode ?? r.sku}`].filter(Boolean).join(' · ')}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removerDaLista([r])}
+                      disabled={emAndamento || gerandoPdv}
+                      className="p-1 text-gray-300 hover:text-red-600 disabled:opacity-40"
+                      title="Tirar da lista"
+                    >
+                      <Trash size={18} />
+                    </button>
+                  </div>
+                  {ok && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <div className="text-[11px] leading-tight text-gray-500">
+                        <div>
+                          atual <b className="text-gray-700">{fmtBRL(r.price)}</b>
+                        </div>
+                        {r.naPromocao && (
+                          <div>
+                            promo <b className="text-blue-700">{fmtBRL(r.valorPromocaoAtual)}</b>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1" />
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        step="0.01"
+                        min="0.01"
+                        value={Number.isFinite(novo) ? novo : ''}
+                        onChange={(e) => setValores((v) => ({ ...v, [r.productCode]: e.target.value }))}
+                        onBlur={(e) => setValores((v) => ({ ...v, [r.productCode]: round2(e.target.value) }))}
+                        className="h-10 w-24 rounded-lg border border-gray-300 px-2 mb-0 text-right text-sm font-bold text-[#000638] tabular-nums"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => zerarUm(r)}
+                        className="h-10 rounded-lg border border-amber-300 bg-amber-50 px-2.5 text-xs font-bold text-amber-800 active:bg-amber-100"
+                        title="Zerar o desconto (valor = preço cheio)"
+                      >
+                        0%
+                      </button>
+                    </div>
+                  )}
+                  <div className="mt-1.5 flex items-center justify-between text-[11px]">
+                    <span className={`inline-block rounded-full border px-2 py-0.5 ${SITUACAO[sit]?.cls || ''}`}>{SITUACAO[sit]?.label || sit}</span>
+                    {pctEf != null && <span className="font-semibold text-gray-600">{pctEf.toFixed(1)}% off</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Computador: tabela */}
+          <div className="hidden md:block overflow-x-auto rounded-lg border border-gray-200">
             <table className="min-w-full text-xs">
               <thead className="bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">
                 <tr>
@@ -1894,7 +2007,18 @@ export default function PromocaoValores() {
                             onBlur={(e) => setValores((v) => ({ ...v, [r.productCode]: round2(e.target.value) }))}
                             className="w-24 rounded border border-gray-300 px-2 py-1 text-right font-semibold text-[#000638] tabular-nums"
                           />
-                        ) : (
+                        ) : null}
+                        {ok && (
+                          <button
+                            type="button"
+                            onClick={() => zerarUm(r)}
+                            className="ml-1 rounded border border-amber-300 bg-amber-50 px-1.5 py-1 text-[10px] font-bold text-amber-800 hover:bg-amber-100"
+                            title="Zerar o desconto (valor = preço cheio)"
+                          >
+                            0%
+                          </button>
+                        )}
+                        {ok ? null : (
                           '—'
                         )}
                       </td>
@@ -1925,12 +2049,12 @@ export default function PromocaoValores() {
           </div>
 
           {totalPaginas > 1 && (
-            <div className="mt-2 flex flex-wrap items-center justify-end gap-2 text-xs text-gray-600">
+            <div className="mt-2 flex flex-wrap items-center justify-between md:justify-end gap-2 text-xs text-gray-600">
               <button
                 type="button"
                 onClick={() => setPagina(Math.max(1, paginaAtual - 1))}
                 disabled={paginaAtual === 1}
-                className="rounded border border-gray-300 px-2 py-1 hover:bg-gray-50 disabled:opacity-40"
+                className="rounded border border-gray-300 px-3 py-2 md:px-2 md:py-1 hover:bg-gray-50 disabled:opacity-40"
               >
                 Anterior
               </button>
@@ -1941,7 +2065,7 @@ export default function PromocaoValores() {
                 type="button"
                 onClick={() => setPagina(Math.min(totalPaginas, paginaAtual + 1))}
                 disabled={paginaAtual === totalPaginas}
-                className="rounded border border-gray-300 px-2 py-1 hover:bg-gray-50 disabled:opacity-40"
+                className="rounded border border-gray-300 px-3 py-2 md:px-2 md:py-1 hover:bg-gray-50 disabled:opacity-40"
               >
                 Próxima
               </button>
@@ -1950,25 +2074,39 @@ export default function PromocaoValores() {
 
           {(aplicando || gerandoPdv) && barraProgresso}
 
-          <div className="mt-4 flex flex-wrap items-center gap-3">
+          <div className="fixed inset-x-0 bottom-0 z-40 flex items-center gap-2 border-t border-gray-200 bg-white/95 p-2 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] backdrop-blur md:static md:z-auto md:mt-4 md:flex-wrap md:gap-3 md:border-0 md:bg-transparent md:p-0 md:shadow-none">
             <button
               type="button"
               onClick={() => setConfirmar(true)}
               disabled={!promocao || !itensParaGravar.length || emAndamento || gerandoPdv}
               title={!promocao ? 'Escolha a promoção do TOTVS no passo 1' : undefined}
-              className="flex items-center gap-2 rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-40"
+              className="flex flex-1 md:flex-none items-center justify-center gap-2 rounded-lg bg-rose-600 px-3 md:px-4 py-3 md:py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-40"
             >
               {aplicando ? <Spinner size={16} className="animate-spin" /> : <CheckCircle size={16} />}
-              {aplicando ? 'Gravando no TOTVS…' : `GERAR NO TOTVS (${fmtNum(promocao ? itensParaGravar.length : 0)})`}
+              {aplicando ? (
+                'Gravando…'
+              ) : (
+                <>
+                  <span className="md:hidden">TOTVS ({fmtNum(promocao ? itensParaGravar.length : 0)})</span>
+                  <span className="hidden md:inline">GERAR NO TOTVS ({fmtNum(promocao ? itensParaGravar.length : 0)})</span>
+                </>
+              )}
             </button>
             <button
               type="button"
               onClick={abrirModalPdv}
               disabled={!itensPdv.length || emAndamento || gerandoPdv}
-              className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-40"
+              className="flex flex-1 md:flex-none items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 md:px-4 py-3 md:py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-40"
             >
               {gerandoPdv ? <Spinner size={16} className="animate-spin" /> : <CashRegister size={16} />}
-              {gerandoPdv ? 'Gravando no PDV Crosby…' : `GERAR NO PDV CROSBY (${fmtNum(itensPdv.length)})`}
+              {gerandoPdv ? (
+                'Gravando…'
+              ) : (
+                <>
+                  <span className="md:hidden">PDV ({fmtNum(itensPdv.length)})</span>
+                  <span className="hidden md:inline">GERAR NO PDV CROSBY ({fmtNum(itensPdv.length)})</span>
+                </>
+              )}
             </button>
             {resultado && !emAndamento && pendentes.length > 0 && (
               <button
@@ -1979,7 +2117,7 @@ export default function PromocaoValores() {
                 <ArrowsClockwise size={16} /> Enviar pendentes ({fmtNum(pendentes.length)})
               </button>
             )}
-            <span className="text-xs text-gray-500">
+            <span className="hidden md:inline text-xs text-gray-500">
               {!promocao && 'TOTVS: escolha a promoção no passo 1 · '}
               {qtdAtualizar} atualizar · {qtdInserir} inserir
               {!incluirNovos && rows.some((r) => r.status === 'ok' && !r.naPromocao)
