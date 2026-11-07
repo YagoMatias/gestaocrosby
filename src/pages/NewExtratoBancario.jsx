@@ -12,7 +12,7 @@ import { Wallet, X, ArrowsClockwise, MagnifyingGlass, FunnelSimple, Export, Uplo
 import { MultiSelect, SeletorCnpj, BANCOS, bancoCfg, docDaConta, fmt, fmtData, fmtDoc, Th, Kpi, Badge, TIPOS, hoje, primeiroDiaMes } from './FluxoCaixaExt';
 
 const API = `${API_BASE_URL}/api/novo-extrato`;
-const SUBTITULO = 'Nova versão do Extrato Bancário, montada do zero. Entradas, saídas e resultado somam só as linhas de lançamento; o saldo fica na última coluna. Lê o PDF do Banco do Brasil, do Itaú (extrato mensal), do Sicredi, do Santander (consolidado) e da Unicred, e o OFX da Caixa e do Santander. Nada da Shopping Recife entra.';
+const SUBTITULO = 'Nova versão do Extrato Bancário, montada do zero. Entradas, saídas e resultado somam só as linhas de lançamento; o saldo fica na última coluna. Lê o PDF do Banco do Brasil, do Itaú (extrato mensal), do Sicredi, do Santander (consolidado), da Unicred e do Bradesco, e o OFX da Caixa e do Santander. Aplicação automática (Invest Fácil) não é entrada nem saída. Nada da Shopping Recife entra.';
 const LINHAS_POR_PAGINA = 100;
 const headersUsuario = () => {
   try {
@@ -199,7 +199,7 @@ const NewExtratoBancario = () => {
           <button disabled className="px-3 py-1.5 text-xs rounded-lg bg-green-600 text-white disabled:opacity-50 flex items-center gap-1" title="Em breve">
             <Export size={14} /> Excel
           </button>
-          <label className={`px-3 py-1.5 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-1 font-medium cursor-pointer ${importando ? 'opacity-60 pointer-events-none' : ''}`} title="PDF do extrato do Banco do Brasil, Itaú, Sicredi, Santander (consolidado) ou Unicred, ou OFX da Caixa e do Santander (um ou vários; importe em ordem de mês)">
+          <label className={`px-3 py-1.5 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-1 font-medium cursor-pointer ${importando ? 'opacity-60 pointer-events-none' : ''}`} title="PDF do extrato do Banco do Brasil, Itaú, Sicredi, Santander (consolidado), Unicred ou Bradesco, ou OFX da Caixa e do Santander (um ou vários; importe em ordem de mês)">
             {importando ? <ArrowsClockwise size={14} className="animate-spin" /> : <UploadSimple size={14} weight="bold" />} {importando ? 'Importando…' : 'Importar extratos'}
             <input ref={inputRef} type="file" accept=".pdf,.ofx,application/pdf" multiple className="hidden" onChange={(e) => importar(Array.from(e.target.files || []))} />
           </label>
@@ -271,6 +271,7 @@ const NewExtratoBancario = () => {
               { value: 'ENTRADA', label: 'Entradas' },
               { value: 'SAIDA', label: 'Saídas' },
               { value: 'TRANSFERENCIA', label: 'Transferências' },
+              { value: 'APLICACAO', label: 'Aplicação automática' },
             ]}
             valor={tipos}
             onChange={setTipos}

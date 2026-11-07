@@ -82,6 +82,7 @@ const TIPOS = {
   ENTRADA: { label: 'Entrada', cor: 'bg-green-100 text-green-800 border-green-300', Icon: ArrowDown },
   SAIDA: { label: 'Saída', cor: 'bg-red-100 text-red-700 border-red-300', Icon: ArrowUp },
   TRANSFERENCIA: { label: 'Transf.', cor: 'bg-amber-100 text-amber-800 border-amber-300', Icon: ArrowsLeftRight },
+  APLICACAO: { label: 'Aplicação', cor: 'bg-sky-100 text-sky-800 border-sky-300', Icon: ArrowsLeftRight },
 };
 
 const Kpi = ({ label, value, sub, tone = 'text-gray-800', Icon, accent = 'bg-gray-100 text-gray-500' }) => (
