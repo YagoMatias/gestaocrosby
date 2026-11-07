@@ -319,7 +319,7 @@ const NewExtratoBancario = () => {
           <Kpi
             label="Transferido entre contas"
             value={fmt(resumo.transfEnviadas)}
-            sub={`${transferencias.length} par(es), contado uma vez${resumo.transfSemParEnviadas || resumo.transfSemParRecebidas ? ` · sem par: ${fmt(resumo.transfSemParEnviadas)} enviado / ${fmt(resumo.transfSemParRecebidas)} recebido` : ''}`}
+            sub={`${transferencias.length} par(es), contado uma vez${resumo.transfParteLote ? ` · ${fmt(resumo.transfParteLote)} em partes de lote SISPAG` : ''}${resumo.transfSemParEnviadas || resumo.transfSemParRecebidas ? ` · sem par: ${fmt(resumo.transfSemParEnviadas)} enviado / ${fmt(resumo.transfSemParRecebidas)} recebido` : ''}`}
             tone="text-amber-700"
             Icon={ArrowsLeftRight}
             accent="bg-amber-50 text-amber-600"
@@ -533,6 +533,7 @@ const NewExtratoBancario = () => {
                       {l.contraparte_nome || (l.contraparte_doc ? '' : '—')}
                       {l.contraparte_doc ? <span className="block text-[10px] text-gray-400">{fmtDoc(l.contraparte_doc)}</span> : null}
                       {l.tipo === 'TRANSFERENCIA' && !l.transferencia_id ? <span className="block text-[10px] text-amber-700">entre contas · outra ponta não importada</span> : null}
+                      {l.valor_transferido > 0 ? <span className="block text-[10px] text-amber-700">lote SISPAG: {fmt(l.valor_transferido)} foi para conta do grupo (entre contas); o resto é pagamento</span> : null}
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap text-gray-500 font-mono">{l.documento || '—'}</td>
                     <td className="px-3 py-2 text-right whitespace-nowrap text-green-700 font-semibold">{l.valor > 0 ? fmt(l.valor) : ''}</td>
