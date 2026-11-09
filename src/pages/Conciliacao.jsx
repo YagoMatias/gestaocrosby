@@ -41,6 +41,7 @@ import {
   Eye,
 } from '@phosphor-icons/react';
 import * as XLSX from 'xlsx';
+import DESPESAS_TOTVS from '../config/despesas.json';
 import { saveAs } from 'file-saver';
 
 const FormularioSolicitacoes = lazy(() => import('./FormularioSolicitacoes'));
@@ -325,6 +326,8 @@ const motivoNaoTarifa = (l) => {
   const forma = semAcentoTar(l.forma).toUpperCase();
   const cat = String(l.categoria || '').toLowerCase();
   const txt = semAcentoTar(`${l.descricao || ''} ${l.memo || ''}`).toUpperCase();
+  // tarifa vem antes: "TAR PIX" (Caixa) e "TARIFA BOLETO STONE" são tarifas
+  if (/TARIFA|ENCARGO/.test(forma) || cat === 'tarifa' || /^TAR(IFA)?\b/.test(txt)) return null;
   if (/PIX/.test(forma) || cat === 'pix' || /\bPIX\b/.test(txt)) return 'Pix';
   if (/BOLETO/.test(forma) || cat === 'boleto' || cat === 'pagamento' || /\bBOLETO\b|PAGAMENTO DE TITULO|PAGTO\.? TITULO|LIQUIDACAO DE TITULO/.test(txt)) return 'pagamento de boleto';
   if (/TRANSFER/.test(forma) || cat === 'transferencia') return 'transferência';
@@ -338,14 +341,20 @@ const motivoNaoTarifa = (l) => {
 const ehTarifa = (l) => motivoNaoTarifa(l) === null;
 
 // ─── janela "Saídas pendentes (todas as contas)" — João, 09/11/2026 ───
-// lista as saídas pendentes de todas as contas, marca as tarifas e afins,
-// baixa Excel das marcadas e cria as duplicatas (TOTVS + Solicitação + conciliação).
+// lista TODAS as saídas pendentes de todas as contas com a sugestão de
+// fornecedor (código TOTVS) e despesa (estudo do histórico do TOTVS), ambos
+// editáveis; qualquer linha pode ser marcada; Excel de tudo que está na tela;
+// cria as duplicatas (TOTVS + Solicitação + conciliação). Tarifa sem código
+// digitado usa o banco da conta + 7008.
+const nomeDespesa = (cod) => (cod ? DESPESAS_TOTVS[String(cod)] || null : null);
 const ModalSaidasPendentes = ({ de, ate, onClose, onConcluido }) => {
   const [itens, setItens] = useState(null);
   const [erro, setErro] = useState(null);
   const [sel, setSel] = useState([]);
   const [busca, setBusca] = useState('');
-  const [criando, setCriando] = useState(null); // { feitos, total }
+  const [edit, setEdit] = useState({}); // id → { forn, desp }
+  const [nomesForn, setNomesForn] = useState({}); // código → nome (consulta TOTVS)
+  const [criando, setCriando] = useState(null);
   const [resultado, setResultado] = useState(null);
   const carregar = useCallback(async () => {
     setErro(null);
@@ -354,7 +363,13 @@ const ModalSaidasPendentes = ({ de, ate, onClose, onConcluido }) => {
       const r = await fetch(`${API}/conciliacao/saidas-pendentes?de=${de}&ate=${ate}`, { headers: headersUsuario() });
       const j = await r.json();
       if (!j?.success) throw new Error(j?.message || 'Falha ao carregar as saídas pendentes.');
-      setItens(j.data.itens || []);
+      const lista = j.data.itens || [];
+      setItens(lista);
+      setEdit((prev) => {
+        const n = { ...prev };
+        for (const i of lista) if (!n[i.id]) n[i.id] = { forn: i.sugestao?.fornecedorCodigo ? String(i.sugestao.fornecedorCodigo) : '', desp: i.sugestao?.despesaCodigo ? String(i.sugestao.despesaCodigo) : '' };
+        return n;
+      });
     } catch (e) {
       setErro(e.message);
       setItens([]);
@@ -369,17 +384,39 @@ const ModalSaidasPendentes = ({ de, ate, onClose, onConcluido }) => {
     return () => document.removeEventListener('keydown', h);
   }, [onClose, criando]);
 
+  const setCampo = (id, campo, v) => setEdit((p) => ({ ...p, [id]: { ...(p[id] || {}), [campo]: String(v).replace(/\D/g, '').slice(0, 9) } }));
+  const buscarNomeForn = async (cod) => {
+    const c = String(cod || '').replace(/\D/g, '');
+    if (!c || nomesForn[c] !== undefined) return;
+    setNomesForn((p) => ({ ...p, [c]: '…' }));
+    try {
+      const r = await fetch(`${API}/conciliacao/fornecedor/${c}`, { headers: headersUsuario() });
+      const j = await r.json();
+      setNomesForn((p) => ({ ...p, [c]: j?.success ? j.data.nome || '(sem nome)' : 'não encontrado no TOTVS' }));
+    } catch {
+      setNomesForn((p) => ({ ...p, [c]: 'erro ao consultar' }));
+    }
+  };
+  const nomeFornDe = (i) => {
+    const c = edit[i.id]?.forn || '';
+    if (!c) return i.tarifa ? `${i.banco} (banco da conta)` : '';
+    if (nomesForn[c] !== undefined) return nomesForn[c];
+    return String(i.sugestao?.fornecedorCodigo || '') === c ? i.sugestao.fornecedorNome : '';
+  };
+  const prontoParaCriar = (i) => i.tarifa || (edit[i.id]?.forn && edit[i.id]?.desp);
+
   const visiveis = useMemo(() => {
     const q = busca.trim().toLowerCase();
-    return (itens || []).filter((i) => !q || `${i.empresa} ${i.banco} ${i.conta} ${i.descricao} ${i.memo || ''} ${i.contraparte || ''} ${i.valor}`.toLowerCase().includes(q));
+    return (itens || []).filter((i) => !q || `${i.empresa} ${i.banco} ${i.conta} ${i.descricao} ${i.memo || ''} ${i.contraparte || ''} ${i.valor} ${i.sugestao?.despesaNome || ''}`.toLowerCase().includes(q));
   }, [itens, busca]);
-  const elegiveis = visiveis.filter((i) => i.elegivel);
+  const tarifas = visiveis.filter((i) => i.tarifa);
   const marcados = (itens || []).filter((i) => sel.includes(i.id));
   const totalSel = marcados.reduce((s, i) => s + i.valor, 0);
-  const todasMarcadas = elegiveis.length > 0 && elegiveis.every((i) => sel.includes(i.id));
+  const todasVisMarcadas = visiveis.length > 0 && visiveis.every((i) => sel.includes(i.id));
+  const semDados = marcados.filter((i) => !prontoParaCriar(i)).length;
 
   const baixarExcel = () => {
-    const rows = (marcados.length ? marcados : elegiveis).map((i) => ({
+    const rows = visiveis.map((i) => ({
       Empresa: i.empresa,
       Banco: i.banco,
       Conta: i.conta,
@@ -388,32 +425,41 @@ const ModalSaidasPendentes = ({ de, ate, onClose, onConcluido }) => {
       Histórico: i.descricao,
       Detalhe: i.memo,
       Contraparte: i.contraparte,
+      'CPF/CNPJ contraparte': i.contraparteDoc,
       Valor: i.valor,
-      'Despesa TOTVS': '7008 TARIFAS BANCARIAS',
+      Tipo: i.tarifa ? 'tarifa / afim' : i.motivoBloqueio,
+      'Cód. fornecedor': edit[i.id]?.forn || '',
+      Fornecedor: nomeFornDe(i),
+      'Cód. despesa': edit[i.id]?.desp || '',
+      Despesa: nomeDespesa(edit[i.id]?.desp) || '',
+      'Sugestão (origem)': i.sugestao?.fonte || '',
+      Marcada: sel.includes(i.id) ? 'sim' : '',
     }));
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Tarifas');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Saídas pendentes');
     const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-    saveAs(new Blob([buf]), `tarifas_selecionadas_${de}_a_${ate}.xlsx`);
+    saveAs(new Blob([buf]), `saidas_pendentes_${de}_a_${ate}.xlsx`);
   };
 
   const criarTodas = async () => {
-    const ids = marcados.map((i) => i.id);
-    if (!ids.length) return;
-    if (!window.confirm(`Criar ${ids.length} duplicata(s) (total ${fmt(totalSel)}) no TOTVS e na Solicitação Crosby, em nome do banco de cada conta (despesa 7008 TARIFAS BANCARIAS), e conciliar cada saída?`)) return;
+    const prontos = marcados.filter(prontoParaCriar);
+    if (!prontos.length) return;
+    const total = prontos.reduce((s, i) => s + i.valor, 0);
+    if (!window.confirm(`Criar ${prontos.length} duplicata(s) (total ${fmt(total)}) no TOTVS e na Solicitação Crosby e conciliar cada saída?${semDados ? `\n\n${semDados} marcada(s) sem fornecedor/despesa ficam de fora.` : ''}`)) return;
     const acc = { criadas: [], recusadas: [], total: 0 };
     setResultado(null);
-    for (let i = 0; i < ids.length; i += 10) {
-      setCriando({ feitos: i, total: ids.length });
+    for (let k = 0; k < prontos.length; k += 10) {
+      setCriando({ feitos: k, total: prontos.length });
+      const lote = prontos.slice(k, k + 10).map((i) => ({ lancamentoId: i.id, fornecedorCodigo: edit[i.id]?.forn || null, despesaCodigo: edit[i.id]?.desp || null }));
       try {
-        const r = await fetch(`${API}/conciliacao/tarifas`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headersUsuario() }, body: JSON.stringify({ lancamentoIds: ids.slice(i, i + 10) }) });
+        const r = await fetch(`${API}/conciliacao/tarifas`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headersUsuario() }, body: JSON.stringify({ itens: lote }) });
         const j = await r.json();
         if (!j?.success) throw new Error(j?.message || 'Falha ao criar as duplicatas.');
         acc.criadas.push(...j.data.criadas);
         acc.recusadas.push(...j.data.recusadas);
         acc.total += j.data.total || 0;
       } catch (e) {
-        acc.recusadas.push(...ids.slice(i, i + 10).map((id) => ({ lancamentoId: id, motivo: e.message })));
+        acc.recusadas.push(...lote.map((x) => ({ lancamentoId: x.lancamentoId, motivo: e.message })));
       }
     }
     setCriando(null);
@@ -425,12 +471,12 @@ const ModalSaidasPendentes = ({ de, ate, onClose, onConcluido }) => {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center p-3 md:p-6 overflow-auto" onClick={() => !criando && onClose()}>
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-7xl" onClick={(e) => e.stopPropagation()}>
         <div className="px-4 py-3 border-b border-gray-200 flex items-start gap-2">
           <div className="flex-1 min-w-0">
             <h3 className="text-sm font-bold text-gray-800">Saídas pendentes — todas as contas</h3>
             <p className="text-xs text-gray-500">
-              {fmtData(de)} a {fmtData(ate)} · {itens ? `${itens.length} pendente(s), ${(itens || []).filter((i) => i.elegivel).length} tarifa(s) e afins` : 'carregando…'} · Pix, boleto, compra/fatura de cartão e transferência ficam de fora.
+              {fmtData(de)} a {fmtData(ate)} · {itens ? `${itens.length} pendente(s) · ${(itens || []).filter((i) => i.tarifa).length} tarifa(s)` : 'carregando…'} · fornecedor e despesa vêm sugeridos pelo histórico do TOTVS — confira/edite antes de criar.
             </p>
           </div>
           <button onClick={() => !criando && onClose()} className="text-gray-400 hover:text-gray-600">
@@ -438,17 +484,21 @@ const ModalSaidasPendentes = ({ de, ate, onClose, onConcluido }) => {
           </button>
         </div>
         <div className="px-4 py-2 border-b border-gray-200 flex flex-wrap items-center gap-2 text-[11px]">
-          <button onClick={() => setSel(todasMarcadas ? [] : elegiveis.map((i) => i.id))} disabled={!elegiveis.length || !!criando} className="px-2.5 py-1.5 rounded-md border border-orange-300 text-orange-800 bg-orange-50 hover:bg-orange-100 disabled:opacity-40 font-medium">
-            {todasMarcadas ? 'Desmarcar todas' : `Selecionar tarifas e afins (${elegiveis.length})`}
+          <button onClick={() => setSel([...new Set([...sel, ...tarifas.map((i) => i.id)])])} disabled={!tarifas.length || !!criando} className="px-2.5 py-1.5 rounded-md border border-orange-300 text-orange-800 bg-orange-50 hover:bg-orange-100 disabled:opacity-40 font-medium">
+            Selecionar tarifas ({tarifas.length})
+          </button>
+          <button onClick={() => setSel(todasVisMarcadas ? [] : visiveis.map((i) => i.id))} disabled={!visiveis.length || !!criando} className="px-2.5 py-1.5 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-40 font-medium">
+            {todasVisMarcadas ? 'Desmarcar todas' : `Selecionar todas (${visiveis.length})`}
           </button>
           <span className="text-gray-600">
             {marcados.length} marcada(s) · {fmt(totalSel)}
+            {semDados ? <span className="text-amber-700"> · {semDados} sem fornecedor/despesa</span> : null}
           </span>
-          <button onClick={baixarExcel} disabled={!elegiveis.length && !marcados.length} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-green-700 text-white hover:bg-green-800 disabled:opacity-40 font-medium" title="Excel das marcadas (ou de todas as tarifas, se nada marcado), por empresa e banco">
+          <button onClick={baixarExcel} disabled={!visiveis.length} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-green-700 text-white hover:bg-green-800 disabled:opacity-40 font-medium" title="Excel de todas as saídas pendentes na tela, com fornecedor e despesa sugeridos/editados">
             <Export size={12} /> Baixar Excel
           </button>
-          <button onClick={criarTodas} disabled={!marcados.length || !!criando} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-40 font-medium">
-            {criando ? <ArrowsClockwise size={12} className="animate-spin" /> : <Plus size={12} weight="bold" />} {criando ? `Criando ${criando.feitos}/${criando.total}…` : `Criar todas as duplicatas (${marcados.length})`}
+          <button onClick={criarTodas} disabled={!marcados.length || !!criando || marcados.length === semDados} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-40 font-medium">
+            {criando ? <ArrowsClockwise size={12} className="animate-spin" /> : <Plus size={12} weight="bold" />} {criando ? `Criando ${criando.feitos}/${criando.total}…` : `Criar duplicatas (${marcados.length - semDados})`}
           </button>
           <div className="relative ml-auto">
             <MagnifyingGlass size={13} className="absolute left-2 top-2 text-gray-400" />
@@ -458,48 +508,66 @@ const ModalSaidasPendentes = ({ de, ate, onClose, onConcluido }) => {
         {(erro || resultado) && (
           <div className={`px-4 py-2 text-[11px] ${erro || resultado?.recusadas?.length ? 'bg-amber-50 text-amber-900' : 'bg-green-50 text-green-800'}`}>
             {erro ||
-              `${resultado.criadas.length} duplicata(s) criada(s) e conciliada(s) (${fmt(resultado.total)})${resultado.recusadas.length ? ` · ${resultado.recusadas.length} recusada(s): ${resultado.recusadas.slice(0, 5).map((x) => `${x.valor != null ? fmt(x.valor) + ' ' : ''}${x.motivo}`).join('; ')}${resultado.recusadas.length > 5 ? '…' : ''}` : ''}. Agora é só clicar em "Conciliar saídas pendentes (todas as contas)" para o resto.`}
+              `${resultado.criadas.length} duplicata(s) criada(s) e conciliada(s) (${fmt(resultado.total)})${resultado.recusadas.length ? ` · ${resultado.recusadas.length} recusada(s): ${resultado.recusadas.slice(0, 5).map((x) => `${x.valor != null ? fmt(x.valor) + ' ' : ''}${x.motivo}`).join('; ')}${resultado.recusadas.length > 5 ? '…' : ''}` : ''}.`}
           </div>
         )}
         <div className="max-h-[65vh] overflow-auto">
           {!itens ? (
             <p className="p-6 text-sm text-gray-400 flex items-center gap-2">
-              <ArrowsClockwise size={14} className="animate-spin" /> Carregando as saídas pendentes de todas as contas…
+              <ArrowsClockwise size={14} className="animate-spin" /> Carregando as saídas pendentes e estudando as despesas no TOTVS…
             </p>
           ) : (
             <table className="w-full text-xs">
               <thead className="sticky top-0 bg-gray-50 z-10">
                 <tr className="border-b border-gray-200">
                   <Th className="w-6">
-                    <input type="checkbox" checked={todasMarcadas} disabled={!elegiveis.length || !!criando} onChange={() => setSel(todasMarcadas ? [] : elegiveis.map((i) => i.id))} className="accent-orange-600" title="Selecionar todas as tarifas e afins" />
+                    <input type="checkbox" checked={todasVisMarcadas} disabled={!visiveis.length || !!criando} onChange={() => setSel(todasVisMarcadas ? [] : visiveis.map((i) => i.id))} className="accent-orange-600" title="Selecionar todas as linhas da tela" />
                   </Th>
                   <Th>Empresa</Th>
                   <Th>Banco / conta</Th>
                   <Th>Data</Th>
-                  <Th>Histórico</Th>
-                  <Th>Contraparte</Th>
+                  <Th>Histórico / contraparte</Th>
                   <Th right>Valor</Th>
-                  <Th>Situação</Th>
+                  <Th>Fornecedor (cód. TOTVS)</Th>
+                  <Th>Despesa (cód.)</Th>
                 </tr>
               </thead>
               <tbody>
-                {visiveis.map((i) => (
-                  <tr key={i.id} className={`border-b border-gray-100 ${sel.includes(i.id) ? 'bg-orange-50' : i.elegivel ? 'hover:bg-gray-50' : 'text-gray-400'}`}>
-                    <td className="px-2 py-1.5 text-center">
-                      <input type="checkbox" checked={sel.includes(i.id)} disabled={!i.elegivel || !!criando} onChange={() => setSel((p) => (p.includes(i.id) ? p.filter((x) => x !== i.id) : [...p, i.id]))} className="accent-orange-600" title={i.elegivel ? 'Marcar para criar a duplicata' : `Bloqueado: ${i.motivoBloqueio}`} />
-                    </td>
-                    <td className="px-3 py-1.5 whitespace-nowrap">{i.empresa}</td>
-                    <td className="px-3 py-1.5 whitespace-nowrap">{i.banco} · {i.conta}</td>
-                    <td className="px-3 py-1.5 whitespace-nowrap">{fmtData(i.data)}</td>
-                    <td className="px-3 py-1.5">
-                      {i.descricao}
-                      {i.memo && i.memo !== i.descricao ? <span className="text-gray-400"> · {i.memo}</span> : null}
-                    </td>
-                    <td className="px-3 py-1.5">{i.contraparte || '—'}</td>
-                    <td className="px-3 py-1.5 text-right font-semibold text-red-600 whitespace-nowrap">{fmt(i.valor)}</td>
-                    <td className="px-3 py-1.5 whitespace-nowrap">{i.elegivel ? <span className="text-orange-700">tarifa / afim</span> : <span title={i.motivoBloqueio}>{i.motivoBloqueio}</span>}</td>
-                  </tr>
-                ))}
+                {visiveis.map((i) => {
+                  const e = edit[i.id] || {};
+                  const nf = nomeFornDe(i);
+                  const nd = nomeDespesa(e.desp);
+                  return (
+                    <tr key={i.id} className={`border-b border-gray-100 align-top ${sel.includes(i.id) ? 'bg-orange-50' : 'hover:bg-gray-50'}`}>
+                      <td className="px-2 py-1.5 text-center">
+                        <input type="checkbox" checked={sel.includes(i.id)} disabled={!!criando} onChange={() => setSel((p) => (p.includes(i.id) ? p.filter((x) => x !== i.id) : [...p, i.id]))} className="accent-orange-600" />
+                      </td>
+                      <td className="px-3 py-1.5 whitespace-nowrap">{i.empresa}</td>
+                      <td className="px-3 py-1.5 whitespace-nowrap">
+                        {i.banco} · {i.conta}
+                        <div className="text-[10px] text-gray-400">{i.tarifa ? 'tarifa / afim' : i.motivoBloqueio}</div>
+                      </td>
+                      <td className="px-3 py-1.5 whitespace-nowrap">{fmtData(i.data)}</td>
+                      <td className="px-3 py-1.5 max-w-[260px]">
+                        {i.descricao}
+                        {i.memo && i.memo !== i.descricao ? <span className="text-gray-400"> · {i.memo}</span> : null}
+                        {i.contraparte ? <div className="text-gray-600">{i.contraparte}{i.contraparteDoc ? <span className="text-gray-400"> · {i.contraparteDoc}</span> : null}</div> : null}
+                      </td>
+                      <td className="px-3 py-1.5 text-right font-semibold text-red-600 whitespace-nowrap">{fmt(i.valor)}</td>
+                      <td className="px-3 py-1.5 min-w-[170px]">
+                        <input value={e.forn || ''} onChange={(ev) => setCampo(i.id, 'forn', ev.target.value)} onBlur={(ev) => buscarNomeForn(ev.target.value)} placeholder={i.tarifa ? 'banco da conta' : 'código'} inputMode="numeric" className="w-24 px-1.5 py-0.5 border border-gray-300 rounded text-gray-800" />
+                        <div className="text-[10px] text-gray-500 truncate max-w-[200px]" title={nf}>{nf}</div>
+                      </td>
+                      <td className="px-3 py-1.5 min-w-[190px]">
+                        <input value={e.desp || ''} onChange={(ev) => setCampo(i.id, 'desp', ev.target.value)} placeholder={i.tarifa ? '7008' : 'código'} inputMode="numeric" className="w-20 px-1.5 py-0.5 border border-gray-300 rounded text-gray-800" />
+                        <div className={`text-[10px] truncate max-w-[220px] ${e.desp && !nd ? 'text-red-600' : 'text-gray-500'}`} title={i.sugestao?.fonte || ''}>
+                          {e.desp ? nd || 'código não está no cadastro' : i.tarifa ? 'TARIFAS BANCARIAS' : ''}
+                          {i.sugestao?.fonte && String(i.sugestao.despesaCodigo || '') === String(e.desp || '') ? <span className="text-indigo-500"> · sugestão</span> : null}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
                 {!visiveis.length && (
                   <tr>
                     <td colSpan={8} className="p-6 text-center text-gray-400">
