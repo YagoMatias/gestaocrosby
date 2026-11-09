@@ -315,15 +315,205 @@ const Kpi = ({ label, value, sub, tone = 'text-gray-900' }) => (
     {sub && <p className="text-[10px] text-gray-400 mt-0.5">{sub}</p>}
   </div>
 );
-// Saída de tarifa / encargo / IOF / custas — mesma regra do backend
-// (services/tarifasConciliacao.js → ehTarifa). Só essas viram duplicata em lote.
+// "Tarifas e afins" — MESMA regra do backend (services/tarifasConciliacao.js →
+// motivoNaoTarifa). Entra tarifa/encargo/IOF/custas/juros e cancelamento de
+// venda; fica de fora Pix, boleto, transferência, compra e fatura de cartão.
 const semAcentoTar = (s) => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-const ehTarifa = (l) => {
-  if (!l || Number(l.valor) >= 0 || l.transferencia_id || l.tipo === 'TRANSFERENCIA') return false;
-  if (/TARIFA|ENCARGO/.test(semAcentoTar(l.forma).toUpperCase())) return true;
-  if (String(l.categoria || '').toLowerCase() === 'tarifa') return true;
+const motivoNaoTarifa = (l) => {
+  if (!l || Number(l.valor) >= 0) return 'não é saída';
+  if (l.transferencia_id || l.tipo === 'TRANSFERENCIA') return 'transferência';
+  const forma = semAcentoTar(l.forma).toUpperCase();
+  const cat = String(l.categoria || '').toLowerCase();
   const txt = semAcentoTar(`${l.descricao || ''} ${l.memo || ''}`).toUpperCase();
-  return /\b(TARIFA|TAR\b|TAXA|IOF|ENCARGO|ENCARGOS|PROTESTO|CUSTAS|CARTORIO|MENSALIDADE|ANUIDADE|CESTA|MANUTENCAO DE CONTA|JUROS\s+(AD|ADIANT|S\/ SALDO|LIMITE)|JUROS AD)\b/.test(txt);
+  if (/PIX/.test(forma) || cat === 'pix' || /\bPIX\b/.test(txt)) return 'Pix';
+  if (/BOLETO/.test(forma) || cat === 'boleto' || cat === 'pagamento' || /\bBOLETO\b|PAGAMENTO DE TITULO|PAGTO\.? TITULO|LIQUIDACAO DE TITULO/.test(txt)) return 'pagamento de boleto';
+  if (/TRANSFER/.test(forma) || cat === 'transferencia') return 'transferência';
+  if (/FATURA/.test(forma) || /FATURA CARTAO|PAGAMENTO FATURA/.test(txt)) return 'fatura de cartão';
+  if (/COMPRA CARTAO/.test(forma) || cat === 'cartao_compra' || /COMPRA CARTAO/.test(txt)) return 'compra no cartão';
+  if (/TARIFA|ENCARGO/.test(forma) || cat === 'tarifa') return null;
+  if (/\b(TARIFA|TAR\b|TAXA|IOF|ENCARGO|ENCARGOS|PROTESTO|CUSTAS|CARTORIO|MENSALIDADE|ANUIDADE|CESTA|MANUTENCAO DE CONTA|JUROS)\b/.test(txt)) return null;
+  if (/CANCELAMENTO DE VENDA|ESTORNO DE VENDA|CHARGEBACK/.test(txt)) return null;
+  return 'não é tarifa/encargo';
+};
+const ehTarifa = (l) => motivoNaoTarifa(l) === null;
+
+// ─── janela "Saídas pendentes (todas as contas)" — João, 09/11/2026 ───
+// lista as saídas pendentes de todas as contas, marca as tarifas e afins,
+// baixa Excel das marcadas e cria as duplicatas (TOTVS + Solicitação + conciliação).
+const ModalSaidasPendentes = ({ de, ate, onClose, onConcluido }) => {
+  const [itens, setItens] = useState(null);
+  const [erro, setErro] = useState(null);
+  const [sel, setSel] = useState([]);
+  const [busca, setBusca] = useState('');
+  const [criando, setCriando] = useState(null); // { feitos, total }
+  const [resultado, setResultado] = useState(null);
+  const carregar = useCallback(async () => {
+    setErro(null);
+    setItens(null);
+    try {
+      const r = await fetch(`${API}/conciliacao/saidas-pendentes?de=${de}&ate=${ate}`, { headers: headersUsuario() });
+      const j = await r.json();
+      if (!j?.success) throw new Error(j?.message || 'Falha ao carregar as saídas pendentes.');
+      setItens(j.data.itens || []);
+    } catch (e) {
+      setErro(e.message);
+      setItens([]);
+    }
+  }, [de, ate]);
+  useEffect(() => {
+    carregar();
+  }, [carregar]);
+  useEffect(() => {
+    const h = (e) => e.key === 'Escape' && !criando && onClose();
+    document.addEventListener('keydown', h);
+    return () => document.removeEventListener('keydown', h);
+  }, [onClose, criando]);
+
+  const visiveis = useMemo(() => {
+    const q = busca.trim().toLowerCase();
+    return (itens || []).filter((i) => !q || `${i.empresa} ${i.banco} ${i.conta} ${i.descricao} ${i.memo || ''} ${i.contraparte || ''} ${i.valor}`.toLowerCase().includes(q));
+  }, [itens, busca]);
+  const elegiveis = visiveis.filter((i) => i.elegivel);
+  const marcados = (itens || []).filter((i) => sel.includes(i.id));
+  const totalSel = marcados.reduce((s, i) => s + i.valor, 0);
+  const todasMarcadas = elegiveis.length > 0 && elegiveis.every((i) => sel.includes(i.id));
+
+  const baixarExcel = () => {
+    const rows = (marcados.length ? marcados : elegiveis).map((i) => ({
+      Empresa: i.empresa,
+      Banco: i.banco,
+      Conta: i.conta,
+      Data: fmtData(i.data),
+      Forma: i.forma,
+      Histórico: i.descricao,
+      Detalhe: i.memo,
+      Contraparte: i.contraparte,
+      Valor: i.valor,
+      'Despesa TOTVS': '7008 TARIFAS BANCARIAS',
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Tarifas');
+    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    saveAs(new Blob([buf]), `tarifas_selecionadas_${de}_a_${ate}.xlsx`);
+  };
+
+  const criarTodas = async () => {
+    const ids = marcados.map((i) => i.id);
+    if (!ids.length) return;
+    if (!window.confirm(`Criar ${ids.length} duplicata(s) (total ${fmt(totalSel)}) no TOTVS e na Solicitação Crosby, em nome do banco de cada conta (despesa 7008 TARIFAS BANCARIAS), e conciliar cada saída?`)) return;
+    const acc = { criadas: [], recusadas: [], total: 0 };
+    setResultado(null);
+    for (let i = 0; i < ids.length; i += 10) {
+      setCriando({ feitos: i, total: ids.length });
+      try {
+        const r = await fetch(`${API}/conciliacao/tarifas`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headersUsuario() }, body: JSON.stringify({ lancamentoIds: ids.slice(i, i + 10) }) });
+        const j = await r.json();
+        if (!j?.success) throw new Error(j?.message || 'Falha ao criar as duplicatas.');
+        acc.criadas.push(...j.data.criadas);
+        acc.recusadas.push(...j.data.recusadas);
+        acc.total += j.data.total || 0;
+      } catch (e) {
+        acc.recusadas.push(...ids.slice(i, i + 10).map((id) => ({ lancamentoId: id, motivo: e.message })));
+      }
+    }
+    setCriando(null);
+    setResultado(acc);
+    setSel([]);
+    await carregar();
+    if (onConcluido) onConcluido();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center p-3 md:p-6 overflow-auto" onClick={() => !criando && onClose()}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl" onClick={(e) => e.stopPropagation()}>
+        <div className="px-4 py-3 border-b border-gray-200 flex items-start gap-2">
+          <div className="flex-1 min-w-0">
+            <h3 className="text-sm font-bold text-gray-800">Saídas pendentes — todas as contas</h3>
+            <p className="text-xs text-gray-500">
+              {fmtData(de)} a {fmtData(ate)} · {itens ? `${itens.length} pendente(s), ${(itens || []).filter((i) => i.elegivel).length} tarifa(s) e afins` : 'carregando…'} · Pix, boleto, compra/fatura de cartão e transferência ficam de fora.
+            </p>
+          </div>
+          <button onClick={() => !criando && onClose()} className="text-gray-400 hover:text-gray-600">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="px-4 py-2 border-b border-gray-200 flex flex-wrap items-center gap-2 text-[11px]">
+          <button onClick={() => setSel(todasMarcadas ? [] : elegiveis.map((i) => i.id))} disabled={!elegiveis.length || !!criando} className="px-2.5 py-1.5 rounded-md border border-orange-300 text-orange-800 bg-orange-50 hover:bg-orange-100 disabled:opacity-40 font-medium">
+            {todasMarcadas ? 'Desmarcar todas' : `Selecionar tarifas e afins (${elegiveis.length})`}
+          </button>
+          <span className="text-gray-600">
+            {marcados.length} marcada(s) · {fmt(totalSel)}
+          </span>
+          <button onClick={baixarExcel} disabled={!elegiveis.length && !marcados.length} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-green-700 text-white hover:bg-green-800 disabled:opacity-40 font-medium" title="Excel das marcadas (ou de todas as tarifas, se nada marcado), por empresa e banco">
+            <Export size={12} /> Baixar Excel
+          </button>
+          <button onClick={criarTodas} disabled={!marcados.length || !!criando} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-40 font-medium">
+            {criando ? <ArrowsClockwise size={12} className="animate-spin" /> : <Plus size={12} weight="bold" />} {criando ? `Criando ${criando.feitos}/${criando.total}…` : `Criar todas as duplicatas (${marcados.length})`}
+          </button>
+          <div className="relative ml-auto">
+            <MagnifyingGlass size={13} className="absolute left-2 top-2 text-gray-400" />
+            <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Filtrar empresa, banco, histórico…" className="pl-7 pr-2 py-1.5 border border-gray-300 rounded-lg w-56" />
+          </div>
+        </div>
+        {(erro || resultado) && (
+          <div className={`px-4 py-2 text-[11px] ${erro || resultado?.recusadas?.length ? 'bg-amber-50 text-amber-900' : 'bg-green-50 text-green-800'}`}>
+            {erro ||
+              `${resultado.criadas.length} duplicata(s) criada(s) e conciliada(s) (${fmt(resultado.total)})${resultado.recusadas.length ? ` · ${resultado.recusadas.length} recusada(s): ${resultado.recusadas.slice(0, 5).map((x) => `${x.valor != null ? fmt(x.valor) + ' ' : ''}${x.motivo}`).join('; ')}${resultado.recusadas.length > 5 ? '…' : ''}` : ''}. Agora é só clicar em "Conciliar saídas pendentes (todas as contas)" para o resto.`}
+          </div>
+        )}
+        <div className="max-h-[65vh] overflow-auto">
+          {!itens ? (
+            <p className="p-6 text-sm text-gray-400 flex items-center gap-2">
+              <ArrowsClockwise size={14} className="animate-spin" /> Carregando as saídas pendentes de todas as contas…
+            </p>
+          ) : (
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-gray-50 z-10">
+                <tr className="border-b border-gray-200">
+                  <Th className="w-6">
+                    <input type="checkbox" checked={todasMarcadas} disabled={!elegiveis.length || !!criando} onChange={() => setSel(todasMarcadas ? [] : elegiveis.map((i) => i.id))} className="accent-orange-600" title="Selecionar todas as tarifas e afins" />
+                  </Th>
+                  <Th>Empresa</Th>
+                  <Th>Banco / conta</Th>
+                  <Th>Data</Th>
+                  <Th>Histórico</Th>
+                  <Th>Contraparte</Th>
+                  <Th right>Valor</Th>
+                  <Th>Situação</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {visiveis.map((i) => (
+                  <tr key={i.id} className={`border-b border-gray-100 ${sel.includes(i.id) ? 'bg-orange-50' : i.elegivel ? 'hover:bg-gray-50' : 'text-gray-400'}`}>
+                    <td className="px-2 py-1.5 text-center">
+                      <input type="checkbox" checked={sel.includes(i.id)} disabled={!i.elegivel || !!criando} onChange={() => setSel((p) => (p.includes(i.id) ? p.filter((x) => x !== i.id) : [...p, i.id]))} className="accent-orange-600" title={i.elegivel ? 'Marcar para criar a duplicata' : `Bloqueado: ${i.motivoBloqueio}`} />
+                    </td>
+                    <td className="px-3 py-1.5 whitespace-nowrap">{i.empresa}</td>
+                    <td className="px-3 py-1.5 whitespace-nowrap">{i.banco} · {i.conta}</td>
+                    <td className="px-3 py-1.5 whitespace-nowrap">{fmtData(i.data)}</td>
+                    <td className="px-3 py-1.5">
+                      {i.descricao}
+                      {i.memo && i.memo !== i.descricao ? <span className="text-gray-400"> · {i.memo}</span> : null}
+                    </td>
+                    <td className="px-3 py-1.5">{i.contraparte || '—'}</td>
+                    <td className="px-3 py-1.5 text-right font-semibold text-red-600 whitespace-nowrap">{fmt(i.valor)}</td>
+                    <td className="px-3 py-1.5 whitespace-nowrap">{i.elegivel ? <span className="text-orange-700">tarifa / afim</span> : <span title={i.motivoBloqueio}>{i.motivoBloqueio}</span>}</td>
+                  </tr>
+                ))}
+                {!visiveis.length && (
+                  <tr>
+                    <td colSpan={8} className="p-6 text-center text-gray-400">
+                      Nenhuma saída pendente no período.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 };
 
 const Th = ({ children, right, className = '' }) => (
@@ -576,6 +766,7 @@ const Conciliacao = () => {
     }
   };
   const [importandoTechfin, setImportandoTechfin] = useState(false);
+  const [saidasPendAberta, setSaidasPendAberta] = useState(false); // janela "Saídas pendentes (todas as contas)"
   const importarTechfin = async (arquivos) => {
     if (!arquivos?.length) return;
     setImportandoTechfin(true);
@@ -954,6 +1145,13 @@ const Conciliacao = () => {
             <input type="file" accept=".csv,text/csv" multiple className="hidden" disabled={importandoTechfin} onChange={(e) => { importarTechfin(Array.from(e.target.files || [])); e.target.value = ''; }} />
           </label>
           <button
+            onClick={() => setSaidasPendAberta(true)}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-orange-600 text-white hover:bg-orange-700 text-[11px] font-medium"
+            title="Abre a lista de saídas pendentes de todas as contas: selecione as tarifas e afins, baixe o Excel e crie as duplicatas (TOTVS + Solicitação Crosby) de uma vez"
+          >
+            <Plus size={12} weight="bold" /> Saídas pendentes (todas as contas)
+          </button>
+          <button
             onClick={() => conciliarAutomatico(null)}
             disabled={conciliando || !totais.pendSaidas}
             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-[#000638] text-white hover:bg-blue-900 disabled:opacity-40 text-[11px] font-medium"
@@ -964,6 +1162,7 @@ const Conciliacao = () => {
         </div>
       </div>
 
+      {saidasPendAberta && <ModalSaidasPendentes de={de} ate={ate} onClose={() => setSaidasPendAberta(false)} onConcluido={carregar} />}
       {contaAberta && (
         <ModalExtrato
           linha={contaAberta}
@@ -1405,17 +1604,27 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
           )}
           {(() => {
             const tarifasSel = (r.lancamentos || []).filter((l) => selLinhas.includes(l.id) && ehTarifa(l)).map((l) => l.id);
-            if (!tarifasSel.length) return null;
+            const tarifasPend = lancamentos.filter((l) => l.pendente && ehTarifa(l)).map((l) => l.id);
+            if (!tarifasPend.length && !tarifasSel.length) return null;
             const fora = selLinhas.length - tarifasSel.length;
             return (
+              <>
+              <button
+                onClick={() => setSelLinhas((prev) => [...new Set([...prev, ...tarifasPend])])}
+                className="px-2.5 py-1 rounded-md border border-orange-300 text-orange-800 bg-orange-50 hover:bg-orange-100 text-[11px] font-medium"
+                title="Marca todas as tarifas e afins pendentes desta conta"
+              >
+                Selecionar tarifas ({tarifasPend.length})
+              </button>
               <button
                 onClick={() => criarDuplicatasTarifas(tarifasSel)}
-                disabled={criandoTarifas}
+                disabled={criandoTarifas || !tarifasSel.length}
                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 text-[11px] font-medium"
                 title={`Cria a duplicata de cada tarifa no TOTVS e na Solicitação Crosby (nome do banco da conta, despesa 7008) e concilia a saída.${fora ? ` ${fora} marcada(s) que não são tarifa ficam de fora.` : ''}`}
               >
-                {criandoTarifas ? <ArrowsClockwise size={12} className="animate-spin" /> : <Plus size={12} weight="bold" />} Criar duplicatas de tarifa ({tarifasSel.length})
+                {criandoTarifas ? <ArrowsClockwise size={12} className="animate-spin" /> : <Plus size={12} weight="bold" />} Criar duplicatas ({tarifasSel.length})
               </button>
+              </>
             );
           })()}
           <button onClick={() => setTipo('TODOS')} className={chip(tipo === 'TODOS')}>
