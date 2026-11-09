@@ -961,6 +961,7 @@ const Conciliacao = () => {
           ate={ate}
           onClose={() => setContaAberta(null)}
           onConciliarConta={() => conciliarAutomatico(contaAberta.fluxo.id)}
+          onRecarregar={carregar}
           conciliando={conciliando}
           salvar={salvarConciliacao}
           desfazer={desfazerConciliacao}
@@ -973,7 +974,7 @@ const Conciliacao = () => {
 };
 
 // ─── modal: extrato da conta, linha a linha ────────────────────
-const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, conciliando, salvar, desfazer, justificar, buscar }) => {
+const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, onRecarregar, conciliando, salvar, desfazer, justificar, buscar }) => {
   const fc = c.fluxo;
   const r = resumo || { lancamentos: [], entradas: 0, saidas: 0, transfEntradas: 0, transfSaidas: 0, qtd: 0, pendencias: 0, pendSaidas: 0, pendEntradas: 0 };
   const [tipo, setTipo] = useState('TODOS');
@@ -994,6 +995,35 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
     }
   };
   const [busca, setBusca] = useState('');
+  // conciliar ENTRADAS pelo CSV do extrato Stone (antecipações/recebíveis/Pix) — João, 09/11/2026
+  const csvRef = useRef(null);
+  const [csvMsg, setCsvMsg] = useState(null); // { ok, texto }
+  const [csvOcupado, setCsvOcupado] = useState(false);
+  const conciliarEntradasCsv = async (arquivo) => {
+    if (!arquivo) return;
+    setCsvOcupado(true);
+    setCsvMsg(null);
+    try {
+      const fd = new FormData();
+      fd.append('arquivo', arquivo);
+      fd.append('contaId', String(c.fluxo.id));
+      const resp = await fetch(`${API}/conciliacao/entradas-csv`, { method: 'POST', body: fd, headers: headersUsuario() });
+      const j = await resp.json();
+      if (!j?.success) throw new Error(j?.message || 'Falha ao conciliar pelo CSV.');
+      const d = j.data;
+      const cats = Object.entries(d.porCategoria || {}).map(([k, v]) => `${k.toLowerCase().replace('_', ' ')} ${fmt(v)}`).join(' · ');
+      setCsvMsg({
+        ok: true,
+        texto: `CSV ${fmtData(d.periodo.de)} a ${fmtData(d.periodo.ate)}: ${d.conciliadas.length} de ${d.pendentes} entrada(s) pendente(s) conciliada(s) (${fmt(d.valorConciliado)})${cats ? ` — ${cats}` : ''}${d.semLinha.length ? ` · ${d.semLinha.length} sem linha no CSV` : ''}${d.erros.length ? ` · ${d.erros.length} com erro` : ''}`,
+      });
+      if (onRecarregar) await onRecarregar();
+    } catch (e) {
+      setCsvMsg({ ok: false, texto: e.message });
+    } finally {
+      setCsvOcupado(false);
+      if (csvRef.current) csvRef.current.value = '';
+    }
+  };
   // ordenar por Entrada/Saída (maior↔menor) — Titia, 09/11/2026. null = ordem do extrato
   const [ordemValor, setOrdemValor] = useState(null); // { col: 'entrada'|'saida', dir: 'desc'|'asc' }
   const [picker, setPicker] = useState(null); // { lancamento, candidatos, avisos, decisao }
@@ -1361,7 +1391,21 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
           >
             {conciliando ? <ArrowsClockwise size={12} className="animate-spin" /> : <Lightning size={12} weight="fill" />} Conciliar saídas pendentes ({r.pendSaidas || 0})
           </button>
+          {String(c?.fluxo?.banco || '').toUpperCase() === 'STONE' && (
+            <>
+              <input ref={csvRef} type="file" accept=".csv" className="hidden" onChange={(e) => conciliarEntradasCsv(e.target.files?.[0])} />
+              <button
+                onClick={() => csvRef.current?.click()}
+                disabled={csvOcupado}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-green-700 text-white hover:bg-green-800 disabled:opacity-40 text-[11px] font-medium"
+                title="Envie o CSV do extrato desta conta (app/portal Stone): as entradas pendentes que baterem data e valor com a planilha (antecipação, recebível de cartão, Pix) são conciliadas"
+              >
+                {csvOcupado ? <ArrowsClockwise size={12} className="animate-spin" /> : <UploadSimple size={12} />} Conciliar entradas pelo CSV
+              </button>
+            </>
+          )}
         </div>
+        {csvMsg && <div className={`px-4 py-1.5 text-[11px] ${csvMsg.ok ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-700'}`}>{csvMsg.texto}</div>}
 
         <div className="flex-1 overflow-auto">
           {situacao === 'PROLABORE' && <PainelProLabore linhas={proLabore} salvar={salvar} justificar={justificar} desfazer={desfazer} setErro={setErroModal} onDetalhe={abrirDetalhe} />}
