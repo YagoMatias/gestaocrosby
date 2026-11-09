@@ -994,6 +994,8 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
     }
   };
   const [busca, setBusca] = useState('');
+  // ordenar por Entrada/Saída (maior↔menor) — Titia, 09/11/2026. null = ordem do extrato
+  const [ordemValor, setOrdemValor] = useState(null); // { col: 'entrada'|'saida', dir: 'desc'|'asc' }
   const [picker, setPicker] = useState(null); // { lancamento, candidatos, avisos, decisao }
   const [selecao, setSelecao] = useState([]); // candidatos marcados (podem somar a saída)
   // busca manual (mesmos filtros das telas Contas a Pagar / Receber): devolve só o que foi pesquisado
@@ -1202,7 +1204,7 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
 
   const lancamentos = useMemo(() => {
     const q = busca.trim().toLowerCase();
-    return (r.lancamentos || []).filter((l) => {
+    const filtrados = (r.lancamentos || []).filter((l) => {
       if (tipo !== 'TODOS' && l.tipo !== tipo) return false;
       if (situacao === 'PROLABORE') return false;
       if (situacao === 'PENDENTES' && !l.pendente) return false;
@@ -1210,7 +1212,23 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
       if (q && !`${l.descricao} ${l.memo} ${l.nomeExibicao || ''} ${l.contraparte_nome || ''} ${l.documento || ''} ${l.forma} ${Math.abs(l.valor)} ${l.conciliacao?.justificativa || ''}`.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [r, tipo, situacao, busca]);
+    if (!ordemValor) return filtrados;
+    // valor da coluna escolhida; quem não tem valor nela vai para o fim (na ordem do extrato)
+    const v = (l) => (ordemValor.col === 'entrada' ? (l.valor > 0 ? l.valor : null) : l.valor < 0 ? -l.valor : null);
+    return filtrados
+      .map((l, i) => ({ l, i, k: v(l) }))
+      .sort((a, b) => {
+        if (a.k == null && b.k == null) return a.i - b.i;
+        if (a.k == null) return 1;
+        if (b.k == null) return -1;
+        return ordemValor.dir === 'desc' ? b.k - a.k : a.k - b.k;
+      })
+      .map((x) => x.l);
+  }, [r, tipo, situacao, busca, ordemValor]);
+  // clique no cabeçalho: maior→menor, menor→maior, volta à ordem do extrato
+  const alternarOrdem = (col) =>
+    setOrdemValor((o) => (o?.col !== col ? { col, dir: 'desc' } : o.dir === 'desc' ? { col, dir: 'asc' } : null));
+  const setaOrdem = (col) => (ordemValor?.col === col ? (ordemValor.dir === 'desc' ? ' ↓' : ' ↑') : ' ↕');
   const qtdPend = (r.lancamentos || []).filter((l) => l.pendente).length;
   const qtdOk = (r.lancamentos || []).length - qtdPend;
 
@@ -1358,8 +1376,16 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, co
                 <Th>Contraparte / fornecedor</Th>
                 <Th>Banco contraparte</Th>
                 <Th>Documento</Th>
-                <Th right>Entrada</Th>
-                <Th right>Saída</Th>
+                <Th right>
+                  <button type="button" onClick={() => alternarOrdem('entrada')} className={`hover:text-gray-900 ${ordemValor?.col === 'entrada' ? 'text-green-700' : ''}`} title="Ordenar por entrada (maior ↔ menor)">
+                    Entrada{setaOrdem('entrada')}
+                  </button>
+                </Th>
+                <Th right>
+                  <button type="button" onClick={() => alternarOrdem('saida')} className={`hover:text-gray-900 ${ordemValor?.col === 'saida' ? 'text-red-700' : ''}`} title="Ordenar por saída (maior ↔ menor)">
+                    Saída{setaOrdem('saida')}
+                  </button>
+                </Th>
                 <Th right>Saldo após</Th>
                 <Th>Conciliação</Th>
               </tr>
