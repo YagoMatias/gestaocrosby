@@ -93,7 +93,9 @@ const NewExtratoBancario = () => {
     try {
       const q = new URLSearchParams({ de, ate });
       if (bancos.length) q.set('bancos', bancos.join(','));
-      if (contasSel.length) q.set('contas', contasSel.map((k) => contasLista.find((c) => c.id === k)?.conta || k).join(','));
+      // contas escolhidas; sem escolha, todas as contas dos CNPJs marcados (filtro por empresa)
+      const contasFiltro = contasSel.length ? contasSel : cnpjsSel.length ? contasLista.filter((c) => cnpjsSel.includes(docDaConta(c)) && (!bancos.length || bancos.includes(c.banco))).map((c) => c.id) : [];
+      if (contasFiltro.length) q.set('contas', contasFiltro.map((k) => contasLista.find((c) => c.id === k)?.conta || k).join(','));
       if (tipos.length) q.set('tipos', tipos.join(','));
       if (busca.trim()) q.set('busca', busca.trim());
       const r = await fetch(`${API}/lancamentos?${q}`);
