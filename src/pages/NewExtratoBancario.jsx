@@ -174,7 +174,7 @@ const NewExtratoBancario = () => {
     // uma planilha de lançamentos (as colunas são as mesmas em todas as abas)
     const planilhaLanc = (linhas) => {
     const aoa = [
-      ['Data', 'Banco', 'Conta', 'Titular', 'Empresa', 'Tipo', 'Histórico', 'Documento', 'Contraparte', 'CNPJ/CPF contraparte', 'Entrada (R$)', 'Saída (R$)', 'Valor (R$)', 'Saldo após (R$)', 'Transferência', 'Parte de lote SISPAG (R$)'],
+      ['Data', 'Banco', 'Conta', 'Titular', 'Empresa', 'Tipo', 'Histórico', 'Documento', 'Contraparte', 'CNPJ/CPF contraparte', 'Entrada (R$)', 'Saída (R$)', 'Valor (R$)', 'Saldo após (R$)', 'Transferência', 'Parte de lote SISPAG (R$)', 'Pago líquido (R$)'],
       ...linhas.map((l) => [
         dataExcel(l.data),
         bancoCfg(l.banco).label,
@@ -192,14 +192,15 @@ const NewExtratoBancario = () => {
         num(l.saldo_apos),
         l.tipo === 'TRANSFERENCIA' ? (l.transferencia_id ? 'par casado' : 'sem par (outra conta não importada)') : '',
         l.valor_transferido > 0 ? num(l.valor_transferido) : null,
+        l.tipo === 'SAIDA' ? num(-l.valor - (l.valor_transferido || 0)) : null, // saída menos a parte que foi para conta do grupo = o que conta em Pago
       ]),
     ];
     const ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates: true });
-    ws['!cols'] = [11, 10, 16, 32, 30, 14, 44, 14, 32, 18, 14, 14, 14, 16, 30, 16].map((w) => ({ wch: w }));
+    ws['!cols'] = [11, 10, 16, 32, 30, 14, 44, 14, 32, 18, 14, 14, 14, 16, 30, 16, 16].map((w) => ({ wch: w }));
     for (let r = 1; r < aoa.length; r++) {
       const d = ws[XLSX.utils.encode_cell({ r, c: 0 })];
       if (d && d.v instanceof Date) d.z = 'dd/mm/yyyy';
-      for (const c of [10, 11, 12, 13, 15]) { const cel = ws[XLSX.utils.encode_cell({ r, c })]; if (cel && typeof cel.v === 'number') cel.z = '#,##0.00'; }
+      for (const c of [10, 11, 12, 13, 15, 16]) { const cel = ws[XLSX.utils.encode_cell({ r, c })]; if (cel && typeof cel.v === 'number') cel.z = '#,##0.00'; }
     }
     return ws;
     };
@@ -232,18 +233,25 @@ const NewExtratoBancario = () => {
       for (let r = 1; r < sp.length; r++) { const d = wsS[XLSX.utils.encode_cell({ r, c: 0 })]; if (d && d.v instanceof Date) d.z = 'dd/mm/yyyy'; const v = wsS[XLSX.utils.encode_cell({ r, c: 7 })]; if (v) v.z = '#,##0.00'; }
       XLSX.utils.book_append_sheet(wb, wsS, 'Sem par');
     }
-    if (modo === 'tudo' && resumo) {
+    if (resumo) {
       const r = resumo;
       const res = [
         ['Período', `${fmtData(de)} a ${fmtData(ate)}`],
         ['Lançamentos', r.qtd],
-        ['Recebido (R$)', r.entradas], ['Pago (R$)', r.saidas], ['Resultado (R$)', r.resultado],
-        ['Transferências enviadas (R$)', r.transfEnviadas], ['Transferências recebidas (R$)', r.transfRecebidas],
-        ['Sem par enviado (R$)', r.transfSemParEnviadas], ['Sem par recebido (R$)', r.transfSemParRecebidas],
-        ['Partes de lote SISPAG (R$)', r.transfParteLote], ['Aplicado (R$)', r.aplicado], ['Resgatado (R$)', r.resgatado],
+        ['Recebido (R$) — aba Entradas', r.entradas],
+        ['Pago (R$) — aba Saídas, coluna Pago líquido', r.saidas],
+        ['Resultado (R$)', r.resultado],
+        ['Transferido entre contas (R$) — pares casados, contado uma vez, inclui partes de lote', r.transfEnviadas],
+        ['  das quais partes de lote SISPAG (linhas de Saída) (R$)', r.transfParteLote],
+        ['Transferências recebidas casadas (R$)', r.transfRecebidas],
+        ['Sem par enviado (R$)', r.transfSemParEnviadas],
+        ['Sem par recebido (R$)', r.transfSemParRecebidas],
+        ['Aba Transferências: entradas (R$) = casadas recebidas + sem par recebido', r.transfRecebidas + r.transfSemParRecebidas],
+        ['Aba Transferências: saídas (R$) = casadas enviadas − partes de lote + sem par enviado', r.transfEnviadas - r.transfParteLote + r.transfSemParEnviadas],
+        ['Aplicado (R$)', r.aplicado], ['Resgatado (R$)', r.resgatado],
       ];
       const wsR = XLSX.utils.aoa_to_sheet(res);
-      wsR['!cols'] = [34, 18].map((w) => ({ wch: w }));
+      wsR['!cols'] = [78, 18].map((w) => ({ wch: w }));
       for (let i = 2; i < res.length; i++) { const v = wsR[XLSX.utils.encode_cell({ r: i, c: 1 })]; if (v && typeof v.v === 'number') v.z = '#,##0.00'; }
       XLSX.utils.book_append_sheet(wb, wsR, 'Resumo');
     }
