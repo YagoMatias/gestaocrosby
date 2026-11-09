@@ -3573,6 +3573,17 @@ const LiberacaoPagamento = () => {
   }, []);
 
   // Aprovação de títulos "STONE 0000": o bot inclui na conta e o Fábio aprova no app
+  // Título marcado PAGO → o backend procura a saída no extrato e concilia
+  // sozinho (Yago, 09/11/2026). Em segundo plano: não trava a tela; se o
+  // extrato ainda não chegou, o job diário/bot Stone concilia depois.
+  const conciliarPagosNaConciliacao = useCallback((ids) => {
+    if (!ids?.length) return;
+    apiJson('/api/fluxo-caixa-ext/conciliacao/liberacao-pagos', {
+      method: 'POST',
+      body: { ids },
+    }).catch((e) => console.warn('Liberação PAGO → conciliação:', e?.message || e));
+  }, []);
+
   const incluirNaStone = useCallback(async (ids) => {
     try {
       const resp = await apiJson('/api/stone-bot/inclusoes', {
@@ -3712,9 +3723,10 @@ const LiberacaoPagamento = () => {
       setTitulos((prev) =>
         prev.map((t) => (t.id === id ? { ...t, ...patch } : t)),
       );
+      if (novoStatus === 'PAGO') conciliarPagosNaConciliacao([id]);
       if (vaiParaStone) await incluirNaStone([id]);
     },
-    [titulos, user, sincronizarPagamentoFabrica, incluirNaStone],
+    [titulos, user, sincronizarPagamentoFabrica, incluirNaStone, conciliarPagosNaConciliacao],
   );
 
   // Mudança de status em lote
@@ -3801,9 +3813,10 @@ const LiberacaoPagamento = () => {
       }
       setProcessando(false);
       setSelecionados(new Set());
+      if (novoStatus === 'PAGO') conciliarPagosNaConciliacao(ids);
       if (paraStone.length) await incluirNaStone(paraStone);
     },
-    [selecionados, titulos, user, sincronizarPagamentoFabrica, incluirNaStone],
+    [selecionados, titulos, user, sincronizarPagamentoFabrica, incluirNaStone, conciliarPagosNaConciliacao],
   );
 
   const aprovarSelecionados = useCallback(async () => {

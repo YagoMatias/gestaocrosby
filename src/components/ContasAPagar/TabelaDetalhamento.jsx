@@ -563,6 +563,19 @@ const TabelaDetalhamento = React.memo(
                                     </span>
                                   )}
                                 </span>
+                              ) : grupo.item._pagoConciliacao ? (
+                                <span
+                                  className="inline-flex items-center gap-1 text-[10px]"
+                                  title={`Saída do extrato conciliada com esta duplicata${grupo.item._pagoConciliacaoBanco ? ` (${grupo.item._pagoConciliacaoBanco})` : ''} — o TOTVS ainda não baixou`}
+                                >
+                                  <span className="w-2 h-2 rounded-full bg-green-500 inline-block" />
+                                  <span className="text-green-700 font-semibold">
+                                    PAGO VIA CONCILIAÇÃO
+                                  </span>
+                                  <span className="text-gray-500">
+                                    em {formatarData(grupo.item._pagoConciliacaoData)}
+                                  </span>
+                                </span>
                               ) : contaPaga ? (
                                 <span className="inline-flex items-center gap-1 text-[10px]">
                                   <span className="w-2 h-2 rounded-full bg-red-500 inline-block" />
