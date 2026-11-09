@@ -653,6 +653,7 @@ const FaturamentoPedido = () => {
   const [confirmaDuplicar, setConfirmaDuplicar] = useState(false);
   const [posting, setPosting] = useState(false);
   const [resultado, setResultado] = useState(null);
+  const [modalFat, setModalFat] = useState(false); // confirmação → andamento → resultado
 
   useEffect(() => {
     try {
@@ -981,14 +982,6 @@ const FaturamentoPedido = () => {
   // ─── FATURAR ─────────────────────────────────────────────────────────────
   const faturar = useCallback(async () => {
     if (!podeFaturar) return;
-    const cen = CENARIOS[previa?.cenario?.chave] || {};
-    const okUser = window.confirm(
-      `Emitir NF-e REAL (produção) série ${prep?.numeracao?.serie ?? 3} pela empresa ${EMPRESA}?\n\n` +
-        `Cliente: ${customer?.name}\n${cen.label || ''} · ${cen.icms || ''}\n` +
-        `${conf.conferidas} peça(s) ${fmtBRL(conf.totalConferido)} + frete ${fmtBRL(frete)} = ${fmtBRL(totalNota)}\n\n` +
-        `Depois grava no TOTVS o documento interno ${operacao} com o contas a receber, na data do caixa ${fmtData(dataCaixa)} (terminal 1).`,
-    );
-    if (!okUser) return;
     setPosting(true);
     try {
       const vend = sellers.find((s) => String(s.code) === String(seller));
@@ -1049,7 +1042,7 @@ const FaturamentoPedido = () => {
     } finally {
       setPosting(false);
     }
-  }, [podeFaturar, previa, prep, customer, conf, frete, totalNota, operacao, dataCaixa, sellers, seller, chave, ref, consumidorFinal, temTransportadora, transp, pagamentos, pBoleto, parcelasBoleto, vencimentos, user, showToast]);
+  }, [podeFaturar, prep, customer, conf, frete, operacao, dataCaixa, sellers, seller, chave, ref, consumidorFinal, temTransportadora, transp, pagamentos, pBoleto, parcelasBoleto, vencimentos, user, showToast]);
 
   const reprocessar = useCallback(async () => {
     if (!resultado?.vendaId) return;
@@ -1749,7 +1742,7 @@ const FaturamentoPedido = () => {
                   ) : (
                     <>
                       <button
-                        onClick={faturar}
+                        onClick={() => setModalFat(true)}
                         disabled={!podeFaturar}
                         className="mt-2 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-40"
                       >
@@ -1774,9 +1767,167 @@ const FaturamentoPedido = () => {
         ) : null}
       </div>
 
+      {modalFat && pedido && prep && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#000638]/50 backdrop-blur-[2px] sm:items-center sm:p-4" onClick={() => !posting && setModalFat(false)}>
+          <div className="w-full overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:max-w-lg sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 bg-gradient-to-r from-[#000638] to-[#1b2a6b] px-5 py-4 text-white">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/15">
+                <Receipt size={20} weight="bold" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-base font-bold">{resultado ? 'Faturamento' : posting ? 'Faturando…' : 'Confirmar faturamento'}</p>
+                <p className="truncate text-xs text-white/70">
+                  Pedido {ref || '—'} · {customer?.name}
+                </p>
+              </div>
+              {Number(prep.numeracao?.ambiente) === 1 && <span className="rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide">produção</span>}
+              {!posting && (
+                <button onClick={() => setModalFat(false)} className="rounded-lg p-1 text-white/70 hover:bg-white/10 hover:text-white">
+                  <X size={18} weight="bold" />
+                </button>
+              )}
+            </div>
+
+            {resultado ? (
+              <div className="space-y-3 p-5">
+                <div className={`rounded-xl p-3 ring-1 ${resultado.fiscal?.ok ? 'bg-emerald-50 ring-emerald-200' : 'bg-rose-50 ring-rose-200'}`}>
+                  <p className={`flex items-center gap-1.5 text-sm font-bold ${resultado.fiscal?.ok ? 'text-emerald-800' : 'text-rose-700'}`}>
+                    {resultado.fiscal?.ok ? <CheckCircle size={18} weight="fill" /> : <Warning size={18} weight="fill" />}
+                    {resultado.fiscal?.ok ? 'NF-e autorizada' : 'NF-e não autorizada'}
+                  </p>
+                  {resultado.fiscal?.ok ? (
+                    <>
+                      <p className="mt-1 text-2xl font-extrabold tabular-nums text-emerald-800">
+                        Nº {notaRes?.numero}
+                        <span className="text-sm font-semibold text-emerald-700"> · série {notaRes?.serie}</span>
+                      </p>
+                      {notaRes?.chave && <p className="mt-0.5 break-all font-mono text-[10.5px] text-gray-500">{notaRes.chave}</p>}
+                    </>
+                  ) : (
+                    <p className="mt-1 text-xs text-rose-700">{resultado.fiscal?.mensagem}</p>
+                  )}
+                </div>
+                <div className={`rounded-xl p-3 ring-1 ${resultado.totvs?.ok ? 'bg-emerald-50 ring-emerald-200' : 'bg-amber-50 ring-amber-200'}`}>
+                  <p className={`flex items-center gap-1.5 text-sm font-bold ${resultado.totvs?.ok ? 'text-emerald-800' : 'text-amber-800'}`}>
+                    {resultado.totvs?.ok ? <CheckCircle size={18} weight="fill" /> : <Warning size={18} weight="fill" />}
+                    {resultado.totvs?.ok ? 'Transação no TOTVS (documento interno)' : 'TOTVS ainda não recebeu'}
+                  </p>
+                  {resultado.totvs?.ok ? (
+                    <>
+                      <p className="mt-1 text-2xl font-extrabold tabular-nums text-emerald-800">
+                        Nº {resultado.totvs.transactionCode}
+                        <span className="text-sm font-semibold text-emerald-700"> · {fmtData(resultado.totvs.transactionDate)}</span>
+                      </p>
+                      <p className="text-xs text-gray-600">
+                        Operação {operacao} · empresa {EMPRESA} · {TOTVS_STATUS[resultado.totvs.status]?.label || ''}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      {resultado.venda?.totvs_transacao_code && (
+                        <p className="mt-1 text-sm font-bold tabular-nums text-amber-800">Transação {resultado.venda.totvs_transacao_code} aberta, sem recebimento</p>
+                      )}
+                      <p className="mt-1 text-xs text-amber-800">{resultado.totvs?.mensagem}</p>
+                    </>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {resultado.fiscal?.ok && notaRes?.id && (
+                    <>
+                      <button onClick={() => imprimirDanfe(notaRes.id).catch((e) => showToast('erro', e.message))} className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#000638] px-3 text-sm font-bold text-white">
+                        <Printer size={15} /> DANFE
+                      </button>
+                      <a href={`${API_BASE_URL}/api/pdv-crosby/notas/${notaRes.id}/xml`} className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-bold text-[#000638] ring-1 ring-gray-300">
+                        <DownloadSimple size={15} /> XML
+                      </a>
+                    </>
+                  )}
+                  {!(resultado.fiscal?.ok && resultado.totvs?.ok) && (
+                    <button onClick={reprocessar} disabled={posting} className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl bg-amber-600 px-3 text-sm font-bold text-white disabled:opacity-50">
+                      {posting ? <Spinner size={15} className="animate-spin" /> : <ArrowsClockwise size={15} />} Tentar de novo
+                    </button>
+                  )}
+                </div>
+                <button
+                  onClick={() => {
+                    setModalFat(false);
+                    escolherPedido('');
+                  }}
+                  className="h-10 w-full rounded-xl text-sm font-bold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50"
+                >
+                  Faturar outro pedido
+                </button>
+              </div>
+            ) : posting ? (
+              <div className="p-8 text-center">
+                <Spinner size={34} className="mx-auto animate-spin text-[#000638]" />
+                <p className="mt-3 text-sm font-semibold text-[#000638]">Emitindo a NF-e na SEFAZ e gravando no TOTVS…</p>
+                <p className="mt-1 text-xs text-gray-500">Pode levar até 1 minuto. Não feche esta janela.</p>
+              </div>
+            ) : (
+              <div className="p-5">
+                <dl className="divide-y divide-gray-100 text-sm">
+                  {[
+                    ['NF-e', `série ${prep.numeracao?.serie ?? 3} · próximo nº ${prep.numeracao?.proximo ?? '—'} (conferido com o TOTVS na hora)`],
+                    ['Empresa', `${EMPRESA} · ${prep.emitente?.nome || ''}`],
+                    ['Cliente', `${customer?.code} — ${customer?.name}`],
+                    ['Fiscal', cen ? `${cen.label} · CFOP ${cen.cfop} · ${cen.icms}${previa?.aliqDifal ? ` (${previa.cenario.destUf} ${previa.aliqDifal}%)` : ''}` : '—'],
+                    ['Transporte', temTransportadora ? `${transp.nome || transp.id}${transp.servico ? ` · ${transp.servico}` : ''} · ${transp.volumes} vol · ${transp.pesoB} kg` : 'Retirada (sem transportadora)'],
+                    ['Pagamento', pagamentos.map((p) => `${FORMAS[p.forma]} ${fmtBRL(p.valor)}${Number(p.parcelas) > 1 ? ` em ${p.parcelas}x` : ''}`).join(' + ')],
+                    ['TOTVS', `documento interno ${operacao} · caixa de ${fmtData(dataCaixa)} · terminal 1`],
+                    ...(card?.dados?.transacao || card?.dados?.pedido_totvs
+                      ? [['Transação no TOTVS (aberta pelo Dryland)', [card.dados.transacao && `transação ${card.dados.transacao}`, card.dados.pedido_totvs && `pedido ${card.dados.pedido_totvs}`].filter(Boolean).join(' · ')]]
+                      : []),
+                  ].map(([k, v]) => (
+                    <div key={k} className="flex gap-3 py-1.5">
+                      <dt className="w-32 shrink-0 text-xs font-semibold uppercase tracking-wide text-gray-400">{k}</dt>
+                      <dd className="min-w-0 flex-1 text-[13px] text-gray-800">{v}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <div className="mt-3 rounded-xl bg-gray-50 p-3 ring-1 ring-gray-200">
+                  <div className="flex justify-between text-xs text-gray-600">
+                    <span>{conf.conferidas} peça(s)</span>
+                    <span className="tabular-nums">{fmtBRL(conf.brutoConferido)}</span>
+                  </div>
+                  {conf.descConferido > 0 && (
+                    <div className="flex justify-between text-xs text-amber-700">
+                      <span>Desconto</span>
+                      <span className="tabular-nums">− {fmtBRL(conf.descConferido)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-xs text-gray-600">
+                    <span>Frete</span>
+                    <span className="tabular-nums">{fmtBRL(frete)}</span>
+                  </div>
+                  <div className="mt-1 flex items-baseline justify-between border-t border-gray-200 pt-1">
+                    <span className="text-sm font-bold text-[#000638]">Total da NF-e</span>
+                    <span className="text-2xl font-extrabold tabular-nums text-[#000638]">{fmtBRL(totalNota)}</span>
+                  </div>
+                </div>
+                {(conf.faltando > 0 || conf.sobrando > 0) && (
+                  <p className="mt-2 text-[11px] text-amber-700">
+                    Ficam fora da nota: {conf.faltando} faltando · {conf.sobrando} sobrando.
+                  </p>
+                )}
+                <p className="mt-2 text-[11px] text-gray-500">A nota é real (SEFAZ, produção). Depois dela, o TOTVS recebe o documento interno e o contas a receber.</p>
+                <div className="mt-4 flex gap-2">
+                  <button onClick={() => setModalFat(false)} className="h-11 flex-1 rounded-xl text-sm font-bold text-gray-600 ring-1 ring-gray-300 hover:bg-gray-50">
+                    Cancelar
+                  </button>
+                  <button onClick={faturar} disabled={!podeFaturar} className="inline-flex h-11 flex-[2] items-center justify-center gap-2 rounded-xl bg-emerald-600 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-40">
+                    <Receipt size={16} weight="bold" /> Emitir NF-e e gravar no TOTVS
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {toast && (
         <div
-          className={`fixed bottom-4 left-1/2 z-50 inline-flex max-w-[92vw] -translate-x-1/2 items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium shadow-lg ${
+          className={`fixed bottom-4 left-1/2 z-[60] inline-flex max-w-[92vw] -translate-x-1/2 items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium shadow-lg ${
             toast.type === 'ok' ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
           }`}
         >
