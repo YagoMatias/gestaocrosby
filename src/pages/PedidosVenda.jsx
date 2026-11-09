@@ -6,6 +6,7 @@
 // (/separar: aguardando / em separação / separado) — é ela que monta o Kanban.
 // Tudo copiado para o HeadCoach a cada 5 min (/api/pedidos-venda).
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   ShoppingBag,
   ArrowsClockwise,
@@ -19,7 +20,6 @@ import {
   Kanban,
   ListBullets,
   CreditCard,
-  UploadSimple,
   FileText,
   User,
   Phone,
@@ -29,7 +29,6 @@ import {
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
-import { useAuth } from '../components/AuthContext';
 
 const fmtBRL = (v) => (v == null || v === '' ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
 const fmtNum = (n) => Number(n || 0).toLocaleString('pt-BR');
@@ -42,14 +41,6 @@ const fmtDoc = (v) => {
   if (d.length === 14) return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
   return v || null;
 };
-const lerArquivo = (f) =>
-  new Promise((ok, falha) => {
-    const r = new FileReader();
-    r.onload = () => ok(r.result);
-    r.onerror = () => falha(new Error('Não consegui ler o arquivo'));
-    r.readAsDataURL(f);
-  });
-
 const CANAIS = {
   varejo: { label: 'Varejo', cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200' },
   revenda: { label: 'Revenda', cls: 'bg-indigo-50 text-indigo-700 ring-indigo-200' },
@@ -69,7 +60,6 @@ const corFat = (s) =>
       : /^a faturar$/i.test(s || '')
         ? 'bg-amber-50 text-amber-700 ring-amber-200'
         : 'bg-blue-50 text-blue-700 ring-blue-200';
-const FORMAS_MANUAIS = { pix: 'Pix', dinheiro: 'Dinheiro', credito: 'Cartão de crédito', debito: 'Cartão de débito', boleto: 'Boleto', credev: 'Credev', outro: 'Outro' };
 const COLUNAS_KANBAN = ['aguardando', 'em_separacao', 'separado'];
 const inputCls = 'h-9 px-2 rounded-lg border border-gray-300 bg-white text-sm mb-0 focus:outline-none focus:ring-2 focus:ring-[#000638]/30';
 
@@ -127,7 +117,34 @@ function Bloco({ titulo, icone: Icone, children }) {
 }
 
 // Cartão do pedido (celular e Kanban)
-function CartaoPedido({ p, onDetalhar, noKanban = false }) {
+const podeFaturar = (p) => p?.separacao?.status === 'separado';
+
+// Selo da transação gerada na tela Faturamento
+const SeloFaturado = ({ f }) =>
+  f ? (
+    <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold ring-1 bg-emerald-50 text-emerald-700 ring-emerald-200" title={`Faturado no HeadCoach em ${fmtDataHora(f.em)}`}>
+      tx {f.transacao}
+      {f.status === 4 ? ' · atendida' : ''}
+    </span>
+  ) : null;
+
+function BotaoFaturar({ p, onFaturar, pequeno = false }) {
+  if (!podeFaturar(p)) return null;
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onFaturar(p);
+      }}
+      className={`${pequeno ? 'px-2 py-0.5' : 'h-8 px-3'} rounded-lg text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98]`}
+    >
+      FATURAR
+    </button>
+  );
+}
+
+function CartaoPedido({ p, onDetalhar, onFaturar, noKanban = false }) {
   return (
     <div className="w-full bg-white rounded-xl border border-gray-200 p-3 shadow-sm">
       <div className="flex items-center justify-between gap-2">
@@ -154,20 +171,23 @@ function CartaoPedido({ p, onDetalhar, noKanban = false }) {
           {p.comprovantes > 0 ? `🧾 ${p.comprovantes} comprovante(s)` : 'sem comprovante'}
           {p.nf_numero ? ` · NF ${p.nf_numero}` : ''}
         </span>
-        <button
-          type="button"
-          onClick={() => onDetalhar(p)}
-          className="h-8 px-3 rounded-lg text-[11px] font-bold text-white bg-[#000638] hover:bg-[#000638]/90 active:scale-[0.98]"
-        >
-          Detalhar
-        </button>
+        <SeloFaturado f={p.faturamento} />
+        <div className="flex items-center gap-1.5 shrink-0">
+          <BotaoFaturar p={p} onFaturar={onFaturar} />
+          <button
+            type="button"
+            onClick={() => onDetalhar(p)}
+            className="h-8 px-3 rounded-lg text-[11px] font-bold text-white bg-[#000638] hover:bg-[#000638]/90 active:scale-[0.98]"
+          >
+            Detalhar
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
 const PedidosVenda = () => {
-  const { user } = useAuth();
   const [visao, setVisao] = useState(() => {
     try {
       return localStorage.getItem('pedidos_venda_visao') || 'lista';
@@ -197,9 +217,6 @@ const PedidosVenda = () => {
   const [ate, setAte] = useState(hojeBR());
   const [busca, setBusca] = useState('');
   const [detalhe, setDetalhe] = useState(null); // { linha, dados }
-  const [formPag, setFormPag] = useState(null);
-  const [salvandoPag, setSalvandoPag] = useState(false);
-  const [enviandoComp, setEnviandoComp] = useState(false);
 
   const carregar = useCallback(async () => {
     setLoading(true);
@@ -248,9 +265,11 @@ const PedidosVenda = () => {
     }
   };
 
+  const navigate = useNavigate();
+  const faturar = (linha) => navigate(`/expedicao/faturamento?chave=${encodeURIComponent(linha.chave)}`);
+
   const abrir = async (linha) => {
     setDetalhe({ linha, dados: null });
-    setFormPag(null);
     try {
       const r = await fetch(`${API_BASE_URL}/api/pedidos-venda/${encodeURIComponent(linha.chave)}`);
       const j = await r.json();
@@ -259,51 +278,6 @@ const PedidosVenda = () => {
     } catch (e) {
       setErro(e.message);
       setDetalhe(null);
-    }
-  };
-
-  const atualizarAnexo = (anexo) => {
-    setDetalhe((d) => (d ? { ...d, dados: { ...d.dados, anexo } } : d));
-    carregar();
-  };
-
-  const salvarPagamento = async () => {
-    if (!detalhe || !formPag?.forma) return;
-    setSalvandoPag(true);
-    try {
-      const r = await fetch(`${API_BASE_URL}/api/pedidos-venda/${encodeURIComponent(detalhe.linha.chave)}/pagamento`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...formPag, por: user?.name || user?.email || null }),
-      });
-      const j = await r.json();
-      if (!r.ok || !j.success) throw new Error(j?.message || 'Falha ao registrar o pagamento');
-      atualizarAnexo(j.data);
-      setFormPag(null);
-    } catch (e) {
-      setErro(e.message);
-    } finally {
-      setSalvandoPag(false);
-    }
-  };
-
-  const enviarComprovante = async (arquivo) => {
-    if (!detalhe || !arquivo) return;
-    setEnviandoComp(true);
-    try {
-      const base64 = await lerArquivo(arquivo);
-      const r = await fetch(`${API_BASE_URL}/api/pedidos-venda/${encodeURIComponent(detalhe.linha.chave)}/comprovante`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ base64, nome: arquivo.name, tipo: arquivo.type }),
-      });
-      const j = await r.json();
-      if (!r.ok || !j.success) throw new Error(j?.message || 'Falha ao enviar o comprovante');
-      atualizarAnexo(j.data);
-    } catch (e) {
-      setErro(e.message);
-    } finally {
-      setEnviandoComp(false);
     }
   };
 
@@ -322,7 +296,8 @@ const PedidosVenda = () => {
   const dd = card?.dados || {};
   const sep = D?.separacao;
   const pi = sep?.pagamento_info || dd.pago_info || {};
-  const man = D?.anexo?.pagamento_manual || null;
+  const bol = dd.boleto_faturado && typeof dd.boleto_faturado === 'object' ? dd.boleto_faturado : null;
+  const fmtData = (v) => (v ? new Date(`${String(v).slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : null);
   const pecas = useMemo(() => {
     if (D?.itens?.length) {
       return [...D.itens]
@@ -471,7 +446,7 @@ const PedidosVenda = () => {
                   <div className="space-y-2 max-h-[70vh] overflow-y-auto pr-0.5">
                     {porColuna[col].length === 0 && <p className="py-6 text-center text-xs text-gray-400">Nenhum pedido.</p>}
                     {porColuna[col].map((p) => (
-                      <CartaoPedido key={p.chave} p={p} onDetalhar={abrir} noKanban />
+                      <CartaoPedido key={p.chave} p={p} onDetalhar={abrir} onFaturar={faturar} noKanban />
                     ))}
                   </div>
                 </div>
@@ -489,7 +464,7 @@ const PedidosVenda = () => {
           )}
           {!loading && items.length === 0 && <p className="py-10 text-center text-sm text-gray-400">Nenhuma venda no período.</p>}
           {items.map((p) => (
-            <CartaoPedido key={p.chave} p={p} onDetalhar={abrir} />
+            <CartaoPedido key={p.chave} p={p} onDetalhar={abrir} onFaturar={faturar} />
           ))}
         </div>
 
@@ -562,9 +537,17 @@ const PedidosVenda = () => {
                     </td>
                     <td className="px-2 py-1.5">
                       <SeloFat s={p.status_fat} />
+                      {p.faturamento && (
+                        <div className="mt-0.5">
+                          <SeloFaturado f={p.faturamento} />
+                        </div>
+                      )}
                     </td>
                     <td className="px-2 py-1.5 text-center tabular-nums">{p.comprovantes || '—'}</td>
-                    <td className="px-2 py-1.5 text-right">
+                    <td className="px-2 py-1.5 text-right whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1">
+                        <BotaoFaturar p={p} onFaturar={faturar} pequeno />
+                      </span>{' '}
                       <button
                         type="button"
                         onClick={(e) => {
@@ -594,6 +577,8 @@ const PedidosVenda = () => {
                     <SeloCanal canal={detalhe.linha.canal} />
                     <SeloFat s={detalhe.linha.status_fat} />
                     <SeloSep s={detalhe.linha.separacao?.status} />
+                    <SeloFaturado f={detalhe.linha.faturamento} />
+                    <BotaoFaturar p={detalhe.linha} onFaturar={faturar} />
                   </div>
                 </div>
                 <button onClick={() => setDetalhe(null)} className="text-gray-400 hover:text-gray-600 p-1">
@@ -650,7 +635,7 @@ const PedidosVenda = () => {
                     </Bloco>
 
                     <Bloco titulo="Pagamento" icone={CreditCard}>
-                      <Linha rotulo="Forma">{man ? FORMAS_MANUAIS[man.forma] || man.forma : dd.forma_pagamento || sep?.pagamento}</Linha>
+                      <Linha rotulo="Forma">{dd.forma_pagamento || sep?.pagamento}</Linha>
                       <Linha rotulo="Parcelamento">
                         {(() => {
                           const n = parseInt(String(dd.parcelamento || pi.parcelas || '').replace(/\D/g, ''), 10);
@@ -663,8 +648,8 @@ const PedidosVenda = () => {
                       <Linha rotulo="Desconto Pix">{Number(dd.desconto_pix) > 0 ? fmtBRL(dd.desconto_pix) : null}</Linha>
                       <Linha rotulo="Frete">{Number(dd.valor_frete) > 0 ? fmtBRL(dd.valor_frete) : null}</Linha>
                       <Linha rotulo="Credev">{dd.credev && !/^n(ã|a)o$/i.test(dd.credev) ? dd.credev : null}</Linha>
-                      <Linha rotulo="NSU">{man?.nsu || card?.cartao_nsu || pi.nsu}</Linha>
-                      <Linha rotulo="Autorização">{man?.autorizacao || card?.cartao_autorizacao || pi.autorizacao}</Linha>
+                      <Linha rotulo="NSU">{card?.cartao_nsu || pi.nsu}</Linha>
+                      <Linha rotulo="Autorização">{card?.cartao_autorizacao || pi.autorizacao}</Linha>
                       <Linha rotulo="Cartão">
                         {card?.cartao_bandeira || pi.bandeira
                           ? `${card?.cartao_bandeira || pi.bandeira}${card?.cartao_final || pi.cartao_final ? ` final ${card?.cartao_final || pi.cartao_final}` : ''}`
@@ -672,104 +657,54 @@ const PedidosVenda = () => {
                       </Linha>
                       <Linha rotulo="Pix (end-to-end)">{card?.pix_e2e || pi.end_to_end_id}</Linha>
                       <Linha rotulo="Cobrança Pagar.me">{card?.pagarme_charge || pi.charge_id}</Linha>
-                      {dd.pagamento_detalhe && <p className="mt-1 text-[11px] text-gray-600 bg-gray-50 rounded-lg px-2 py-1">{dd.pagamento_detalhe}</p>}
-                      {man && (
-                        <p className="mt-1 text-[10px] text-gray-400">
-                          Registrado à mão por {man.por || '—'} em {fmtDataHora(man.em)}
-                          {man.obs ? ` · ${man.obs}` : ''}
-                        </p>
+                      {bol && (
+                        <div className="mt-1 border-t border-gray-100 pt-1">
+                          <Linha rotulo="Boleto">{[bol.forma, bol.condicao && `${bol.condicao} dias`].filter(Boolean).join(' · ') || 'faturado'}</Linha>
+                          <Linha rotulo="Parcelas">{bol.parcelas ? `${bol.parcelas}x de ${fmtBRL(bol.valor_parcela)}` : null}</Linha>
+                          <Linha rotulo="Vencimentos">{(bol.vencimentos || []).map(fmtData).filter(Boolean).join(', ') || null}</Linha>
+                          <Linha rotulo="Valor faturado">{bol.valor != null ? fmtBRL(bol.valor) : null}</Linha>
+                          <Linha rotulo="Faturado por">{bol.por ? `${bol.por}${bol.em ? ` em ${fmtDataHora(bol.em)}` : ''}` : null}</Linha>
+                        </div>
                       )}
-                      <div className="mt-2 border-t border-gray-100 pt-2">
-                        {!formPag ? (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setFormPag({
-                                forma: man?.forma || 'pix',
-                                nsu: man?.nsu || card?.cartao_nsu || '',
-                                autorizacao: man?.autorizacao || card?.cartao_autorizacao || '',
-                                obs: man?.obs || '',
-                              })
-                            }
-                            className="text-[11px] font-semibold text-rose-700 hover:underline"
-                          >
-                            {man ? 'Editar pagamento registrado' : 'Registrar pagamento (dinheiro, débito, NSU…)'}
-                          </button>
-                        ) : (
-                          <div className="space-y-1.5">
-                            <select value={formPag.forma} onChange={(e) => setFormPag((f) => ({ ...f, forma: e.target.value }))} className="w-full h-9 px-2 rounded-lg border border-gray-300 text-sm mb-0">
-                              {Object.entries(FORMAS_MANUAIS).map(([k, v]) => (
-                                <option key={k} value={k}>
-                                  {v}
-                                </option>
-                              ))}
-                            </select>
-                            <div className="grid grid-cols-2 gap-1.5">
-                              <input value={formPag.nsu} onChange={(e) => setFormPag((f) => ({ ...f, nsu: e.target.value }))} placeholder="NSU" className="h-9 px-2 rounded-lg border border-gray-300 text-sm mb-0" />
-                              <input
-                                value={formPag.autorizacao}
-                                onChange={(e) => setFormPag((f) => ({ ...f, autorizacao: e.target.value }))}
-                                placeholder="Autorização"
-                                className="h-9 px-2 rounded-lg border border-gray-300 text-sm mb-0"
-                              />
-                            </div>
-                            <input value={formPag.obs} onChange={(e) => setFormPag((f) => ({ ...f, obs: e.target.value }))} placeholder="Observação (opcional)" className="w-full h-9 px-2 rounded-lg border border-gray-300 text-sm mb-0" />
-                            <div className="flex gap-1.5">
-                              <button type="button" onClick={() => setFormPag(null)} className="flex-1 h-9 rounded-lg ring-1 ring-gray-300 text-xs font-semibold text-gray-600">
-                                Cancelar
-                              </button>
-                              <button
-                                type="button"
-                                onClick={salvarPagamento}
-                                disabled={salvandoPag}
-                                className="flex-1 h-9 rounded-lg bg-[#000638] text-white text-xs font-bold disabled:opacity-50 inline-flex items-center justify-center gap-1"
-                              >
-                                {salvandoPag && <Spinner size={12} className="animate-spin" />} Salvar
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                      {(dd.duplicata_link || dd.duplicata_assinada_url) && (
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {dd.duplicata_assinada_url ? (
+                            <a href={dd.duplicata_assinada_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:underline">
+                              <FileText size={12} /> duplicata assinada{dd.duplicata_assinada_em ? ` (${fmtData(dd.duplicata_assinada_em)})` : ''} <ArrowSquareOut size={10} />
+                            </a>
+                          ) : (
+                            <a href={dd.duplicata_link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 hover:underline">
+                              <FileText size={12} /> duplicata para assinar (ainda não assinada) <ArrowSquareOut size={10} />
+                            </a>
+                          )}
+                        </div>
+                      )}
+                      {dd.pagamento_detalhe && <p className="mt-1 text-[11px] text-gray-600 bg-gray-50 rounded-lg px-2 py-1">{dd.pagamento_detalhe}</p>}
                     </Bloco>
                   </div>
 
-                  {/* Comprovantes */}
-                  <Bloco titulo="Comprovantes" icone={FileText}>
-                    <div className="flex flex-wrap gap-2">
-                      {(card?.comprovantes_url || []).map((c, i) => {
-                        const img = /\.(png|jpe?g|webp|gif)$/i.test(c.path);
-                        return (
-                          <a key={c.path} href={c.url} target="_blank" rel="noreferrer" className="block rounded-lg ring-1 ring-gray-200 overflow-hidden bg-gray-50 hover:ring-[#000638]" title="Abrir comprovante">
-                            {img ? (
-                              <img src={c.url} alt={`Comprovante ${i + 1}`} className="h-28 w-28 object-cover" loading="lazy" />
-                            ) : (
-                              <span className="flex h-28 w-28 flex-col items-center justify-center gap-1 text-[11px] text-[#000638]">
-                                <FileText size={26} /> comprovante {i + 1}
-                              </span>
-                            )}
-                          </a>
-                        );
-                      })}
-                      {D.anexo?.comprovante_url && (
-                        <a href={D.anexo.comprovante_url} target="_blank" rel="noreferrer" className="block rounded-lg ring-1 ring-emerald-300 overflow-hidden bg-emerald-50" title="Anexado no HeadCoach">
-                          {/\.(png|jpe?g|webp|gif)$/i.test(D.anexo.comprovante_url) ? (
-                            <img src={D.anexo.comprovante_url} alt="Comprovante anexado" className="h-28 w-28 object-cover" />
-                          ) : (
-                            <span className="flex h-28 w-28 flex-col items-center justify-center gap-1 text-[11px] text-emerald-800">
-                              <FileText size={26} /> anexado aqui
-                            </span>
-                          )}
-                        </a>
-                      )}
-                      <label
-                        className={`flex h-28 w-28 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-gray-300 text-[11px] font-semibold text-gray-500 hover:border-[#000638] hover:text-[#000638] ${enviandoComp ? 'opacity-50 pointer-events-none' : ''}`}
-                      >
-                        {enviandoComp ? <Spinner size={20} className="animate-spin" /> : <UploadSimple size={20} />}
-                        anexar foto/PDF
-                        <input type="file" accept="image/*,application/pdf" className="hidden" onChange={(e) => enviarComprovante(e.target.files?.[0])} />
-                      </label>
-                    </div>
-                    {!(card?.comprovantes_url || []).length && !D.anexo?.comprovante_url && <p className="mt-1 text-[11px] text-gray-400">O Dryland não tem comprovante desta venda.</p>}
+                  {/* Comprovantes do Dryland */}
+                  <Bloco titulo={`Comprovante de pagamento (${(card?.comprovantes_url || []).length})`} icone={FileText}>
+                    {(card?.comprovantes_url || []).length === 0 ? (
+                      <p className="text-[11px] text-gray-400">O Dryland não tem comprovante desta venda.</p>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {card.comprovantes_url.map((c, i) => {
+                          const img = /\.(png|jpe?g|webp|gif)$/i.test(c.path);
+                          return (
+                            <a key={c.path} href={c.url} target="_blank" rel="noreferrer" className="block rounded-lg ring-1 ring-gray-200 overflow-hidden bg-gray-50 hover:ring-[#000638]" title="Abrir em tamanho real">
+                              {img ? (
+                                <img src={c.url} alt={`Comprovante ${i + 1}`} className="w-full max-h-[60vh] object-contain bg-white" loading="lazy" />
+                              ) : (
+                                <span className="flex h-24 items-center justify-center gap-2 text-sm font-semibold text-[#000638]">
+                                  <FileText size={22} /> abrir comprovante {i + 1} (PDF)
+                                </span>
+                              )}
+                            </a>
+                          );
+                        })}
+                      </div>
+                    )}
                   </Bloco>
 
                   {dd.obs && <p className="mt-2 text-[11px] text-gray-600 bg-amber-50 rounded-xl ring-1 ring-amber-200 px-3 py-2">{dd.obs}</p>}

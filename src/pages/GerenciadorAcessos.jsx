@@ -525,6 +525,11 @@ const AVAILABLE_PAGES = [
     category: 'Expedição',
   },
   {
+    path: '/expedicao/faturamento',
+    name: 'Faturamento',
+    category: 'Expedição',
+  },
+  {
     path: '/duplicata-vendas',
     name: 'Duplicata de Vendas',
     category: 'Expedição',

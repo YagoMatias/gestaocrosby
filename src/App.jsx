@@ -195,6 +195,7 @@ const FormularioSolicitacoes = lazy(
 const MinhasSolicitacoes = lazy(() => import('./pages/MinhasSolicitacoes'));
 const DuplicataVendas = lazy(() => import('./pages/DuplicataVendas'));
 const PedidosVenda = lazy(() => import('./pages/PedidosVenda'));
+const FaturamentoPedido = lazy(() => import('./pages/FaturamentoPedido'));
 const PagamentosFabricas = lazy(() => import('./pages/PagamentosFabricas'));
 const ConciliacaoStone = lazy(() => import('./pages/ConciliacaoStone'));
 const Conciliacao = lazy(() => import('./pages/Conciliacao'));
@@ -378,6 +379,7 @@ const protectedRoutes = [
   { path: '/cadastrar-cliente', component: CadastrarCliente },
   { path: '/duplicata-vendas', component: DuplicataVendas },
   { path: '/expedicao/pedidos-venda', component: PedidosVenda },
+  { path: '/expedicao/faturamento', component: FaturamentoPedido },
   // RH — Banco de Talentos
   { path: '/rh/vagas', component: RhVagas },
   { path: '/rh/inscricoes', component: RhVagaInscricoes },

@@ -127,7 +127,7 @@ function beep(ok = true) {
 }
 
 // ─── Busca de cliente com dropdown (+ atalho p/ cadastro) ────────────────────
-function ClientePicker({ value, onSelect }) {
+export function ClientePicker({ value, onSelect }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
   const [open, setOpen] = useState(false);

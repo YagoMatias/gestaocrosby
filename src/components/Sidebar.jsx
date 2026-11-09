@@ -1180,6 +1180,12 @@ const expedicao = [
     color: 'text-sky-600',
   },
   {
+    name: 'Faturamento',
+    href: '/expedicao/faturamento',
+    icon: Receipt,
+    color: 'text-emerald-600',
+  },
+  {
     name: 'Inadimplência Multimarcas',
     href: '/inadimplentes-multimarcas',
     icon: Buildings,
