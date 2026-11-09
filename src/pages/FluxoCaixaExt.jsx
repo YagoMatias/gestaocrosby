@@ -179,7 +179,7 @@ const LINHAS_POR_PAGINA = 100;
 const SEM_CNPJ = 'sem-cnpj';
 const docDaConta = (c) => {
   const d = String(c?.titular_cnpj || '').replace(/\D/g, '');
-  return d.length >= 11 ? d : SEM_CNPJ;
+  return d.length >= 11 || d.length === 8 ? d : SEM_CNPJ; // 8 dígitos = só a raiz da empresa (conta sem CNPJ no extrato)
 };
 const fmtRaiz = (r) => r.replace(/^(\d{2})(\d{3})(\d{3})$/, '$1.$2.$3');
 
@@ -204,7 +204,7 @@ const SeletorCnpj = ({ contas, valor, onChange }) => {
       const raiz = doc === SEM_CNPJ ? SEM_CNPJ : doc.slice(0, 8);
       if (!porRaiz.has(raiz)) porRaiz.set(raiz, { raiz, nome: '', docs: new Map() });
       const g = porRaiz.get(raiz);
-      if (!g.nome && doc !== SEM_CNPJ) g.nome = c.titular_nome || '';
+      if (doc !== SEM_CNPJ && (c.grupo_nome || (!g.nome && c.titular_nome))) g.nome = c.grupo_nome || c.titular_nome || '';
       g.docs.set(doc, (g.docs.get(doc) || 0) + 1);
     }
     return [...porRaiz.values()].sort((a, b) => (a.raiz === SEM_CNPJ ? 1 : b.raiz === SEM_CNPJ ? -1 : a.raiz.localeCompare(b.raiz)));
@@ -221,7 +221,7 @@ const SeletorCnpj = ({ contas, valor, onChange }) => {
     : grupoInteiro
       ? grupoInteiro.raiz === SEM_CNPJ
         ? 'Sem CNPJ cadastrado'
-        : `Raiz ${fmtRaiz(grupoInteiro.raiz)}`
+        : grupoInteiro.nome || `Raiz ${fmtRaiz(grupoInteiro.raiz)}`
       : valor.length === 1
         ? fmtDoc(valor[0])
         : `${valor.length} CNPJs`;

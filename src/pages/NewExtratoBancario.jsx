@@ -58,7 +58,8 @@ const NewExtratoBancario = () => {
             apelido: `${bancoCfg(c.banco).label} ${c.conta}${c.contaDv ? `-${c.contaDv}` : ''}`,
             banco: c.banco,
             titular_nome: c.titular,
-            titular_cnpj: null,
+            titular_cnpj: c.titularCnpj || c.cnpjRaiz || null, // CNPJ do extrato; sem ele, a raiz da empresa (8 dígitos)
+            grupo_nome: c.grupoNome || null,
             qtdImportacoes: c.importacoes.length,
             periodoInicio: c.periodoInicio,
             periodoFim: c.periodoFim,
