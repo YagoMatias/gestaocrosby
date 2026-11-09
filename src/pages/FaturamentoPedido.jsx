@@ -371,6 +371,7 @@ function DetalheTransacao({ id, onReprocessar, reprocessando }) {
   const [d, setD] = useState(null);
   const [erro, setErro] = useState('');
   const [versao, setVersao] = useState(0);
+  const [terminalNovo, setTerminalNovo] = useState('');
   const [cancelar, setCancelar] = useState(false);
   const [justificativa, setJustificativa] = useState('');
   const [cancelando, setCancelando] = useState(false);
@@ -484,13 +485,24 @@ function DetalheTransacao({ id, onReprocessar, reprocessando }) {
           {v?.totvs_erro && <span className="block text-rose-600">{v.totvs_erro}</span>}
         </p>
         {nota?.status !== 'cancelada' && v?.status !== 'cancelada' && (nota?.status !== 'autorizada' || v?.totvs_status !== 4) && (
-          <button
-            onClick={() => onReprocessar(v.id)}
-            disabled={reprocessando}
-            className="inline-flex h-8 items-center gap-1 rounded-lg bg-amber-600 px-2.5 text-[11px] font-bold text-white disabled:opacity-50"
-          >
-            {reprocessando ? <Spinner size={13} className="animate-spin" /> : <ArrowsClockwise size={13} />} Tentar de novo
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => onReprocessar(v.id, terminalNovo)}
+              disabled={reprocessando}
+              className="inline-flex h-8 items-center gap-1 rounded-lg bg-amber-600 px-2.5 text-[11px] font-bold text-white disabled:opacity-50"
+            >
+              {reprocessando ? <Spinner size={13} className="animate-spin" /> : <ArrowsClockwise size={13} />} Tentar de novo
+            </button>
+            <span className="text-[11px] text-gray-500">terminal</span>
+            <input
+              type="number"
+              min="1"
+              value={terminalNovo}
+              onChange={(e) => setTerminalNovo(e.target.value)}
+              placeholder={String(v?.pedido_info?.terminal || 1)}
+              className="mb-0 h-8 w-14 rounded-lg border border-gray-300 px-1.5 text-xs"
+            />
+          </div>
         )}
         <p>
           <b>Pagamento:</b>{' '}
@@ -573,11 +585,15 @@ function AbaTransacoes() {
     carregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [de, ate]);
-  const reprocessar = async (vendaId) => {
+  const reprocessar = async (vendaId, terminalNovo) => {
     setReprocessando(true);
     setAviso('');
     try {
-      const r = await fetch(`${API}/vendas/${vendaId}/reprocessar`, { method: 'POST' });
+      const r = await fetch(`${API}/vendas/${vendaId}/reprocessar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Number(terminalNovo) > 0 ? { terminal: Number(terminalNovo) } : {}),
+      });
       const j = await r.json();
       setAviso(j.message || '');
       await carregar();
@@ -687,6 +703,13 @@ const FaturamentoPedido = () => {
   const [previa, setPrevia] = useState(null);
   const [previaErro, setPreviaErro] = useState('');
   const [operacao, setOperacao] = useState('');
+  const [terminal, setTerminal] = useState(() => {
+    try {
+      return localStorage.getItem('fat_terminal') || '1';
+    } catch {
+      return '1';
+    }
+  });
   const [dataCaixa, setDataCaixa] = useState(() => {
     try {
       return localStorage.getItem('fat_data_caixa') || hojeIso();
@@ -718,10 +741,11 @@ const FaturamentoPedido = () => {
   useEffect(() => {
     try {
       localStorage.setItem('fat_data_caixa', dataCaixa);
+      localStorage.setItem('fat_terminal', terminal);
     } catch {
       /* sem storage */
     }
-  }, [dataCaixa]);
+  }, [dataCaixa, terminal]);
 
   const limparLeituras = useCallback(() => {
     setLidos({});
@@ -1055,6 +1079,7 @@ const FaturamentoPedido = () => {
         operacaoDocInterno: Number(operacao),
         consumidorFinal,
         dataCaixa,
+        terminal: Number(terminal) || 1,
         itens: conf.linhas
           .filter((l) => l.conferido > 0)
           .flatMap((l) => {
@@ -1102,13 +1127,17 @@ const FaturamentoPedido = () => {
     } finally {
       setPosting(false);
     }
-  }, [podeFaturar, prep, customer, conf, frete, operacao, dataCaixa, sellers, seller, chave, ref, consumidorFinal, temTransportadora, transp, pagamentos, pBoleto, parcelasBoleto, vencimentos, user, showToast]);
+  }, [podeFaturar, prep, customer, conf, frete, operacao, dataCaixa, terminal, sellers, seller, chave, ref, consumidorFinal, temTransportadora, transp, pagamentos, pBoleto, parcelasBoleto, vencimentos, user, showToast]);
 
   const reprocessar = useCallback(async () => {
     if (!resultado?.vendaId) return;
     setPosting(true);
     try {
-      const r = await fetch(`${API}/vendas/${resultado.vendaId}/reprocessar`, { method: 'POST' });
+      const r = await fetch(`${API}/vendas/${resultado.vendaId}/reprocessar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ terminal: Number(terminal) || 1 }),
+      });
       const j = await r.json();
       if (j.success) setResultado(j.data);
       showToast(j.data?.fiscal?.ok && j.data?.totvs?.ok ? 'ok' : 'erro', j.message);
@@ -1117,7 +1146,7 @@ const FaturamentoPedido = () => {
     } finally {
       setPosting(false);
     }
-  }, [resultado, showToast]);
+  }, [resultado, terminal, showToast]);
 
   const escolherPedido = (k) => setParams(k ? { chave: k } : {});
   const irAba = (a) => setParams(a === 'transacoes' ? { aba: 'transacoes' } : chave ? { chave } : {});
@@ -1706,12 +1735,20 @@ const FaturamentoPedido = () => {
                       </option>
                     ))}
                   </select>
-                  <label className={`${labelCls} mt-2`}>
-                    <CalendarBlank size={11} className="mr-0.5 inline" /> Data do caixa (terminal 1)
-                  </label>
-                  <input type="date" value={dataCaixa} onChange={(e) => setDataCaixa(e.target.value)} className={inputCls} />
+                  <div className="mt-2 grid grid-cols-[1fr_5rem] gap-2">
+                    <div>
+                      <label className={labelCls}>
+                        <CalendarBlank size={11} className="mr-0.5 inline" /> Data do caixa
+                      </label>
+                      <input type="date" value={dataCaixa} onChange={(e) => setDataCaixa(e.target.value)} className={inputCls} />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Terminal</label>
+                      <input type="number" min="1" value={terminal} onChange={(e) => setTerminal(e.target.value)} className={inputCls} />
+                    </div>
+                  </div>
                   <p className="mt-1 flex items-start gap-1 text-[10.5px] text-gray-500">
-                    <Info size={11} className="mt-0.5 shrink-0" /> O caixa do terminal 1 precisa estar aberto no TOTVS nessa data. O contas a receber sai com as parcelas e vencimentos acima.
+                    <Info size={11} className="mt-0.5 shrink-0" /> O caixa desse terminal precisa estar aberto no TOTVS nessa data. O contas a receber sai com as parcelas e vencimentos acima.
                   </p>
                 </Bloco>
 
@@ -1934,7 +1971,7 @@ const FaturamentoPedido = () => {
                     ['Fiscal', cen ? `${cen.label} · CFOP ${cen.cfop} · ${cen.icms}${previa?.aliqDifal ? ` (${previa.cenario.destUf} ${previa.aliqDifal}%)` : ''}` : '—'],
                     ['Transporte', temTransportadora ? `${transp.nome || transp.id}${transp.servico ? ` · ${transp.servico}` : ''} · ${transp.volumes} vol · ${transp.pesoB} kg` : 'Retirada (sem transportadora)'],
                     ['Pagamento', pagamentos.map((p) => `${FORMAS[p.forma]} ${fmtBRL(p.valor)}${Number(p.parcelas) > 1 ? ` em ${p.parcelas}x` : ''}`).join(' + ')],
-                    ['TOTVS', `documento interno ${operacao} · caixa de ${fmtData(dataCaixa)} · terminal 1`],
+                    ['TOTVS', `documento interno ${operacao} · caixa de ${fmtData(dataCaixa)} · terminal ${terminal}`],
                     ...(card?.dados?.transacao || card?.dados?.pedido_totvs
                       ? [['Transação no TOTVS (aberta pelo Dryland)', [card.dados.transacao && `transação ${card.dados.transacao}`, card.dados.pedido_totvs && `pedido ${card.dados.pedido_totvs}`].filter(Boolean).join(' · ')]]
                       : []),
