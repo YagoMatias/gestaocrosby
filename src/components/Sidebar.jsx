@@ -9,6 +9,7 @@ import {
   ArrowsLeftRight,
   X,
   Money,
+  ShoppingBag,
   Receipt,
   FileText,
   Calendar,
@@ -1172,6 +1173,12 @@ const recuperacaoCredito = [
 ];
 
 const expedicao = [
+  {
+    name: 'Pedido de Venda',
+    href: '/expedicao/pedidos-venda',
+    icon: ShoppingBag,
+    color: 'text-sky-600',
+  },
   {
     name: 'Inadimplência Multimarcas',
     href: '/inadimplentes-multimarcas',

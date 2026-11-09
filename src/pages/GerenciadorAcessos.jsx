@@ -520,6 +520,11 @@ const AVAILABLE_PAGES = [
 
   // ─── Expedição ──────────────────────────────────────────────
   {
+    path: '/expedicao/pedidos-venda',
+    name: 'Pedido de Venda',
+    category: 'Expedição',
+  },
+  {
     path: '/duplicata-vendas',
     name: 'Duplicata de Vendas',
     category: 'Expedição',
