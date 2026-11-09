@@ -1009,12 +1009,12 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
       fd.append('contaId', String(c.fluxo.id));
       const resp = await fetch(`${API}/conciliacao/entradas-csv`, { method: 'POST', body: fd, headers: headersUsuario() });
       const j = await resp.json();
-      if (!j?.success) throw new Error(j?.message || 'Falha ao conciliar pelo CSV.');
+      if (!j?.success) throw new Error(j?.message || 'Falha ao conciliar pelo extrato.');
       const d = j.data;
       const cats = Object.entries(d.porCategoria || {}).map(([k, v]) => `${k.toLowerCase().replace('_', ' ')} ${fmt(v)}`).join(' · ');
       setCsvMsg({
         ok: true,
-        texto: `CSV ${fmtData(d.periodo.de)} a ${fmtData(d.periodo.ate)}: ${d.conciliadas.length} de ${d.pendentes} entrada(s) pendente(s) conciliada(s) (${fmt(d.valorConciliado)})${cats ? ` — ${cats}` : ''}${d.semLinha.length ? ` · ${d.semLinha.length} sem linha no CSV` : ''}${d.erros.length ? ` · ${d.erros.length} com erro` : ''}`,
+        texto: `Extrato ${fmtData(d.periodo.de)} a ${fmtData(d.periodo.ate)}: ${d.conciliadas.length} de ${d.pendentes} entrada(s) pendente(s) conciliada(s) (${fmt(d.valorConciliado)})${cats ? ` — ${cats}` : ''}${d.semLinha.length ? ` · ${d.semLinha.length} sem linha no arquivo` : ''}${d.erros.length ? ` · ${d.erros.length} com erro` : ''}`,
       });
       if (onRecarregar) await onRecarregar();
     } catch (e) {
@@ -1391,16 +1391,16 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
           >
             {conciliando ? <ArrowsClockwise size={12} className="animate-spin" /> : <Lightning size={12} weight="fill" />} Conciliar saídas pendentes ({r.pendSaidas || 0})
           </button>
-          {String(c?.fluxo?.banco || '').toUpperCase() === 'STONE' && (
+          {['STONE', 'SICREDI'].includes(String(c?.fluxo?.banco || '').toUpperCase()) && (
             <>
-              <input ref={csvRef} type="file" accept=".csv" className="hidden" onChange={(e) => conciliarEntradasCsv(e.target.files?.[0])} />
+              <input ref={csvRef} type="file" accept=".csv,.xls,.xlsx" className="hidden" onChange={(e) => conciliarEntradasCsv(e.target.files?.[0])} />
               <button
                 onClick={() => csvRef.current?.click()}
                 disabled={csvOcupado}
                 className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-green-700 text-white hover:bg-green-800 disabled:opacity-40 text-[11px] font-medium"
-                title="Envie o CSV do extrato desta conta (app/portal Stone): as entradas pendentes que baterem data e valor com a planilha (antecipação, recebível de cartão, Pix) são conciliadas"
+                title="Envie o extrato desta conta (CSV da Stone ou Excel da Sicredi): as entradas pendentes que baterem data e valor com o arquivo (antecipação, recebível, boleto, Pix, TED) são conciliadas"
               >
-                {csvOcupado ? <ArrowsClockwise size={12} className="animate-spin" /> : <UploadSimple size={12} />} Conciliar entradas pelo CSV
+                {csvOcupado ? <ArrowsClockwise size={12} className="animate-spin" /> : <UploadSimple size={12} />} Conciliar entradas pelo extrato (CSV/Excel)
               </button>
             </>
           )}
