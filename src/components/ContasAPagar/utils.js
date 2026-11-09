@@ -133,6 +133,15 @@ export const deveOcultarDespesaProducao = (item) => {
   return true; // senão, oculta
 };
 
+// De onde vem o PAGO do título (Yago, 09/11/2026): conciliação do extrato,
+// Liberação de Pagamento ou baixa no TOTVS. null = em aberto.
+export const origemPagamento = (item) => {
+  if (item?._pagoConciliacao) return 'CONCILIACAO';
+  if (item?._pagoLiberacao) return 'LIBERACAO';
+  if (item?.dt_liq && String(item.dt_liq).trim() !== '') return 'TOTVS';
+  return null;
+};
+
 // Determinar status da conta baseado nos dados
 export const getStatusFromData = (item) => {
   // Conciliado como PAGO na Liberação de Pagamento, mesmo que o TOTVS ainda

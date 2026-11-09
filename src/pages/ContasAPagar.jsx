@@ -27,6 +27,7 @@ import {
   agruparDadosIdenticos,
   formatarCpfCnpj,
   deveOcultarFaturaBanco,
+  origemPagamento,
   deveOcultarDespesaProducao,
   ehDespesaProducao,
 } from '../components/ContasAPagar';
@@ -271,6 +272,8 @@ const ContasAPagar = (props) => {
 
   // ─── Estado Filtro Pagamento ───
   const [filtroPagamento, setFiltroPagamento] = useState('TODOS');
+  // Pago via TOTVS / Liberação / Conciliação (Yago, 09/11/2026)
+  const [filtroPagoVia, setFiltroPagoVia] = useState('TODOS');
   const [valorInicial, setValorInicial] = useState('');
   const [valorFinal, setValorFinal] = useState('');
 
@@ -925,7 +928,9 @@ const ContasAPagar = (props) => {
         modo: modoData,
         situacao: situacao || 'N',
         previsao: previsao === 'PREVISÃO' ? 'PREVISAO' : previsao || 'TODOS',
-        filtroPagamento,
+        // PAGO/ABERTO é filtrado aqui na tela, depois de marcar os pagos via
+        // conciliação e Liberação (o servidor só conhece a baixa do TOTVS)
+        filtroPagamento: 'TODOS',
         ...(valorInicial !== '' && { valorInicial: parseFloat(valorInicial) }),
         ...(valorFinal !== '' && { valorFinal: parseFloat(valorFinal) }),
       };
@@ -1030,6 +1035,13 @@ const ContasAPagar = (props) => {
       // não foram emitidas a partir de 01/10/2026 e não estão pagas (Yago 29/10/2026)
       filtrados = filtrados.filter((item) => !deveOcultarDespesaProducao(item));
 
+      // Pagamento (PAGO/ABERTO) e Pago via (TOTVS/Liberação/Conciliação):
+      // pago = baixado no TOTVS, conciliado no extrato ou PAGO na Liberação
+      if (filtroPagamento === 'PAGO') filtrados = filtrados.filter((i) => origemPagamento(i));
+      else if (filtroPagamento === 'ABERTO') filtrados = filtrados.filter((i) => !origemPagamento(i));
+      if (filtroPagoVia && filtroPagoVia !== 'TODOS')
+        filtrados = filtrados.filter((i) => origemPagamento(i) === filtroPagoVia);
+
       setDados(filtrados);
 
       // Extrair despesas e centros de custo únicos para filtros
@@ -1090,6 +1102,7 @@ const ContasAPagar = (props) => {
       despesasFixas,
       modoData,
       filtroPagamento,
+      filtroPagoVia,
       valorInicial,
       valorFinal,
     ],
@@ -1139,6 +1152,8 @@ const ContasAPagar = (props) => {
         handleFiltrar={handleFiltrarFn}
         filtroPagamento={filtroPagamento}
         setFiltroPagamento={setFiltroPagamento}
+        filtroPagoVia={filtroPagoVia}
+        setFiltroPagoVia={setFiltroPagoVia}
         valorInicial={valorInicial}
         setValorInicial={setValorInicial}
         valorFinal={valorFinal}
@@ -1240,6 +1255,7 @@ const ContasAPagar = (props) => {
                 hasRole={hasRole}
                 filtroPagamento={filtroPagamento}
                 setFiltroPagamento={setFiltroPagamento}
+                filtroPagoVia={filtroPagoVia}
               />
             </>
           )}

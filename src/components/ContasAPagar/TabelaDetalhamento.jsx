@@ -14,6 +14,7 @@ import {
   TABLE_CLASSES,
   TABLE_HEADER_CLASSES,
   getStickyColStyle,
+  origemPagamento,
 } from './utils';
 
 const REGISTROS_POR_PAGINA = 50;
@@ -136,6 +137,7 @@ const TabelaDetalhamento = React.memo(
     hasRole,
     filtroPagamento,
     setFiltroPagamento,
+    filtroPagoVia = 'TODOS',
   }) => {
     const parentRef = useRef(null);
     const [filtroCor, setFiltroCor] = useState(new Set());
@@ -153,13 +155,14 @@ const TabelaDetalhamento = React.memo(
       let filtrados = dadosOrdenadosParaCards;
       if (filtroPagamento && filtroPagamento !== 'TODOS') {
         filtrados = filtrados.filter((grupo) => {
-          const contaPaga =
-            (grupo.item.dt_liq && grupo.item.dt_liq.trim() !== '') ||
-            grupo.item._pagoLiberacao;
+          const contaPaga = !!origemPagamento(grupo.item);
           if (filtroPagamento === 'PAGO') return contaPaga;
           if (filtroPagamento === 'ABERTO') return !contaPaga;
           return true;
         });
+      }
+      if (filtroPagoVia && filtroPagoVia !== 'TODOS') {
+        filtrados = filtrados.filter((grupo) => origemPagamento(grupo.item) === filtroPagoVia);
       }
       if (filtroCor.size > 0) {
         filtrados = filtrados.filter((grupo) => {
@@ -168,7 +171,7 @@ const TabelaDetalhamento = React.memo(
         });
       }
       return filtrados;
-    }, [dadosOrdenadosParaCards, filtroPagamento, filtroCor]);
+    }, [dadosOrdenadosParaCards, filtroPagamento, filtroPagoVia, filtroCor]);
 
     // Dados para a tabela
     const paginacao = useMemo(

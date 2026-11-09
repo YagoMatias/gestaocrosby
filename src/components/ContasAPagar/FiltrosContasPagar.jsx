@@ -45,6 +45,8 @@ const FiltrosContasPagar = React.memo(
     handleFiltrar,
     filtroPagamento,
     setFiltroPagamento,
+    filtroPagoVia = 'TODOS',
+    setFiltroPagoVia,
     valorInicial,
     setValorInicial,
     valorFinal,
@@ -142,6 +144,23 @@ const FiltrosContasPagar = React.memo(
                 <option value="PAGO">PAGO</option>
               </select>
             </div>
+            {setFiltroPagoVia && (
+              <div>
+                <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
+                  Pago via
+                </label>
+                <select
+                  value={filtroPagoVia}
+                  onChange={(e) => setFiltroPagoVia(e.target.value)}
+                  className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full focus:outline-none focus:ring-2 focus:ring-[#000638] bg-[#f8f9fb] text-[#000638] text-xs"
+                >
+                  <option value="TODOS">TODOS</option>
+                  <option value="TOTVS">TOTVS</option>
+                  <option value="LIBERACAO">LIBERAÇÃO</option>
+                  <option value="CONCILIACAO">CONCILIAÇÃO</option>
+                </select>
+              </div>
+            )}
             <div>
               <label className="block text-xs font-semibold mb-0.5 text-[#000638]">
                 Valor Inicial (R$)
