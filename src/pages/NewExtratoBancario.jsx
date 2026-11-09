@@ -55,7 +55,7 @@ const NewExtratoBancario = () => {
           (j.data || []).map((c) => ({
             id: c.chave,
             conta: c.conta,
-            apelido: `${bancoCfg(c.banco).label} ${c.conta}${c.contaDv ? `-${c.contaDv}` : ''}`,
+            apelido: `${bancoCfg(c.banco).label} ${c.conta}${c.contaDv ? `-${c.contaDv}` : ''}${c.grupoNome ? ` · ${c.grupoNome.split(' (')[0]}` : ''}`, // empresa dona da conta
             banco: c.banco,
             titular_nome: c.titular,
             titular_cnpj: c.titularCnpj || c.cnpjRaiz || null, // CNPJ do extrato; sem ele, a raiz da empresa (8 dígitos)
