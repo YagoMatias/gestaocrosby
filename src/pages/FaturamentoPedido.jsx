@@ -1,13 +1,18 @@
 // Página: Expedição → Faturamento (/expedicao/faturamento?chave=<id do card | SEP:ref>)
 // Pedido SEPARADO no Dryland → botão FATURAR na tela Pedido de Venda → aqui:
-//   • empresa SEMPRE 99, cliente já marcado pelo pedido, vendedor do pedido
-//   • operação escolhida numa LISTA FIXA (OPERACOES_FATURAMENTO)
-//   • os produtos do pedido aparecem pelo SKU (código TOTVS) com a quantidade
-//   • LIGAR PORTAL: cada etiqueta lida vira SKU (EPC → produto no TOTVS) e é
-//     conferida contra o pedido — conferido / faltando / sobrando (fora do pedido)
-//   • GERAR TRANSAÇÃO: venda "em andamento" no TOTVS só com as peças
-//     conferidas, pelo preço do pedido; acompanha até ATENDIDA (o caixa finaliza
-//     no TRAFP005) e fica registrada em pedidos_venda_faturamentos.
+//   • empresa SEMPRE 99, cliente e vendedor do pedido
+//   • os produtos do pedido aparecem pelo SKU; LIGAR PORTAL confere cada
+//     etiqueta (EPC → SKU) contra o pedido — conferido / faltando / sobrando
+//   • fiscal: cenário (RN / fora com IE / fora sem IE + DIFAL) e CFOP por peça
+//     (produção própria × adquirido, aprendido das NF-e do TOTVS)
+//   • transporte (transportadora, frete, volumes, peso) e pagamento (formas,
+//     parcelas e vencimentos do boleto, NSU/autorização) já vêm do pedido
+//   • FATURAR: a NF-e sai pelo HeadCoach (série 3 da 99) e o TOTVS recebe o
+//     DOCUMENTO INTERNO (511/7807/7808/7809) + recebimento → contas a receber,
+//     na data do caixa aberto no terminal 1
+//   • aba Transações: NF-e, documento interno, quem emitiu, peças com os EPCs
+//     (kardex), valor, pagamento e comprovantes
+// Backend: /api/faturamento-expedicao (services/faturamentoExpedicao.js).
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -19,7 +24,6 @@ import {
   ArrowLeft,
   Buildings,
   User,
-  Gear,
   CheckCircle,
   Warning,
   Tag,
@@ -30,49 +34,78 @@ import {
   MagnifyingGlass,
   Package,
   Minus,
+  Plus,
+  Truck,
+  CreditCard,
+  Scales,
+  CalendarBlank,
+  FileText,
+  Printer,
+  DownloadSimple,
+  ListBullets,
+  CaretDown,
+  CaretRight,
+  Storefront,
+  ArrowSquareOut,
+  Info,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
 import { useAuth } from '../components/AuthContext';
 import { ClientePicker } from './DevolucaoRFID';
 import { portalConnect, portalDisconnect, portalTags, portalClear } from '../utils/portalApi';
+import { gerarHtmlDanfeDeXml } from '../utils/danfeHtml';
+import { abrirImpressao } from '../utils/documentoFiscalHtml';
 
 // ─── Configuração ────────────────────────────────────────────────────────────
 const EMPRESA = 99; // faturamento sempre pela empresa 99
+const API = `${API_BASE_URL}/api/faturamento-expedicao`;
 
-// LISTA FIXA de operações de venda. Ajuste aqui quando a lista oficial mudar.
-// `canais` = canais do pedido em que a operação já vem marcada.
-const OPERACOES_FATURAMENTO = [
-  { code: '545', label: 'VENDA VAREJO', canais: ['varejo'] },
-  { code: '7236', label: 'VENDA REVENDEDOR', canais: ['revenda'] },
-  { code: '7235', label: 'VENDA MULTIMARCAS', canais: ['mtm'] },
-  { code: '7234', label: 'VENDA FRANQUIA', canais: ['franquias'] },
+const OPERACOES_DOC_INTERNO = [
+  { code: 511, label: '511 - VENDA VAREJO *', canal: 'varejo' },
+  { code: 7807, label: '7807 - VENDAS FRANQUIAS N/OFC', canal: 'franquias' },
+  { code: 7808, label: '7808 - VENDAS MTM N/OFC', canal: 'mtm' },
+  { code: 7809, label: '7809 - VENDA REVENDEDORES N/OFC', canal: 'revenda' },
 ];
 
-const CONFIG = {
-  paymentConditionCode: 1, // provisória; o caixa define a real no TRAFP005
-  priceCodes: '4', // só para peça sem preço no pedido
+const FORMAS = {
+  pix: 'Pix',
+  credito: 'Cartão de crédito',
+  debito: 'Cartão de débito',
+  boleto: 'Boleto',
+  credito_loja: 'Credev',
+  dinheiro: 'Dinheiro',
+};
+const BANDEIRAS = ['visa', 'mastercard', 'elo', 'amex', 'hipercard', 'outros'];
+
+const CANAIS = { varejo: 'Varejo', revenda: 'Revenda', mtm: 'Multimarcas', franquias: 'Franquias' };
+
+const CENARIOS = {
+  interna: { label: 'Dentro do RN', cfop: '5101 / 5102', icms: 'ICMS 20%' },
+  interContrib: { label: 'Fora do RN · cliente com IE', cfop: '6101 / 6102', icms: 'ICMS 12%' },
+  interNaoContrib: { label: 'Fora do RN · consumidor final', cfop: '6107 / 6108', icms: 'ICMS 12% + DIFAL' },
 };
 
-const TRX_STATUS = {
-  1: { label: 'Em andamento', cls: 'bg-amber-50 text-amber-700 ring-amber-200' },
-  2: { label: 'Encerrada', cls: 'bg-blue-50 text-blue-700 ring-blue-200' },
-  3: { label: 'Em processo externo', cls: 'bg-gray-100 text-gray-600 ring-gray-200' },
-  4: { label: 'ATENDIDA', cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200' },
-  6: { label: 'CANCELADA', cls: 'bg-rose-50 text-rose-700 ring-rose-200' },
+const TOTVS_STATUS = {
+  1: { label: 'em andamento', cls: 'bg-amber-50 text-amber-700 ring-amber-200' },
+  4: { label: 'recebido · contas a receber lançado', cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200' },
+  6: { label: 'cancelado', cls: 'bg-rose-50 text-rose-700 ring-rose-200' },
+};
+const NF_STATUS = {
+  autorizada: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
+  rejeitada: 'bg-rose-50 text-rose-700 ring-rose-200',
+  erro: 'bg-rose-50 text-rose-700 ring-rose-200',
+  cancelada: 'bg-gray-100 text-gray-500 ring-gray-200',
 };
 
-const CANAIS = {
-  varejo: 'Varejo',
-  revenda: 'Revenda',
-  mtm: 'Multimarcas',
-  franquias: 'Franquias',
-};
-
+const round2 = (v) => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
 const fmtBRL = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const fmtDataHora = (d) =>
   d ? new Date(d).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
-const arred3 = (n) => Number(Number(n || 0).toFixed(3));
+const fmtData = (d) => (d ? new Date(`${String(d).slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : '—');
+const hojeIso = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Recife' }).format(new Date());
+const inputCls = 'mb-0 h-9 w-full rounded-lg border border-gray-300 bg-white px-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#000638]/30';
+const labelCls = 'mb-1 block text-[11px] font-semibold uppercase tracking-wide text-gray-500';
 
 function beep(ok = true) {
   try {
@@ -92,6 +125,13 @@ function beep(ok = true) {
   }
 }
 
+// parcelas iguais; a diferença de centavos vai na última (igual ao TOTVS)
+function parcelasIguais(total, n) {
+  const q = Math.max(1, Number(n) || 1);
+  const p = round2(total / q);
+  return Array.from({ length: q }, (_, i) => (i === q - 1 ? round2(total - p * (q - 1)) : p));
+}
+
 // Itens do pedido agrupados por SKU (código do produto no TOTVS).
 // Separação do Dryland quando houver (pedido do site); senão, itens do card.
 function itensDoPedido(dados) {
@@ -105,23 +145,95 @@ function itensDoPedido(dados) {
     const q = Number(i.qtd) || 1;
     const cur = porSku.get(sku);
     if (cur) {
-      // preço médio ponderado quando o mesmo SKU aparece em mais de uma linha
       const totalAnt = cur.preco * cur.qtd;
       cur.qtd += q;
-      cur.preco = (totalAnt + (Number(i.preco) || 0) * q) / cur.qtd;
+      cur.preco = round2((totalAnt + (Number(i.preco) || 0) * q) / cur.qtd);
     } else {
-      porSku.set(sku, { sku, descricao: i.descricao || '', cor: i.cor || '', tam: i.tam || '', qtd: q, preco: Number(i.preco) || 0 });
+      porSku.set(sku, { sku, descricao: i.descricao || '', cor: i.cor || '', tam: i.tam || '', qtd: q, preco: round2(Number(i.preco) || 0) });
     }
   }
   return [...porSku.values()].sort((a, b) => a.descricao.localeCompare(b.descricao));
 }
 
-// ─── Lista dos pedidos separados (quando a tela abre sem pedido) ────────────
+async function imprimirDanfe(notaId) {
+  const r = await fetch(`${API_BASE_URL}/api/pdv-crosby/notas/${notaId}/xml`);
+  if (!r.ok) throw new Error('XML da nota não encontrado');
+  abrirImpressao(gerarHtmlDanfeDeXml(await r.text()));
+}
+
+function Bloco({ titulo, icone: Icone, children, extra }) {
+  return (
+    <section className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+      <div className="mb-2 flex items-center gap-1.5">
+        <Icone size={15} className="text-[#000638]" />
+        <h3 className="flex-1 text-xs font-bold uppercase tracking-wide text-[#000638]">{titulo}</h3>
+        {extra}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Chip({ children, cls = 'bg-gray-100 text-gray-600 ring-gray-200' }) {
+  return <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-semibold ring-1 ${cls}`}>{children}</span>;
+}
+
+// ─── Busca de transportadora (taxista ou outra pessoa do TOTVS) ─────────────
+function BuscaPessoa({ onEscolher }) {
+  const [q, setQ] = useState('');
+  const [res, setRes] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const buscar = async () => {
+    const t = q.trim();
+    if (!t) return;
+    setBusy(true);
+    try {
+      const param = /^\d+$/.test(t) ? `code=${t}` : `nome=${encodeURIComponent(t)}`;
+      const r = await fetch(`${API_BASE_URL}/api/totvs/clientes/search-name?${param}`);
+      const j = await r.json();
+      setRes(j?.data?.clientes || []);
+    } catch {
+      setRes([]);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="mt-1.5">
+      <div className="flex gap-1">
+        <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && buscar()} placeholder="Código ou nome do taxista" className={inputCls} />
+        <button onClick={buscar} disabled={busy} className="h-9 shrink-0 rounded-lg bg-[#000638] px-3 text-xs font-bold text-white disabled:opacity-40">
+          {busy ? <Spinner size={13} className="animate-spin" /> : <MagnifyingGlass size={13} />}
+        </button>
+      </div>
+      {res && (
+        <ul className="mt-1 max-h-40 overflow-y-auto rounded-lg ring-1 ring-gray-200">
+          {res.length === 0 && <li className="px-2 py-1.5 text-xs text-gray-400">Ninguém encontrado</li>}
+          {res.slice(0, 20).map((c) => (
+            <li key={c.code}>
+              <button
+                onClick={() => {
+                  onEscolher({ code: c.code, nome: c.name });
+                  setRes(null);
+                  setQ('');
+                }}
+                className="w-full px-2 py-1.5 text-left text-xs hover:bg-gray-50"
+              >
+                <b className="text-[#000638]">{c.code}</b> — {c.name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ─── Lista dos pedidos separados (tela sem pedido escolhido) ────────────────
 function ListaSeparados({ onEscolher }) {
   const [itens, setItens] = useState(null);
   const [busca, setBusca] = useState('');
   const [erro, setErro] = useState('');
-
   const carregar = useCallback(async () => {
     setItens(null);
     setErro('');
@@ -138,59 +250,280 @@ function ListaSeparados({ onEscolher }) {
   useEffect(() => {
     carregar();
   }, [carregar]);
-
   const filtrados = useMemo(() => {
     const b = busca.trim().toUpperCase();
     if (!b) return itens || [];
-    return (itens || []).filter((p) =>
-      [p.numero_site, p.cliente, p.titulo, p.vendedor].filter(Boolean).some((v) => String(v).toUpperCase().includes(b)),
-    );
+    return (itens || []).filter((p) => [p.numero_site, p.cliente, p.titulo, p.vendedor].filter(Boolean).some((v) => String(v).toUpperCase().includes(b)));
   }, [itens, busca]);
-
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3">
-      <div className="flex flex-wrap items-center gap-2 mb-2">
-        <p className="text-sm font-bold text-[#000638] flex-1">Pedidos separados prontos para faturar</p>
+    <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <p className="flex-1 text-sm font-bold text-[#000638]">Pedidos separados prontos para faturar</p>
         <div className="relative">
           <MagnifyingGlass size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-            placeholder="pedido, cliente, vendedor…"
-            className="h-9 pl-8 pr-2 rounded-lg border border-gray-300 text-sm mb-0 w-56"
-          />
+          <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="pedido, cliente, vendedor…" className="mb-0 h-9 w-56 rounded-lg border border-gray-300 pl-8 pr-2 text-sm" />
         </div>
-        <button onClick={carregar} className="h-9 px-3 rounded-lg text-xs font-semibold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50 inline-flex items-center gap-1.5">
+        <button onClick={carregar} className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50">
           <ArrowsClockwise size={13} className={itens === null ? 'animate-spin' : ''} /> Atualizar
         </button>
       </div>
-      {erro && <p className="text-xs text-rose-700 bg-rose-50 rounded-lg px-2 py-1.5 ring-1 ring-rose-200 mb-2">{erro}</p>}
+      {erro && <p className="mb-2 rounded-lg bg-rose-50 px-2 py-1.5 text-xs text-rose-700 ring-1 ring-rose-200">{erro}</p>}
       {itens === null ? (
         <div className="py-8 text-center text-gray-400">
-          <Spinner size={20} className="animate-spin mx-auto" />
+          <Spinner size={20} className="mx-auto animate-spin" />
         </div>
       ) : filtrados.length === 0 ? (
         <p className="py-6 text-center text-xs text-gray-400">Nenhum pedido separado.</p>
       ) : (
         <ul className="divide-y divide-gray-100">
           {filtrados.map((p) => (
-            <li key={p.chave} className="py-2 flex flex-wrap items-center gap-2 text-xs">
-              <span className="font-mono font-bold text-[#000638] w-20">{p.numero_site || '—'}</span>
-              <span className="flex-1 min-w-[160px] truncate font-medium text-gray-800">{p.cliente || p.titulo}</span>
+            <li key={p.chave} className="flex flex-wrap items-center gap-2 py-2 text-xs">
+              <span className="w-20 font-mono font-bold text-[#000638]">{p.numero_site || '—'}</span>
+              <span className="min-w-[160px] flex-1 truncate font-medium text-gray-800">{p.cliente || p.titulo}</span>
               <span className="text-gray-500">{CANAIS[p.canal] || p.canal}</span>
-              <span className="text-gray-500 tabular-nums">{p.separacao?.qtd_pecas || 0} pç</span>
-              <span className="font-semibold tabular-nums w-24 text-right">{fmtBRL(p.valor)}</span>
-              {p.faturamento ? (
-                <span className="px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 font-semibold">tx {p.faturamento.transacao}</span>
-              ) : null}
-              <button
-                onClick={() => onEscolher(p.chave)}
-                className="h-8 px-3 rounded-lg text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700"
-              >
+              <span className="tabular-nums text-gray-500">{p.separacao?.qtd_pecas || 0} pç</span>
+              <span className="w-24 text-right font-semibold tabular-nums">{fmtBRL(p.valor)}</span>
+              {p.faturamento && (
+                <Chip cls="bg-emerald-50 text-emerald-700 ring-emerald-200">{p.faturamento.nf ? `NF ${p.faturamento.nf}` : `tx ${p.faturamento.transacao}`}</Chip>
+              )}
+              <button onClick={() => onEscolher(p.chave)} className="h-8 rounded-lg bg-emerald-600 px-3 text-[11px] font-bold text-white hover:bg-emerald-700">
                 FATURAR
               </button>
             </li>
           ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ─── Aba Transações ─────────────────────────────────────────────────────────
+function DetalheTransacao({ id, onReprocessar, reprocessando }) {
+  const [d, setD] = useState(null);
+  const [erro, setErro] = useState('');
+  useEffect(() => {
+    let vivo = true;
+    fetch(`${API}/transacoes/${id}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (!vivo) return;
+        if (!j.success) throw new Error(j.message);
+        setD(j.data);
+      })
+      .catch((e) => vivo && setErro(e.message));
+    return () => {
+      vivo = false;
+    };
+  }, [id]);
+  if (erro) return <p className="px-3 py-2 text-xs text-rose-600">{erro}</p>;
+  if (!d) return <Spinner size={16} className="mx-auto my-3 animate-spin text-gray-400" />;
+  const v = d.venda;
+  const nota = v?.notas?.find((n) => n.status === 'autorizada') || v?.notas?.[0];
+  const porProduto = {};
+  for (const k of d.kardex) {
+    porProduto[k.product_code] = porProduto[k.product_code] || { nome: k.produto_nome, epcs: [] };
+    porProduto[k.product_code].epcs.push(k.epc);
+  }
+  return (
+    <div className="grid gap-3 bg-gray-50 px-3 py-3 md:grid-cols-2">
+      <div className="space-y-2 text-xs">
+        <p>
+          <b>NF-e:</b>{' '}
+          {nota ? (
+            <>
+              {nota.numero}/{nota.serie} <Chip cls={NF_STATUS[nota.status]}>{nota.status}</Chip>
+              {nota.chave && <span className="mt-0.5 block font-mono text-[10.5px] text-gray-500">{nota.chave}</span>}
+              {nota.status !== 'autorizada' && nota.xmotivo && <span className="block text-rose-600">{nota.cstat} {nota.xmotivo}</span>}
+            </>
+          ) : (
+            '—'
+          )}
+        </p>
+        {nota?.status === 'autorizada' && (
+          <div className="flex gap-1.5">
+            <button onClick={() => imprimirDanfe(nota.id).catch((e) => alert(e.message))} className="inline-flex h-8 items-center gap-1 rounded-lg bg-[#000638] px-2.5 text-[11px] font-bold text-white">
+              <Printer size={13} /> DANFE
+            </button>
+            <a href={`${API_BASE_URL}/api/pdv-crosby/notas/${nota.id}/xml`} className="inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-[11px] font-bold text-[#000638] ring-1 ring-gray-300">
+              <DownloadSimple size={13} /> XML
+            </a>
+          </div>
+        )}
+        <p>
+          <b>TOTVS (documento interno):</b> {v?.totvs_transacao_code ? `transação ${v.totvs_transacao_code} · ${fmtData(v.totvs_transacao_date)}` : '—'}{' '}
+          {v?.totvs_status && <Chip cls={TOTVS_STATUS[v.totvs_status]?.cls}>{TOTVS_STATUS[v.totvs_status]?.label || v.totvs_status}</Chip>}
+          {v?.totvs_erro && <span className="block text-rose-600">{v.totvs_erro}</span>}
+        </p>
+        {(nota?.status !== 'autorizada' || v?.totvs_status !== 4) && (
+          <button
+            onClick={() => onReprocessar(v.id)}
+            disabled={reprocessando}
+            className="inline-flex h-8 items-center gap-1 rounded-lg bg-amber-600 px-2.5 text-[11px] font-bold text-white disabled:opacity-50"
+          >
+            {reprocessando ? <Spinner size={13} className="animate-spin" /> : <ArrowsClockwise size={13} />} Tentar de novo
+          </button>
+        )}
+        <p>
+          <b>Pagamento:</b>{' '}
+          {(v?.pagamentos || []).map((p) => `${FORMAS[p.forma] || p.forma} ${fmtBRL(p.valor)}${p.parcelas > 1 ? ` em ${p.parcelas}x` : ''}${p.nsu ? ` · NSU ${p.nsu}` : ''}${p.autorizacao ? ` · aut ${p.autorizacao}` : ''}`).join(' + ') || '—'}
+        </p>
+        {(v?.cobranca?.parcelas || []).length > 0 && (
+          <p>
+            <b>Boleto:</b> {v.cobranca.parcelas.map((x) => `${fmtData(x.vencimento)} ${fmtBRL(x.valor)}`).join(' · ')}
+          </p>
+        )}
+        <p>
+          <b>Transporte:</b> {v?.transporte ? `${v.transporte.nome}${v.transporte.servico ? ` · ${v.transporte.servico}` : ''} · ${v.transporte.volumes} vol · ${v.transporte.pesoB || 0} kg` : 'retirada / sem transportadora'} · frete {fmtBRL(v?.frete)}
+        </p>
+        <p>
+          <b>Emitido por:</b> {d.faturamento.criado_por || '—'} em {fmtDataHora(d.faturamento.criado_em)} · caixa TOTVS {fmtData(v?.data_caixa)}
+        </p>
+        {(v?.comprovantes || []).length > 0 && (
+          <p className="flex flex-wrap gap-1">
+            <b>Comprovantes:</b>
+            {v.comprovantes.map((c, i) => (
+              <a key={c.path || i} href={c.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 font-semibold text-blue-700 hover:underline">
+                comprovante {i + 1} <ArrowSquareOut size={10} />
+              </a>
+            ))}
+          </p>
+        )}
+        {(d.faturamento.qtd_faltando > 0 || d.faturamento.qtd_sobrando > 0) && (
+          <p className="text-amber-700">
+            Ficaram fora: {d.faturamento.qtd_faltando} faltando · {d.faturamento.qtd_sobrando} sobrando
+          </p>
+        )}
+      </div>
+      <div>
+        <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-gray-500">Peças e etiquetas RFID (kardex)</p>
+        <ul className="space-y-1.5">
+          {(v?.itens || []).map((it) => (
+            <li key={it.id} className="rounded-lg bg-white p-2 ring-1 ring-gray-200">
+              <p className="text-xs font-semibold text-gray-800">
+                {it.nome} <span className="font-mono text-gray-400">· SKU {it.product_code}</span>
+              </p>
+              <p className="text-[11px] text-gray-500">
+                {it.quantidade} × {fmtBRL(it.valor_unit)} · CFOP {it.cfop || '—'} · {it.tipo_fiscal === 'adquirido' ? 'adquirido' : 'produção'}
+              </p>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {(porProduto[it.product_code]?.epcs || []).map((epc) => (
+                  <span key={epc} className="inline-flex items-center gap-0.5 rounded-full bg-purple-50 px-1.5 py-0.5 font-mono text-[10px] text-purple-700 ring-1 ring-purple-200">
+                    <Tag size={9} /> {epc}
+                  </span>
+                ))}
+                {!(porProduto[it.product_code]?.epcs || []).length && <span className="text-[10px] text-gray-400">sem etiqueta (digitada)</span>}
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+function AbaTransacoes() {
+  const [lista, setLista] = useState(null);
+  const [busca, setBusca] = useState('');
+  const [de, setDe] = useState(() => new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10));
+  const [ate, setAte] = useState(hojeIso);
+  const [aberto, setAberto] = useState(null);
+  const [reprocessando, setReprocessando] = useState(false);
+  const [aviso, setAviso] = useState('');
+  const carregar = useCallback(async () => {
+    setLista(null);
+    try {
+      const qs = new URLSearchParams({ de, ate, ...(busca.trim() ? { busca: busca.trim() } : {}) });
+      const r = await fetch(`${API}/transacoes?${qs}`);
+      const j = await r.json();
+      setLista(j.success ? j.data : []);
+    } catch {
+      setLista([]);
+    }
+  }, [de, ate, busca]);
+  useEffect(() => {
+    carregar();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [de, ate]);
+  const reprocessar = async (vendaId) => {
+    setReprocessando(true);
+    setAviso('');
+    try {
+      const r = await fetch(`${API}/vendas/${vendaId}/reprocessar`, { method: 'POST' });
+      const j = await r.json();
+      setAviso(j.message || '');
+      await carregar();
+      setAberto(null);
+    } catch (e) {
+      setAviso(e.message);
+    } finally {
+      setReprocessando(false);
+    }
+  };
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="flex flex-wrap items-end gap-2 border-b border-gray-100 p-3">
+        <div className="relative min-w-[200px] flex-1">
+          <MagnifyingGlass size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input value={busca} onChange={(e) => setBusca(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && carregar()} placeholder="Pedido, cliente, NF, transação, quem emitiu…" className={`${inputCls} pl-8`} />
+        </div>
+        <div>
+          <label className={labelCls}>De</label>
+          <input type="date" value={de} onChange={(e) => setDe(e.target.value)} className={`${inputCls} w-auto`} />
+        </div>
+        <div>
+          <label className={labelCls}>Até</label>
+          <input type="date" value={ate} onChange={(e) => setAte(e.target.value)} className={`${inputCls} w-auto`} />
+        </div>
+        <button onClick={carregar} className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50">
+          <ArrowsClockwise size={13} className={lista === null ? 'animate-spin' : ''} /> Buscar
+        </button>
+      </div>
+      {aviso && <p className="mx-3 mt-2 rounded-lg bg-blue-50 px-2 py-1.5 text-xs text-blue-800 ring-1 ring-blue-200">{aviso}</p>}
+      {lista === null ? (
+        <div className="py-10 text-center text-gray-400">
+          <Spinner size={20} className="mx-auto animate-spin" />
+        </div>
+      ) : lista.length === 0 ? (
+        <p className="py-10 text-center text-xs text-gray-400">Nenhum faturamento no período.</p>
+      ) : (
+        <ul className="divide-y divide-gray-100">
+          {lista.map((f) => {
+            const nf = f.nota;
+            const st = f.venda?.totvs_status;
+            return (
+              <li key={f.id}>
+                <button onClick={() => setAberto(aberto === f.id ? null : f.id)} className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-left text-xs hover:bg-gray-50">
+                  {aberto === f.id ? <CaretDown size={12} /> : <CaretRight size={12} />}
+                  <span className="w-24 text-gray-500">{fmtDataHora(f.criado_em)}</span>
+                  <span className="w-20 font-mono font-bold text-[#000638]">{f.numero_site || '—'}</span>
+                  <span className="min-w-[140px] flex-1 truncate font-medium text-gray-800">{f.cliente_nome}</span>
+                  <span>
+                    {nf ? (
+                      <Chip cls={NF_STATUS[nf.status]}>
+                        NF {nf.numero} · {nf.status}
+                      </Chip>
+                    ) : (
+                      <Chip cls={NF_STATUS.erro}>sem NF</Chip>
+                    )}
+                  </span>
+                  <span>
+                    {st === 4 ? (
+                      <Chip cls={TOTVS_STATUS[4].cls}>TOTVS {f.venda?.totvs_transacao_code}</Chip>
+                    ) : f.venda?.totvs_erro ? (
+                      <Chip cls="bg-rose-50 text-rose-700 ring-rose-200">TOTVS pendente</Chip>
+                    ) : (
+                      <Chip cls="bg-amber-50 text-amber-700 ring-amber-200">TOTVS {f.venda?.totvs_transacao_code || '—'}</Chip>
+                    )}
+                  </span>
+                  <span className="w-28 text-gray-500">{(f.forma_pagamento || '').split(' + ').map((x) => FORMAS[x] || x).join(' + ')}</span>
+                  <span className="w-20 text-right tabular-nums">{f.qtd_conferida} pç</span>
+                  <span className="w-24 text-right font-semibold tabular-nums">{fmtBRL(f.total)}</span>
+                  <span className="w-28 truncate text-gray-400">{f.criado_por || ''}</span>
+                </button>
+                {aberto === f.id && <DetalheTransacao id={f.id} onReprocessar={reprocessar} reprocessando={reprocessando} />}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
@@ -203,42 +536,62 @@ const FaturamentoPedido = () => {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const chave = params.get('chave') || '';
+  const aba = params.get('aba') || 'faturar';
 
   const [toast, setToast] = useState(null);
   const showToast = useCallback((type, msg) => {
     setToast({ type, msg });
-    setTimeout(() => setToast(null), 4500);
+    setTimeout(() => setToast(null), 5000);
   }, []);
 
   // Pedido
   const [pedido, setPedido] = useState(null); // { card, separacao, itens, faturamentos }
+  const [prep, setPrep] = useState(null); // sugestões do /preparar
   const [carregando, setCarregando] = useState(false);
   const [erroPedido, setErroPedido] = useState('');
 
-  // Cabeçalho da transação
+  // Cabeçalho
   const [sellers, setSellers] = useState([]);
   const [seller, setSeller] = useState('');
   const [customer, setCustomer] = useState(null);
-  const [customerInfo, setCustomerInfo] = useState(null);
+  const [consumidorFinal, setConsumidorFinal] = useState(false);
+  const [previa, setPrevia] = useState(null);
+  const [previaErro, setPreviaErro] = useState('');
   const [operacao, setOperacao] = useState('');
-  const [ufEmpresa, setUfEmpresa] = useState(null);
-  const ufCliente = customerInfo?.uf || null;
-  const cfop = ufEmpresa && ufCliente ? (ufEmpresa === ufCliente ? '5102' : '6102') : '5102';
+  const [dataCaixa, setDataCaixa] = useState(() => {
+    try {
+      return localStorage.getItem('fat_data_caixa') || hojeIso();
+    } catch {
+      return hojeIso();
+    }
+  });
+
+  // Transporte e pagamento
+  const [transp, setTransp] = useState({ id: 'RETIRADA', code: null, nome: null, servico: '', frete: 0, modFrete: 0, volumes: 0, pesoB: 0 });
+  const [pagamentos, setPagamentos] = useState([]);
+  const [vencimentos, setVencimentos] = useState([]);
 
   // Portal / leituras
   const [portalStatus, setPortalStatus] = useState({ status: 'desconectado' });
   const [portalBusy, setPortalBusy] = useState(false);
-  const [lidos, setLidos] = useState({}); // sku → { sku, nome, epcs[], manual, preco }
-  const [naoResolvidos, setNaoResolvidos] = useState([]); // EPCs que o TOTVS não reconheceu
+  const [lidos, setLidos] = useState({}); // sku → { sku, nome, epcs[], manual, precoTotvs }
+  const [naoResolvidos, setNaoResolvidos] = useState([]);
   const processed = useRef(new Set());
   const [codigoManual, setCodigoManual] = useState('');
   const [manualBusy, setManualBusy] = useState(false);
 
-  // Transação
+  // Faturamento
   const [confirmaDuplicar, setConfirmaDuplicar] = useState(false);
   const [posting, setPosting] = useState(false);
-  const [trx, setTrx] = useState(null);
-  const [trxStatus, setTrxStatus] = useState(null);
+  const [resultado, setResultado] = useState(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('fat_data_caixa', dataCaixa);
+    } catch {
+      /* sem storage */
+    }
+  }, [dataCaixa]);
 
   const limparLeituras = useCallback(() => {
     setLidos({});
@@ -247,13 +600,14 @@ const FaturamentoPedido = () => {
     portalClear().catch(() => {});
   }, []);
 
-  // ─── Carrega o pedido ────────────────────────────────────────────────────
+  // ─── Carrega o pedido + sugestões ────────────────────────────────────────
   useEffect(() => {
     setPedido(null);
+    setPrep(null);
     setErroPedido('');
-    setTrx(null);
-    setTrxStatus(null);
+    setResultado(null);
     setConfirmaDuplicar(false);
+    setConsumidorFinal(false);
     setLidos({});
     setNaoResolvidos([]);
     processed.current = new Set();
@@ -262,22 +616,44 @@ const FaturamentoPedido = () => {
     setCarregando(true);
     (async () => {
       try {
-        const r = await fetch(`${API_BASE_URL}/api/pedidos-venda/${encodeURIComponent(chave)}`);
-        const j = await r.json();
-        if (!r.ok || !j.success) throw new Error(j?.message || `HTTP ${r.status}`);
+        const [r1, r2] = await Promise.all([
+          fetch(`${API_BASE_URL}/api/pedidos-venda/${encodeURIComponent(chave)}`).then((r) => r.json()),
+          fetch(`${API}/preparar/${encodeURIComponent(chave)}`).then((r) => r.json()),
+        ]);
+        if (!r1.success) throw new Error(r1.message || 'Pedido não encontrado');
+        if (!r2.success) throw new Error(r2.message || 'Não consegui preparar o faturamento');
         if (!vivo) return;
-        const d = j.data;
+        const d = r1.data;
+        const p = r2.data;
         setPedido(d);
-        const dd = d.card?.dados || {};
-        const sep = d.separacao;
-        const codCli = parseInt(dd.codigo_cliente, 10);
-        setCustomer(Number.isFinite(codCli) && codCli > 0 ? { code: codCli, name: dd.nome_cliente || sep?.cliente || `Cliente ${codCli}` } : null);
-        setCustomerInfo(null);
-        const vend = sep?.vendedor_code || parseInt(dd.cod_vendedor, 10) || null;
-        setSeller(vend ? String(vend) : '');
-        const canal = d.card?.canal || ({ revenda: 'revenda', varejo: 'varejo', multimarca: 'mtm', franquia: 'franquias' })[sep?.canal] || '';
-        const op = OPERACOES_FATURAMENTO.find((o) => o.canais.includes(canal));
-        setOperacao(op ? op.code : '');
+        setPrep(p);
+        setCustomer(p.cliente?.code ? { code: p.cliente.code, name: p.cliente.nome || `Cliente ${p.cliente.code}` } : null);
+        setSeller(p.vendedorCode ? String(p.vendedorCode) : '');
+        setOperacao(String(p.operacaoDocInterno || ''));
+        const tr = p.transportadoras.find((t) => t.id === p.transporte.id);
+        setTransp({
+          id: p.transporte.id,
+          code: p.transporte.code,
+          nome: tr && tr.code ? tr.label : null,
+          servico: p.transporte.servico || '',
+          frete: p.transporte.frete || 0,
+          modFrete: p.transporte.modFrete,
+          volumes: p.transporte.volumes,
+          pesoB: p.transporte.pesoB || 0,
+        });
+        const formas = p.pagamento.formas.length ? p.pagamento.formas : ['pix'];
+        setPagamentos(
+          formas.map((f, i) => ({
+            forma: f,
+            valor: 0,
+            parcelas: f === 'boleto' || f === 'credito' ? p.pagamento.parcelas || 1 : 1,
+            nsu: f === 'credito' || f === 'debito' ? p.pagamento.nsu || '' : '',
+            autorizacao: f === 'credito' || f === 'debito' ? p.pagamento.autorizacao || '' : '',
+            bandeira: f === 'credito' || f === 'debito' ? String(p.pagamento.bandeira || '').toLowerCase() : '',
+            auto: i === 0,
+          })),
+        );
+        setVencimentos(p.pagamento.vencimentos || []);
       } catch (e) {
         if (vivo) setErroPedido(e.message);
       } finally {
@@ -289,40 +665,46 @@ const FaturamentoPedido = () => {
     };
   }, [chave]);
 
-  // UF da empresa 99 e vendedores dela
   useEffect(() => {
-    fetch(`${API_BASE_URL}/api/totvs/pdv/branch/${EMPRESA}`)
-      .then((r) => r.json())
-      .then((j) => j?.success && setUfEmpresa(j.data?.uf || null))
-      .catch(() => {});
     fetch(`${API_BASE_URL}/api/totvs/pdv/sellers?branch=${EMPRESA}`)
       .then((r) => r.json())
       .then((j) => setSellers(j?.data?.items || []))
       .catch(() => setSellers([]));
   }, []);
 
-  // Dados do cliente (UF → CFOP)
-  useEffect(() => {
-    if (!customer) {
-      setCustomerInfo(null);
-      return undefined;
-    }
-    let vivo = true;
-    fetch(`${API_BASE_URL}/api/totvs/pdv/customer/${customer.code}`)
-      .then((r) => r.json())
-      .then((j) => vivo && j?.data && setCustomerInfo(j.data))
-      .catch(() => {});
-    return () => {
-      vivo = false;
-    };
-  }, [customer]);
-
   const itensPedido = useMemo(() => (pedido ? itensDoPedido(pedido) : []), [pedido]);
   const skusPedido = useMemo(() => new Set(itensPedido.map((i) => i.sku)), [itensPedido]);
 
+  // ─── Prévia fiscal (cenário + CFOP por peça) ─────────────────────────────
+  useEffect(() => {
+    setPrevia(null);
+    setPreviaErro('');
+    if (!customer?.code || !itensPedido.length) return undefined;
+    let vivo = true;
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch(`${API}/previa`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clienteCode: customer.code, consumidorFinal, itens: itensPedido.map((i) => ({ productCode: Number(i.sku), referencia: i.descricao })) }),
+        });
+        const j = await r.json();
+        if (!vivo) return;
+        if (!j.success) throw new Error(j.message);
+        setPrevia(j.data);
+      } catch (e) {
+        if (vivo) setPreviaErro(e.message);
+      }
+    }, 300);
+    return () => {
+      vivo = false;
+      clearTimeout(t);
+    };
+  }, [customer, consumidorFinal, itensPedido]);
+  const cfopPor = useMemo(() => new Map((previa?.itens || []).map((i) => [String(i.productCode), i])), [previa]);
+
   // ─── Portal RFID ─────────────────────────────────────────────────────────
   const portalLigado = ['lendo', 'conectando', 'reconectando'].includes(portalStatus.status);
-
   const ligarPortal = useCallback(async () => {
     setPortalBusy(true);
     try {
@@ -335,7 +717,6 @@ const FaturamentoPedido = () => {
       setPortalBusy(false);
     }
   }, [showToast]);
-
   const desligarPortal = useCallback(async () => {
     setPortalBusy(true);
     try {
@@ -347,15 +728,11 @@ const FaturamentoPedido = () => {
       setPortalBusy(false);
     }
   }, []);
-
   const consultarProduto = useCallback(async (code) => {
-    const r = await fetch(
-      `${API_BASE_URL}/api/totvs/pdv/product/${encodeURIComponent(code)}?branch=${EMPRESA}&priceCodes=${CONFIG.priceCodes}`,
-    );
+    const r = await fetch(`${API_BASE_URL}/api/totvs/pdv/product/${encodeURIComponent(code)}?branch=${EMPRESA}&priceCodes=4`);
     const j = await r.json();
     return { ok: r.ok && !!j?.data?.product, data: j?.data, message: j?.message };
   }, []);
-
   const somar = useCallback(
     (data, { epc = null, manual = 0 }) => {
       const p = data.product;
@@ -364,20 +741,12 @@ const FaturamentoPedido = () => {
       const precoTotvs = padrao ? (padrao.promotionalPrice > 0 ? padrao.promotionalPrice : padrao.price) : 0;
       setLidos((prev) => {
         const cur = prev[sku] || { sku, nome: p.productName, epcs: [], manual: 0, precoTotvs };
-        return {
-          ...prev,
-          [sku]: {
-            ...cur,
-            epcs: epc && !cur.epcs.includes(epc) ? [...cur.epcs, epc] : cur.epcs,
-            manual: cur.manual + manual,
-          },
-        };
+        return { ...prev, [sku]: { ...cur, epcs: epc && !cur.epcs.includes(epc) ? [...cur.epcs, epc] : cur.epcs, manual: cur.manual + manual } };
       });
       beep(skusPedido.has(sku));
     },
     [skusPedido],
   );
-
   const resolverEpc = useCallback(
     async (epc) => {
       try {
@@ -385,14 +754,13 @@ const FaturamentoPedido = () => {
         if (res.ok) somar(res.data, { epc });
         else setNaoResolvidos((l) => (l.includes(epc) ? l : [...l, epc]));
       } catch {
-        processed.current.delete(epc); // tenta de novo na próxima varredura
+        processed.current.delete(epc);
       }
     },
     [consultarProduto, somar],
   );
-
   useEffect(() => {
-    if (!chave) return undefined;
+    if (!chave || aba !== 'faturar') return undefined;
     const timer = setInterval(async () => {
       try {
         const j = await portalTags();
@@ -409,13 +777,12 @@ const FaturamentoPedido = () => {
       }
     }, 1000);
     return () => clearInterval(timer);
-  }, [chave, resolverEpc]);
-
+  }, [chave, aba, resolverEpc]);
   const adicionarManual = useCallback(async () => {
     const code = codigoManual.trim();
     if (!code || manualBusy) return;
     setManualBusy(true);
-    setCodigoManual(''); // libera o campo já (a consulta no TOTVS demora)
+    setCodigoManual('');
     try {
       const res = await consultarProduto(code);
       if (!res.ok) {
@@ -431,7 +798,6 @@ const FaturamentoPedido = () => {
       setManualBusy(false);
     }
   }, [codigoManual, manualBusy, consultarProduto, somar, showToast]);
-
   const removerEpc = useCallback((sku, epc) => {
     processed.current.delete(epc);
     setLidos((prev) => {
@@ -443,7 +809,6 @@ const FaturamentoPedido = () => {
       return next;
     });
   }, []);
-
   const tirarManual = useCallback((sku) => {
     setLidos((prev) => {
       const cur = prev[sku];
@@ -455,13 +820,13 @@ const FaturamentoPedido = () => {
     });
   }, []);
 
-  // ─── Conferência: SKU do pedido × SKU lido pelo portal ───────────────────
+  // ─── Conferência: SKU do pedido × SKU lido ───────────────────────────────
   const conf = useMemo(() => {
     const linhas = itensPedido.map((i) => {
       const l = lidos[i.sku];
       const lido = l ? l.epcs.length + l.manual : 0;
       const conferido = Math.min(lido, i.qtd);
-      const preco = i.preco > 0 ? i.preco : l?.precoTotvs || 0;
+      const preco = i.preco > 0 ? i.preco : round2(l?.precoTotvs || 0);
       return { ...i, preco, lido, conferido, falta: i.qtd - conferido, sobra: Math.max(0, lido - i.qtd), epcs: l?.epcs || [], manual: l?.manual || 0 };
     });
     const fora = Object.values(lidos)
@@ -471,562 +836,789 @@ const FaturamentoPedido = () => {
     const conferidas = linhas.reduce((s, l) => s + l.conferido, 0);
     const faltando = esperado - conferidas;
     const sobrando = linhas.reduce((s, l) => s + l.sobra, 0) + fora.reduce((s, l) => s + l.lido, 0);
-    const totalPedido = linhas.reduce((s, l) => s + l.qtd * l.preco, 0);
-    const totalConferido = linhas.reduce((s, l) => s + l.conferido * l.preco, 0);
+    const totalPedido = round2(linhas.reduce((s, l) => s + l.qtd * l.preco, 0));
+    const totalConferido = round2(linhas.reduce((s, l) => s + l.conferido * l.preco, 0));
     return { linhas, fora, esperado, conferidas, faltando, sobrando, totalPedido, totalConferido, ok: esperado > 0 && faltando === 0 && sobrando === 0 };
   }, [itensPedido, lidos, skusPedido]);
 
-  // ─── Gerar a transação de venda no TOTVS ─────────────────────────────────
+  // ─── Totais e pagamento ──────────────────────────────────────────────────
+  const temTransportadora = transp.id !== 'RETIRADA' && !!transp.code;
+  const frete = temTransportadora ? round2(transp.frete) : 0;
+  const totalNota = round2(conf.totalConferido + frete);
+  // forma "automática" (a primeira) acompanha o total: total − as outras formas
+  useEffect(() => {
+    setPagamentos((ps) => {
+      if (!ps.length) return ps;
+      const outras = round2(ps.filter((p) => !p.auto).reduce((s, p) => s + Number(p.valor || 0), 0));
+      const alvo = round2(Math.max(0, totalNota - outras));
+      return ps.map((p) => (p.auto && p.valor !== alvo ? { ...p, valor: alvo } : p));
+    });
+  }, [totalNota, pagamentos.map((p) => (p.auto ? '' : p.valor)).join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
+  const somaPag = round2(pagamentos.reduce((s, p) => s + Number(p.valor || 0), 0));
+  const pBoleto = pagamentos.find((p) => p.forma === 'boleto');
+  const parcelasBoleto = pBoleto ? parcelasIguais(Number(pBoleto.valor || 0), pBoleto.parcelas) : [];
+  const setPag = (i, patch) => setPagamentos((ps) => ps.map((p, k) => (k === i ? { ...p, ...patch } : p)));
+
+  // ─── Validação ───────────────────────────────────────────────────────────
   const card = pedido?.card || null;
-  const ref = card?.numero_site || pedido?.separacao?.ref || (chave.startsWith('SEP:') ? chave.slice(4) : null);
-  const jaNoTotvs = [card?.transacao && `transação ${card.transacao}`, card?.pedido_totvs && `pedido ${card.pedido_totvs}`]
-    .concat((pedido?.separacao?.totvs_pedidos || []).map((p) => `pedido ${p}`))
-    .filter(Boolean);
-  const fatsVivos = (pedido?.faturamentos || []).filter((f) => f.transacao_status !== 6);
+  const ref = prep?.ref || card?.numero_site || pedido?.separacao?.ref || (chave.startsWith('SEP:') ? chave.slice(4) : null);
+  const fatsVivos = (pedido?.faturamentos || []).filter((f) => f.venda_id && f.nf_status === 'autorizada');
+  const jaNoTotvs = prep?.jaNoTotvs || [];
   const precisaConfirmar = jaNoTotvs.length > 0 || fatsVivos.length > 0;
   const semPreco = conf.linhas.some((l) => l.conferido > 0 && !(l.preco > 0));
+  const pendencias = [];
+  if (!customer) pendencias.push('Escolha o cliente.');
+  if (previa && !previa.cliente.temEndereco) pendencias.push('Cliente sem endereço completo no TOTVS (a NF-e exige).');
+  if (previa && !previa.difalOk) pendencias.push(`DIFAL de ${previa.cenario.destUf} ainda não conferido — fature esta pelo TOTVS ou marque se o cliente tem IE.`);
+  if (previaErro) pendencias.push(previaErro);
+  if (!seller) pendencias.push('Escolha o vendedor.');
+  if (!operacao) pendencias.push('Escolha a operação do documento interno.');
+  if (!dataCaixa) pendencias.push('Informe a data do caixa do TOTVS.');
+  if (conf.conferidas === 0) pendencias.push('Ligue o portal e passe as peças do pedido.');
+  if (semPreco) pendencias.push('Há peça conferida sem preço.');
+  if (transp.id !== 'RETIRADA' && !transp.code) pendencias.push('Escolha a transportadora (taxista: pesquise pelo nome ou código).');
+  if (!pagamentos.length) pendencias.push('Informe o pagamento.');
+  if (Math.abs(somaPag - totalNota) > 0.01) pendencias.push(`Pagamento (${fmtBRL(somaPag)}) não fecha com o total da nota (${fmtBRL(totalNota)}).`);
+  if (pBoleto && parcelasBoleto.some((_, i) => !/^\d{4}-\d{2}-\d{2}$/.test(vencimentos[i] || ''))) pendencias.push('Informe o vencimento de cada parcela do boleto.');
+  if (precisaConfirmar && !confirmaDuplicar) pendencias.push('Confirme o aviso de lançamento já existente.');
+  const podeFaturar = !posting && !resultado && pendencias.length === 0;
 
-  const podeGerar =
-    !posting &&
-    !trx &&
-    customer &&
-    seller &&
-    operacao &&
-    conf.conferidas > 0 &&
-    !semPreco &&
-    (!precisaConfirmar || confirmaDuplicar);
-
-  const gerarTransacao = useCallback(async () => {
-    if (!podeGerar) return;
+  // ─── FATURAR ─────────────────────────────────────────────────────────────
+  const faturar = useCallback(async () => {
+    if (!podeFaturar) return;
+    const cen = CENARIOS[previa?.cenario?.chave] || {};
+    const okUser = window.confirm(
+      `Emitir NF-e REAL (produção) série ${prep?.numeracao?.serie ?? 3} pela empresa ${EMPRESA}?\n\n` +
+        `Cliente: ${customer?.name}\n${cen.label || ''} · ${cen.icms || ''}\n` +
+        `${conf.conferidas} peça(s) ${fmtBRL(conf.totalConferido)} + frete ${fmtBRL(frete)} = ${fmtBRL(totalNota)}\n\n` +
+        `Depois grava no TOTVS o documento interno ${operacao} com o contas a receber, na data do caixa ${fmtData(dataCaixa)} (terminal 1).`,
+    );
+    if (!okUser) return;
     setPosting(true);
     try {
-      const cf = parseInt(cfop, 10);
-      const itens = conf.linhas
-        .filter((l) => l.conferido > 0)
-        .map((l) => ({ productCode: parseInt(l.sku, 10), quantity: l.conferido, value: arred3(l.preco), cfop: cf }));
-      // 3 casas: o TOTVS soma as linhas com 3 decimais (mesma regra da Devolução)
-      const total = arred3(itens.reduce((s, it) => s + it.quantity * it.value, 0));
-      const observations = [
-        { observation: `PEDIDO DRYLAND ${ref || chave} - FATURAMENTO HEADCOACH`.slice(0, 80) },
-        ...(!conf.ok
-          ? [{ observation: `CONFERIDAS ${conf.conferidas} DE ${conf.esperado} - FALTAM ${conf.faltando} SOBRAM ${conf.sobrando}`.slice(0, 80) }]
-          : []),
-      ];
-      const payload = {
-        branchCode: EMPRESA,
-        customerCode: customer.code,
-        sellerCode: parseInt(seller, 10),
-        operationCode: parseInt(operacao, 10),
-        paymentConditionCode: CONFIG.paymentConditionCode,
-        isPreSale: false,
-        status: 1,
-        totalAmountTransaction: total,
-        items: itens,
-        observations,
+      const vend = sellers.find((s) => String(s.code) === String(seller));
+      const body = {
+        chave,
+        numeroSite: ref,
+        canal: prep?.canal,
+        clienteCode: customer.code,
+        vendedorCode: Number(seller),
+        vendedorNome: vend?.name || null,
+        operacaoDocInterno: Number(operacao),
+        consumidorFinal,
+        dataCaixa,
+        itens: conf.linhas
+          .filter((l) => l.conferido > 0)
+          .map((l) => ({ productCode: Number(l.sku), quantidade: l.conferido, valorUnit: l.preco, nome: l.descricao, epcs: l.epcs.slice(0, l.conferido) })),
+        transporte: temTransportadora
+          ? { code: transp.code, servico: transp.servico || null, frete, modFrete: Number(transp.modFrete), volumes: Number(transp.volumes) || 1, pesoB: Number(transp.pesoB) || 0 }
+          : { code: null, frete: 0 },
+        pagamentos: pagamentos.map((p) => ({
+          forma: p.forma,
+          valor: round2(p.valor),
+          parcelas: Number(p.parcelas) || 1,
+          nsu: p.nsu || null,
+          autorizacao: p.autorizacao || null,
+          bandeira: p.bandeira || null,
+        })),
+        vencimentos: pBoleto ? parcelasBoleto.map((_, i) => vencimentos[i]) : [],
+        comprovantes: prep?.comprovantes || [],
+        pedidoInfo: { forma: prep?.pagamento?.formaTexto, nsu: prep?.pagamento?.nsu, autorizacao: prep?.pagamento?.autorizacao },
+        qtdPedido: conf.esperado,
+        faltando: conf.linhas.filter((l) => l.falta > 0).map((l) => ({ productCode: l.sku, name: l.descricao, quantidade: l.falta })),
+        sobrando: [
+          ...conf.linhas.filter((l) => l.sobra > 0).map((l) => ({ productCode: l.sku, name: l.descricao, quantidade: l.sobra, epcs: l.epcs.slice(l.qtd) })),
+          ...conf.fora.map((l) => ({ productCode: l.sku, name: l.nome, quantidade: l.lido, epcs: l.epcs })),
+        ],
+        por: user?.name || user?.email || null,
       };
-      const r = await fetch(`${API_BASE_URL}/api/totvs/pdv/transactions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      const r = await fetch(`${API}/faturar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const j = await r.json();
-      if (!r.ok || !j.success) {
+      if (!j.success) {
         beep(false);
-        showToast('erro', j?.message || 'O TOTVS recusou a transação');
+        showToast('erro', j.message || 'Falha ao faturar');
         return;
       }
-      const nova = { ...j.data, total };
-      setTrx(nova);
-      setTrxStatus(1);
-      beep(true);
-
-      // registra no HeadCoach (conferidos / faltando / sobrando)
-      try {
-        const rr = await fetch(`${API_BASE_URL}/api/pedidos-venda/${encodeURIComponent(chave)}/faturamentos`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            numeroSite: ref,
-            empresa: EMPRESA,
-            transactionCode: nova.transactionCode,
-            transactionDate: nova.transactionDate,
-            status: 1,
-            operacao: parseInt(operacao, 10),
-            cfop: cf,
-            total,
-            clienteCode: customer.code,
-            clienteNome: customer.name,
-            vendedorCode: parseInt(seller, 10),
-            qtdPedido: conf.esperado,
-            conferidos: conf.linhas
-              .filter((l) => l.conferido > 0)
-              .map((l) => ({ productCode: l.sku, name: l.descricao, quantidade: l.conferido, unit: Number(l.preco.toFixed(2)), total: Number((l.conferido * l.preco).toFixed(2)), epcs: l.epcs.slice(0, l.conferido) })),
-            faltando: conf.linhas
-              .filter((l) => l.falta > 0)
-              .map((l) => ({ productCode: l.sku, name: l.descricao, quantidade: l.falta, unit: Number(l.preco.toFixed(2)) })),
-            sobrando: [
-              ...conf.linhas.filter((l) => l.sobra > 0).map((l) => ({ productCode: l.sku, name: l.descricao, quantidade: l.sobra, epcs: l.epcs.slice(l.qtd) })),
-              ...conf.fora.map((l) => ({ productCode: l.sku, name: l.nome, quantidade: l.lido, epcs: l.epcs })),
-            ],
-            por: user?.name || user?.email || null,
-          }),
-        });
-        const jr = await rr.json();
-        if (rr.ok && jr.success) setTrx((t) => (t ? { ...t, registroId: jr.data.id } : t));
-        else showToast('erro', `Transação gerada, mas o registro no HeadCoach falhou: ${jr?.message || ''}`);
-      } catch (er) {
-        showToast('erro', `Transação gerada, mas o registro no HeadCoach falhou: ${er.message}`);
-      }
+      setResultado(j.data);
+      beep(j.data.fiscal?.ok && j.data.totvs?.ok);
+      showToast(j.data.fiscal?.ok && j.data.totvs?.ok ? 'ok' : 'erro', j.message);
     } catch (e) {
-      showToast('erro', `Falha ao gerar a transação: ${e.message}`);
+      showToast('erro', `Falha ao faturar: ${e.message}`);
     } finally {
       setPosting(false);
     }
-  }, [podeGerar, cfop, conf, ref, chave, customer, seller, operacao, showToast, user]);
+  }, [podeFaturar, previa, prep, customer, conf, frete, totalNota, operacao, dataCaixa, sellers, seller, chave, ref, consumidorFinal, temTransportadora, transp, pagamentos, pBoleto, parcelasBoleto, vencimentos, user, showToast]);
 
-  // ─── Acompanha a transação até ATENDIDA / CANCELADA ──────────────────────
-  const verificarStatus = useCallback(async () => {
-    if (!trx) return;
+  const reprocessar = useCallback(async () => {
+    if (!resultado?.vendaId) return;
+    setPosting(true);
     try {
-      const qs = new URLSearchParams({ branch: trx.branchCode, code: trx.transactionCode, date: String(trx.transactionDate).slice(0, 10) });
-      const r = await fetch(`${API_BASE_URL}/api/totvs/pdv/transaction-status?${qs}`);
+      const r = await fetch(`${API}/vendas/${resultado.vendaId}/reprocessar`, { method: 'POST' });
       const j = await r.json();
-      if (j?.data?.status != null) setTrxStatus(j.data.status);
-    } catch {
-      /* próximo ciclo */
+      if (j.success) setResultado(j.data);
+      showToast(j.data?.fiscal?.ok && j.data?.totvs?.ok ? 'ok' : 'erro', j.message);
+    } catch (e) {
+      showToast('erro', e.message);
+    } finally {
+      setPosting(false);
     }
-  }, [trx]);
-
-  useEffect(() => {
-    if (!trx || trxStatus === 4 || trxStatus === 6) return undefined;
-    const t = setInterval(verificarStatus, 10000);
-    return () => clearInterval(t);
-  }, [trx, trxStatus, verificarStatus]);
-
-  const ultimoAvisado = useRef(null);
-  useEffect(() => {
-    if (!trx?.registroId || trxStatus == null || trxStatus === 1) return;
-    const k = `${trx.registroId}:${trxStatus}`;
-    if (ultimoAvisado.current === k) return;
-    ultimoAvisado.current = k;
-    fetch(`${API_BASE_URL}/api/pedidos-venda/faturamentos/${trx.registroId}/status`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: trxStatus }),
-    }).catch(() => {});
-  }, [trx, trxStatus]);
+  }, [resultado, showToast]);
 
   const escolherPedido = (k) => setParams(k ? { chave: k } : {});
+  const irAba = (a) => setParams(a === 'transacoes' ? { aba: 'transacoes' } : chave ? { chave } : {});
 
   // ─── Render ──────────────────────────────────────────────────────────────
-  const opAtual = OPERACOES_FATURAMENTO.find((o) => o.code === operacao);
-  const st = TRX_STATUS[trxStatus] || { label: `status ${trxStatus}`, cls: 'bg-gray-100 text-gray-600 ring-gray-200' };
-
+  const cen = previa ? CENARIOS[previa.cenario.chave] : null;
+  const notaRes = resultado?.nota;
   return (
     <div className="flex-1 overflow-y-auto bg-gray-100 p-3 lg:p-4">
-      <div className="max-w-6xl mx-auto">
-        <PageTitle
-          title="Faturamento"
-          subtitle="Pedido separado no Dryland: confira as peças pelo portal RFID e gere a venda no TOTVS (empresa 99)"
-          icon={Receipt}
-        />
+      <div className="mx-auto max-w-6xl">
+        <PageTitle title="Faturamento" subtitle="NF-e emitida pelo HeadCoach (empresa 99) + documento interno e contas a receber no TOTVS" icon={Receipt} />
 
         <div className="mb-2 flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => navigate('/expedicao/pedidos-venda')}
-            className="h-8 px-2.5 rounded-lg text-xs font-semibold text-[#000638] bg-white ring-1 ring-gray-200 shadow-sm hover:bg-gray-50 inline-flex items-center gap-1"
-          >
+          <button onClick={() => navigate('/expedicao/pedidos-venda')} className="inline-flex h-8 items-center gap-1 rounded-lg bg-white px-2.5 text-xs font-semibold text-[#000638] shadow-sm ring-1 ring-gray-200 hover:bg-gray-50">
             <ArrowLeft size={13} /> Pedido de Venda
           </button>
-          {chave && (
-            <button
-              onClick={() => escolherPedido('')}
-              className="h-8 px-2.5 rounded-lg text-xs font-semibold text-[#000638] bg-white ring-1 ring-gray-200 shadow-sm hover:bg-gray-50"
-            >
+          <div className="inline-flex rounded-lg bg-white p-0.5 ring-1 ring-gray-200">
+            {[
+              { id: 'faturar', label: 'Faturar', icon: Receipt },
+              { id: 'transacoes', label: 'Transações', icon: ListBullets },
+            ].map((t) => (
+              <button
+                key={t.id}
+                onClick={() => irAba(t.id)}
+                className={`inline-flex h-7 items-center gap-1 rounded-md px-2.5 text-xs font-bold ${aba === t.id ? 'bg-[#000638] text-white' : 'text-[#000638] hover:bg-gray-50'}`}
+              >
+                <t.icon size={13} /> {t.label}
+              </button>
+            ))}
+          </div>
+          {chave && aba === 'faturar' && (
+            <button onClick={() => escolherPedido('')} className="h-8 rounded-lg bg-white px-2.5 text-xs font-semibold text-[#000638] shadow-sm ring-1 ring-gray-200 hover:bg-gray-50">
               Escolher outro pedido
             </button>
           )}
         </div>
 
-        {!chave ? (
+        {aba === 'transacoes' ? (
+          <AbaTransacoes />
+        ) : !chave ? (
           <ListaSeparados onEscolher={escolherPedido} />
         ) : carregando ? (
           <div className="py-16 text-center text-gray-400">
-            <Spinner size={22} className="animate-spin mx-auto" />
+            <Spinner size={22} className="mx-auto animate-spin" />
           </div>
         ) : erroPedido ? (
-          <p className="text-sm text-rose-700 bg-rose-50 rounded-xl px-3 py-2 ring-1 ring-rose-200">{erroPedido}</p>
-        ) : pedido ? (
+          <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700 ring-1 ring-rose-200">{erroPedido}</p>
+        ) : pedido && prep ? (
           <>
             {/* Pedido */}
-            <div className="mb-2 bg-white rounded-xl border border-gray-200 shadow-sm px-3 py-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#000638]">
+            <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs text-[#000638] shadow-sm">
               <span className="font-mono text-sm font-bold">{ref || '—'}</span>
               <span className="font-semibold">{card?.dados?.nome_cliente || pedido.separacao?.cliente || card?.titulo}</span>
-              <span className="text-gray-500">{CANAIS[card?.canal] || pedido.separacao?.canal || ''}</span>
-              <span className="text-gray-500">{card?.forma_pagamento || pedido.separacao?.pagamento || ''}</span>
+              <span className="text-gray-500">{CANAIS[prep.canal] || prep.canal}</span>
+              <span className="text-gray-500">{prep.pagamento.formaTexto || ''}</span>
               <span>
                 <b>{conf.esperado}</b> peça(s) · <b>{fmtBRL(conf.totalPedido)}</b>
               </span>
-              {card?.status && <span className="px-1.5 py-0.5 rounded-full bg-gray-100 ring-1 ring-gray-200 text-gray-600">{card.status}</span>}
+              {card?.status && <Chip>{card.status}</Chip>}
+              <span className="flex-1" />
+              {prep.numeracao?.serie != null && (
+                <Chip cls={Number(prep.numeracao.ambiente) === 1 ? 'bg-rose-50 text-rose-700 ring-rose-200' : 'bg-amber-50 text-amber-700 ring-amber-200'}>
+                  NF-e série {prep.numeracao.serie} · {Number(prep.numeracao.ambiente) === 1 ? 'PRODUÇÃO' : 'homologação'}
+                </Chip>
+              )}
             </div>
 
-            {precisaConfirmar && !trx && (
-              <div className="mb-2 rounded-xl bg-amber-50 ring-1 ring-amber-300 px-3 py-2 text-xs text-amber-800">
-                <p className="font-semibold inline-flex items-center gap-1">
-                  <Warning size={14} weight="bold" /> Atenção: este pedido já tem lançamento no TOTVS
+            {precisaConfirmar && !resultado && (
+              <div className="mb-2 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800 ring-1 ring-amber-300">
+                <p className="inline-flex items-center gap-1 font-semibold">
+                  <Warning size={14} weight="bold" /> Atenção: este pedido já tem lançamento
                 </p>
                 <ul className="mt-1 list-disc pl-5">
-                  {jaNoTotvs.length > 0 && <li>O Dryland já abriu: {jaNoTotvs.join(', ')}.</li>}
+                  {jaNoTotvs.length > 0 && <li>O Dryland já abriu no TOTVS: {jaNoTotvs.join(', ')} — confira para não faturar duas vezes.</li>}
                   {fatsVivos.map((f) => (
                     <li key={f.id}>
-                      Faturado aqui em {fmtDataHora(f.criado_em)}: transação {f.transacao_code} ({TRX_STATUS[f.transacao_status]?.label || f.transacao_status}) · {f.qtd_conferida} pç · {fmtBRL(f.total)}
+                      Já faturado aqui em {fmtDataHora(f.criado_em)}: NF {f.nf_numero}/{f.nf_serie} · {f.qtd_conferida} pç · {fmtBRL(f.total)}
                     </li>
                   ))}
                 </ul>
-                <label className="mt-1.5 flex items-center gap-1.5 font-semibold cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={confirmaDuplicar}
-                    onChange={(e) => setConfirmaDuplicar(e.target.checked)}
-                    className="mb-0 !w-4 !h-4 shrink-0 accent-amber-600"
-                  />
-                  Conferi e quero gerar outra transação mesmo assim
+                <label className="mt-1.5 flex cursor-pointer items-center gap-1.5 font-semibold">
+                  <input type="checkbox" checked={confirmaDuplicar} onChange={(e) => setConfirmaDuplicar(e.target.checked)} className="mb-0 !h-4 !w-4 shrink-0 accent-amber-600" />
+                  Conferi e quero faturar mesmo assim
                 </label>
               </div>
             )}
 
-            {/* Cabeçalho da transação */}
-            <div className="mb-2 bg-white rounded-xl border border-gray-200 shadow-sm p-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 items-start">
-              <div>
-                <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Empresa</label>
-                <div className="h-9 px-2.5 rounded-lg bg-gray-50 ring-1 ring-gray-200 inline-flex items-center gap-1.5 text-sm font-semibold text-[#000638] w-full">
-                  <Buildings size={15} className="text-gray-400" /> {EMPRESA}
-                  {ufEmpresa && <span className="text-xs font-normal text-gray-500">· {ufEmpresa}</span>}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Vendedor</label>
-                <div className="relative">
-                  <User size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <select
-                    value={seller}
-                    onChange={(e) => setSeller(e.target.value)}
-                    className={`w-full h-9 pl-8 pr-2 mb-0 rounded-lg border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#000638]/30 ${seller ? 'border-gray-300' : 'border-amber-400'}`}
-                  >
-                    <option value="">Selecione…</option>
-                    {seller && !sellers.some((s) => String(s.code) === seller) && <option value={seller}>{seller} — vendedor do pedido</option>}
-                    {sellers.map((s) => (
-                      <option key={s.code} value={s.code}>
-                        {s.code} — {s.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <ClientePicker value={customer} onSelect={setCustomer} />
-
-              <div>
-                <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Operação</label>
-                <div className="flex gap-1">
-                  <div className="relative flex-1">
-                    <Gear size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-                    <select
-                      value={operacao}
-                      onChange={(e) => setOperacao(e.target.value)}
-                      className={`w-full h-9 pl-8 pr-2 mb-0 rounded-lg border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#000638]/30 ${operacao ? 'border-gray-300' : 'border-amber-400'}`}
-                    >
-                      <option value="">Selecione a operação…</option>
-                      {OPERACOES_FATURAMENTO.map((o) => (
-                        <option key={o.code} value={o.code}>
-                          {o.code} - {o.label}
-                        </option>
-                      ))}
-                    </select>
+            <div className="grid items-start gap-2 lg:grid-cols-[1fr_330px]">
+              {/* ── Coluna esquerda ── */}
+              <div className="space-y-2">
+                {/* Cliente / fiscal */}
+                <Bloco titulo="Cliente e fiscal" icone={FileText}>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <div>
+                      <label className={labelCls}>Empresa</label>
+                      <div className="flex h-9 items-center gap-1.5 rounded-lg bg-gray-50 px-2.5 text-sm font-semibold text-[#000638] ring-1 ring-gray-200">
+                        <Buildings size={15} className="text-gray-400" /> {EMPRESA} · {prep.emitente.uf}
+                      </div>
+                    </div>
+                    <ClientePicker
+                      value={customer}
+                      onSelect={(c) => {
+                        setCustomer(c);
+                        setConsumidorFinal(false);
+                      }}
+                    />
+                    <div>
+                      <label className={labelCls}>Vendedor</label>
+                      <div className="relative">
+                        <User size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <select value={seller} onChange={(e) => setSeller(e.target.value)} className={`${inputCls} pl-8 ${seller ? '' : 'border-amber-400'}`}>
+                          <option value="">Selecione…</option>
+                          {seller && !sellers.some((s) => String(s.code) === seller) && <option value={seller}>{seller} — vendedor do pedido</option>}
+                          {sellers.map((s) => (
+                            <option key={s.code} value={s.code}>
+                              {s.code} — {s.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
                   </div>
-                  <div
-                    className="h-9 w-[4.2rem] rounded-lg border border-gray-300 bg-gray-50 text-sm text-center leading-9 font-semibold text-[#000638]"
-                    title={ufEmpresa && ufCliente ? `Empresa ${ufEmpresa} · cliente ${ufCliente}` : 'CFOP pela UF da empresa e do cliente'}
-                  >
-                    {cfop}
+                  {customer && (
+                    <div className="mt-2 rounded-lg bg-gray-50 px-2.5 py-2 text-xs ring-1 ring-gray-200">
+                      {!previa && !previaErro && (
+                        <span className="inline-flex items-center gap-1 text-gray-400">
+                          <Spinner size={12} className="animate-spin" /> conferindo cadastro e tributação…
+                        </span>
+                      )}
+                      {previa && (
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                          <span>
+                            {previa.cliente.cnpj ? `CNPJ ${previa.cliente.cnpj}` : `CPF ${previa.cliente.cpf || '—'}`} · {previa.cliente.ie ? `IE ${previa.cliente.ie}` : 'sem IE'} ·{' '}
+                            {previa.cliente.cidade}/{previa.cliente.uf}
+                          </span>
+                          <Chip cls="bg-indigo-50 text-[#000638] ring-indigo-200">
+                            {cen?.label} · CFOP {cen?.cfop} · {cen?.icms}
+                            {previa.aliqDifal ? ` (${previa.cenario.destUf} ${previa.aliqDifal}%)` : ''}
+                          </Chip>
+                          {(previa.cliente.ie || consumidorFinal) && previa.cenario.interestadual && (
+                            <label className="inline-flex cursor-pointer items-center gap-1 text-gray-600" title="Use quando o cliente tem IE mas o TOTVS o trata como consumidor final (ex.: MEI): vira CFOP 6107/6108 com DIFAL">
+                              <input type="checkbox" checked={consumidorFinal} onChange={(e) => setConsumidorFinal(e.target.checked)} className="mb-0 !h-3.5 !w-3.5" />
+                              tratar como consumidor final
+                            </label>
+                          )}
+                        </div>
+                      )}
+                      {previaErro && <span className="text-rose-600">{previaErro}</span>}
+                    </div>
+                  )}
+                </Bloco>
+
+                {/* Conferência */}
+                <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-100 px-3 py-2 text-xs">
+                    <span className="inline-flex items-center gap-1 font-bold text-[#000638]">
+                      <Package size={14} /> Produtos do pedido
+                    </span>
+                    <span className="text-emerald-700">
+                      <b>{conf.conferidas}</b> de {conf.esperado} conferidas
+                    </span>
+                    {conf.faltando > 0 && (
+                      <span className="text-amber-700">
+                        <b>{conf.faltando}</b> faltando
+                      </span>
+                    )}
+                    {conf.sobrando > 0 && (
+                      <span className="text-rose-700">
+                        <b>{conf.sobrando}</b> sobrando
+                      </span>
+                    )}
+                    {conf.ok && (
+                      <span className="inline-flex items-center gap-1 font-bold text-emerald-700">
+                        <CheckCircle size={14} weight="fill" /> tudo confere
+                      </span>
+                    )}
                   </div>
-                </div>
-                {customer && !ufCliente && <p className="mt-1 text-[10px] text-amber-700">UF do cliente não encontrada — usando CFOP {cfop}.</p>}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-[1fr_290px] gap-2 items-start">
-              {/* Conferência */}
-              <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                <div className="px-3 py-2 border-b border-gray-100 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                  <span className="font-bold text-[#000638] inline-flex items-center gap-1">
-                    <Package size={14} /> Produtos do pedido
-                  </span>
-                  <span className="text-emerald-700">
-                    <b>{conf.conferidas}</b> de {conf.esperado} conferidas
-                  </span>
-                  {conf.faltando > 0 && (
-                    <span className="text-amber-700">
-                      <b>{conf.faltando}</b> faltando
-                    </span>
-                  )}
-                  {conf.sobrando > 0 && (
-                    <span className="text-rose-700">
-                      <b>{conf.sobrando}</b> sobrando
-                    </span>
-                  )}
-                  {conf.ok && (
-                    <span className="inline-flex items-center gap-1 text-emerald-700 font-bold">
-                      <CheckCircle size={14} weight="fill" /> tudo confere
-                    </span>
-                  )}
-                </div>
-
-                {conf.linhas.length === 0 ? (
-                  <p className="px-3 py-8 text-center text-xs text-gray-400">Este pedido não tem itens no Dryland.</p>
-                ) : (
-                  <ul className="divide-y divide-gray-100">
-                    {conf.linhas.map((l) => {
-                      const cor =
-                        l.conferido === l.qtd && l.sobra === 0
-                          ? 'border-l-emerald-500 bg-emerald-50/40'
-                          : l.sobra > 0
-                            ? 'border-l-rose-500 bg-rose-50/40'
-                            : l.conferido > 0
-                              ? 'border-l-amber-400 bg-amber-50/30'
-                              : 'border-l-gray-200';
-                      return (
-                        <li key={l.sku} className={`px-3 py-2 border-l-4 ${cor}`}>
-                          <div className="flex items-start gap-2">
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold text-gray-800 truncate">{l.descricao || `SKU ${l.sku}`}</p>
-                              <p className="text-[11px] text-gray-500">
-                                SKU <b className="font-mono text-[#000638]">{l.sku}</b>
-                                {l.cor ? ` · ${l.cor}` : ''}
-                                {l.tam ? ` · ${l.tam}` : ''} · {fmtBRL(l.preco)}
-                                {!(l.preco > 0) && <span className="text-rose-600 font-semibold"> sem preço</span>}
-                              </p>
+                  {conf.linhas.length === 0 ? (
+                    <p className="px-3 py-8 text-center text-xs text-gray-400">Este pedido não tem itens no Dryland.</p>
+                  ) : (
+                    <ul className="divide-y divide-gray-100">
+                      {conf.linhas.map((l) => {
+                        const cor =
+                          l.conferido === l.qtd && l.sobra === 0
+                            ? 'border-l-emerald-500 bg-emerald-50/40'
+                            : l.sobra > 0
+                              ? 'border-l-rose-500 bg-rose-50/40'
+                              : l.conferido > 0
+                                ? 'border-l-amber-400 bg-amber-50/30'
+                                : 'border-l-gray-200';
+                        const fx = cfopPor.get(l.sku);
+                        return (
+                          <li key={l.sku} className={`border-l-4 px-3 py-2 ${cor}`}>
+                            <div className="flex items-start gap-2">
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-semibold text-gray-800">{l.descricao || `SKU ${l.sku}`}</p>
+                                <p className="text-[11px] text-gray-500">
+                                  SKU <b className="font-mono text-[#000638]">{l.sku}</b>
+                                  {l.cor ? ` · ${l.cor}` : ''}
+                                  {l.tam ? ` · ${l.tam}` : ''} · {fmtBRL(l.preco)}
+                                  {fx && (
+                                    <span className="ml-1 rounded bg-indigo-50 px-1 font-semibold text-[#000638]" title={fx.tipo === 'adquirido' ? 'mercadoria adquirida de terceiros' : 'produção do estabelecimento'}>
+                                      CFOP {fx.cfop}
+                                    </span>
+                                  )}
+                                  {!(l.preco > 0) && <span className="font-semibold text-rose-600"> sem preço</span>}
+                                </p>
+                              </div>
+                              <div className="shrink-0 text-right">
+                                <p className="text-base font-bold tabular-nums text-[#000638]">
+                                  {l.lido}
+                                  <span className="font-normal text-gray-400">/{l.qtd}</span>
+                                </p>
+                                <p className="text-[10px] font-semibold">
+                                  {l.conferido === l.qtd && l.sobra === 0 ? (
+                                    <span className="text-emerald-700">ok</span>
+                                  ) : l.sobra > 0 ? (
+                                    <span className="text-rose-700">+{l.sobra} a mais</span>
+                                  ) : (
+                                    <span className="text-amber-700">falta {l.falta}</span>
+                                  )}
+                                </p>
+                              </div>
                             </div>
-                            <div className="text-right shrink-0">
-                              <p className="text-base font-bold tabular-nums text-[#000638]">
-                                {l.lido}
-                                <span className="text-gray-400 font-normal">/{l.qtd}</span>
-                              </p>
-                              <p className="text-[10px] font-semibold">
-                                {l.conferido === l.qtd && l.sobra === 0 ? (
-                                  <span className="text-emerald-700">ok</span>
-                                ) : l.sobra > 0 ? (
-                                  <span className="text-rose-700">+{l.sobra} a mais</span>
-                                ) : (
-                                  <span className="text-amber-700">falta {l.falta}</span>
+                            {(l.epcs.length > 0 || l.manual > 0) && (
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {l.epcs.map((epc) => (
+                                  <span key={epc} className="inline-flex items-center gap-1 rounded-full bg-purple-50 px-1.5 py-0.5 font-mono text-[10px] text-purple-700 ring-1 ring-purple-200">
+                                    <Tag size={9} /> {epc}
+                                    <button onClick={() => removerEpc(l.sku, epc)} className="text-purple-300 hover:text-rose-600" title="Tirar esta etiqueta">
+                                      <X size={9} weight="bold" />
+                                    </button>
+                                  </span>
+                                ))}
+                                {l.manual > 0 && (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-1.5 py-0.5 text-[10px] text-blue-700 ring-1 ring-blue-200">
+                                    <Barcode size={10} /> {l.manual} digitada(s)
+                                    <button onClick={() => tirarManual(l.sku)} className="text-blue-300 hover:text-rose-600" title="Tirar uma">
+                                      <Minus size={9} weight="bold" />
+                                    </button>
+                                  </span>
                                 )}
-                              </p>
-                            </div>
-                          </div>
-                          {(l.epcs.length > 0 || l.manual > 0) && (
-                            <div className="mt-1 flex flex-wrap gap-1">
+                              </div>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                  {conf.fora.length > 0 && (
+                    <div className="border-t border-rose-200 bg-rose-50/60">
+                      <p className="px-3 pt-2 text-[11px] font-bold uppercase tracking-wide text-rose-700">
+                        Lidas que NÃO estão no pedido ({conf.fora.reduce((s, l) => s + l.lido, 0)}) — não entram na nota
+                      </p>
+                      <ul className="divide-y divide-rose-100">
+                        {conf.fora.map((l) => (
+                          <li key={l.sku} className="px-3 py-1.5 text-xs">
+                            <p className="font-semibold text-rose-800">
+                              {l.nome} <span className="font-mono font-normal">· SKU {l.sku}</span> · {l.lido} pç
+                            </p>
+                            <div className="mt-0.5 flex flex-wrap gap-1">
                               {l.epcs.map((epc) => (
-                                <span key={epc} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-700 ring-1 ring-purple-200 font-mono text-[10px]">
+                                <span key={epc} className="inline-flex items-center gap-1 rounded-full bg-white px-1.5 py-0.5 font-mono text-[10px] text-rose-700 ring-1 ring-rose-200">
                                   <Tag size={9} /> {epc}
-                                  <button onClick={() => removerEpc(l.sku, epc)} className="text-purple-300 hover:text-rose-600" title="Tirar esta etiqueta">
+                                  <button onClick={() => removerEpc(l.sku, epc)} className="text-rose-300 hover:text-rose-600">
                                     <X size={9} weight="bold" />
                                   </button>
                                 </span>
                               ))}
                               {l.manual > 0 && (
-                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 ring-1 ring-blue-200 text-[10px]">
-                                  <Barcode size={10} /> {l.manual} digitada(s)
-                                  <button onClick={() => tirarManual(l.sku)} className="text-blue-300 hover:text-rose-600" title="Tirar uma">
-                                    <Minus size={9} weight="bold" />
-                                  </button>
-                                </span>
+                                <button onClick={() => tirarManual(l.sku)} className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-rose-700 ring-1 ring-rose-200">
+                                  {l.manual} digitada(s) · tirar uma
+                                </button>
                               )}
                             </div>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {naoResolvidos.length > 0 && (
+                    <div className="border-t border-gray-200 px-3 py-2 text-[11px] text-gray-500">
+                      <b>{naoResolvidos.length}</b> etiqueta(s) que o TOTVS não reconheceu:{' '}
+                      <span className="font-mono">
+                        {naoResolvidos.slice(0, 6).join(', ')}
+                        {naoResolvidos.length > 6 ? '…' : ''}
+                      </span>
+                    </div>
+                  )}
+                </section>
 
-                {conf.fora.length > 0 && (
-                  <div className="border-t border-rose-200 bg-rose-50/60">
-                    <p className="px-3 pt-2 text-[11px] font-bold uppercase tracking-wide text-rose-700">
-                      Lidas que NÃO estão no pedido ({conf.fora.reduce((s, l) => s + l.lido, 0)}) — não entram na transação
-                    </p>
-                    <ul className="divide-y divide-rose-100">
-                      {conf.fora.map((l) => (
-                        <li key={l.sku} className="px-3 py-1.5 text-xs">
-                          <p className="font-semibold text-rose-800">
-                            {l.nome} <span className="font-mono font-normal">· SKU {l.sku}</span> · {l.lido} pç
+                {/* Transporte */}
+                <Bloco titulo="Transporte" icone={Truck}>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    <div className="sm:col-span-1">
+                      <label className={labelCls}>Transportadora</label>
+                      <select
+                        value={transp.id}
+                        onChange={(e) => {
+                          const t = prep.transportadoras.find((x) => x.id === e.target.value);
+                          setTransp((s) => ({
+                            ...s,
+                            id: t.id,
+                            code: t.code,
+                            nome: t.code ? t.label : null,
+                            volumes: t.id === 'RETIRADA' ? 0 : s.volumes || 1,
+                            frete: t.id === 'RETIRADA' ? 0 : s.frete,
+                            servico: t.id === 'CORREIOS' ? s.servico : '',
+                          }));
+                        }}
+                        className={inputCls}
+                      >
+                        {prep.transportadoras.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.label}
+                            {t.code ? ` (${t.code})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      {transp.id === 'TAXISTA' &&
+                        (transp.code ? (
+                          <p className="mt-1 flex items-center gap-1 text-xs text-[#000638]">
+                            <b>{transp.code}</b> — {transp.nome}
+                            <button onClick={() => setTransp((s) => ({ ...s, code: null, nome: null }))} className="text-gray-400 hover:text-rose-600">
+                              <X size={11} weight="bold" />
+                            </button>
                           </p>
-                          <div className="mt-0.5 flex flex-wrap gap-1">
-                            {l.epcs.map((epc) => (
-                              <span key={epc} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-white text-rose-700 ring-1 ring-rose-200 font-mono text-[10px]">
-                                <Tag size={9} /> {epc}
-                                <button onClick={() => removerEpc(l.sku, epc)} className="text-rose-300 hover:text-rose-600">
-                                  <X size={9} weight="bold" />
-                                </button>
-                              </span>
-                            ))}
-                            {l.manual > 0 && (
-                              <button onClick={() => tirarManual(l.sku)} className="px-1.5 py-0.5 rounded-full bg-white ring-1 ring-rose-200 text-[10px] text-rose-700">
-                                {l.manual} digitada(s) · tirar uma
-                              </button>
-                            )}
+                        ) : (
+                          <BuscaPessoa onEscolher={(p) => setTransp((s) => ({ ...s, code: p.code, nome: p.nome }))} />
+                        ))}
+                    </div>
+                    {transp.id !== 'RETIRADA' && (
+                      <>
+                        <div>
+                          <label className={labelCls}>Valor do frete (R$)</label>
+                          <input type="number" min="0" step="0.01" value={transp.frete} onChange={(e) => setTransp((s) => ({ ...s, frete: e.target.value }))} className={inputCls} />
+                        </div>
+                        <div>
+                          <label className={labelCls}>Quem paga o frete</label>
+                          <select value={transp.modFrete} onChange={(e) => setTransp((s) => ({ ...s, modFrete: Number(e.target.value) }))} className={inputCls}>
+                            <option value={1}>Cliente (destinatário · FOB)</option>
+                            <option value={0}>Crosby (remetente · CIF)</option>
+                          </select>
+                        </div>
+                        {transp.id === 'CORREIOS' && (
+                          <div>
+                            <label className={labelCls}>Serviço</label>
+                            <select value={transp.servico} onChange={(e) => setTransp((s) => ({ ...s, servico: e.target.value }))} className={inputCls}>
+                              <option value="">—</option>
+                              <option value="PAC">PAC</option>
+                              <option value="SEDEX">SEDEX</option>
+                            </select>
                           </div>
-                        </li>
-                      ))}
-                    </ul>
+                        )}
+                        <div>
+                          <label className={labelCls}>Volumes</label>
+                          <input type="number" min="1" step="1" value={transp.volumes} onChange={(e) => setTransp((s) => ({ ...s, volumes: e.target.value }))} className={inputCls} />
+                        </div>
+                        <div>
+                          <label className={labelCls}>
+                            <Scales size={11} className="mr-0.5 inline" /> Peso bruto (kg)
+                          </label>
+                          <input type="number" min="0" step="0.001" value={transp.pesoB} onChange={(e) => setTransp((s) => ({ ...s, pesoB: e.target.value }))} className={inputCls} />
+                        </div>
+                      </>
+                    )}
                   </div>
-                )}
+                  {transp.id === 'RETIRADA' && <p className="mt-1 text-[11px] text-gray-500">Sem transportadora: a NF-e sai com "sem frete" (modFrete 9).</p>}
+                </Bloco>
 
-                {naoResolvidos.length > 0 && (
-                  <div className="border-t border-gray-200 px-3 py-2 text-[11px] text-gray-500">
-                    <b>{naoResolvidos.length}</b> etiqueta(s) que o TOTVS não reconheceu:{' '}
-                    <span className="font-mono">{naoResolvidos.slice(0, 6).join(', ')}{naoResolvidos.length > 6 ? '…' : ''}</span>
+                {/* Pagamento */}
+                <Bloco
+                  titulo="Pagamento"
+                  icone={CreditCard}
+                  extra={
+                    <button
+                      onClick={() => setPagamentos((ps) => [...ps, { forma: 'pix', valor: 0, parcelas: 1, nsu: '', autorizacao: '', bandeira: '', auto: ps.length === 0 }])}
+                      className="inline-flex items-center gap-0.5 text-[11px] font-bold text-emerald-700 hover:underline"
+                    >
+                      <Plus size={11} weight="bold" /> forma
+                    </button>
+                  }
+                >
+                  {prep.pagamento.formaTexto && (
+                    <p className="mb-2 text-[11px] text-gray-500">
+                      No pedido: <b>{prep.pagamento.formaTexto}</b>
+                      {prep.pagamento.pix ? ` · Pix ${prep.pagamento.pix}` : ''}
+                      {prep.pagamento.credev ? ` · Credev ${prep.pagamento.credev}` : ''}
+                    </p>
+                  )}
+                  <div className="space-y-2">
+                    {pagamentos.map((p, i) => (
+                      <div key={i} className="rounded-lg bg-gray-50 p-2 ring-1 ring-gray-200">
+                        <div className="grid gap-2 sm:grid-cols-4">
+                          <div>
+                            <label className={labelCls}>Forma</label>
+                            <select value={p.forma} onChange={(e) => setPag(i, { forma: e.target.value, parcelas: 1 })} className={inputCls}>
+                              {Object.entries(FORMAS).map(([k, v]) => (
+                                <option key={k} value={k}>
+                                  {v}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className={labelCls}>Valor {p.auto && <span className="normal-case text-gray-400">(automático)</span>}</label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={p.valor}
+                              readOnly={p.auto}
+                              onChange={(e) => setPag(i, { valor: e.target.value })}
+                              className={`${inputCls} ${p.auto ? 'bg-gray-100' : ''}`}
+                            />
+                          </div>
+                          {(p.forma === 'credito' || p.forma === 'boleto') && (
+                            <div>
+                              <label className={labelCls}>Parcelas</label>
+                              <input type="number" min="1" max="24" value={p.parcelas} onChange={(e) => setPag(i, { parcelas: Math.max(1, parseInt(e.target.value, 10) || 1) })} className={inputCls} />
+                            </div>
+                          )}
+                          {(p.forma === 'credito' || p.forma === 'debito') && (
+                            <div>
+                              <label className={labelCls}>Bandeira</label>
+                              <select value={p.bandeira} onChange={(e) => setPag(i, { bandeira: e.target.value })} className={inputCls}>
+                                <option value="">—</option>
+                                {BANDEIRAS.map((b) => (
+                                  <option key={b} value={b}>
+                                    {b}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+                          {(p.forma === 'credito' || p.forma === 'debito') && (
+                            <>
+                              <div>
+                                <label className={labelCls}>NSU</label>
+                                <input value={p.nsu} onChange={(e) => setPag(i, { nsu: e.target.value })} className={inputCls} />
+                              </div>
+                              <div>
+                                <label className={labelCls}>Autorização</label>
+                                <input value={p.autorizacao} onChange={(e) => setPag(i, { autorizacao: e.target.value })} className={inputCls} />
+                              </div>
+                            </>
+                          )}
+                          {pagamentos.length > 1 && (
+                            <div className="flex items-end">
+                              <button
+                                onClick={() =>
+                                  setPagamentos((ps) => {
+                                    const n = ps.filter((_, k) => k !== i);
+                                    if (n.length && !n.some((x) => x.auto)) n[0] = { ...n[0], auto: true };
+                                    return n;
+                                  })
+                                }
+                                className="inline-flex h-9 items-center gap-1 rounded-lg px-2 text-xs text-rose-600 ring-1 ring-rose-200 hover:bg-rose-50"
+                              >
+                                <Trash size={13} /> tirar
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        {p.forma === 'boleto' && (
+                          <div className="mt-2 grid gap-1.5 sm:grid-cols-3">
+                            {parcelasBoleto.map((v, k) => (
+                              <div key={k} className="flex items-center gap-1.5 text-xs">
+                                <span className="w-8 shrink-0 font-semibold text-gray-500">{k + 1}ª</span>
+                                <input
+                                  type="date"
+                                  value={vencimentos[k] || ''}
+                                  onChange={(e) =>
+                                    setVencimentos((vs) => {
+                                      const n = [...vs];
+                                      n[k] = e.target.value;
+                                      return n;
+                                    })
+                                  }
+                                  className={`${inputCls} ${vencimentos[k] ? '' : 'border-amber-400'}`}
+                                />
+                                <span className="w-20 shrink-0 text-right font-semibold tabular-nums">{fmtBRL(v)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
                   </div>
-                )}
+                  {prep.comprovantes.length > 0 && (
+                    <p className="mt-2 flex flex-wrap items-center gap-2 text-[11px]">
+                      <b className="text-gray-500">Comprovantes do Dryland:</b>
+                      {prep.comprovantes.map((c, i) => (
+                        <a key={c.path} href={c.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 font-semibold text-blue-700 hover:underline">
+                          comprovante {i + 1} <ArrowSquareOut size={10} />
+                        </a>
+                      ))}
+                    </p>
+                  )}
+                </Bloco>
               </div>
 
-              {/* Coluna de ações */}
+              {/* ── Coluna direita ── */}
               <div className="space-y-2 lg:sticky lg:top-2">
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5 inline-flex items-center gap-1">
-                    <Broadcast size={13} /> Portal RFID
-                  </p>
-                  <div className="flex items-center gap-2 mb-2 text-xs">
-                    <span className={`w-2.5 h-2.5 rounded-full ${portalStatus.status === 'lendo' ? 'bg-emerald-500 animate-pulse' : portalLigado ? 'bg-amber-400' : 'bg-gray-300'}`} />
+                <Bloco titulo="Portal RFID" icone={Broadcast}>
+                  <div className="mb-2 flex items-center gap-2 text-xs">
+                    <span className={`h-2.5 w-2.5 rounded-full ${portalStatus.status === 'lendo' ? 'animate-pulse bg-emerald-500' : portalLigado ? 'bg-amber-400' : 'bg-gray-300'}`} />
                     <span className="font-medium text-gray-700">{portalStatus.status || 'desconectado'}</span>
-                    {portalStatus.erro && <span className="text-rose-600 truncate" title={portalStatus.erro}>{portalStatus.erro}</span>}
+                    {portalStatus.erro && (
+                      <span className="truncate text-rose-600" title={portalStatus.erro}>
+                        {portalStatus.erro}
+                      </span>
+                    )}
                   </div>
                   {portalLigado ? (
-                    <button
-                      onClick={desligarPortal}
-                      disabled={portalBusy}
-                      className="w-full h-10 rounded-lg text-sm font-bold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50 inline-flex items-center justify-center gap-2"
-                    >
+                    <button onClick={desligarPortal} disabled={portalBusy} className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-rose-600 text-sm font-bold text-white hover:bg-rose-700 disabled:opacity-50">
                       {portalBusy ? <Spinner size={16} className="animate-spin" /> : <Plugs size={16} weight="bold" />} DESLIGAR PORTAL
                     </button>
                   ) : (
-                    <button
-                      onClick={ligarPortal}
-                      disabled={portalBusy}
-                      className="w-full h-10 rounded-lg text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 inline-flex items-center justify-center gap-2"
-                    >
+                    <button onClick={ligarPortal} disabled={portalBusy} className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
                       {portalBusy ? <Spinner size={16} className="animate-spin" /> : <PlugsConnected size={16} weight="bold" />} LIGAR PORTAL
                     </button>
                   )}
-                  <button
-                    onClick={limparLeituras}
-                    className="mt-1.5 w-full h-8 rounded-lg text-xs font-semibold text-rose-600 ring-1 ring-rose-200 hover:bg-rose-50 inline-flex items-center justify-center gap-1.5"
-                  >
+                  <button onClick={limparLeituras} className="mt-1.5 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg text-xs font-semibold text-rose-600 ring-1 ring-rose-200 hover:bg-rose-50">
                     <Trash size={13} /> Limpar leituras
                   </button>
-
-                  <div className="mt-2 pt-2 border-t border-gray-100">
-                    <label className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Peça sem etiqueta (código / barras)</label>
+                  <div className="mt-2 border-t border-gray-100 pt-2">
+                    <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-gray-500">Peça sem etiqueta (código / barras)</label>
                     <div className="flex gap-1">
                       <input
                         value={codigoManual}
                         onChange={(e) => setCodigoManual(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && adicionarManual()}
                         placeholder="SKU ou código de barras"
-                        className="flex-1 min-w-0 h-9 px-2 rounded-lg border border-gray-300 text-sm mb-0"
+                        className="mb-0 h-9 min-w-0 flex-1 rounded-lg border border-gray-300 px-2 text-sm"
                       />
-                      <button
-                        onClick={adicionarManual}
-                        disabled={manualBusy || !codigoManual.trim()}
-                        className="h-9 px-3 rounded-lg text-xs font-bold text-white bg-[#000638] disabled:opacity-40"
-                      >
+                      <button onClick={adicionarManual} disabled={manualBusy || !codigoManual.trim()} className="h-9 rounded-lg bg-[#000638] px-3 text-xs font-bold text-white disabled:opacity-40">
                         {manualBusy ? <Spinner size={13} className="animate-spin" /> : '+1'}
                       </button>
                     </div>
                   </div>
-                </div>
+                </Bloco>
 
-                <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-3 text-xs space-y-1">
+                <Bloco titulo="TOTVS (documento interno)" icone={Storefront}>
+                  <label className={labelCls}>Operação</label>
+                  <select value={operacao} onChange={(e) => setOperacao(e.target.value)} className={inputCls}>
+                    <option value="">Selecione…</option>
+                    {OPERACOES_DOC_INTERNO.map((o) => (
+                      <option key={o.code} value={o.code}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                  <label className={`${labelCls} mt-2`}>
+                    <CalendarBlank size={11} className="mr-0.5 inline" /> Data do caixa (terminal 1)
+                  </label>
+                  <input type="date" value={dataCaixa} onChange={(e) => setDataCaixa(e.target.value)} className={inputCls} />
+                  <p className="mt-1 flex items-start gap-1 text-[10.5px] text-gray-500">
+                    <Info size={11} className="mt-0.5 shrink-0" /> O caixa do terminal 1 precisa estar aberto no TOTVS nessa data. O contas a receber sai com as parcelas e vencimentos acima.
+                  </p>
+                </Bloco>
+
+                <section className="space-y-1 rounded-xl border border-gray-200 bg-white p-3 text-xs shadow-sm">
                   <div className="flex justify-between">
                     <span className="text-gray-500">Peças do pedido</span>
                     <span className="tabular-nums">{conf.esperado}</span>
                   </div>
                   <div className="flex justify-between text-emerald-700">
-                    <span>Conferidas</span>
-                    <span className="tabular-nums font-semibold">{conf.conferidas}</span>
+                    <span>Conferidas (vão na nota)</span>
+                    <span className="font-semibold tabular-nums">{conf.conferidas}</span>
                   </div>
                   {conf.faltando > 0 && (
                     <div className="flex justify-between text-amber-700">
-                      <span>Faltando (não entram)</span>
+                      <span>Faltando (ficam fora)</span>
                       <span className="tabular-nums">{conf.faltando}</span>
                     </div>
                   )}
                   {conf.sobrando > 0 && (
                     <div className="flex justify-between text-rose-700">
-                      <span>Sobrando (não entram)</span>
+                      <span>Sobrando (ficam fora)</span>
                       <span className="tabular-nums">{conf.sobrando}</span>
                     </div>
                   )}
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Valor do pedido</span>
-                    <span className="tabular-nums">{fmtBRL(conf.totalPedido)}</span>
+                    <span className="text-gray-500">Produtos</span>
+                    <span className="tabular-nums">{fmtBRL(conf.totalConferido)}</span>
                   </div>
-                  <div className="flex justify-between items-baseline pt-1 border-t border-gray-100">
-                    <span className="font-semibold text-[#000638]">Total da transação</span>
-                    <span className="text-xl font-bold text-[#000638] tabular-nums">{fmtBRL(conf.totalConferido)}</span>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">Frete</span>
+                    <span className="tabular-nums">{fmtBRL(frete)}</span>
+                  </div>
+                  <div className="flex items-baseline justify-between border-t border-gray-100 pt-1">
+                    <span className="font-semibold text-[#000638]">Total da NF-e</span>
+                    <span className="text-xl font-bold tabular-nums text-[#000638]">{fmtBRL(totalNota)}</span>
                   </div>
 
-                  {trx ? (
-                    <div className="mt-2 rounded-lg bg-emerald-50 ring-1 ring-emerald-200 p-2 space-y-1">
-                      <p className="font-bold text-emerald-800 inline-flex items-center gap-1">
-                        <CheckCircle size={14} weight="fill" /> Transação {trx.transactionCode} gerada
-                      </p>
-                      <p className="text-[11px] text-emerald-800">
-                        Empresa {trx.branchCode} · {fmtBRL(trx.total)} · operação {operacao}
-                        {opAtual ? ` (${opAtual.label})` : ''}
-                      </p>
-                      <span className={`inline-block px-1.5 py-0.5 rounded-full ring-1 font-semibold ${st.cls}`}>{st.label}</span>
-                      {trxStatus === 1 && <p className="text-[11px] text-gray-600">Finalize no TOTVS (TRAFP005 → Continuar Transação → Encerrar). A tela confere a cada 10 s.</p>}
-                      <button
-                        onClick={() => escolherPedido('')}
-                        className="mt-1 w-full h-8 rounded-lg text-xs font-bold text-white bg-[#000638] hover:bg-[#000638]/90"
-                      >
+                  {resultado ? (
+                    <div className="mt-2 space-y-2">
+                      <div className={`rounded-lg p-2 ring-1 ${resultado.fiscal?.ok ? 'bg-emerald-50 ring-emerald-200' : 'bg-rose-50 ring-rose-200'}`}>
+                        <p className={`inline-flex items-center gap-1 font-bold ${resultado.fiscal?.ok ? 'text-emerald-800' : 'text-rose-700'}`}>
+                          {resultado.fiscal?.ok ? <CheckCircle size={14} weight="fill" /> : <Warning size={14} weight="fill" />}
+                          {resultado.fiscal?.ok ? `NF-e ${notaRes?.numero}/${notaRes?.serie} autorizada` : 'NF-e não autorizada'}
+                        </p>
+                        {!resultado.fiscal?.ok && <p className="text-[11px] text-rose-700">{resultado.fiscal?.mensagem}</p>}
+                        {notaRes?.chave && <p className="mt-0.5 break-all font-mono text-[10px] text-gray-500">{notaRes.chave}</p>}
+                        {resultado.fiscal?.ok && notaRes?.id && (
+                          <div className="mt-1.5 flex gap-1.5">
+                            <button onClick={() => imprimirDanfe(notaRes.id).catch((e) => showToast('erro', e.message))} className="inline-flex h-8 items-center gap-1 rounded-lg bg-[#000638] px-2.5 text-[11px] font-bold text-white">
+                              <Printer size={13} /> DANFE
+                            </button>
+                            <a href={`${API_BASE_URL}/api/pdv-crosby/notas/${notaRes.id}/xml`} className="inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-[11px] font-bold text-[#000638] ring-1 ring-gray-300">
+                              <DownloadSimple size={13} /> XML
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                      <div className={`rounded-lg p-2 ring-1 ${resultado.totvs?.ok ? 'bg-emerald-50 ring-emerald-200' : 'bg-amber-50 ring-amber-200'}`}>
+                        <p className={`inline-flex items-center gap-1 font-bold ${resultado.totvs?.ok ? 'text-emerald-800' : 'text-amber-800'}`}>
+                          {resultado.totvs?.ok ? <CheckCircle size={14} weight="fill" /> : <Warning size={14} weight="fill" />}
+                          {resultado.totvs?.ok ? `TOTVS: documento interno ${resultado.totvs.transactionCode}` : 'TOTVS ainda não recebeu'}
+                        </p>
+                        <p className="text-[11px] text-gray-700">
+                          {resultado.totvs?.ok ? `${TOTVS_STATUS[resultado.totvs.status]?.label || ''} · ${fmtData(resultado.totvs.transactionDate)}` : resultado.totvs?.mensagem}
+                        </p>
+                      </div>
+                      {!(resultado.fiscal?.ok && resultado.totvs?.ok) && (
+                        <button onClick={reprocessar} disabled={posting} className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-amber-600 text-xs font-bold text-white disabled:opacity-50">
+                          {posting ? <Spinner size={14} className="animate-spin" /> : <ArrowsClockwise size={14} />} Tentar de novo
+                        </button>
+                      )}
+                      <button onClick={() => escolherPedido('')} className="h-9 w-full rounded-lg bg-[#000638] text-xs font-bold text-white hover:bg-[#000638]/90">
                         Faturar outro pedido
                       </button>
                     </div>
                   ) : (
                     <>
                       <button
-                        onClick={gerarTransacao}
-                        disabled={!podeGerar}
-                        className="mt-2 w-full h-11 rounded-lg text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 inline-flex items-center justify-center gap-2"
+                        onClick={faturar}
+                        disabled={!podeFaturar}
+                        className="mt-2 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-40"
                       >
                         {posting ? <Spinner size={16} className="animate-spin" /> : <Receipt size={16} weight="bold" />}
-                        GERAR TRANSAÇÃO ({conf.conferidas} pç)
+                        {posting ? 'FATURANDO…' : `FATURAR (${conf.conferidas} pç)`}
                       </button>
-                      {!podeGerar && !posting && (
-                        <p className="text-[10px] text-amber-700">
-                          {!customer
-                            ? 'Escolha o cliente.'
-                            : !seller
-                              ? 'Escolha o vendedor.'
-                              : !operacao
-                                ? 'Escolha a operação.'
-                                : conf.conferidas === 0
-                                  ? 'Ligue o portal e passe as peças do pedido.'
-                                  : semPreco
-                                    ? 'Há peça conferida sem preço.'
-                                    : precisaConfirmar && !confirmaDuplicar
-                                      ? 'Confirme o aviso de lançamento no TOTVS acima.'
-                                      : ''}
-                        </p>
+                      {posting && <p className="text-[10.5px] text-gray-500">Emitindo a NF-e na SEFAZ e gravando no TOTVS — pode levar até 1 minuto.</p>}
+                      {!posting && pendencias.length > 0 && (
+                        <ul className="list-disc space-y-0.5 pl-4 text-[10.5px] text-amber-700">
+                          {pendencias.slice(0, 4).map((p) => (
+                            <li key={p}>{p}</li>
+                          ))}
+                        </ul>
                       )}
-                      {conf.conferidas > 0 && !conf.ok && (
-                        <p className="text-[10px] text-gray-500">Só as peças conferidas entram; o que falta ou sobra fica registrado.</p>
-                      )}
+                      {conf.conferidas > 0 && !conf.ok && <p className="text-[10px] text-gray-500">Só as peças conferidas entram na nota; o que falta ou sobra fica registrado.</p>}
                     </>
                   )}
-                </div>
+                </section>
               </div>
             </div>
           </>
@@ -1035,7 +1627,7 @@ const FaturamentoPedido = () => {
 
       {toast && (
         <div
-          className={`fixed bottom-4 left-1/2 -translate-x-1/2 z-50 max-w-[92vw] px-4 py-2 rounded-xl shadow-lg text-sm font-medium inline-flex items-center gap-2 ${
+          className={`fixed bottom-4 left-1/2 z-50 inline-flex max-w-[92vw] -translate-x-1/2 items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium shadow-lg ${
             toast.type === 'ok' ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'
           }`}
         >

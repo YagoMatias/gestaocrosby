@@ -26,8 +26,10 @@ import {
   ArrowSquareOut,
   Receipt,
   Copy,
+  PresentationChart,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
+import PainelExpedicao from '../components/pedidosVenda/PainelExpedicao';
 import { API_BASE_URL } from '../config/constants';
 
 const fmtBRL = (v) => (v == null || v === '' ? '—' : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }));
@@ -123,8 +125,8 @@ const podeFaturar = (p) => p?.separacao?.status === 'separado';
 const SeloFaturado = ({ f }) =>
   f ? (
     <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold ring-1 bg-emerald-50 text-emerald-700 ring-emerald-200" title={`Faturado no HeadCoach em ${fmtDataHora(f.em)}`}>
-      tx {f.transacao}
-      {f.status === 4 ? ' · atendida' : ''}
+      {f.nf ? `NF ${f.nf}` : `tx ${f.transacao}`}
+      {!f.nf && f.status === 4 ? ' · atendida' : ''}
     </span>
   ) : null;
 
@@ -316,7 +318,7 @@ const PedidosVenda = () => {
           icon={ShoppingBag}
         />
 
-        {resumo && (
+        {resumo && visao !== 'painel' && (
           <div className="mb-2 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-1.5 sm:gap-2">
             <Card label="Vendas" valor={fmtNum(resumo.pedidos)} />
             <Card label="Valor" valor={fmtBRL(resumo.valor)} />
@@ -330,6 +332,8 @@ const PedidosVenda = () => {
         )}
 
         <div className="mb-2 bg-white rounded-xl border border-gray-200 shadow-sm p-2.5 sm:p-3 flex flex-wrap items-end gap-2">
+          {visao !== 'painel' && (
+          <>
           <div className="relative w-full sm:w-72">
             <MagnifyingGlass size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
@@ -386,11 +390,14 @@ const PedidosVenda = () => {
             <input type="checkbox" checked={transferencias} onChange={(e) => setTransferencias(e.target.checked)} className="w-4 h-4 p-0 mb-0" />
             incluir transferências
           </label>
+          </>
+          )}
           <div className="flex-1" />
           <div className="inline-flex rounded-lg ring-1 ring-gray-200 p-0.5 bg-white">
             {[
               { id: 'lista', label: 'Lista', icon: ListBullets },
               { id: 'kanban', label: 'Kanban', icon: Kanban },
+              { id: 'painel', label: 'Painel', icon: PresentationChart },
             ].map((v) => {
               const Icon = v.icon;
               return (
@@ -405,6 +412,7 @@ const PedidosVenda = () => {
               );
             })}
           </div>
+          {visao !== 'painel' && (
           <button
             onClick={sincronizar}
             disabled={sincronizando}
@@ -413,6 +421,7 @@ const PedidosVenda = () => {
           >
             <ArrowsClockwise size={14} className={sincronizando || loading ? 'animate-spin' : ''} /> Atualizar do Dryland
           </button>
+          )}
         </div>
 
         {erro && (
@@ -425,6 +434,8 @@ const PedidosVenda = () => {
             <CheckCircle size={14} weight="bold" /> {aviso}
           </p>
         )}
+
+        {visao === 'painel' && <PainelExpedicao />}
 
         {/* Kanban da separação */}
         {visao === 'kanban' && (
@@ -456,7 +467,7 @@ const PedidosVenda = () => {
         )}
 
         {/* Lista — celular: cartões */}
-        <div className={`md:hidden space-y-2 ${visao === 'kanban' ? 'hidden' : ''}`}>
+        <div className={`md:hidden space-y-2 ${visao !== 'lista' ? 'hidden' : ''}`}>
           {loading && items.length === 0 && (
             <div className="py-10 text-center text-gray-400">
               <Spinner size={20} className="animate-spin mx-auto" />
