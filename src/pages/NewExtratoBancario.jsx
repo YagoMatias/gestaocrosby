@@ -171,7 +171,8 @@ const NewExtratoBancario = () => {
     const num = (v) => (v == null || v === '' ? null : Number(v));
     const dataExcel = (iso) => (iso ? new Date(`${String(iso).slice(0, 10)}T12:00:00`) : null);
     const rotuloTipo = (t) => ({ ENTRADA: 'Entrada', SAIDA: 'Saída', TRANSFERENCIA: 'Transferência', APLICACAO: 'Aplicação' })[t] || t;
-    const linhas = lancamentos.filter((l) => !cfg.tipos || cfg.tipos.includes(l.tipo));
+    // uma planilha de lançamentos (as colunas são as mesmas em todas as abas)
+    const planilhaLanc = (linhas) => {
     const aoa = [
       ['Data', 'Banco', 'Conta', 'Titular', 'Empresa', 'Tipo', 'Histórico', 'Documento', 'Contraparte', 'CNPJ/CPF contraparte', 'Entrada (R$)', 'Saída (R$)', 'Valor (R$)', 'Saldo após (R$)', 'Transferência', 'Parte de lote SISPAG (R$)'],
       ...linhas.map((l) => [
@@ -200,8 +201,18 @@ const NewExtratoBancario = () => {
       if (d && d.v instanceof Date) d.z = 'dd/mm/yyyy';
       for (const c of [10, 11, 12, 13, 15]) { const cel = ws[XLSX.utils.encode_cell({ r, c })]; if (cel && typeof cel.v === 'number') cel.z = '#,##0.00'; }
     }
+    return ws;
+    };
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, cfg.rotulo.replace('Só ', '').replace(/^./, (c) => c.toUpperCase()).slice(0, 31));
+    if (modo === 'tudo') {
+      // "Tudo" sai separado por aba: Entradas, Saídas, Transferências (e Aplicações, se houver)
+      for (const [tipo, nome] of [['ENTRADA', 'Entradas'], ['SAIDA', 'Saídas'], ['TRANSFERENCIA', 'Transferências'], ['APLICACAO', 'Aplicações']]) {
+        const linhas = lancamentos.filter((l) => l.tipo === tipo);
+        if (linhas.length || tipo !== 'APLICACAO') XLSX.utils.book_append_sheet(wb, planilhaLanc(linhas), nome);
+      }
+    } else {
+      XLSX.utils.book_append_sheet(wb, planilhaLanc(lancamentos.filter((l) => cfg.tipos.includes(l.tipo))), cfg.rotulo.replace('Só ', '').replace(/^./, (c) => c.toUpperCase()).slice(0, 31));
+    }
     if (modo === 'tudo' || modo === 'transferencias') {
       // pares (as duas pontas) e sem par
       const pares = [
@@ -293,7 +304,7 @@ const NewExtratoBancario = () => {
                   <button key={k} onClick={() => exportarExcel(k)} className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50">
                     {m.rotulo}
                     <span className="block text-[10px] text-gray-400">
-                      {k === 'tudo' ? `${lancamentos.length} lançamentos + pares + resumo` : `${lancamentos.filter((l) => m.tipos.includes(l.tipo)).length} lançamentos${k === 'transferencias' ? ' + pares + sem par' : ''}`}
+                      {k === 'tudo' ? `${lancamentos.length} lançamentos em abas (entradas, saídas, transferências) + pares + resumo` : `${lancamentos.filter((l) => m.tipos.includes(l.tipo)).length} lançamentos${k === 'transferencias' ? ' + pares + sem par' : ''}`}
                     </span>
                   </button>
                 ))}
