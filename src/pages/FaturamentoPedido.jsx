@@ -133,37 +133,93 @@ function parcelasIguais(total, n) {
 }
 
 // Itens do pedido agrupados por SKU (código do produto no TOTVS).
-// O PREÇO VENDIDO está nos itens do card da fila (troca/desconto já aplicados —
-// RV1325: 2555 a 17,50 + 16,39, total 241,11 = pago); a separação guarda o
-// preço de tabela. Sem card, vale a separação. Cada unidade guarda o próprio
-// preço (precos[]): SKU com preços diferentes vira uma linha por preço na nota.
+// SEMPRE o preço do Detalhar: itens do card da fila do Dryland (troca, Black e
+// ajustes já aplicados — RV1325: 2555 a 17,50 + 16,39). Sem card, a separação.
+// Cada UNIDADE guarda: preço vendido, sua parte do desconto do pedido (Pix /
+// desconto geral, rateado pelo preço; centavos que sobram na peça mais cara) e
+// as marcas do Dryland (Black %, troca, brinde).
 function itensDoPedido(dados) {
   const doCard = dados?.card?.dados?.itens || [];
   const brutos = doCard.length
-    ? doCard.map((i) => ({ cod: i.cod, descricao: i.descricao, cor: i.cor, tam: i.tam, qtd: i.qtd, preco: i.preco }))
+    ? doCard
     : (dados?.itens || []).map((i) => ({ cod: i.cod, descricao: i.descricao, cor: i.cor, tam: i.tamanho, qtd: i.qtd, preco: i.preco }));
-  const porSku = new Map();
+  const unidades = [];
   for (const i of brutos) {
     const sku = String(i.cod || '').trim();
     if (!sku) continue;
     const q = Number(i.qtd) || 1;
-    const unit = round2(Number(i.preco) || 0);
-    const cur = porSku.get(sku) || { sku, descricao: i.descricao || '', cor: i.cor || '', tam: i.tam || '', precos: [] };
-    for (let k = 0; k < q; k++) cur.precos.push(unit);
-    porSku.set(sku, cur);
+    for (let k = 0; k < q; k++) {
+      unidades.push({
+        sku,
+        descricao: i.descricao || '',
+        cor: i.cor || '',
+        tam: i.tam || i.tamanho || '',
+        preco: round2(Number(i.preco) || 0),
+        desc: 0,
+        black: i.black ? { pct: Number(i.black_pct) || null, antes: Number(i.preco_antes_black) || null } : null,
+        troca: i.troca_de ? String(i.troca_de) : null,
+        brinde: !!i.brinde,
+      });
+    }
+  }
+  // desconto do pedido (Pix + desconto geral) rateado nas peças
+  const dd = dados?.card?.dados || {};
+  const descPedido = round2((Number(dd.desconto) || 0) + (Number(dd.desconto_pix) || 0));
+  const soma = unidades.reduce((s, u) => s + u.preco, 0);
+  if (descPedido > 0 && soma > 0) {
+    unidades.forEach((u) => (u.desc = round2((descPedido * u.preco) / soma)));
+    const sobra = round2(descPedido - unidades.reduce((s, u) => s + u.desc, 0));
+    if (sobra !== 0) {
+      const k = unidades.reduce((m, u, idx) => (u.preco > unidades[m].preco ? idx : m), 0);
+      unidades[k].desc = round2(unidades[k].desc + sobra);
+    }
+  }
+  const porSku = new Map();
+  for (const u of unidades) {
+    const cur = porSku.get(u.sku) || { sku: u.sku, descricao: u.descricao, cor: u.cor, tam: u.tam, unidades: [] };
+    cur.unidades.push(u);
+    porSku.set(u.sku, cur);
   }
   return [...porSku.values()]
-    .map((x) => ({ ...x, qtd: x.precos.length, preco: round2(x.precos.reduce((s, v) => s + v, 0) / x.precos.length) }))
+    .map((x) => ({ ...x, qtd: x.unidades.length, precos: x.unidades.map((u) => u.preco), preco: round2(x.unidades.reduce((s, u) => s + u.preco, 0) / x.unidades.length) }))
     .sort((a, b) => a.descricao.localeCompare(b.descricao));
 }
 
-// Linhas da nota de um SKU conferido: as primeiras `n` unidades, agrupadas por preço
-function linhasPorPreco(precos, n) {
+// Resumo dos descontos do pedido (para a tela)
+function resumoDescontos(dados, itens) {
+  const dd = dados?.card?.dados || {};
+  const unidades = itens.flatMap((i) => i.unidades);
+  const total = unidades.length;
+  const out = [];
+  const pix = Number(dd.desconto_pix) || 0;
+  const geral = Number(dd.desconto) || 0;
+  const base = Number(dd.valor_cheio) || unidades.reduce((s, u) => s + u.preco, 0);
+  if (pix > 0) out.push({ tipo: 'Desconto Pix', pct: base ? (pix / base) * 100 : null, valor: pix, pecas: total, total });
+  if (geral > 0) out.push({ tipo: 'Desconto do pedido', pct: base ? (geral / base) * 100 : null, valor: geral, pecas: total, total });
+  const porPct = {};
+  for (const u of unidades.filter((x) => x.black)) {
+    let k = u.black.pct;
+    if (k == null) k = u.black.antes ? round2((1 - u.preco / u.black.antes) * 100) : 0;
+    porPct[k] = porPct[k] || { n: 0, valor: 0 };
+    porPct[k].n += 1;
+    porPct[k].valor += u.black.antes ? u.black.antes - u.preco : 0;
+  }
+  for (const [pct, v] of Object.entries(porPct)) out.push({ tipo: 'Black', pct: Number(pct) || null, valor: round2(v.valor), pecas: v.n, total });
+  const trocas = unidades.filter((u) => u.troca).length;
+  if (trocas) out.push({ tipo: 'Troca (preço pago mantido)', pct: null, valor: null, pecas: trocas, total });
+  const brindes = unidades.filter((u) => u.brinde).length;
+  if (brindes) out.push({ tipo: 'Brinde', pct: null, valor: null, pecas: brindes, total });
+  return out;
+}
+
+// Linhas da nota de um SKU conferido: as primeiras `n` unidades, agrupadas por
+// (preço, desconto) — assim quantidade × desconto da linha é exato
+function linhasPorPreco(unidades, n) {
   const grupos = [];
-  for (const v of precos.slice(0, n)) {
-    const g = grupos.find((x) => x.valor === v);
+  for (const u of unidades.slice(0, n)) {
+    const g = grupos.find((x) => x.valor === u.preco && x.desc === u.desc);
     if (g) g.qtd += 1;
-    else grupos.push({ valor: v, qtd: 1 });
+    else grupos.push({ valor: u.preco, desc: u.desc, qtd: 1 });
   }
   return grupos;
 }
@@ -686,6 +742,7 @@ const FaturamentoPedido = () => {
   }, []);
 
   const itensPedido = useMemo(() => (pedido ? itensDoPedido(pedido) : []), [pedido]);
+  const descontos = useMemo(() => (pedido ? resumoDescontos(pedido, itensPedido) : []), [pedido, itensPedido]);
   const skusPedido = useMemo(() => new Set(itensPedido.map((i) => i.sku)), [itensPedido]);
 
   // ─── Prévia fiscal (cenário + CFOP por peça) ─────────────────────────────
@@ -840,11 +897,30 @@ const FaturamentoPedido = () => {
       const lido = l ? l.epcs.length + l.manual : 0;
       const conferido = Math.min(lido, i.qtd);
       // unidade sem preço no pedido usa o preço do TOTVS
-      const precos = i.precos.map((v) => (v > 0 ? v : round2(l?.precoTotvs || 0)));
+      const unidades = i.unidades.map((u) => (u.preco > 0 ? u : { ...u, preco: round2(l?.precoTotvs || 0) }));
+      const precos = unidades.map((u) => u.preco);
       const preco = round2(precos.reduce((s, v) => s + v, 0) / precos.length);
-      const valorConferido = round2(precos.slice(0, conferido).reduce((s, v) => s + v, 0));
-      const valorTotal = round2(precos.reduce((s, v) => s + v, 0));
-      return { ...i, precos, preco, valorConferido, valorTotal, lido, conferido, falta: i.qtd - conferido, sobra: Math.max(0, lido - i.qtd), epcs: l?.epcs || [], manual: l?.manual || 0 };
+      const confU = unidades.slice(0, conferido);
+      const brutoConferido = round2(confU.reduce((s, u) => s + u.preco, 0));
+      const descConferido = round2(confU.reduce((s, u) => s + u.desc, 0));
+      const valorConferido = round2(brutoConferido - descConferido);
+      const valorTotal = round2(unidades.reduce((s, u) => s + u.preco - u.desc, 0));
+      return {
+        ...i,
+        unidades,
+        precos,
+        preco,
+        brutoConferido,
+        descConferido,
+        valorConferido,
+        valorTotal,
+        lido,
+        conferido,
+        falta: i.qtd - conferido,
+        sobra: Math.max(0, lido - i.qtd),
+        epcs: l?.epcs || [],
+        manual: l?.manual || 0,
+      };
     });
     const fora = Object.values(lidos)
       .filter((l) => !skusPedido.has(l.sku))
@@ -854,8 +930,10 @@ const FaturamentoPedido = () => {
     const faltando = esperado - conferidas;
     const sobrando = linhas.reduce((s, l) => s + l.sobra, 0) + fora.reduce((s, l) => s + l.lido, 0);
     const totalPedido = round2(linhas.reduce((s, l) => s + l.valorTotal, 0));
-    const totalConferido = round2(linhas.reduce((s, l) => s + l.valorConferido, 0));
-    return { linhas, fora, esperado, conferidas, faltando, sobrando, totalPedido, totalConferido, ok: esperado > 0 && faltando === 0 && sobrando === 0 };
+    const brutoConferido = round2(linhas.reduce((s, l) => s + l.brutoConferido, 0));
+    const descConferido = round2(linhas.reduce((s, l) => s + l.descConferido, 0));
+    const totalConferido = round2(brutoConferido - descConferido);
+    return { linhas, fora, esperado, conferidas, faltando, sobrando, totalPedido, brutoConferido, descConferido, totalConferido, ok: esperado > 0 && faltando === 0 && sobrando === 0 };
   }, [itensPedido, lidos, skusPedido]);
 
   // ─── Totais e pagamento ──────────────────────────────────────────────────
@@ -882,7 +960,7 @@ const FaturamentoPedido = () => {
   const fatsVivos = (pedido?.faturamentos || []).filter((f) => f.venda_id && f.nf_status === 'autorizada');
   const jaNoTotvs = prep?.jaNoTotvs || [];
   const precisaConfirmar = jaNoTotvs.length > 0 || fatsVivos.length > 0;
-  const semPreco = conf.linhas.some((l) => l.conferido > 0 && l.precos.slice(0, l.conferido).some((v) => !(v > 0)));
+  const semPreco = conf.linhas.some((l) => l.conferido > 0 && l.unidades.slice(0, l.conferido).some((u) => !(u.preco > 0)));
   const pendencias = [];
   if (!customer) pendencias.push('Escolha o cliente.');
   if (previa && !previa.cliente.temEndereco) pendencias.push('Cliente sem endereço completo no TOTVS (a NF-e exige).');
@@ -928,10 +1006,10 @@ const FaturamentoPedido = () => {
           .filter((l) => l.conferido > 0)
           .flatMap((l) => {
             let ini = 0;
-            return linhasPorPreco(l.precos, l.conferido).map((g) => {
+            return linhasPorPreco(l.unidades, l.conferido).map((g) => {
               const epcs = l.epcs.slice(ini, ini + g.qtd);
               ini += g.qtd;
-              return { productCode: Number(l.sku), quantidade: g.qtd, valorUnit: g.valor, nome: l.descricao, epcs };
+              return { productCode: Number(l.sku), quantidade: g.qtd, valorUnit: g.valor, descontoUnit: g.desc, nome: l.descricao, epcs };
             });
           }),
         transporte: temTransportadora
@@ -1187,6 +1265,19 @@ const FaturamentoPedido = () => {
                                   SKU <b className="font-mono text-[#000638]">{l.sku}</b>
                                   {l.cor ? ` · ${l.cor}` : ''}
                                   {l.tam ? ` · ${l.tam}` : ''} · {[...new Set(l.precos)].map((v) => fmtBRL(v)).join(' + ')}
+                                  {l.unidades.some((u) => u.black) && (
+                                    <span className="ml-1 rounded bg-rose-50 px-1 font-semibold text-rose-700">
+                                      Black −{l.unidades.find((u) => u.black).black.pct ?? '?'}%
+                                      {l.unidades.find((u) => u.black).black.antes ? ` (de ${fmtBRL(l.unidades.find((u) => u.black).black.antes)})` : ''}
+                                      {l.unidades.filter((u) => u.black).length < l.qtd ? ` em ${l.unidades.filter((u) => u.black).length} de ${l.qtd}` : ''}
+                                    </span>
+                                  )}
+                                  {l.unidades.some((u) => u.troca) && <span className="ml-1 rounded bg-sky-50 px-1 font-semibold text-sky-700">troca de {l.unidades.find((u) => u.troca).troca}</span>}
+                                  {l.unidades.some((u) => u.desc > 0) && (
+                                    <span className="ml-1 rounded bg-amber-50 px-1 font-semibold text-amber-700">
+                                      − {fmtBRL(l.unidades.reduce((s, u) => s + u.desc, 0))} desc. pedido
+                                    </span>
+                                  )}
                                   {fx && (
                                     <span className="ml-1 rounded bg-indigo-50 px-1 font-semibold text-[#000638]" title={fx.tipo === 'adquirido' ? 'mercadoria adquirida de terceiros' : 'produção do estabelecimento'}>
                                       CFOP {fx.cfop}
@@ -1530,6 +1621,28 @@ const FaturamentoPedido = () => {
                   </div>
                 </Bloco>
 
+                <Bloco titulo="Descontos do pedido" icone={Tag}>
+                  {descontos.length === 0 ? (
+                    <p className="text-xs text-gray-500">Sem desconto — peças no preço do Detalhar.</p>
+                  ) : (
+                    <ul className="space-y-1.5 text-xs">
+                      {descontos.map((d) => (
+                        <li key={d.tipo + d.pct} className="rounded-lg bg-gray-50 px-2 py-1.5 ring-1 ring-gray-200">
+                          <p className="font-semibold text-[#000638]">
+                            {d.tipo}
+                            {d.pct != null ? ` · ${d.pct.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%` : ''}
+                            {d.valor ? ` · ${fmtBRL(d.valor)}` : ''}
+                          </p>
+                          <p className="text-[11px] text-gray-500">
+                            {d.pecas === d.total ? `em todas as ${d.total} peças` : d.pecas === 1 ? `em 1 peça de ${d.total}` : `em ${d.pecas} de ${d.total} peças`}
+                            {d.tipo.startsWith('Desconto') ? ' — rateado no valor de cada peça da NF-e' : ''}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </Bloco>
+
                 <Bloco titulo="TOTVS (documento interno)" icone={Storefront}>
                   <label className={labelCls}>Operação</label>
                   <select value={operacao} onChange={(e) => setOperacao(e.target.value)} className={inputCls}>
@@ -1572,8 +1685,14 @@ const FaturamentoPedido = () => {
                   )}
                   <div className="flex justify-between">
                     <span className="text-gray-500">Produtos</span>
-                    <span className="tabular-nums">{fmtBRL(conf.totalConferido)}</span>
+                    <span className="tabular-nums">{fmtBRL(conf.brutoConferido)}</span>
                   </div>
+                  {conf.descConferido > 0 && (
+                    <div className="flex justify-between text-amber-700">
+                      <span>Desconto (vai na NF-e)</span>
+                      <span className="tabular-nums">− {fmtBRL(conf.descConferido)}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between">
                     <span className="text-gray-500">Frete</span>
                     <span className="tabular-nums">{fmtBRL(frete)}</span>
