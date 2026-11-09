@@ -133,26 +133,39 @@ function parcelasIguais(total, n) {
 }
 
 // Itens do pedido agrupados por SKU (código do produto no TOTVS).
-// Separação do Dryland quando houver (pedido do site); senão, itens do card.
+// O PREÇO VENDIDO está nos itens do card da fila (troca/desconto já aplicados —
+// RV1325: 2555 a 17,50 + 16,39, total 241,11 = pago); a separação guarda o
+// preço de tabela. Sem card, vale a separação. Cada unidade guarda o próprio
+// preço (precos[]): SKU com preços diferentes vira uma linha por preço na nota.
 function itensDoPedido(dados) {
-  const brutos = (dados?.itens || []).length
-    ? dados.itens.map((i) => ({ cod: i.cod, descricao: i.descricao, cor: i.cor, tam: i.tamanho, qtd: i.qtd, preco: i.preco }))
-    : (dados?.card?.dados?.itens || []).map((i) => ({ cod: i.cod, descricao: i.descricao, cor: i.cor, tam: i.tam, qtd: i.qtd, preco: i.preco }));
+  const doCard = dados?.card?.dados?.itens || [];
+  const brutos = doCard.length
+    ? doCard.map((i) => ({ cod: i.cod, descricao: i.descricao, cor: i.cor, tam: i.tam, qtd: i.qtd, preco: i.preco }))
+    : (dados?.itens || []).map((i) => ({ cod: i.cod, descricao: i.descricao, cor: i.cor, tam: i.tamanho, qtd: i.qtd, preco: i.preco }));
   const porSku = new Map();
   for (const i of brutos) {
     const sku = String(i.cod || '').trim();
     if (!sku) continue;
     const q = Number(i.qtd) || 1;
-    const cur = porSku.get(sku);
-    if (cur) {
-      const totalAnt = cur.preco * cur.qtd;
-      cur.qtd += q;
-      cur.preco = round2((totalAnt + (Number(i.preco) || 0) * q) / cur.qtd);
-    } else {
-      porSku.set(sku, { sku, descricao: i.descricao || '', cor: i.cor || '', tam: i.tam || '', qtd: q, preco: round2(Number(i.preco) || 0) });
-    }
+    const unit = round2(Number(i.preco) || 0);
+    const cur = porSku.get(sku) || { sku, descricao: i.descricao || '', cor: i.cor || '', tam: i.tam || '', precos: [] };
+    for (let k = 0; k < q; k++) cur.precos.push(unit);
+    porSku.set(sku, cur);
   }
-  return [...porSku.values()].sort((a, b) => a.descricao.localeCompare(b.descricao));
+  return [...porSku.values()]
+    .map((x) => ({ ...x, qtd: x.precos.length, preco: round2(x.precos.reduce((s, v) => s + v, 0) / x.precos.length) }))
+    .sort((a, b) => a.descricao.localeCompare(b.descricao));
+}
+
+// Linhas da nota de um SKU conferido: as primeiras `n` unidades, agrupadas por preço
+function linhasPorPreco(precos, n) {
+  const grupos = [];
+  for (const v of precos.slice(0, n)) {
+    const g = grupos.find((x) => x.valor === v);
+    if (g) g.qtd += 1;
+    else grupos.push({ valor: v, qtd: 1 });
+  }
+  return grupos;
 }
 
 async function imprimirDanfe(notaId) {
@@ -826,8 +839,12 @@ const FaturamentoPedido = () => {
       const l = lidos[i.sku];
       const lido = l ? l.epcs.length + l.manual : 0;
       const conferido = Math.min(lido, i.qtd);
-      const preco = i.preco > 0 ? i.preco : round2(l?.precoTotvs || 0);
-      return { ...i, preco, lido, conferido, falta: i.qtd - conferido, sobra: Math.max(0, lido - i.qtd), epcs: l?.epcs || [], manual: l?.manual || 0 };
+      // unidade sem preço no pedido usa o preço do TOTVS
+      const precos = i.precos.map((v) => (v > 0 ? v : round2(l?.precoTotvs || 0)));
+      const preco = round2(precos.reduce((s, v) => s + v, 0) / precos.length);
+      const valorConferido = round2(precos.slice(0, conferido).reduce((s, v) => s + v, 0));
+      const valorTotal = round2(precos.reduce((s, v) => s + v, 0));
+      return { ...i, precos, preco, valorConferido, valorTotal, lido, conferido, falta: i.qtd - conferido, sobra: Math.max(0, lido - i.qtd), epcs: l?.epcs || [], manual: l?.manual || 0 };
     });
     const fora = Object.values(lidos)
       .filter((l) => !skusPedido.has(l.sku))
@@ -836,8 +853,8 @@ const FaturamentoPedido = () => {
     const conferidas = linhas.reduce((s, l) => s + l.conferido, 0);
     const faltando = esperado - conferidas;
     const sobrando = linhas.reduce((s, l) => s + l.sobra, 0) + fora.reduce((s, l) => s + l.lido, 0);
-    const totalPedido = round2(linhas.reduce((s, l) => s + l.qtd * l.preco, 0));
-    const totalConferido = round2(linhas.reduce((s, l) => s + l.conferido * l.preco, 0));
+    const totalPedido = round2(linhas.reduce((s, l) => s + l.valorTotal, 0));
+    const totalConferido = round2(linhas.reduce((s, l) => s + l.valorConferido, 0));
     return { linhas, fora, esperado, conferidas, faltando, sobrando, totalPedido, totalConferido, ok: esperado > 0 && faltando === 0 && sobrando === 0 };
   }, [itensPedido, lidos, skusPedido]);
 
@@ -865,7 +882,7 @@ const FaturamentoPedido = () => {
   const fatsVivos = (pedido?.faturamentos || []).filter((f) => f.venda_id && f.nf_status === 'autorizada');
   const jaNoTotvs = prep?.jaNoTotvs || [];
   const precisaConfirmar = jaNoTotvs.length > 0 || fatsVivos.length > 0;
-  const semPreco = conf.linhas.some((l) => l.conferido > 0 && !(l.preco > 0));
+  const semPreco = conf.linhas.some((l) => l.conferido > 0 && l.precos.slice(0, l.conferido).some((v) => !(v > 0)));
   const pendencias = [];
   if (!customer) pendencias.push('Escolha o cliente.');
   if (previa && !previa.cliente.temEndereco) pendencias.push('Cliente sem endereço completo no TOTVS (a NF-e exige).');
@@ -909,7 +926,14 @@ const FaturamentoPedido = () => {
         dataCaixa,
         itens: conf.linhas
           .filter((l) => l.conferido > 0)
-          .map((l) => ({ productCode: Number(l.sku), quantidade: l.conferido, valorUnit: l.preco, nome: l.descricao, epcs: l.epcs.slice(0, l.conferido) })),
+          .flatMap((l) => {
+            let ini = 0;
+            return linhasPorPreco(l.precos, l.conferido).map((g) => {
+              const epcs = l.epcs.slice(ini, ini + g.qtd);
+              ini += g.qtd;
+              return { productCode: Number(l.sku), quantidade: g.qtd, valorUnit: g.valor, nome: l.descricao, epcs };
+            });
+          }),
         transporte: temTransportadora
           ? { code: transp.code, servico: transp.servico || null, frete, modFrete: Number(transp.modFrete), volumes: Number(transp.volumes) || 1, pesoB: Number(transp.pesoB) || 0 }
           : { code: null, frete: 0 },
@@ -1162,7 +1186,7 @@ const FaturamentoPedido = () => {
                                 <p className="text-[11px] text-gray-500">
                                   SKU <b className="font-mono text-[#000638]">{l.sku}</b>
                                   {l.cor ? ` · ${l.cor}` : ''}
-                                  {l.tam ? ` · ${l.tam}` : ''} · {fmtBRL(l.preco)}
+                                  {l.tam ? ` · ${l.tam}` : ''} · {[...new Set(l.precos)].map((v) => fmtBRL(v)).join(' + ')}
                                   {fx && (
                                     <span className="ml-1 rounded bg-indigo-50 px-1 font-semibold text-[#000638]" title={fx.tipo === 'adquirido' ? 'mercadoria adquirida de terceiros' : 'produção do estabelecimento'}>
                                       CFOP {fx.cfop}
@@ -1558,6 +1582,12 @@ const FaturamentoPedido = () => {
                     <span className="font-semibold text-[#000638]">Total da NF-e</span>
                     <span className="text-xl font-bold tabular-nums text-[#000638]">{fmtBRL(totalNota)}</span>
                   </div>
+                  {Number(card?.dados?.valor_pedido) > 0 && (
+                    <div className={`flex justify-between ${conf.ok && Math.abs(Number(card.dados.valor_pedido) - totalNota) > 0.01 ? 'font-semibold text-rose-600' : 'text-gray-500'}`}>
+                      <span>Pago no pedido{conf.ok && Math.abs(Number(card.dados.valor_pedido) - totalNota) > 0.01 ? ' — não bate!' : ''}</span>
+                      <span className="tabular-nums">{fmtBRL(card.dados.valor_pedido)}</span>
+                    </div>
+                  )}
 
                   {resultado ? (
                     <div className="mt-2 space-y-2">
