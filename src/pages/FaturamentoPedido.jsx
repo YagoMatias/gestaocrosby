@@ -224,10 +224,10 @@ function linhasPorPreco(unidades, n) {
   return grupos;
 }
 
-async function imprimirDanfe(notaId) {
+async function imprimirDanfe(notaId, { cancelada = false } = {}) {
   const r = await fetch(`${API_BASE_URL}/api/pdv-crosby/notas/${notaId}/xml`);
   if (!r.ok) throw new Error('XML da nota não encontrado');
-  abrirImpressao(gerarHtmlDanfeDeXml(await r.text()));
+  abrirImpressao(gerarHtmlDanfeDeXml(await r.text(), { cancelada }));
 }
 
 function Bloco({ titulo, icone: Icone, children, extra }) {
@@ -370,6 +370,11 @@ function ListaSeparados({ onEscolher }) {
 function DetalheTransacao({ id, onReprocessar, reprocessando }) {
   const [d, setD] = useState(null);
   const [erro, setErro] = useState('');
+  const [versao, setVersao] = useState(0);
+  const [cancelar, setCancelar] = useState(false);
+  const [justificativa, setJustificativa] = useState('');
+  const [cancelando, setCancelando] = useState(false);
+  const [avisoCancel, setAvisoCancel] = useState('');
   useEffect(() => {
     let vivo = true;
     fetch(`${API}/transacoes/${id}`)
@@ -383,7 +388,28 @@ function DetalheTransacao({ id, onReprocessar, reprocessando }) {
     return () => {
       vivo = false;
     };
-  }, [id]);
+  }, [id, versao]);
+  const cancelarNota = async (notaId) => {
+    setCancelando(true);
+    setAvisoCancel('');
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/pdv-crosby/notas/${notaId}/cancelar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ justificativa: justificativa.trim() }),
+      });
+      const j = await r.json();
+      setAvisoCancel(j.message || (j.success ? 'Nota cancelada' : 'Falha ao cancelar'));
+      if (j.success) {
+        setCancelar(false);
+        setVersao((v) => v + 1);
+      }
+    } catch (e) {
+      setAvisoCancel(e.message);
+    } finally {
+      setCancelando(false);
+    }
+  };
   if (erro) return <p className="px-3 py-2 text-xs text-rose-600">{erro}</p>;
   if (!d) return <Spinner size={16} className="mx-auto my-3 animate-spin text-gray-400" />;
   const v = d.venda;
@@ -408,22 +434,56 @@ function DetalheTransacao({ id, onReprocessar, reprocessando }) {
             '—'
           )}
         </p>
-        {nota?.status === 'autorizada' && (
-          <div className="flex gap-1.5">
-            <button onClick={() => imprimirDanfe(nota.id).catch((e) => alert(e.message))} className="inline-flex h-8 items-center gap-1 rounded-lg bg-[#000638] px-2.5 text-[11px] font-bold text-white">
+        {(nota?.status === 'autorizada' || nota?.status === 'cancelada') && (
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              onClick={() => imprimirDanfe(nota.id, { cancelada: nota.status === 'cancelada' }).catch((e) => alert(e.message))}
+              className="inline-flex h-8 items-center gap-1 rounded-lg bg-[#000638] px-2.5 text-[11px] font-bold text-white"
+            >
               <Printer size={13} /> DANFE
             </button>
             <a href={`${API_BASE_URL}/api/pdv-crosby/notas/${nota.id}/xml`} className="inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-[11px] font-bold text-[#000638] ring-1 ring-gray-300">
               <DownloadSimple size={13} /> XML
             </a>
+            {nota.status === 'autorizada' && !cancelar && (
+              <button onClick={() => setCancelar(true)} className="inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-[11px] font-bold text-rose-600 ring-1 ring-rose-200 hover:bg-rose-50">
+                <X size={13} weight="bold" /> Cancelar NF-e
+              </button>
+            )}
           </div>
         )}
+        {cancelar && nota?.status === 'autorizada' && (
+          <div className="rounded-lg bg-rose-50 p-2 ring-1 ring-rose-200">
+            <p className="text-[11px] font-bold text-rose-700">Cancelar a NF-e {nota.numero}/{nota.serie} na SEFAZ</p>
+            <p className="text-[10.5px] text-rose-700">Não tem volta. A transação do TOTVS não é cancelada por aqui — cancele-a no TOTVS.</p>
+            <textarea
+              value={justificativa}
+              onChange={(e) => setJustificativa(e.target.value)}
+              placeholder="Justificativa (mínimo 15 caracteres)"
+              rows={2}
+              className="mb-0 mt-1 w-full rounded-lg border border-rose-300 bg-white px-2 py-1 text-xs"
+            />
+            <div className="mt-1 flex gap-1.5">
+              <button onClick={() => setCancelar(false)} className="h-8 rounded-lg bg-white px-2.5 text-[11px] font-bold text-gray-600 ring-1 ring-gray-300">
+                Voltar
+              </button>
+              <button
+                onClick={() => cancelarNota(nota.id)}
+                disabled={cancelando || justificativa.trim().length < 15}
+                className="inline-flex h-8 items-center gap-1 rounded-lg bg-rose-600 px-2.5 text-[11px] font-bold text-white disabled:opacity-40"
+              >
+                {cancelando ? <Spinner size={13} className="animate-spin" /> : <X size={13} weight="bold" />} Confirmar cancelamento
+              </button>
+            </div>
+          </div>
+        )}
+        {avisoCancel && <p className="rounded-lg bg-blue-50 px-2 py-1 text-[11px] text-blue-800 ring-1 ring-blue-200">{avisoCancel}</p>}
         <p>
           <b>TOTVS (documento interno):</b> {v?.totvs_transacao_code ? `transação ${v.totvs_transacao_code} · ${fmtData(v.totvs_transacao_date)}` : '—'}{' '}
           {v?.totvs_status && <Chip cls={TOTVS_STATUS[v.totvs_status]?.cls}>{TOTVS_STATUS[v.totvs_status]?.label || v.totvs_status}</Chip>}
           {v?.totvs_erro && <span className="block text-rose-600">{v.totvs_erro}</span>}
         </p>
-        {(nota?.status !== 'autorizada' || v?.totvs_status !== 4) && (
+        {nota?.status !== 'cancelada' && v?.status !== 'cancelada' && (nota?.status !== 'autorizada' || v?.totvs_status !== 4) && (
           <button
             onClick={() => onReprocessar(v.id)}
             disabled={reprocessando}
