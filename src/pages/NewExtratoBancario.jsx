@@ -10,6 +10,7 @@ import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
 import { Wallet, X, ArrowsClockwise, MagnifyingGlass, FunnelSimple, Export, UploadSimple, Info, ArrowDown, ArrowUp, ArrowsLeftRight, ArrowRight, Receipt, Bank, Warning, CheckCircle, CaretLeft, CaretRight } from '@phosphor-icons/react';
 import { MultiSelect, SeletorCnpj, BANCOS, bancoCfg, docDaConta, fmt, fmtData, fmtDoc, Th, Kpi, Badge, TIPOS, hoje, primeiroDiaMes } from './FluxoCaixaExt';
+import * as XLSX from 'xlsx';
 
 const API = `${API_BASE_URL}/api/novo-extrato`;
 const SUBTITULO = 'Nova versão do Extrato Bancário, montada do zero. Entradas, saídas e resultado somam só as linhas de lançamento; o saldo fica na última coluna. Lê o PDF do Banco do Brasil, do Itaú (extrato mensal), do Sicredi, do Santander (consolidado), da Unicred, do Bradesco e do BNB, e o OFX da Caixa e do Santander. Aplicação automática (Invest Fácil) não é entrada nem saída. Nada da Shopping Recife entra.';
@@ -154,6 +155,89 @@ const NewExtratoBancario = () => {
   const transferencias = dados?.transferencias || [];
   const semPar = dados?.semPar || [];
   const nomeConta = (banco, conta, dv) => `${bancoCfg(banco).label} ${conta}${dv ? `-${dv}` : ''}`;
+
+  // ── Excel: tudo, só entradas, só saídas ou só transferências (o resultado inteiro da busca, não só a página) ──
+  const [menuExcel, setMenuExcel] = useState(false);
+  const EXCEL_MODOS = {
+    tudo: { rotulo: 'Tudo', tipos: null },
+    entradas: { rotulo: 'Só entradas', tipos: ['ENTRADA'] },
+    saidas: { rotulo: 'Só saídas', tipos: ['SAIDA'] },
+    transferencias: { rotulo: 'Só transferências', tipos: ['TRANSFERENCIA'] },
+  };
+  const exportarExcel = (modo) => {
+    setMenuExcel(false);
+    const cfg = EXCEL_MODOS[modo];
+    const empresaDe = new Map(contasLista.map((c) => [c.id, c.grupo_nome || c.titular_nome || '']));
+    const num = (v) => (v == null || v === '' ? null : Number(v));
+    const dataExcel = (iso) => (iso ? new Date(`${String(iso).slice(0, 10)}T12:00:00`) : null);
+    const rotuloTipo = (t) => ({ ENTRADA: 'Entrada', SAIDA: 'Saída', TRANSFERENCIA: 'Transferência', APLICACAO: 'Aplicação' })[t] || t;
+    const linhas = lancamentos.filter((l) => !cfg.tipos || cfg.tipos.includes(l.tipo));
+    const aoa = [
+      ['Data', 'Banco', 'Conta', 'Titular', 'Empresa', 'Tipo', 'Histórico', 'Documento', 'Contraparte', 'CNPJ/CPF contraparte', 'Entrada (R$)', 'Saída (R$)', 'Valor (R$)', 'Saldo após (R$)', 'Transferência', 'Parte de lote SISPAG (R$)'],
+      ...linhas.map((l) => [
+        dataExcel(l.data),
+        bancoCfg(l.banco).label,
+        `${l.conta}${l.conta_dv ? `-${l.conta_dv}` : ''}`,
+        l.titular || '',
+        empresaDe.get(`${l.banco}|${l.conta}`) || '',
+        rotuloTipo(l.tipo),
+        l.historico_base || l.historico || '',
+        l.documento || '',
+        l.contraparte_nome || '',
+        l.contraparte_doc || '',
+        l.valor > 0 ? num(l.valor) : null,
+        l.valor < 0 ? num(-l.valor) : null,
+        num(l.valor),
+        num(l.saldo_apos),
+        l.tipo === 'TRANSFERENCIA' ? (l.transferencia_id ? 'par casado' : 'sem par (outra conta não importada)') : '',
+        l.valor_transferido > 0 ? num(l.valor_transferido) : null,
+      ]),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(aoa, { cellDates: true });
+    ws['!cols'] = [11, 10, 16, 32, 30, 14, 44, 14, 32, 18, 14, 14, 14, 16, 30, 16].map((w) => ({ wch: w }));
+    for (let r = 1; r < aoa.length; r++) {
+      const d = ws[XLSX.utils.encode_cell({ r, c: 0 })];
+      if (d && d.v instanceof Date) d.z = 'dd/mm/yyyy';
+      for (const c of [10, 11, 12, 13, 15]) { const cel = ws[XLSX.utils.encode_cell({ r, c })]; if (cel && typeof cel.v === 'number') cel.z = '#,##0.00'; }
+    }
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, cfg.rotulo.replace('Só ', '').replace(/^./, (c) => c.toUpperCase()).slice(0, 31));
+    if (modo === 'tudo' || modo === 'transferencias') {
+      // pares (as duas pontas) e sem par
+      const pares = [
+        ['Data', 'Valor (R$)', 'Saiu da conta', 'Titular origem', 'Entrou na conta', 'Titular destino', 'Como aparece (saída)', 'Como aparece (entrada)', 'Evidência'],
+        ...transferencias.map((t) => [dataExcel(t.data), num(t.valor), t.origem ? nomeConta(t.origem.banco, t.origem.conta, t.origem.conta_dv) : '', t.origem?.titular || '', t.destino ? nomeConta(t.destino.banco, t.destino.conta, t.destino.conta_dv) : '', t.destino?.titular || '', t.origem?.historico || '', t.destino?.historico || '', t.evidencia || '']),
+      ];
+      const wsP = XLSX.utils.aoa_to_sheet(pares, { cellDates: true });
+      wsP['!cols'] = [11, 14, 22, 32, 22, 32, 40, 40, 26].map((w) => ({ wch: w }));
+      for (let r = 1; r < pares.length; r++) { const d = wsP[XLSX.utils.encode_cell({ r, c: 0 })]; if (d && d.v instanceof Date) d.z = 'dd/mm/yyyy'; const v = wsP[XLSX.utils.encode_cell({ r, c: 1 })]; if (v) v.z = '#,##0.00'; }
+      XLSX.utils.book_append_sheet(wb, wsP, 'Pares entre contas');
+      const sp = [
+        ['Data', 'Conta', 'Titular', 'Sentido', 'Histórico', 'Contraparte (empresa do grupo)', 'CNPJ/CPF', 'Valor (R$)'],
+        ...semPar.map((l) => [dataExcel(l.data), nomeConta(l.banco, l.conta, l.conta_dv), l.titular || '', l.valor < 0 ? 'enviou' : 'recebeu', l.historico_base || l.historico || '', l.contraparte_nome || '', l.contraparte_doc || '', num(l.valor)]),
+      ];
+      const wsS = XLSX.utils.aoa_to_sheet(sp, { cellDates: true });
+      wsS['!cols'] = [11, 22, 32, 10, 44, 32, 18, 14].map((w) => ({ wch: w }));
+      for (let r = 1; r < sp.length; r++) { const d = wsS[XLSX.utils.encode_cell({ r, c: 0 })]; if (d && d.v instanceof Date) d.z = 'dd/mm/yyyy'; const v = wsS[XLSX.utils.encode_cell({ r, c: 7 })]; if (v) v.z = '#,##0.00'; }
+      XLSX.utils.book_append_sheet(wb, wsS, 'Sem par');
+    }
+    if (modo === 'tudo' && resumo) {
+      const r = resumo;
+      const res = [
+        ['Período', `${fmtData(de)} a ${fmtData(ate)}`],
+        ['Lançamentos', r.qtd],
+        ['Recebido (R$)', r.entradas], ['Pago (R$)', r.saidas], ['Resultado (R$)', r.resultado],
+        ['Transferências enviadas (R$)', r.transfEnviadas], ['Transferências recebidas (R$)', r.transfRecebidas],
+        ['Sem par enviado (R$)', r.transfSemParEnviadas], ['Sem par recebido (R$)', r.transfSemParRecebidas],
+        ['Partes de lote SISPAG (R$)', r.transfParteLote], ['Aplicado (R$)', r.aplicado], ['Resgatado (R$)', r.resgatado],
+      ];
+      const wsR = XLSX.utils.aoa_to_sheet(res);
+      wsR['!cols'] = [34, 18].map((w) => ({ wch: w }));
+      for (let i = 2; i < res.length; i++) { const v = wsR[XLSX.utils.encode_cell({ r: i, c: 1 })]; if (v && typeof v.v === 'number') v.z = '#,##0.00'; }
+      XLSX.utils.book_append_sheet(wb, wsR, 'Resumo');
+    }
+    XLSX.writeFile(wb, `extrato-${modo}-${de}-a-${ate}.xlsx`);
+  };
   const recasar = async () => {
     setRecasando(true);
     setErro(null);
@@ -199,9 +283,23 @@ const NewExtratoBancario = () => {
           <button onClick={buscar} disabled={carregando || !de || !ate} className="px-4 py-1.5 text-xs rounded-lg bg-[#000638] text-white hover:bg-[#000638]/90 disabled:opacity-50 flex items-center gap-1 font-semibold">
             {carregando ? <ArrowsClockwise size={14} className="animate-spin" /> : <MagnifyingGlass size={14} weight="bold" />} {carregando ? 'Buscando…' : 'Buscar'}
           </button>
-          <button disabled className="px-3 py-1.5 text-xs rounded-lg bg-green-600 text-white disabled:opacity-50 flex items-center gap-1" title="Em breve">
-            <Export size={14} /> Excel
-          </button>
+          <div className="relative">
+            <button onClick={() => setMenuExcel((v) => !v)} disabled={!lancamentos.length} className="px-3 py-1.5 text-xs rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 flex items-center gap-1" title={lancamentos.length ? 'Baixar o resultado da busca em Excel' : 'Faça uma busca primeiro'}>
+              <Export size={14} /> Excel
+            </button>
+            {menuExcel && (
+              <div className="absolute right-0 z-30 mt-1 w-52 bg-white border border-gray-200 rounded-lg shadow-lg py-1" onMouseLeave={() => setMenuExcel(false)}>
+                {Object.entries(EXCEL_MODOS).map(([k, m]) => (
+                  <button key={k} onClick={() => exportarExcel(k)} className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50">
+                    {m.rotulo}
+                    <span className="block text-[10px] text-gray-400">
+                      {k === 'tudo' ? `${lancamentos.length} lançamentos + pares + resumo` : `${lancamentos.filter((l) => m.tipos.includes(l.tipo)).length} lançamentos${k === 'transferencias' ? ' + pares + sem par' : ''}`}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
           <label className={`px-3 py-1.5 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-1 font-medium cursor-pointer ${importando ? 'opacity-60 pointer-events-none' : ''}`} title="PDF do extrato do Banco do Brasil, Itaú, Sicredi, Santander (consolidado), Unicred, Bradesco ou BNB, ou OFX da Caixa e do Santander (um ou vários; importe em ordem de mês)">
             {importando ? <ArrowsClockwise size={14} className="animate-spin" /> : <UploadSimple size={14} weight="bold" />} {importando ? 'Importando…' : 'Importar extratos'}
             <input ref={inputRef} type="file" accept=".pdf,.ofx,application/pdf" multiple className="hidden" onChange={(e) => importar(Array.from(e.target.files || []))} />
