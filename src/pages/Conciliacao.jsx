@@ -315,6 +315,17 @@ const Kpi = ({ label, value, sub, tone = 'text-gray-900' }) => (
     {sub && <p className="text-[10px] text-gray-400 mt-0.5">{sub}</p>}
   </div>
 );
+// Saída de tarifa / encargo / IOF / custas — mesma regra do backend
+// (services/tarifasConciliacao.js → ehTarifa). Só essas viram duplicata em lote.
+const semAcentoTar = (s) => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+const ehTarifa = (l) => {
+  if (!l || Number(l.valor) >= 0 || l.transferencia_id || l.tipo === 'TRANSFERENCIA') return false;
+  if (/TARIFA|ENCARGO/.test(semAcentoTar(l.forma).toUpperCase())) return true;
+  if (String(l.categoria || '').toLowerCase() === 'tarifa') return true;
+  const txt = semAcentoTar(`${l.descricao || ''} ${l.memo || ''}`).toUpperCase();
+  return /\b(TARIFA|TAR\b|TAXA|IOF|ENCARGO|ENCARGOS|PROTESTO|CUSTAS|CARTORIO|MENSALIDADE|ANUIDADE|CESTA|MANUTENCAO DE CONTA|JUROS\s+(AD|ADIANT|S\/ SALDO|LIMITE)|JUROS AD)\b/.test(txt);
+};
+
 const Th = ({ children, right, className = '' }) => (
   <th className={`px-3 py-2 text-xs font-semibold text-gray-600 whitespace-nowrap ${right ? 'text-right' : 'text-left'} ${className}`}>{children}</th>
 );
@@ -1024,6 +1035,32 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
       if (csvRef.current) csvRef.current.value = '';
     }
   };
+  // tarifas marcadas → duplicata TOTVS + Solicitação + conciliação (João, 09/11/2026)
+  const [criandoTarifas, setCriandoTarifas] = useState(false);
+  const criarDuplicatasTarifas = async (ids) => {
+    if (!ids.length) return;
+    const linhas = (r.lancamentos || []).filter((l) => ids.includes(l.id));
+    const total = linhas.reduce((s, l) => s + Math.abs(l.valor), 0);
+    if (!window.confirm(`Criar ${ids.length} duplicata(s) de tarifa (total ${fmt(total)}) no TOTVS e na Solicitação Crosby, em nome do banco da conta (despesa 7008 TARIFAS BANCARIAS), e conciliar cada saída?`)) return;
+    setCriandoTarifas(true);
+    setCsvMsg(null);
+    try {
+      const resp = await fetch(`${API}/conciliacao/tarifas`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headersUsuario() }, body: JSON.stringify({ lancamentoIds: ids }) });
+      const j = await resp.json();
+      if (!j?.success) throw new Error(j?.message || 'Falha ao criar as duplicatas.');
+      const d = j.data;
+      setCsvMsg({
+        ok: !d.recusadas.length,
+        texto: `${d.criadas.length} duplicata(s) de tarifa criada(s) e conciliada(s) (${fmt(d.total)})${d.criadas.length ? ` — dup ${d.criadas.map((c) => c.duplicata).join(', ')}` : ''}${d.recusadas.length ? ` · ${d.recusadas.length} recusada(s): ${d.recusadas.map((x) => `${fmt(x.valor || 0)} ${x.motivo}`).join('; ')}` : ''}`,
+      });
+      setSelLinhas([]);
+      if (onRecarregar) await onRecarregar();
+    } catch (e) {
+      setCsvMsg({ ok: false, texto: e.message });
+    } finally {
+      setCriandoTarifas(false);
+    }
+  };
   // ordenar por Entrada/Saída (maior↔menor) — Titia, 09/11/2026. null = ordem do extrato
   const [ordemValor, setOrdemValor] = useState(null); // { col: 'entrada'|'saida', dir: 'desc'|'asc' }
   const [picker, setPicker] = useState(null); // { lancamento, candidatos, avisos, decisao }
@@ -1366,6 +1403,21 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
               </button>
             </span>
           )}
+          {(() => {
+            const tarifasSel = (r.lancamentos || []).filter((l) => selLinhas.includes(l.id) && ehTarifa(l)).map((l) => l.id);
+            if (!tarifasSel.length) return null;
+            const fora = selLinhas.length - tarifasSel.length;
+            return (
+              <button
+                onClick={() => criarDuplicatasTarifas(tarifasSel)}
+                disabled={criandoTarifas}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 text-[11px] font-medium"
+                title={`Cria a duplicata de cada tarifa no TOTVS e na Solicitação Crosby (nome do banco da conta, despesa 7008) e concilia a saída.${fora ? ` ${fora} marcada(s) que não são tarifa ficam de fora.` : ''}`}
+              >
+                {criandoTarifas ? <ArrowsClockwise size={12} className="animate-spin" /> : <Plus size={12} weight="bold" />} Criar duplicatas de tarifa ({tarifasSel.length})
+              </button>
+            );
+          })()}
           <button onClick={() => setTipo('TODOS')} className={chip(tipo === 'TODOS')}>
             Todos tipos
           </button>
@@ -1412,7 +1464,22 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
           <table className={`w-full text-sm hidden ${situacao === 'PROLABORE' ? '' : 'md:table'}`}>
             <thead className="sticky top-0 bg-gray-50 z-10">
               <tr className="border-b border-gray-200">
-                <Th className="w-6" />
+                <Th className="w-6">
+                  {(() => {
+                    const tarifasPend = lancamentos.filter((l) => l.pendente && ehTarifa(l)).map((l) => l.id);
+                    if (!tarifasPend.length) return null;
+                    const todas = tarifasPend.every((id) => selLinhas.includes(id));
+                    return (
+                      <input
+                        type="checkbox"
+                        checked={todas}
+                        onChange={() => setSelLinhas((prev) => (todas ? prev.filter((id) => !tarifasPend.includes(id)) : [...new Set([...prev, ...tarifasPend])]))}
+                        className="accent-orange-600"
+                        title={`Selecionar todas as tarifas/encargos pendentes (${tarifasPend.length})`}
+                      />
+                    );
+                  })()}
+                </Th>
                 <Th>Data</Th>
                 <Th>Tipo</Th>
                 <Th>Forma</Th>
