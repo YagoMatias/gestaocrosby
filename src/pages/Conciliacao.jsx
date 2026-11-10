@@ -589,6 +589,45 @@ const ModalSaidasPendentes = ({ de, ate, onClose, onConcluido }) => {
   );
 };
 
+// ─── entrada → fatura no contas a receber já baixada (Inefável, 10/11/2026) ───
+// contas de baixa do TOTVS (iguais às da Solicitação de Baixa)
+const BANCOS_BAIXA_CR = [
+  { id: 'confianca', label: 'Confiança (422)' },
+  { id: 'sicredi', label: 'Sicredi (748)' },
+];
+const bancoBaixaPadraoCR = (banco) => (String(banco || '').toUpperCase() === 'SICREDI' ? 'sicredi' : 'confianca');
+async function gerarFaturasEntradas(itens) {
+  const acc = { criadas: [], recusadas: [], total: 0 };
+  for (let k = 0; k < itens.length; k += 10) {
+    const lote = itens.slice(k, k + 10);
+    try {
+      const r = await fetch(`${API}/conciliacao/faturas-entradas`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headersUsuario() }, body: JSON.stringify({ itens: lote }) });
+      const j = await r.json();
+      if (!j?.success) throw new Error(j?.message || 'Falha ao gerar as faturas.');
+      acc.criadas.push(...j.data.criadas);
+      acc.recusadas.push(...j.data.recusadas);
+      acc.total += j.data.total || 0;
+    } catch (e) {
+      acc.recusadas.push(...lote.map((x) => ({ lancamentoId: x.lancamentoId, motivo: e.message })));
+    }
+  }
+  return acc;
+}
+const textoResultadoFaturas = (d) =>
+  `${d.criadas.length} fatura(s) gerada(s), baixada(s) e conciliada(s) (${fmt(d.total)})${d.criadas.length ? ` — ${d.criadas.map((c) => c.fatura).join(', ')}` : ''}${d.recusadas.length ? ` · ${d.recusadas.length} recusada(s): ${d.recusadas.slice(0, 5).map((x) => `${x.valor != null ? fmt(x.valor) + ' ' : ''}${x.motivo}`).join('; ')}${d.recusadas.length > 5 ? '…' : ''}` : ''}`;
+// nome da pessoa pelo código (mesma consulta do fornecedor das saídas)
+async function nomePessoaTotvs(cod) {
+  const c = String(cod || '').replace(/\D/g, '');
+  if (!c) return '';
+  try {
+    const r = await fetch(`${API}/conciliacao/fornecedor/${c}`, { headers: headersUsuario() });
+    const j = await r.json();
+    return j?.success ? j.data.nome || '(sem nome)' : 'não encontrado no TOTVS';
+  } catch {
+    return 'erro ao consultar';
+  }
+}
+
 // ─── "Entradas pendentes (todas as contas)" (Inefável, 10/11/2026) ───
 const ModalEntradasPendentes = ({ de, ate, onClose, onConcluido }) => {
   const [itens, setItens] = useState(null);
@@ -598,6 +637,17 @@ const ModalEntradasPendentes = ({ de, ate, onClose, onConcluido }) => {
   const [texto, setTexto] = useState('');
   const [salvando, setSalvando] = useState(null);
   const [resultado, setResultado] = useState(null);
+  const [cli, setCli] = useState({}); // id → código do cliente TOTVS
+  const [nomesCli, setNomesCli] = useState({}); // código → nome
+  const [bancoBaixa, setBancoBaixa] = useState(''); // '' = padrão pelo banco da conta
+  const [codTodas, setCodTodas] = useState('');
+  const buscarNomeCli = async (cod) => {
+    const c = String(cod || '').replace(/\D/g, '');
+    if (!c || nomesCli[c] !== undefined) return;
+    setNomesCli((p) => ({ ...p, [c]: '…' }));
+    const n = await nomePessoaTotvs(c);
+    setNomesCli((p) => ({ ...p, [c]: n }));
+  };
   const carregar = useCallback(async () => {
     setErro(null);
     setItens(null);
@@ -653,12 +703,30 @@ const ModalEntradasPendentes = ({ de, ate, onClose, onConcluido }) => {
       'CPF/CNPJ contraparte': i.contraparteDoc,
       Documento: i.documento,
       Valor: i.valor,
+      'Cód. cliente': cli[i.id] || '',
+      Cliente: cli[i.id] ? nomesCli[cli[i.id]] || '' : '',
       Marcada: sel.includes(i.id) ? 'sim' : '',
     }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Entradas pendentes');
     const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     saveAs(new Blob([buf]), `entradas_pendentes_${de}_a_${ate}.xlsx`);
+  };
+
+  const comCliente = marcados.filter((i) => cli[i.id]);
+  const gerarFaturas = async () => {
+    if (!comCliente.length) return;
+    const total = comCliente.reduce((s, i) => s + i.valor, 0);
+    const semCli = marcados.length - comCliente.length;
+    if (!window.confirm(`Gerar ${comCliente.length} fatura(s) no contas a receber do TOTVS (total ${fmt(total)}), baixar cada uma em conta corrente${bancoBaixa ? ` (${BANCOS_BAIXA_CR.find((b) => b.id === bancoBaixa)?.label})` : ''} na data da entrada e conciliar?${semCli ? `\n\n${semCli} marcada(s) sem código do cliente ficam de fora.` : ''}`)) return;
+    setResultado(null);
+    setSalvando({ feitos: 0, total: comCliente.length });
+    const d = await gerarFaturasEntradas(comCliente.map((i) => ({ lancamentoId: i.id, clienteCodigo: cli[i.id], banco: bancoBaixa || bancoBaixaPadraoCR(i.banco) })));
+    setSalvando(null);
+    setResultado({ ok: d.criadas.length, falhas: d.recusadas.map((x) => `${x.valor != null ? fmt(x.valor) + ' ' : ''}${x.motivo}`), texto: textoResultadoFaturas(d) });
+    setSel([]);
+    await carregar();
+    if (onConcluido) onConcluido();
   };
 
   // justifica todas as marcadas com o mesmo texto (conciliação MANUAL, igual ao Justificar da conta)
@@ -730,9 +798,36 @@ const ModalEntradasPendentes = ({ de, ate, onClose, onConcluido }) => {
             <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Filtrar empresa, banco, forma, histórico…" className="pl-7 pr-2 py-1.5 border border-gray-300 rounded-lg w-56" />
           </div>
         </div>
+        <div className="px-4 py-2 border-b border-gray-200 flex flex-wrap items-center gap-2 text-[11px] bg-sky-50/50">
+          <span className="font-semibold text-sky-900">Gerar contas a receber:</span>
+          <input value={codTodas} onChange={(e) => setCodTodas(e.target.value.replace(/\D/g, '').slice(0, 9))} placeholder="cód. cliente" inputMode="numeric" className="w-24 px-1.5 py-1 border border-gray-300 rounded" />
+          <button
+            onClick={() => {
+              if (!codTodas || !marcados.length) return;
+              setCli((p) => ({ ...p, ...Object.fromEntries(marcados.map((i) => [i.id, codTodas])) }));
+              buscarNomeCli(codTodas);
+            }}
+            disabled={!codTodas || !marcados.length || !!salvando}
+            className="px-2 py-1 rounded-md border border-sky-300 text-sky-800 bg-white hover:bg-sky-50 disabled:opacity-40"
+          >
+            Usar nas marcadas ({marcados.length})
+          </button>
+          <select value={bancoBaixa} onChange={(e) => setBancoBaixa(e.target.value)} disabled={!!salvando} className="px-1.5 py-1 border border-gray-300 rounded">
+            <option value="">Baixa: banco padrão da conta</option>
+            {BANCOS_BAIXA_CR.map((b) => (
+              <option key={b.id} value={b.id}>
+                Baixa em {b.label}
+              </option>
+            ))}
+          </select>
+          <button onClick={gerarFaturas} disabled={!comCliente.length || !!salvando} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-sky-700 text-white hover:bg-sky-800 disabled:opacity-40 font-medium" title="Cria a fatura no contas a receber do TOTVS no cliente informado, baixa em conta corrente na data da entrada e concilia">
+            {salvando ? <ArrowsClockwise size={12} className="animate-spin" /> : <Plus size={12} weight="bold" />} Gerar fatura + baixa ({comCliente.length})
+          </button>
+          <span className="text-gray-500">fatura doc 1 · portador 1020 · nº 8 + id da linha</span>
+        </div>
         {(erro || resultado) && (
           <div className={`px-4 py-2 text-[11px] ${erro || resultado?.falhas?.length ? 'bg-amber-50 text-amber-900' : 'bg-green-50 text-green-800'}`}>
-            {erro || `${resultado.ok} entrada(s) justificada(s)${resultado.falhas.length ? ` · ${resultado.falhas.length} falha(s): ${resultado.falhas.slice(0, 5).join('; ')}${resultado.falhas.length > 5 ? '…' : ''}` : ''}.`}
+            {erro || resultado.texto || `${resultado.ok} entrada(s) justificada(s)${resultado.falhas.length ? ` · ${resultado.falhas.length} falha(s): ${resultado.falhas.slice(0, 5).join('; ')}${resultado.falhas.length > 5 ? '…' : ''}` : ''}.`}
           </div>
         )}
         <div className="max-h-[65vh] overflow-auto">
@@ -753,6 +848,7 @@ const ModalEntradasPendentes = ({ de, ate, onClose, onConcluido }) => {
                   <Th>Forma</Th>
                   <Th>Histórico / contraparte</Th>
                   <Th right>Valor</Th>
+                  <Th>Cliente (cód. TOTVS)</Th>
                 </tr>
               </thead>
               <tbody>
@@ -778,11 +874,23 @@ const ModalEntradasPendentes = ({ de, ate, onClose, onConcluido }) => {
                       ) : null}
                     </td>
                     <td className="px-3 py-1.5 text-right font-semibold text-emerald-700 whitespace-nowrap">{fmt(i.valor)}</td>
+                    <td className="px-3 py-1.5 min-w-[170px]">
+                      <input
+                        value={cli[i.id] || ''}
+                        onChange={(ev) => setCli((p) => ({ ...p, [i.id]: ev.target.value.replace(/\D/g, '').slice(0, 9) }))}
+                        onBlur={(ev) => buscarNomeCli(ev.target.value)}
+                        placeholder="código"
+                        inputMode="numeric"
+                        disabled={!!salvando}
+                        className="w-24 px-1.5 py-0.5 border border-gray-300 rounded text-gray-800"
+                      />
+                      <div className="text-[10px] text-gray-500 truncate max-w-[200px]">{cli[i.id] ? nomesCli[cli[i.id]] || '' : ''}</div>
+                    </td>
                   </tr>
                 ))}
                 {!visiveis.length && (
                   <tr>
-                    <td colSpan={7} className="p-6 text-center text-gray-400">
+                    <td colSpan={8} className="p-6 text-center text-gray-400">
                       Nenhuma entrada pendente no período.
                     </td>
                   </tr>
@@ -1597,11 +1705,12 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
   const [selLinhas, setSelLinhas] = useState([]); // ids de saídas pendentes marcadas para mandar ao pró-labore
   const proLabore = useMemo(() => (r.lancamentos || []).filter((l) => l.proLabore || l.conciliacao?.origem === 'PRO_LABORE'), [r]);
   const mandarProLabore = async (pessoaId) => {
-    if (!selLinhas.length) return;
+    const saidasSel = (r.lancamentos || []).filter((l) => selLinhas.includes(l.id) && l.valor < 0).map((l) => l.id);
+    if (!saidasSel.length) return;
     const pessoa = PESSOAS_PRO_LABORE.find((p) => p.id === pessoaId);
     setOcupado('lote');
     try {
-      for (const id of selLinhas) await salvar(id, 'PRO_LABORE', { pessoaId: pessoa.id, pessoa: pessoa.pessoa, cpf: pessoa.cpf }, null, null);
+      for (const id of saidasSel) await salvar(id, 'PRO_LABORE', { pessoaId: pessoa.id, pessoa: pessoa.pessoa, cpf: pessoa.cpf }, null, null);
       setSelLinhas([]);
     } catch (e) {
       setErroModal(e.message);
@@ -1663,6 +1772,27 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
       setCsvMsg({ ok: false, texto: e.message });
     } finally {
       setCriandoTarifas(false);
+    }
+  };
+  // entradas marcadas → fatura no contas a receber já baixada (Inefável, 10/11/2026)
+  const [cliEnt, setCliEnt] = useState('');
+  const [nomeCliEnt, setNomeCliEnt] = useState('');
+  const [bancoEnt, setBancoEnt] = useState(bancoBaixaPadraoCR(fc?.banco));
+  const [gerandoFat, setGerandoFat] = useState(false);
+  const gerarFaturasMarcadas = async (ids) => {
+    if (!ids.length || !cliEnt) return;
+    const linhas = (r.lancamentos || []).filter((l) => ids.includes(l.id));
+    const total = linhas.reduce((s, l) => s + Math.abs(l.valor), 0);
+    if (!window.confirm(`Gerar ${ids.length} fatura(s) no contas a receber do TOTVS para o cliente ${cliEnt}${nomeCliEnt ? ` (${nomeCliEnt})` : ''}, total ${fmt(total)}, baixar em conta corrente (${BANCOS_BAIXA_CR.find((b) => b.id === bancoEnt)?.label}) na data de cada entrada e conciliar?`)) return;
+    setGerandoFat(true);
+    setCsvMsg(null);
+    try {
+      const d = await gerarFaturasEntradas(ids.map((id) => ({ lancamentoId: id, clienteCodigo: cliEnt, banco: bancoEnt })));
+      setCsvMsg({ ok: !d.recusadas.length, texto: textoResultadoFaturas(d) });
+      setSelLinhas((prev) => prev.filter((x) => !ids.includes(x)));
+      if (onRecarregar) await onRecarregar();
+    } finally {
+      setGerandoFat(false);
     }
   };
   // ordenar por Entrada/Saída (maior↔menor) — Titia, 09/11/2026. null = ordem do extrato
@@ -2005,9 +2135,9 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
             Pró-labore ({proLabore.length})
           </button>
           <span className="w-px h-5 bg-gray-200 mx-1" />
-          {selLinhas.length > 0 && (
+          {(r.lancamentos || []).some((l) => selLinhas.includes(l.id) && l.valor < 0) && (
             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-purple-50 border border-purple-200 text-[11px] text-purple-900">
-              {selLinhas.length} marcada(s) → pró-labore de
+              {(r.lancamentos || []).filter((l) => selLinhas.includes(l.id) && l.valor < 0).length} saída(s) marcada(s) → pró-labore de
               {PESSOAS_PRO_LABORE.map((p) => (
                 <button key={p.id} onClick={() => mandarProLabore(p.id)} disabled={ocupado === 'lote'} className="px-2 py-0.5 rounded bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 font-medium">
                   {p.curto}
@@ -2018,6 +2148,37 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
               </button>
             </span>
           )}
+          {(() => {
+            const entSel = (r.lancamentos || []).filter((l) => selLinhas.includes(l.id) && l.valor > 0).map((l) => l.id);
+            if (!entSel.length) return null;
+            return (
+              <span className="inline-flex flex-wrap items-center gap-1.5 px-2 py-1 rounded-md bg-sky-50 border border-sky-200 text-[11px] text-sky-900">
+                {entSel.length} entrada(s) → contas a receber, cliente
+                <input
+                  value={cliEnt}
+                  onChange={(e) => {
+                    setCliEnt(e.target.value.replace(/\D/g, '').slice(0, 9));
+                    setNomeCliEnt('');
+                  }}
+                  onBlur={async (e) => setNomeCliEnt(await nomePessoaTotvs(e.target.value))}
+                  placeholder="cód."
+                  inputMode="numeric"
+                  className="w-20 px-1.5 py-0.5 border border-gray-300 rounded text-gray-800"
+                />
+                {nomeCliEnt && <span className="text-gray-600 max-w-[180px] truncate" title={nomeCliEnt}>{nomeCliEnt}</span>}
+                <select value={bancoEnt} onChange={(e) => setBancoEnt(e.target.value)} className="px-1 py-0.5 border border-gray-300 rounded">
+                  {BANCOS_BAIXA_CR.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      baixa {b.label}
+                    </option>
+                  ))}
+                </select>
+                <button onClick={() => gerarFaturasMarcadas(entSel)} disabled={gerandoFat || !cliEnt} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-sky-700 text-white hover:bg-sky-800 disabled:opacity-50 font-medium" title="Cria a fatura no contas a receber do TOTVS no cliente informado, baixa em conta corrente na data da entrada e concilia">
+                  {gerandoFat ? <ArrowsClockwise size={11} className="animate-spin" /> : <Plus size={11} weight="bold" />} Gerar fatura + baixa ({entSel.length})
+                </button>
+              </span>
+            );
+          })()}
           {(() => {
             const tarifasSel = (r.lancamentos || []).filter((l) => selLinhas.includes(l.id) && ehTarifa(l)).map((l) => l.id);
             const tarifasPend = lancamentos.filter((l) => l.pendente && ehTarifa(l)).map((l) => l.id);
@@ -2132,8 +2293,8 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
                 return (
                   <tr key={l.id} className={`border-b border-gray-100 hover:bg-gray-50 text-xs ${l.tipo === 'TRANSFERENCIA' ? 'bg-amber-50/40' : ''} ${!l.pendente ? 'opacity-90' : ''} ${selLinhas.includes(l.id) ? 'bg-purple-50' : ''}`}>
                     <td className="px-2 py-2 text-center">
-                      {l.pendente && l.valor < 0 && (
-                        <input type="checkbox" checked={selLinhas.includes(l.id)} onChange={() => setSelLinhas((prev) => (prev.includes(l.id) ? prev.filter((x) => x !== l.id) : [...prev, l.id]))} className="accent-purple-600" title="Marcar para mandar ao pró-labore" />
+                      {l.pendente && (l.valor < 0 || (l.valor > 0 && l.tipo !== 'TRANSFERENCIA')) && (
+                        <input type="checkbox" checked={selLinhas.includes(l.id)} onChange={() => setSelLinhas((prev) => (prev.includes(l.id) ? prev.filter((x) => x !== l.id) : [...prev, l.id]))} className={l.valor > 0 ? 'accent-sky-600' : 'accent-purple-600'} title={l.valor > 0 ? 'Marcar para gerar a fatura no contas a receber' : 'Marcar para pró-labore / duplicata'} />
                       )}
                     </td>
                     <td className="px-3 py-2 whitespace-nowrap">
