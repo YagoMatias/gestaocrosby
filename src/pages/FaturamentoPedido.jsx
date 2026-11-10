@@ -9,7 +9,8 @@
 //     parcelas e vencimentos do boleto, NSU/autorização) já vêm do pedido
 //   • FATURAR: a NF-e sai pelo HeadCoach (série 3 da 99) e o TOTVS recebe o
 //     DOCUMENTO INTERNO (511/7807/7808/7809) + recebimento → contas a receber,
-//     na data do caixa aberto no terminal 1
+//     na EMPRESA 990 (nas empresas que emitem nota a API não fecha o
+//     recebimento), com o caixa do terminal 1 da 990 aberto na data de hoje
 //   • aba Transações: NF-e, documento interno, quem emitiu, peças com os EPCs
 //     (kardex), valor, pagamento e comprovantes
 // Backend: /api/faturamento-expedicao (services/faturamentoExpedicao.js).
@@ -48,17 +49,20 @@ import {
   Storefront,
   ArrowSquareOut,
   Info,
+  WifiHigh,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
 import { useAuth } from '../components/AuthContext';
 import { ClientePicker } from './DevolucaoRFID';
 import { portalConnect, portalDisconnect, portalTags, portalClear } from '../utils/portalApi';
+import PortalPotenciaModal from '../components/PortalPotenciaModal';
 import { gerarHtmlDanfeDeXml } from '../utils/danfeHtml';
 import { abrirImpressao } from '../utils/documentoFiscalHtml';
 
 // ─── Configuração ────────────────────────────────────────────────────────────
-const EMPRESA = 99; // faturamento sempre pela empresa 99
+const EMPRESA = 99; // faturamento (NF-e) sempre pela empresa 99
+const EMPRESA_TOTVS = 990; // empresa do TOTVS que recebe o documento interno + contas a receber
 const API = `${API_BASE_URL}/api/faturamento-expedicao`;
 
 const OPERACOES_DOC_INTERNO = [
@@ -76,7 +80,6 @@ const FORMAS = {
   credito_loja: 'Credev',
   dinheiro: 'Dinheiro',
 };
-const BANDEIRAS = ['visa', 'mastercard', 'elo', 'amex', 'hipercard', 'outros'];
 
 const CANAIS = { varejo: 'Varejo', revenda: 'Revenda', mtm: 'Multimarcas', franquias: 'Franquias' };
 
@@ -132,19 +135,10 @@ function parcelasIguais(total, n) {
   return Array.from({ length: q }, (_, i) => (i === q - 1 ? round2(total - p * (q - 1)) : p));
 }
 
-// Itens do pedido agrupados por SKU (código do produto no TOTVS).
-// SEMPRE o preço do Detalhar: itens do card da fila do Dryland (troca, Black e
-// ajustes já aplicados — RV1325: 2555 a 17,50 + 16,39). Sem card, a separação.
-// Cada UNIDADE guarda: preço vendido, sua parte do desconto do pedido (Pix /
-// desconto geral, rateado pelo preço; centavos que sobram na peça mais cara) e
-// as marcas do Dryland (Black %, troca, brinde).
-function itensDoPedido(dados) {
-  const doCard = dados?.card?.dados?.itens || [];
-  const brutos = doCard.length
-    ? doCard
-    : (dados?.itens || []).map((i) => ({ cod: i.cod, descricao: i.descricao, cor: i.cor, tam: i.tamanho, qtd: i.qtd, preco: i.preco }));
+// Unidades (uma por peça) de uma lista de itens do Dryland
+function unidadesDe(lista) {
   const unidades = [];
-  for (const i of brutos) {
+  for (const i of lista || []) {
     const sku = String(i.cod || '').trim();
     if (!sku) continue;
     const q = Number(i.qtd) || 1;
@@ -161,6 +155,64 @@ function itensDoPedido(dados) {
         brinde: !!i.brinde,
       });
     }
+  }
+  return unidades;
+}
+
+// Peças que estão no card do Painel e não na separação, e o contrário
+// (só informativo: o que vale para faturar é a separação)
+function diferencaCardSeparacao(dados) {
+  if (dados?.separacaoIncompleta) return null;
+  const sep = dados?.itens || [];
+  const card = dados?.card?.dados?.itens || [];
+  if (!sep.length || !card.length) return null;
+  const conta = (lista) => {
+    const m = new Map();
+    for (const i of lista) {
+      const sku = String(i.cod || '').trim();
+      if (!sku) continue;
+      const cur = m.get(sku) || { sku, nome: i.descricao || '', qtd: 0 };
+      cur.qtd += Number(i.qtd) || 1;
+      m.set(sku, cur);
+    }
+    return m;
+  };
+  const a = conta(sep);
+  const b = conta(card);
+  const soSeparacao = [];
+  const soCard = [];
+  for (const [sku, x] of a) if ((b.get(sku)?.qtd || 0) < x.qtd) soSeparacao.push({ ...x, qtd: x.qtd - (b.get(sku)?.qtd || 0) });
+  for (const [sku, x] of b) if ((a.get(sku)?.qtd || 0) < x.qtd) soCard.push({ ...x, qtd: x.qtd - (a.get(sku)?.qtd || 0) });
+  return soSeparacao.length || soCard.length ? { soSeparacao, soCard } : null;
+}
+
+// Itens do pedido agrupados por SKU (código do produto no TOTVS).
+// AS PEÇAS vêm da SEPARAÇÃO do Dryland (tela /separar — "Loja Virtual Max",
+// pedidos finalizados): é ela que diz o que realmente vai na caixa (trocas,
+// peça não achada, crédito). Yago, 10/11/2026: o card do Painel era a tela
+// errada para saber o que faturar.
+// O PREÇO de cada peça continua o do Detalhar (card da fila: troca, Black e
+// ajustes já aplicados — RV1325: 2555 a 17,50 + 16,39) quando o card tem
+// aquela peça; peça que só existe na separação usa o preço da separação.
+// Sem separação (ex.: Brejinho), valem os itens do card.
+// Cada UNIDADE guarda: preço vendido, sua parte do desconto do pedido (Pix /
+// desconto geral, rateado pelo preço; centavos que sobram na peça mais cara) e
+// as marcas do Dryland (Black %, troca, brinde).
+function itensDoPedido(dados) {
+  const doCard = unidadesDe(dados?.card?.dados?.itens);
+  const daSep = unidadesDe((dados?.itens || []).map((i) => ({ cod: i.cod, descricao: i.descricao, cor: i.cor, tam: i.tamanho, qtd: i.qtd, preco: i.preco })));
+  let unidades = doCard;
+  if (daSep.length && !(dados?.separacaoIncompleta && doCard.length)) {
+    // fila de unidades do card por SKU, para dar a cada peça separada o preço do Detalhar
+    const fila = new Map();
+    for (const u of doCard) {
+      if (!fila.has(u.sku)) fila.set(u.sku, []);
+      fila.get(u.sku).push(u);
+    }
+    unidades = daSep.map((u) => {
+      const c = fila.get(u.sku)?.shift();
+      return c ? { ...u, preco: c.preco, black: c.black, troca: c.troca, brinde: c.brinde } : { ...u, soSeparacao: doCard.length > 0 };
+    });
   }
   // desconto do pedido (Pix + desconto geral) rateado nas peças
   const dd = dados?.card?.dados || {};
@@ -298,36 +350,88 @@ function BuscaPessoa({ onEscolher }) {
   );
 }
 
-// ─── Lista dos pedidos separados (tela sem pedido escolhido) ────────────────
-function ListaSeparados({ onEscolher }) {
+// ─── Lista dos pedidos a faturar (tela sem pedido escolhido) ────────────────
+// QUAIS pedidos: os "a faturar" do Painel do frete (pago e sem nota; não some
+// depois de 72 h como os Finalizados da tela Separar). QUAIS peças: a separação.
+// Situação da separação de cada linha da lista:
+const situacaoSeparacao = (p) => {
+  const sp = p.separacao;
+  const semSep = { k: 'sem', label: 'sem separação · peças do card', cls: 'bg-gray-100 text-gray-600 ring-gray-200', pode: true };
+  if (!sp) return semSep;
+  // ainda na tela Separar do Dryland com peça por achar: não libera
+  if (sp.viva && sp.status !== 'separado') return { k: 'andamento', label: `em separação ${sp.qtd_separada || 0}/${sp.qtd_pecas || 0}`, cls: 'bg-amber-50 text-amber-700 ring-amber-200', pode: false };
+  if (sp.incompleta) return { k: 'antiga', label: 'separação antiga · peças do card', cls: 'bg-gray-100 text-gray-600 ring-gray-200', pode: true };
+  if (sp.status === 'separado') return { k: 'ok', label: 'separação finalizada', cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200', pode: true };
+  // saiu da tela sem nenhuma linha separada (linhas tiradas do pedido)
+  return semSep;
+};
+const pecasDaLinha = (p) => {
+  const st = situacaoSeparacao(p);
+  return Number(st.k === 'ok' || st.k === 'andamento' ? p.separacao?.qtd_pecas : p.pecas_card ?? p.separacao?.qtd_pecas) || 0;
+};
+
+function ListaSeparados({ onEscolher, origem = 'pedidos' }) {
+  const brejinho = origem === 'brejinho';
   const [itens, setItens] = useState(null);
   const [busca, setBusca] = useState('');
+  const [tipo, setTipo] = useState('todos');
   const [erro, setErro] = useState('');
   const carregar = useCallback(async () => {
     setItens(null);
     setErro('');
     try {
-      const r = await fetch(`${API_BASE_URL}/api/pedidos-venda?separacao=separado`);
+      const r = await fetch(
+        brejinho
+          ? `${API_BASE_URL}/api/brejinho?status=${encodeURIComponent('aguardando pagamento')}`
+          : `${API_BASE_URL}/api/pedidos-venda?status=${encodeURIComponent('a faturar')}`,
+      );
       const j = await r.json();
       if (!r.ok || !j.success) throw new Error(j?.message || `HTTP ${r.status}`);
-      setItens(j.data.items || []);
+      setItens(
+        brejinho
+          ? (j.data.items || []).map((p) => ({
+              chave: p.chave,
+              numero_site: p.pedido,
+              cliente: p.cliente,
+              canal: 'franquias',
+              separacao: { qtd_pecas: p.qtd_pecas },
+              valor: p.valor,
+              faturamento: p.faturamento,
+            }))
+          : j.data.items || [],
+      );
     } catch (e) {
       setErro(e.message);
       setItens([]);
     }
-  }, []);
+  }, [brejinho]);
   useEffect(() => {
     carregar();
   }, [carregar]);
   const filtrados = useMemo(() => {
     const b = busca.trim().toUpperCase();
-    if (!b) return itens || [];
-    return (itens || []).filter((p) => [p.numero_site, p.cliente, p.titulo, p.vendedor].filter(Boolean).some((v) => String(v).toUpperCase().includes(b)));
-  }, [itens, busca]);
+    return (itens || [])
+      .filter((p) => brejinho || tipo === 'todos' || p.canal === tipo)
+      .filter((p) => !b || [p.numero_site, p.cliente, p.titulo, p.vendedor].filter(Boolean).some((v) => String(v).toUpperCase().includes(b)));
+  }, [itens, busca, tipo, brejinho]);
+  // mesmos tipos da tela Separar do Dryland (transferência não é venda: não fatura aqui)
+  const tipos = useMemo(() => {
+    const conta = (k) => {
+      const l = (itens || []).filter((p) => k === 'todos' || p.canal === k);
+      return { pedidos: l.length, pecas: l.reduce((s, p) => s + pecasDaLinha(p), 0) };
+    };
+    return [
+      ['todos', 'Todos'],
+      ['mtm', 'Multimarcas'],
+      ['revenda', 'Revendedor'],
+      ['franquias', 'Franquia'],
+      ['varejo', 'Varejo'],
+    ].map(([k, label]) => ({ k, label, ...conta(k) }));
+  }, [itens]);
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
       <div className="mb-2 flex flex-wrap items-center gap-2">
-        <p className="flex-1 text-sm font-bold text-[#000638]">Pedidos separados prontos para faturar</p>
+        <p className="flex-1 text-sm font-bold text-[#000638]">{brejinho ? 'Pedidos do Brejinho aguardando pagamento' : 'Pedidos a faturar (Painel do frete) · peças pela separação do Dryland'}</p>
         <div className="relative">
           <MagnifyingGlass size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
           <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="pedido, cliente, vendedor…" className="mb-0 h-9 w-56 rounded-lg border border-gray-300 pl-8 pr-2 text-sm" />
@@ -336,13 +440,28 @@ function ListaSeparados({ onEscolher }) {
           <ArrowsClockwise size={13} className={itens === null ? 'animate-spin' : ''} /> Atualizar
         </button>
       </div>
+      {!brejinho && (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {tipos.map((t) => (
+            <button
+              key={t.k}
+              onClick={() => setTipo(t.k)}
+              className={`h-8 rounded-lg px-2.5 text-[11px] font-semibold ring-1 transition ${
+                tipo === t.k ? 'bg-[#000638] text-white ring-[#000638]' : 'bg-white text-[#000638] ring-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              {t.label} · {t.pedidos} pedido{t.pedidos === 1 ? '' : 's'} · {t.pecas} pçs
+            </button>
+          ))}
+        </div>
+      )}
       {erro && <p className="mb-2 rounded-lg bg-rose-50 px-2 py-1.5 text-xs text-rose-700 ring-1 ring-rose-200">{erro}</p>}
       {itens === null ? (
         <div className="py-8 text-center text-gray-400">
           <Spinner size={20} className="mx-auto animate-spin" />
         </div>
       ) : filtrados.length === 0 ? (
-        <p className="py-6 text-center text-xs text-gray-400">Nenhum pedido separado.</p>
+        <p className="py-6 text-center text-xs text-gray-400">{brejinho ? 'Nenhum pedido aguardando pagamento.' : 'Nenhum pedido a faturar.'}</p>
       ) : (
         <ul className="divide-y divide-gray-100">
           {filtrados.map((p) => (
@@ -350,12 +469,18 @@ function ListaSeparados({ onEscolher }) {
               <span className="w-20 font-mono font-bold text-[#000638]">{p.numero_site || '—'}</span>
               <span className="min-w-[160px] flex-1 truncate font-medium text-gray-800">{p.cliente || p.titulo}</span>
               <span className="text-gray-500">{CANAIS[p.canal] || p.canal}</span>
-              <span className="tabular-nums text-gray-500">{p.separacao?.qtd_pecas || 0} pç</span>
+              <span className="tabular-nums text-gray-500">{brejinho ? p.separacao?.qtd_pecas || 0 : pecasDaLinha(p)} pç</span>
+              {!brejinho && <Chip cls={situacaoSeparacao(p).cls}>{situacaoSeparacao(p).label}</Chip>}
               <span className="w-24 text-right font-semibold tabular-nums">{fmtBRL(p.valor)}</span>
               {p.faturamento && (
                 <Chip cls="bg-emerald-50 text-emerald-700 ring-emerald-200">{p.faturamento.nf ? `NF ${p.faturamento.nf}` : `tx ${p.faturamento.transacao}`}</Chip>
               )}
-              <button onClick={() => onEscolher(p.chave)} className="h-8 rounded-lg bg-emerald-600 px-3 text-[11px] font-bold text-white hover:bg-emerald-700">
+              <button
+                onClick={() => onEscolher(p.chave)}
+                disabled={!brejinho && !situacaoSeparacao(p).pode}
+                title={!brejinho && !situacaoSeparacao(p).pode ? 'A separação deste pedido ainda não foi finalizada no Dryland' : ''}
+                className="h-8 rounded-lg bg-emerald-600 px-3 text-[11px] font-bold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+              >
                 FATURAR
               </button>
             </li>
@@ -483,12 +608,18 @@ function DetalheTransacao({ id, onReprocessar, reprocessando }) {
         {avisoCancel && <p className="rounded-lg bg-blue-50 px-2 py-1 text-[11px] text-blue-800 ring-1 ring-blue-200">{avisoCancel}</p>}
         <p>
           <b>TOTVS (documento interno):</b> {v?.totvs_transacao_code ? `transação ${v.totvs_transacao_code} · ${fmtData(v.totvs_transacao_date)}` : '—'}
-          {v?.operacao_doc_interno ? ` · op ${v.operacao_doc_interno}` : ''}{' '}
+          {v?.operacao_doc_interno ? ` · op ${v.operacao_doc_interno}` : ''}
+          {v?.totvs_transacao_code ? ` · empresa ${v.pedido_info?.empresaTotvs || EMPRESA}` : ''}{' '}
           {v?.totvs_status && <Chip cls={TOTVS_STATUS[v.totvs_status]?.cls}>{TOTVS_STATUS[v.totvs_status]?.label || v.totvs_status}</Chip>}
           {v?.totvs_erro && <span className="block text-rose-600">{v.totvs_erro}</span>}
+          {v?.totvs_status !== 4 && v?.status !== 'cancelada' && Number(v?.pedido_info?.empresaTotvs || EMPRESA) !== EMPRESA_TOTVS && (
+            <span className="block text-amber-700">
+              "Tentar de novo" abre a transação na empresa {EMPRESA_TOTVS}, onde o recebimento pela API funciona{v?.totvs_transacao_code ? `; a ${v.totvs_transacao_code} da ${EMPRESA} fica para cancelar no TOTVS` : ''}.
+            </span>
+          )}
           {(v?.pedido_info?.transacoesAnteriores || []).length > 0 && (
             <span className="block text-amber-700">
-              Transações anteriores para cancelar no TOTVS: {v.pedido_info.transacoesAnteriores.map((t) => `${t.code} (op ${t.operacao})`).join(', ')}
+              Transações anteriores para cancelar no TOTVS: {v.pedido_info.transacoesAnteriores.map((t) => `${t.code} (${t.empresa ? `empresa ${t.empresa} · ` : ''}op ${t.operacao})`).join(', ')}
             </span>
           )}
         </p>
@@ -708,7 +839,8 @@ function AbaTransacoes() {
 }
 
 // ─── Página ──────────────────────────────────────────────────────────────────
-const FaturamentoPedido = () => {
+const FaturamentoPedido = ({ origem = 'pedidos' }) => {
+  const brejinho = origem === 'brejinho';
   const { user } = useAuth();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
@@ -759,10 +891,33 @@ const FaturamentoPedido = () => {
   const [transp, setTransp] = useState({ id: 'RETIRADA', code: null, nome: null, servico: '', frete: 0, modFrete: 0, volumes: 0, pesoB: 0 });
   const [pagamentos, setPagamentos] = useState([]);
   const [vencimentos, setVencimentos] = useState([]);
+  // Operadoras/parcelamentos de cartão do cadastro do TOTVS (como na FGRFM003)
+  const [cartoes, setCartoes] = useState(null);
+  useEffect(() => {
+    fetch(`${API}/cartoes`)
+      .then((r) => r.json())
+      .then((j) => setCartoes(j.success ? j.data : { credito: [], debito: [], padrao: {} }))
+      .catch(() => setCartoes({ credito: [], debito: [], padrao: {} }));
+  }, []);
+  // Cartão efetivo de um pagamento: o que o vendedor escolheu ou o padrão
+  // (Pagar.me) com o parcelamento do pedido
+  const cartaoDe = useCallback(
+    (p) => {
+      if (!cartoes || (p.forma !== 'credito' && p.forma !== 'debito')) return null;
+      const grupos = cartoes[p.forma] || [];
+      const grupo = grupos.find((g) => g.chave === p.cartaoChave) || grupos.find((g) => g.chave === cartoes.padrao?.[p.forma]) || null;
+      if (!grupo) return { grupos, grupo: null, opcao: null };
+      const n = p.forma === 'debito' ? 1 : Number(p.parcelas) || 1;
+      const opcao = grupo.opcoes.find((o) => o.seq === p.cartaoSeq) || grupo.opcoes.find((o) => o.parcelas === n) || null;
+      return { grupos, grupo, opcao };
+    },
+    [cartoes],
+  );
 
   // Portal / leituras
   const [portalStatus, setPortalStatus] = useState({ status: 'desconectado' });
   const [portalBusy, setPortalBusy] = useState(false);
+  const [potenciaOpen, setPotenciaOpen] = useState(false);
   const [lidos, setLidos] = useState({}); // sku → { sku, nome, epcs[], manual, precoTotvs }
   const [naoResolvidos, setNaoResolvidos] = useState([]);
   const processed = useRef(new Set());
@@ -866,6 +1021,7 @@ const FaturamentoPedido = () => {
   }, []);
 
   const itensPedido = useMemo(() => (pedido ? itensDoPedido(pedido) : []), [pedido]);
+  const difCard = useMemo(() => (pedido ? diferencaCardSeparacao(pedido) : null), [pedido]);
   const descontos = useMemo(() => (pedido ? resumoDescontos(pedido, itensPedido) : []), [pedido, itensPedido]);
   const skusPedido = useMemo(() => new Set(itensPedido.map((i) => i.sku)), [itensPedido]);
 
@@ -1080,7 +1236,12 @@ const FaturamentoPedido = () => {
 
   // ─── Validação ───────────────────────────────────────────────────────────
   const card = pedido?.card || null;
-  const ref = prep?.ref || card?.numero_site || pedido?.separacao?.ref || (chave.startsWith('SEP:') ? chave.slice(4) : null);
+  const ref =
+    prep?.ref ||
+    card?.numero_site ||
+    pedido?.separacao?.ref ||
+    (chave.startsWith('SEP:') ? chave.slice(4) : null) ||
+    (card?.dados?.brejinho ? `BRJ ${card.dados.brejinho.pedido_showroom || card.dados.brejinho.id}` : null);
   const fatsVivos = (pedido?.faturamentos || []).filter((f) => f.venda_id && f.nf_status === 'autorizada');
   const jaNoTotvs = prep?.jaNoTotvs || [];
   const precisaConfirmar = jaNoTotvs.length > 0 || fatsVivos.length > 0;
@@ -1098,6 +1259,8 @@ const FaturamentoPedido = () => {
   if (semPreco) pendencias.push('Há peça conferida sem preço.');
   if (transp.id !== 'RETIRADA' && !transp.code) pendencias.push('Escolha a transportadora (em "Outro", pesquise pelo nome ou código).');
   if (!pagamentos.length) pendencias.push('Informe o pagamento.');
+  if (!comoFatura && pagamentos.some((p) => (p.forma === 'credito' || p.forma === 'debito') && !cartaoDe(p)?.opcao))
+    pendencias.push('Escolha a operadora e o parcelamento do cartão (cadastro do TOTVS).');
   if (Math.abs(somaPag - totalNota) > 0.01) pendencias.push(`Pagamento (${fmtBRL(somaPag)}) não fecha com o total da nota (${fmtBRL(totalNota)}).`);
   if (pBoleto && parcelasBoleto.some((_, i) => !/^\d{4}-\d{2}-\d{2}$/.test(vencimentos[i] || ''))) pendencias.push('Informe o vencimento de cada parcela do boleto.');
   if (precisaConfirmar && !confirmaDuplicar) pendencias.push('Confirme o aviso de lançamento já existente.');
@@ -1134,14 +1297,20 @@ const FaturamentoPedido = () => {
         transporte: temTransportadora
           ? { code: transp.code, servico: transp.servico || null, frete, modFrete: Number(transp.modFrete), volumes: Number(transp.volumes) || 1, pesoB: Number(transp.pesoB) || 0 }
           : { code: null, frete: 0 },
-        pagamentos: pagamentos.map((p) => ({
-          forma: p.forma,
-          valor: round2(p.valor),
-          parcelas: Number(p.parcelas) || 1,
-          nsu: p.nsu || null,
-          autorizacao: p.autorizacao || null,
-          bandeira: p.bandeira || null,
-        })),
+        pagamentos: pagamentos.map((p) => {
+          const c = cartaoDe(p);
+          return {
+            forma: p.forma,
+            valor: round2(p.valor),
+            parcelas: c?.opcao ? c.opcao.parcelas : Number(p.parcelas) || 1,
+            nsu: p.nsu || null,
+            autorizacao: p.autorizacao || null,
+            bandeira: p.bandeira || null,
+            cartao: c?.opcao
+              ? { seq: c.opcao.seq, descricao: c.opcao.descricao, parcelas: c.opcao.parcelas, portador: c.grupo.portador, operadora: c.grupo.operadora, bandeira: c.grupo.bandeira }
+              : null,
+          };
+        }),
         vencimentos: pBoleto ? parcelasBoleto.map((_, i) => vencimentos[i]) : [],
         comprovantes: prep?.comprovantes || [],
         pedidoInfo: { forma: prep?.pagamento?.formaTexto, nsu: prep?.pagamento?.nsu, autorizacao: prep?.pagamento?.autorizacao },
@@ -1168,7 +1337,7 @@ const FaturamentoPedido = () => {
     } finally {
       setPosting(false);
     }
-  }, [podeFaturar, prep, customer, conf, frete, operacao, dataDiferente, dataVenda, terminal, comoFatura, sellers, seller, chave, ref, consumidorFinal, temTransportadora, transp, pagamentos, pBoleto, parcelasBoleto, vencimentos, user, showToast]);
+  }, [podeFaturar, prep, customer, conf, frete, operacao, dataDiferente, dataVenda, terminal, comoFatura, sellers, seller, chave, ref, consumidorFinal, temTransportadora, transp, pagamentos, cartaoDe, pBoleto, parcelasBoleto, vencimentos, user, showToast]);
 
   const reprocessar = useCallback(async () => {
     if (!resultado?.vendaId) return;
@@ -1198,11 +1367,18 @@ const FaturamentoPedido = () => {
   return (
     <div className="flex-1 overflow-y-auto bg-gray-100 p-3 lg:p-4">
       <div className="mx-auto max-w-6xl">
-        <PageTitle title="Faturamento" subtitle="NF-e emitida pelo HeadCoach (empresa 99) + documento interno e contas a receber no TOTVS" icon={Receipt} />
+        <PageTitle
+          title={brejinho ? 'Faturamento — Brejinho' : 'Faturamento'}
+          subtitle="NF-e emitida pelo HeadCoach (empresa 99) + documento interno e contas a receber no TOTVS (empresa 990)"
+          icon={Receipt}
+        />
 
         <div className="mb-2 flex flex-wrap items-center gap-2">
-          <button onClick={() => navigate('/expedicao/pedidos-venda')} className="inline-flex h-8 items-center gap-1 rounded-lg bg-white px-2.5 text-xs font-semibold text-[#000638] shadow-sm ring-1 ring-gray-200 hover:bg-gray-50">
-            <ArrowLeft size={13} /> Pedido de Venda
+          <button
+            onClick={() => navigate(brejinho ? '/expedicao/brejinho/pedidos' : '/expedicao/pedidos-venda')}
+            className="inline-flex h-8 items-center gap-1 rounded-lg bg-white px-2.5 text-xs font-semibold text-[#000638] shadow-sm ring-1 ring-gray-200 hover:bg-gray-50"
+          >
+            <ArrowLeft size={13} /> {brejinho ? 'Pedidos Brejinho' : 'Pedido de Venda'}
           </button>
           <div className="inline-flex rounded-lg bg-white p-0.5 ring-1 ring-gray-200">
             {[
@@ -1228,7 +1404,7 @@ const FaturamentoPedido = () => {
         {aba === 'transacoes' ? (
           <AbaTransacoes />
         ) : !chave ? (
-          <ListaSeparados onEscolher={escolherPedido} />
+          <ListaSeparados onEscolher={escolherPedido} origem={origem} />
         ) : carregando ? (
           <div className="py-16 text-center text-gray-400">
             <Spinner size={22} className="mx-auto animate-spin" />
@@ -1365,6 +1541,20 @@ const FaturamentoPedido = () => {
                       </span>
                     )}
                   </div>
+                  <p className="border-b border-gray-100 bg-gray-50 px-3 py-1 text-[10.5px] text-gray-500">
+                    {pedido?.separacaoIncompleta
+                      ? 'Pedido antigo: a separação saiu da tela do Dryland antes de o HeadCoach guardar todas as linhas. Peças do card do pedido (com as trocas registradas nele).'
+                      : (pedido?.itens || []).length > 0
+                        ? 'Peças da separação do Dryland (tela Separar · Loja Virtual Max).'
+                        : 'Este pedido não tem separação no Dryland: peças do card do pedido.'}
+                  </p>
+                  {difCard && (
+                    <div className="border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] text-amber-800">
+                      <b>O card do Painel está diferente da separação.</b> Vale a separação.
+                      {difCard.soSeparacao.length > 0 && <span className="block">Só na separação (entra na nota): {difCard.soSeparacao.map((x) => `${x.qtd}x ${x.sku} ${x.nome}`).join(' · ')}</span>}
+                      {difCard.soCard.length > 0 && <span className="block">Só no card (fica fora da nota): {difCard.soCard.map((x) => `${x.qtd}x ${x.sku} ${x.nome}`).join(' · ')}</span>}
+                    </div>
+                  )}
                   {conf.linhas.length === 0 ? (
                     <p className="px-3 py-8 text-center text-xs text-gray-400">Este pedido não tem itens no Dryland.</p>
                   ) : (
@@ -1617,33 +1807,62 @@ const FaturamentoPedido = () => {
                               className={`${inputCls} ${p.auto ? 'bg-gray-100' : ''}`}
                             />
                           </div>
-                          {(p.forma === 'credito' || p.forma === 'boleto') && (
+                          {p.forma === 'boleto' && (
                             <div>
                               <label className={labelCls}>Parcelas</label>
                               <input type="number" min="1" max="24" value={p.parcelas} onChange={(e) => setPag(i, { parcelas: Math.max(1, parseInt(e.target.value, 10) || 1) })} className={inputCls} />
                             </div>
                           )}
-                          {(p.forma === 'credito' || p.forma === 'debito') && (
-                            <div>
-                              <label className={labelCls}>Bandeira</label>
-                              <select value={p.bandeira} onChange={(e) => setPag(i, { bandeira: e.target.value })} className={inputCls}>
-                                <option value="">—</option>
-                                {BANDEIRAS.map((b) => (
-                                  <option key={b} value={b}>
-                                    {b}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          )}
+                          {(p.forma === 'credito' || p.forma === 'debito') &&
+                            (() => {
+                              const c = cartaoDe(p);
+                              if (!cartoes) return <div className="flex items-end text-[11px] text-gray-400">carregando cartões do TOTVS…</div>;
+                              return (
+                                <>
+                                  <div>
+                                    <label className={labelCls}>Operadora *</label>
+                                    <select
+                                      value={c?.grupo?.chave || ''}
+                                      onChange={(e) => setPag(i, { cartaoChave: e.target.value, cartaoSeq: null })}
+                                      className={`${inputCls} ${c?.grupo ? '' : 'border-amber-400'}`}
+                                    >
+                                      <option value="">Selecione…</option>
+                                      {(c?.grupos || []).map((g) => (
+                                        <option key={g.chave} value={g.chave}>
+                                          {g.operadora} · {g.bandeira} ({g.portador})
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className={labelCls}>Parcelamento *</label>
+                                    <select
+                                      value={c?.opcao?.seq ?? ''}
+                                      onChange={(e) => {
+                                        const o = c?.grupo?.opcoes.find((x) => String(x.seq) === e.target.value);
+                                        if (o) setPag(i, { cartaoChave: c.grupo.chave, cartaoSeq: o.seq, parcelas: o.parcelas });
+                                      }}
+                                      className={`${inputCls} ${c?.opcao ? '' : 'border-amber-400'}`}
+                                    >
+                                      <option value="">Selecione…</option>
+                                      {(c?.grupo?.opcoes || []).map((o) => (
+                                        <option key={o.seq} value={o.seq}>
+                                          {o.descricao}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </>
+                              );
+                            })()}
                           {(p.forma === 'credito' || p.forma === 'debito') && (
                             <>
                               <div>
-                                <label className={labelCls}>NSU</label>
+                                <label className={labelCls}>Nr. documento (NSU) *</label>
                                 <input value={p.nsu} onChange={(e) => setPag(i, { nsu: e.target.value })} className={inputCls} />
                               </div>
                               <div>
-                                <label className={labelCls}>Autorização</label>
+                                <label className={labelCls}>Autorização *</label>
                                 <input value={p.autorizacao} onChange={(e) => setPag(i, { autorizacao: e.target.value })} className={inputCls} />
                               </div>
                             </>
@@ -1724,9 +1943,18 @@ const FaturamentoPedido = () => {
                       {portalBusy ? <Spinner size={16} className="animate-spin" /> : <PlugsConnected size={16} weight="bold" />} LIGAR PORTAL
                     </button>
                   )}
-                  <button onClick={limparLeituras} className="mt-1.5 inline-flex h-8 w-full items-center justify-center gap-1.5 rounded-lg text-xs font-semibold text-rose-600 ring-1 ring-rose-200 hover:bg-rose-50">
-                    <Trash size={13} /> Limpar leituras
-                  </button>
+                  <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                    <button
+                      onClick={() => setPotenciaOpen(true)}
+                      className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg text-xs font-semibold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50"
+                      title="Alcance de leitura das antenas"
+                    >
+                      <WifiHigh size={13} weight="bold" /> Potência
+                    </button>
+                    <button onClick={limparLeituras} className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg text-xs font-semibold text-rose-600 ring-1 ring-rose-200 hover:bg-rose-50">
+                      <Trash size={13} /> Limpar leituras
+                    </button>
+                  </div>
                   <div className="mt-2 border-t border-gray-100 pt-2">
                     <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-gray-500">Peça sem etiqueta (código / barras)</label>
                     <div className="flex gap-1">
@@ -1766,7 +1994,7 @@ const FaturamentoPedido = () => {
                   )}
                 </Bloco>
 
-                <Bloco titulo="TOTVS (documento interno)" icone={Storefront}>
+                <Bloco titulo={`TOTVS (documento interno · empresa ${EMPRESA_TOTVS})`} icone={Storefront}>
                   <label className={labelCls}>Operação</label>
                   <select value={operacao} onChange={(e) => setOperacao(e.target.value)} className={inputCls}>
                     <option value="">Selecione…</option>
@@ -1816,7 +2044,7 @@ const FaturamentoPedido = () => {
                     <Info size={11} className="mt-0.5 shrink-0" />
                     {comoFatura
                       ? 'Cada pagamento vira fatura no contas a receber (cartão em N vezes = N faturas a cada 30 dias), sem movimento de caixa.'
-                      : 'O caixa desse terminal precisa estar aberto no TOTVS com a data de hoje. O contas a receber sai com as parcelas e vencimentos acima.'}
+                      : `O caixa desse terminal da empresa ${EMPRESA_TOTVS} precisa estar aberto no TOTVS com a data de hoje. O contas a receber sai com as parcelas e vencimentos acima.`}
                   </p>
                 </Bloco>
 
@@ -1984,7 +2212,7 @@ const FaturamentoPedido = () => {
                         <span className="text-sm font-semibold text-emerald-700"> · {fmtData(resultado.totvs.transactionDate)}</span>
                       </p>
                       <p className="text-xs text-gray-600">
-                        Operação {operacao} · empresa {EMPRESA} · {TOTVS_STATUS[resultado.totvs.status]?.label || ''}
+                        Operação {operacao} · empresa {resultado.venda?.pedido_info?.empresaTotvs || EMPRESA} · {TOTVS_STATUS[resultado.totvs.status]?.label || ''}
                       </p>
                     </>
                   ) : (
@@ -2039,7 +2267,7 @@ const FaturamentoPedido = () => {
                     ['Fiscal', cen ? `${cen.label} · CFOP ${cen.cfop} · ${cen.icms}${previa?.aliqDifal ? ` (${previa.cenario.destUf} ${previa.aliqDifal}%)` : ''}` : '—'],
                     ['Transporte', temTransportadora ? `${transp.nome || transp.id}${transp.servico ? ` · ${transp.servico}` : ''} · ${transp.volumes} vol · ${transp.pesoB} kg` : 'Retirada (sem transportadora)'],
                     ['Pagamento', pagamentos.map((p) => `${FORMAS[p.forma]} ${fmtBRL(p.valor)}${Number(p.parcelas) > 1 ? ` em ${p.parcelas}x` : ''}`).join(' + ')],
-                    ['TOTVS', `documento interno ${operacao} · data de hoje (${fmtData(hojeIso())}) · terminal ${terminal}`],
+                    ['TOTVS', `documento interno ${operacao} · empresa ${EMPRESA_TOTVS} · data de hoje (${fmtData(hojeIso())}) · terminal ${terminal}`],
                     ...(dataDiferente && dataVenda ? [['Data diferente', `observação na transação: VENDA DO DIA ${fmtData(dataVenda)}`]] : []),
                     ...(card?.dados?.transacao || card?.dados?.pedido_totvs
                       ? [['Transação no TOTVS (aberta pelo Dryland)', [card.dados.transacao && `transação ${card.dados.transacao}`, card.dados.pedido_totvs && `pedido ${card.dados.pedido_totvs}`].filter(Boolean).join(' · ')]]
@@ -2076,7 +2304,7 @@ const FaturamentoPedido = () => {
                     Ficam fora da nota: {conf.faltando} faltando · {conf.sobrando} sobrando.
                   </p>
                 )}
-                <p className="mt-2 text-[11px] text-gray-500">A nota é real (SEFAZ, produção). Depois dela, o TOTVS recebe o documento interno e o contas a receber.</p>
+                <p className="mt-2 text-[11px] text-gray-500">A nota é real (SEFAZ, produção). Depois dela, o TOTVS recebe o documento interno e o contas a receber na empresa {EMPRESA_TOTVS}.</p>
                 <div className="mt-4 flex gap-2">
                   <button onClick={() => setModalFat(false)} className="h-11 flex-1 rounded-xl text-sm font-bold text-gray-600 ring-1 ring-gray-300 hover:bg-gray-50">
                     Cancelar
@@ -2089,6 +2317,10 @@ const FaturamentoPedido = () => {
             )}
           </div>
         </div>
+      )}
+
+      {potenciaOpen && (
+        <PortalPotenciaModal onClose={() => setPotenciaOpen(false)} onSaved={() => showToast('ok', 'Potência do portal gravada')} />
       )}
 
       {toast && (

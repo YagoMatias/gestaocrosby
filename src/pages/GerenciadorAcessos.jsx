@@ -530,6 +530,16 @@ const AVAILABLE_PAGES = [
     category: 'Expedição',
   },
   {
+    path: '/expedicao/brejinho/pedidos',
+    name: 'Expedição Brejinho — Pedidos',
+    category: 'Expedição',
+  },
+  {
+    path: '/expedicao/brejinho/faturamento',
+    name: 'Expedição Brejinho — Faturamento',
+    category: 'Expedição',
+  },
+  {
     path: '/duplicata-vendas',
     name: 'Duplicata de Vendas',
     category: 'Expedição',

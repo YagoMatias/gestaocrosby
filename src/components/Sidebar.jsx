@@ -1186,6 +1186,26 @@ const expedicao = [
     color: 'text-emerald-600',
   },
   {
+    name: 'Expedição Brejinho',
+    href: '#',
+    icon: Storefront,
+    color: 'text-amber-600',
+    children: [
+      {
+        name: 'Pedidos',
+        href: '/expedicao/brejinho/pedidos',
+        icon: ShoppingBag,
+        color: 'text-amber-600',
+      },
+      {
+        name: 'Faturamento',
+        href: '/expedicao/brejinho/faturamento',
+        icon: Receipt,
+        color: 'text-amber-600',
+      },
+    ],
+  },
+  {
     name: 'Inadimplência Multimarcas',
     href: '/inadimplentes-multimarcas',
     icon: Buildings,
