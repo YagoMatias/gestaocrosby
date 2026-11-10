@@ -372,6 +372,7 @@ function DetalheTransacao({ id, onReprocessar, reprocessando }) {
   const [erro, setErro] = useState('');
   const [versao, setVersao] = useState(0);
   const [terminalNovo, setTerminalNovo] = useState('');
+  const [faturaNova, setFaturaNova] = useState(null); // null = mantém o que está na venda
   const [cancelar, setCancelar] = useState(false);
   const [justificativa, setJustificativa] = useState('');
   const [cancelando, setCancelando] = useState(false);
@@ -487,7 +488,7 @@ function DetalheTransacao({ id, onReprocessar, reprocessando }) {
         {nota?.status !== 'cancelada' && v?.status !== 'cancelada' && (nota?.status !== 'autorizada' || v?.totvs_status !== 4) && (
           <div className="flex items-center gap-1.5">
             <button
-              onClick={() => onReprocessar(v.id, terminalNovo)}
+              onClick={() => onReprocessar(v.id, terminalNovo, faturaNova ?? undefined)}
               disabled={reprocessando}
               className="inline-flex h-8 items-center gap-1 rounded-lg bg-amber-600 px-2.5 text-[11px] font-bold text-white disabled:opacity-50"
             >
@@ -502,6 +503,15 @@ function DetalheTransacao({ id, onReprocessar, reprocessando }) {
               placeholder={String(v?.pedido_info?.terminal || 1)}
               className="mb-0 h-8 w-14 rounded-lg border border-gray-300 px-1.5 text-xs"
             />
+            <label className="inline-flex cursor-pointer items-center gap-1 text-[11px] text-gray-600">
+              <input
+                type="checkbox"
+                checked={faturaNova ?? !!v?.pedido_info?.receberComoFatura}
+                onChange={(e) => setFaturaNova(e.target.checked)}
+                className="mb-0 !h-3.5 !w-3.5"
+              />
+              como fatura
+            </label>
           </div>
         )}
         <p>
@@ -585,14 +595,14 @@ function AbaTransacoes() {
     carregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [de, ate]);
-  const reprocessar = async (vendaId, terminalNovo) => {
+  const reprocessar = async (vendaId, terminalNovo, faturaNova) => {
     setReprocessando(true);
     setAviso('');
     try {
       const r = await fetch(`${API}/vendas/${vendaId}/reprocessar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(Number(terminalNovo) > 0 ? { terminal: Number(terminalNovo) } : {}),
+        body: JSON.stringify({ ...(Number(terminalNovo) > 0 ? { terminal: Number(terminalNovo) } : {}), ...(typeof faturaNova === 'boolean' ? { comoFatura: faturaNova } : {}) }),
       });
       const j = await r.json();
       setAviso(j.message || '');
@@ -703,6 +713,13 @@ const FaturamentoPedido = () => {
   const [previa, setPrevia] = useState(null);
   const [previaErro, setPreviaErro] = useState('');
   const [operacao, setOperacao] = useState('');
+  const [comoFatura, setComoFatura] = useState(() => {
+    try {
+      return localStorage.getItem('fat_como_fatura') === '1';
+    } catch {
+      return false;
+    }
+  });
   const [terminal, setTerminal] = useState(() => {
     try {
       return localStorage.getItem('fat_terminal') || '1';
@@ -742,10 +759,11 @@ const FaturamentoPedido = () => {
     try {
       localStorage.setItem('fat_data_caixa', dataCaixa);
       localStorage.setItem('fat_terminal', terminal);
+      localStorage.setItem('fat_como_fatura', comoFatura ? '1' : '0');
     } catch {
       /* sem storage */
     }
-  }, [dataCaixa, terminal]);
+  }, [dataCaixa, terminal, comoFatura]);
 
   const limparLeituras = useCallback(() => {
     setLidos({});
@@ -1080,6 +1098,7 @@ const FaturamentoPedido = () => {
         consumidorFinal,
         dataCaixa,
         terminal: Number(terminal) || 1,
+        receberComoFatura: comoFatura,
         itens: conf.linhas
           .filter((l) => l.conferido > 0)
           .flatMap((l) => {
@@ -1127,7 +1146,7 @@ const FaturamentoPedido = () => {
     } finally {
       setPosting(false);
     }
-  }, [podeFaturar, prep, customer, conf, frete, operacao, dataCaixa, terminal, sellers, seller, chave, ref, consumidorFinal, temTransportadora, transp, pagamentos, pBoleto, parcelasBoleto, vencimentos, user, showToast]);
+  }, [podeFaturar, prep, customer, conf, frete, operacao, dataCaixa, terminal, comoFatura, sellers, seller, chave, ref, consumidorFinal, temTransportadora, transp, pagamentos, pBoleto, parcelasBoleto, vencimentos, user, showToast]);
 
   const reprocessar = useCallback(async () => {
     if (!resultado?.vendaId) return;
@@ -1136,7 +1155,7 @@ const FaturamentoPedido = () => {
       const r = await fetch(`${API}/vendas/${resultado.vendaId}/reprocessar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ terminal: Number(terminal) || 1 }),
+        body: JSON.stringify({ terminal: Number(terminal) || 1, comoFatura }),
       });
       const j = await r.json();
       if (j.success) setResultado(j.data);
@@ -1146,7 +1165,7 @@ const FaturamentoPedido = () => {
     } finally {
       setPosting(false);
     }
-  }, [resultado, terminal, showToast]);
+  }, [resultado, terminal, comoFatura, showToast]);
 
   const escolherPedido = (k) => setParams(k ? { chave: k } : {});
   const irAba = (a) => setParams(a === 'transacoes' ? { aba: 'transacoes' } : chave ? { chave } : {});
@@ -1747,8 +1766,16 @@ const FaturamentoPedido = () => {
                       <input type="number" min="1" value={terminal} onChange={(e) => setTerminal(e.target.value)} className={inputCls} />
                     </div>
                   </div>
+                  <label className={`${labelCls} mt-2`}>Recebimento no TOTVS</label>
+                  <select value={comoFatura ? 'fatura' : 'forma'} onChange={(e) => setComoFatura(e.target.value === 'fatura')} className={inputCls}>
+                    <option value="forma">Pela forma de pagamento (cartão, Pix…)</option>
+                    <option value="fatura">Tudo como FATURA (título a receber)</option>
+                  </select>
                   <p className="mt-1 flex items-start gap-1 text-[10.5px] text-gray-500">
-                    <Info size={11} className="mt-0.5 shrink-0" /> O caixa desse terminal precisa estar aberto no TOTVS nessa data. O contas a receber sai com as parcelas e vencimentos acima.
+                    <Info size={11} className="mt-0.5 shrink-0" />
+                    {comoFatura
+                      ? 'Cada pagamento vira fatura no contas a receber (cartão em N vezes = N faturas a cada 30 dias), sem movimento de caixa.'
+                      : 'O caixa desse terminal precisa estar aberto no TOTVS nessa data. O contas a receber sai com as parcelas e vencimentos acima.'}
                   </p>
                 </Bloco>
 
