@@ -373,6 +373,7 @@ function DetalheTransacao({ id, onReprocessar, reprocessando }) {
   const [versao, setVersao] = useState(0);
   const [terminalNovo, setTerminalNovo] = useState('');
   const [faturaNova, setFaturaNova] = useState(null); // null = mantém o que está na venda
+  const [operacaoNova, setOperacaoNova] = useState(''); // '' = mantém; outra = abre nova transação no TOTVS
   const [cancelar, setCancelar] = useState(false);
   const [justificativa, setJustificativa] = useState('');
   const [cancelando, setCancelando] = useState(false);
@@ -481,14 +482,20 @@ function DetalheTransacao({ id, onReprocessar, reprocessando }) {
         )}
         {avisoCancel && <p className="rounded-lg bg-blue-50 px-2 py-1 text-[11px] text-blue-800 ring-1 ring-blue-200">{avisoCancel}</p>}
         <p>
-          <b>TOTVS (documento interno):</b> {v?.totvs_transacao_code ? `transação ${v.totvs_transacao_code} · ${fmtData(v.totvs_transacao_date)}` : '—'}{' '}
+          <b>TOTVS (documento interno):</b> {v?.totvs_transacao_code ? `transação ${v.totvs_transacao_code} · ${fmtData(v.totvs_transacao_date)}` : '—'}
+          {v?.operacao_doc_interno ? ` · op ${v.operacao_doc_interno}` : ''}{' '}
           {v?.totvs_status && <Chip cls={TOTVS_STATUS[v.totvs_status]?.cls}>{TOTVS_STATUS[v.totvs_status]?.label || v.totvs_status}</Chip>}
           {v?.totvs_erro && <span className="block text-rose-600">{v.totvs_erro}</span>}
+          {(v?.pedido_info?.transacoesAnteriores || []).length > 0 && (
+            <span className="block text-amber-700">
+              Transações anteriores para cancelar no TOTVS: {v.pedido_info.transacoesAnteriores.map((t) => `${t.code} (op ${t.operacao})`).join(', ')}
+            </span>
+          )}
         </p>
         {nota?.status !== 'cancelada' && v?.status !== 'cancelada' && (nota?.status !== 'autorizada' || v?.totvs_status !== 4) && (
           <div className="flex items-center gap-1.5">
             <button
-              onClick={() => onReprocessar(v.id, terminalNovo, faturaNova ?? undefined)}
+              onClick={() => onReprocessar(v.id, terminalNovo, faturaNova ?? undefined, operacaoNova)}
               disabled={reprocessando}
               className="inline-flex h-8 items-center gap-1 rounded-lg bg-amber-600 px-2.5 text-[11px] font-bold text-white disabled:opacity-50"
             >
@@ -512,6 +519,14 @@ function DetalheTransacao({ id, onReprocessar, reprocessando }) {
               />
               como fatura
             </label>
+            <select value={operacaoNova} onChange={(e) => setOperacaoNova(e.target.value)} className="mb-0 h-8 rounded-lg border border-gray-300 px-1 text-[11px]" title="Trocar a operação abre uma NOVA transação no TOTVS; a anterior fica para cancelar">
+              <option value="">operação {v?.operacao_doc_interno || ''}</option>
+              {OPERACOES_DOC_INTERNO.filter((o) => o.code !== Number(v?.operacao_doc_interno)).map((o) => (
+                <option key={o.code} value={o.code}>
+                  trocar p/ {o.code}
+                </option>
+              ))}
+            </select>
           </div>
         )}
         <p>
@@ -598,14 +613,18 @@ function AbaTransacoes() {
     carregar();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [de, ate]);
-  const reprocessar = async (vendaId, terminalNovo, faturaNova) => {
+  const reprocessar = async (vendaId, terminalNovo, faturaNova, operacaoNova) => {
     setReprocessando(true);
     setAviso('');
     try {
       const r = await fetch(`${API}/vendas/${vendaId}/reprocessar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...(Number(terminalNovo) > 0 ? { terminal: Number(terminalNovo) } : {}), ...(typeof faturaNova === 'boolean' ? { comoFatura: faturaNova } : {}) }),
+        body: JSON.stringify({
+          ...(Number(terminalNovo) > 0 ? { terminal: Number(terminalNovo) } : {}),
+          ...(typeof faturaNova === 'boolean' ? { comoFatura: faturaNova } : {}),
+          ...(Number(operacaoNova) > 0 ? { operacaoDocInterno: Number(operacaoNova) } : {}),
+        }),
       });
       const j = await r.json();
       setAviso(j.message || '');
