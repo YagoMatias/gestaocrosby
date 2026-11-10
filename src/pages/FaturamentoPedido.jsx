@@ -270,7 +270,7 @@ function BuscaPessoa({ onEscolher }) {
   return (
     <div className="mt-1.5">
       <div className="flex gap-1">
-        <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && buscar()} placeholder="Código ou nome do taxista" className={inputCls} />
+        <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && buscar()} placeholder="Código ou nome no TOTVS" className={inputCls} />
         <button onClick={buscar} disabled={busy} className="h-9 shrink-0 rounded-lg bg-[#000638] px-3 text-xs font-bold text-white disabled:opacity-40">
           {busy ? <Spinner size={13} className="animate-spin" /> : <MagnifyingGlass size={13} />}
         </button>
@@ -1077,7 +1077,7 @@ const FaturamentoPedido = () => {
   if (dataDiferente && dataVenda > hojeIso()) pendencias.push('A data da venda não pode ser depois de hoje.');
   if (conf.conferidas === 0) pendencias.push('Ligue o portal e passe as peças do pedido.');
   if (semPreco) pendencias.push('Há peça conferida sem preço.');
-  if (transp.id !== 'RETIRADA' && !transp.code) pendencias.push('Escolha a transportadora (taxista: pesquise pelo nome ou código).');
+  if (transp.id !== 'RETIRADA' && !transp.code) pendencias.push('Escolha a transportadora (em "Outro", pesquise pelo nome ou código).');
   if (!pagamentos.length) pendencias.push('Informe o pagamento.');
   if (Math.abs(somaPag - totalNota) > 0.01) pendencias.push(`Pagamento (${fmtBRL(somaPag)}) não fecha com o total da nota (${fmtBRL(totalNota)}).`);
   if (pBoleto && parcelasBoleto.some((_, i) => !/^\d{4}-\d{2}-\d{2}$/.test(vencimentos[i] || ''))) pendencias.push('Informe o vencimento de cada parcela do boleto.');
