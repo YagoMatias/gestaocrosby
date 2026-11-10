@@ -1155,7 +1155,7 @@ const Conciliacao = () => {
   const [importandoTechfin, setImportandoTechfin] = useState(false);
   const [saidasPendAberta, setSaidasPendAberta] = useState(false);
   const [entradasPendAberta, setEntradasPendAberta] = useState(false); // janela "Entradas pendentes (todas as contas)"
-  const [adiantAberto, setAdiantAberto] = useState(false); // lista "Adiantamentos a fornecedor\" // janela "Saídas pendentes (todas as contas)"
+  const [adiantAberto, setAdiantAberto] = useState(false); // lista "Adiantamentos a fornecedor"
   const importarTechfin = async (arquivos) => {
     if (!arquivos?.length) return;
     setImportandoTechfin(true);
