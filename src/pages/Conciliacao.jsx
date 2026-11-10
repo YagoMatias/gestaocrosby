@@ -392,7 +392,12 @@ const ModalSaidasPendentes = ({ de, ate, onClose, onConcluido }) => {
     try {
       const r = await fetch(`${API}/conciliacao/fornecedor/${c}`, { headers: headersUsuario() });
       const j = await r.json();
-      setNomesForn((p) => ({ ...p, [c]: j?.success ? j.data.nome || '(sem nome)' : 'não encontrado no TOTVS' }));
+      setNomesForn((p) => ({
+        ...p,
+        [c]: j?.success
+          ? `${j.data.nome || '(sem nome)'}${j.data.fornecedor === false ? ' ⚠ NÃO é fornecedor no TOTVS' : ''}`
+          : 'não encontrado no TOTVS',
+      }));
     } catch {
       setNomesForn((p) => ({ ...p, [c]: 'erro ao consultar' }));
     }
@@ -572,6 +577,113 @@ const ModalSaidasPendentes = ({ de, ate, onClose, onConcluido }) => {
                   <tr>
                     <td colSpan={8} className="p-6 text-center text-gray-400">
                       Nenhuma saída pendente no período.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── lista "Adiantamentos a fornecedor" (Titia, 10/11/2026) ───
+const ModalAdiantamentos = ({ onClose }) => {
+  const [itens, setItens] = useState(null);
+  const [erro, setErro] = useState(null);
+  const [busca, setBusca] = useState('');
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch(`${API}/conciliacao/adiantamentos`, { headers: headersUsuario() });
+        const j = await r.json();
+        if (!j?.success) throw new Error(j?.message || 'Falha ao carregar os adiantamentos.');
+        setItens(j.data.itens || []);
+      } catch (e) {
+        setErro(e.message);
+        setItens([]);
+      }
+    })();
+  }, []);
+  useEffect(() => {
+    const h = (e) => e.key === 'Escape' && onClose();
+    document.addEventListener('keydown', h);
+    return () => document.removeEventListener('keydown', h);
+  }, [onClose]);
+  const visiveis = (itens || []).filter((i) => {
+    const q = busca.trim().toLowerCase();
+    return !q || `${i.fornecedor} ${i.empresa} ${i.conta} ${i.observacao || ''} ${i.valor}`.toLowerCase().includes(q);
+  });
+  const total = visiveis.reduce((s, i) => s + i.valor, 0);
+  const exportar = () => {
+    const rows = visiveis.map((i) => ({ Data: fmtData(i.data), Fornecedor: i.fornecedor, 'CPF/CNPJ': i.fornecedorDoc, Valor: i.valor, Empresa: i.empresa, Banco: i.banco, Conta: i.conta, Observação: i.observacao, 'Marcado por': i.usuario, 'Marcado em': i.marcadoEm ? String(i.marcadoEm).slice(0, 16).replace('T', ' ') : '' }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Adiantamentos');
+    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    saveAs(new Blob([buf]), 'adiantamentos_a_fornecedor.xlsx');
+  };
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center p-3 md:p-6 overflow-auto" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl" onClick={(e) => e.stopPropagation()}>
+        <div className="px-4 py-3 border-b border-gray-200 flex items-start gap-2">
+          <div className="flex-1">
+            <h3 className="text-sm font-bold text-gray-800">Adiantamentos a fornecedor</h3>
+            <p className="text-xs text-gray-500">Pagamentos justificados na Conciliação como adiantamento (fornecedor ainda sem nota fiscal) · {visiveis.length} lançamento(s) · {fmt(total)}</p>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="px-4 py-2 border-b border-gray-200 flex items-center gap-2 text-[11px]">
+          <button onClick={exportar} disabled={!visiveis.length} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-green-700 text-white hover:bg-green-800 disabled:opacity-40 font-medium">
+            <Export size={12} /> Baixar Excel
+          </button>
+          <div className="relative ml-auto">
+            <MagnifyingGlass size={13} className="absolute left-2 top-2 text-gray-400" />
+            <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Filtrar fornecedor, empresa…" className="pl-7 pr-2 py-1.5 border border-gray-300 rounded-lg w-56" />
+          </div>
+        </div>
+        {erro && <div className="px-4 py-2 text-[11px] bg-red-50 text-red-700">{erro}</div>}
+        <div className="max-h-[65vh] overflow-auto">
+          {!itens ? (
+            <p className="p-6 text-sm text-gray-400 flex items-center gap-2">
+              <ArrowsClockwise size={14} className="animate-spin" /> Carregando…
+            </p>
+          ) : (
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-gray-50">
+                <tr className="border-b border-gray-200">
+                  <Th>Data</Th>
+                  <Th>Fornecedor</Th>
+                  <Th right>Valor</Th>
+                  <Th>Empresa / conta</Th>
+                  <Th>Observação</Th>
+                  <Th>Marcado por</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {visiveis.map((i) => (
+                  <tr key={i.id} className="border-b border-gray-100 hover:bg-gray-50">
+                    <td className="px-3 py-1.5 whitespace-nowrap">{fmtData(i.data)}</td>
+                    <td className="px-3 py-1.5">
+                      {i.fornecedor}
+                      {i.fornecedorDoc ? <span className="text-gray-400"> · {i.fornecedorDoc}</span> : null}
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-semibold text-red-600 whitespace-nowrap">{fmt(i.valor)}</td>
+                    <td className="px-3 py-1.5">
+                      {i.empresa}
+                      <div className="text-[10px] text-gray-400">{i.banco} · {i.conta}</div>
+                    </td>
+                    <td className="px-3 py-1.5">{i.observacao || '—'}</td>
+                    <td className="px-3 py-1.5 whitespace-nowrap">{i.usuario || '—'}</td>
+                  </tr>
+                ))}
+                {!visiveis.length && (
+                  <tr>
+                    <td colSpan={6} className="p-6 text-center text-gray-400">
+                      Nenhum adiantamento a fornecedor marcado ainda. No extrato da conta, use Justificar → "Adiantamento a fornecedor".
                     </td>
                   </tr>
                 )}
@@ -834,7 +946,8 @@ const Conciliacao = () => {
     }
   };
   const [importandoTechfin, setImportandoTechfin] = useState(false);
-  const [saidasPendAberta, setSaidasPendAberta] = useState(false); // janela "Saídas pendentes (todas as contas)"
+  const [saidasPendAberta, setSaidasPendAberta] = useState(false);
+  const [adiantAberto, setAdiantAberto] = useState(false); // lista "Adiantamentos a fornecedor\" // janela "Saídas pendentes (todas as contas)"
   const importarTechfin = async (arquivos) => {
     if (!arquivos?.length) return;
     setImportandoTechfin(true);
@@ -1213,6 +1326,13 @@ const Conciliacao = () => {
             <input type="file" accept=".csv,text/csv" multiple className="hidden" disabled={importandoTechfin} onChange={(e) => { importarTechfin(Array.from(e.target.files || [])); e.target.value = ''; }} />
           </label>
           <button
+            onClick={() => setAdiantAberto(true)}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-amber-400 bg-amber-50 text-amber-900 hover:bg-amber-100 text-[11px] font-medium"
+            title="Pagamentos justificados como adiantamento a fornecedor (ainda sem nota fiscal)"
+          >
+            <FileText size={12} /> Adiantamentos a fornecedor
+          </button>
+          <button
             onClick={() => setSaidasPendAberta(true)}
             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-orange-600 text-white hover:bg-orange-700 text-[11px] font-medium"
             title="Abre a lista de saídas pendentes de todas as contas: selecione as tarifas e afins, baixe o Excel e crie as duplicatas (TOTVS + Solicitação Crosby) de uma vez"
@@ -1230,6 +1350,7 @@ const Conciliacao = () => {
         </div>
       </div>
 
+      {adiantAberto && <ModalAdiantamentos onClose={() => setAdiantAberto(false)} />}
       {saidasPendAberta && <ModalSaidasPendentes de={de} ate={ate} onClose={() => setSaidasPendAberta(false)} onConcluido={carregar} />}
       {contaAberta && (
         <ModalExtrato
@@ -1504,11 +1625,22 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
     }
   };
   const salvarJustificativa = async () => {
-    const { lancamento: l, texto } = justificando;
-    if (!texto?.trim()) return;
+    const { lancamento: l, texto, tipo, fornecedor } = justificando;
+    const adiant = tipo === 'adiantamento';
+    if (adiant ? !fornecedor?.trim() : !texto?.trim()) return;
     setOcupado(l.id);
     try {
-      await salvar(l.id, 'MANUAL', null, texto.trim(), null);
+      // Adiantamento a fornecedor (Titia, 10/11/2026): pagamento sem nota fiscal ainda
+      // → conciliação MANUAL marcada, listada em "Adiantamentos a fornecedor"
+      if (adiant)
+        await salvar(
+          l.id,
+          'MANUAL',
+          { tipo: 'ADIANTAMENTO_FORNECEDOR', fornecedor: fornecedor.trim(), fornecedorDoc: l.contraparte_doc || null, observacao: texto?.trim() || null, valor: Math.abs(l.valor), data: l.data },
+          `ADIANTAMENTO A FORNECEDOR — ${fornecedor.trim()}${texto?.trim() ? ` · ${texto.trim()}` : ''} (sem nota fiscal)`,
+          null,
+        );
+      else await salvar(l.id, 'MANUAL', null, texto.trim(), null);
       setJustificando(null);
       setPicker(null);
     } catch (e) {
@@ -1831,7 +1963,7 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
                     <td className="px-3 py-2 text-right font-semibold text-red-600 whitespace-nowrap">{l.valor < 0 ? fmt(-l.valor) : ''}</td>
                     <td className={`px-3 py-2 text-right whitespace-nowrap ${l.saldo_apos < 0 ? 'text-red-600' : 'text-gray-500'}`}>{l.saldo_apos != null ? fmt(l.saldo_apos) : ''}</td>
                     <td className="px-3 py-2 max-w-[300px]">
-                      <CelulaConciliacao l={l} podeConciliar={podeConciliarLinha(l, c)} ocupado={ocupado === l.id} onConciliar={() => conciliarLinha(l)} onJustificar={() => setJustificando({ lancamento: l, texto: '' })} onDesfazer={() => desfazerLinha(l)} onDetalhe={() => abrirDetalhe(l)} />
+                      <CelulaConciliacao l={l} podeConciliar={podeConciliarLinha(l, c)} ocupado={ocupado === l.id} onConciliar={() => conciliarLinha(l)} onJustificar={() => setJustificando({ lancamento: l, texto: '', tipo: 'comum', fornecedor: l.contraparte_nome || l.nomeExibicao || '' })} onDesfazer={() => desfazerLinha(l)} onDetalhe={() => abrirDetalhe(l)} />
                     </td>
                   </tr>
                 );
@@ -1881,7 +2013,7 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
                     <Badge cfg={tcfg}>{tcfg.label}</Badge>
                   </div>
                   <div className="mt-1.5">
-                    <CelulaConciliacao l={l} podeConciliar={podeConciliarLinha(l, c)} ocupado={ocupado === l.id} onConciliar={() => conciliarLinha(l)} onJustificar={() => setJustificando({ lancamento: l, texto: '' })} onDesfazer={() => desfazerLinha(l)} onDetalhe={() => abrirDetalhe(l)} />
+                    <CelulaConciliacao l={l} podeConciliar={podeConciliarLinha(l, c)} ocupado={ocupado === l.id} onConciliar={() => conciliarLinha(l)} onJustificar={() => setJustificando({ lancamento: l, texto: '', tipo: 'comum', fornecedor: l.contraparte_nome || l.nomeExibicao || '' })} onDesfazer={() => desfazerLinha(l)} onDetalhe={() => abrirDetalhe(l)} />
                   </div>
                 </div>
               );
@@ -2021,7 +2153,7 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
                     </div>}
                   </div>
                   <div className="px-4 py-3 border-t border-gray-200 flex flex-wrap items-center gap-2">
-                    <button onClick={() => setJustificando({ lancamento: picker.lancamento, texto: '' })} className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50">
+                    <button onClick={() => setJustificando({ lancamento: picker.lancamento, texto: '', tipo: 'comum', fornecedor: picker.lancamento.contraparte_nome || picker.lancamento.nomeExibicao || '' })} className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50">
                       <ChatText size={13} /> Justificar manualmente
                     </button>
                     {picker.lancamento.valor < 0 && (
@@ -2100,13 +2232,34 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
                     </h4>
                     <p className="text-xs text-gray-500 mt-0.5 truncate">{justificando.lancamento.descricao} · {justificando.lancamento.nomeExibicao || justificando.lancamento.memo}</p>
                   </div>
-                  <div className="p-4">
+                  <div className="p-4 space-y-3">
+                    {justificando.lancamento.valor < 0 && (
+                      <div className="flex flex-wrap gap-2 text-xs">
+                        <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border cursor-pointer ${justificando.tipo !== 'adiantamento' ? 'border-blue-400 bg-blue-50 text-blue-800' : 'border-gray-300 text-gray-600'}`}>
+                          <input type="radio" checked={justificando.tipo !== 'adiantamento'} onChange={() => setJustificando({ ...justificando, tipo: 'comum' })} /> Justificativa
+                        </label>
+                        <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border cursor-pointer ${justificando.tipo === 'adiantamento' ? 'border-amber-400 bg-amber-50 text-amber-900' : 'border-gray-300 text-gray-600'}`}>
+                          <input type="radio" checked={justificando.tipo === 'adiantamento'} onChange={() => setJustificando({ ...justificando, tipo: 'adiantamento' })} /> Adiantamento a fornecedor (sem nota fiscal ainda)
+                        </label>
+                      </div>
+                    )}
+                    {justificando.tipo === 'adiantamento' && (
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Fornecedor</label>
+                        <input
+                          value={justificando.fornecedor || ''}
+                          onChange={(e) => setJustificando({ ...justificando, fornecedor: e.target.value })}
+                          placeholder="Nome do fornecedor (e CNPJ, se souber)"
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-amber-500"
+                        />
+                      </div>
+                    )}
                     <textarea
                       autoFocus
                       value={justificando.texto}
                       onChange={(e) => setJustificando({ ...justificando, texto: e.target.value })}
                       rows={3}
-                      placeholder="O que foi este lançamento? (ex.: antecipação Stone, boleto cliente X, tarifa, reembolso…)"
+                      placeholder={justificando.tipo === 'adiantamento' ? 'Observação (opcional): o que foi comprado, previsão da nota…' : 'O que foi este lançamento? (ex.: antecipação Stone, boleto cliente X, tarifa, reembolso…)'}
                       className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
@@ -2114,8 +2267,8 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
                     <button onClick={() => setJustificando(null)} className="px-3 py-1.5 text-xs rounded-md text-gray-500 hover:bg-gray-100">
                       Cancelar
                     </button>
-                    <button disabled={!justificando.texto.trim() || ocupado} onClick={salvarJustificativa} className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50">
-                      <Check size={13} weight="bold" /> Marcar como OK
+                    <button disabled={(justificando.tipo === 'adiantamento' ? !justificando.fornecedor?.trim() : !justificando.texto.trim()) || ocupado} onClick={salvarJustificativa} className={`inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-md text-white disabled:opacity-50 ${justificando.tipo === 'adiantamento' ? 'bg-amber-600 hover:bg-amber-700' : 'bg-green-600 hover:bg-green-700'}`}>
+                      <Check size={13} weight="bold" /> {justificando.tipo === 'adiantamento' ? 'Marcar como adiantamento a fornecedor' : 'Marcar como OK'}
                     </button>
                   </div>
                 </>
