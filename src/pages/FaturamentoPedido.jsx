@@ -13,6 +13,10 @@
 //     recebimento), com o caixa do terminal 1 da 990 aberto na data de hoje
 //   • aba Transações: NF-e, documento interno, quem emitiu, peças com os EPCs
 //     (kardex), valor, pagamento e comprovantes
+//   • aba Transações também mostra a MINUTA (pedida ao robô do Dryland:
+//     Correios / LATAM / Azul; a etiqueta ou o AWB voltam do card de lá) e a
+//     DUPLICATA (venda com boleto: enviada pelo HeadCoach para o cliente
+//     assinar, igual à do Dryland)
 // Backend: /api/faturamento-expedicao (services/faturamentoExpedicao.js).
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -54,6 +58,8 @@ import {
   ClockCounterClockwise,
   FloppyDisk,
   Wallet,
+  Signature,
+  PaperPlaneTilt,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
@@ -72,6 +78,10 @@ const API = `${API_BASE_URL}/api/faturamento-expedicao`;
 // tela; acima disso, senha de owner, admin ou financeiro (perfil "user").
 const LIMITE_DESCONTO_LIVRE = 20;
 const ROLES_LIBERAM_DESCONTO = ['owner', 'admin', 'user'];
+// Troca de peça na conferência (a que falta sai, a que sobra entra pelo MESMO
+// valor do pedido): liberada só em 10/11/2026 — pedidos cuja separação se perdeu
+// nas 72 h do Dryland e tiveram peça trocada. O servidor também confere a data.
+const TROCA_LIBERADA_ATE = '2026-11-10';
 // Formas que consomem saldo do cliente no TOTVS → campo do saldo.
 // Vale SÓ o saldo da empresa 99 (Yago, 10/11/2026): saldo de outra empresa não
 // aparece nem pode ser usado.
@@ -275,18 +285,6 @@ function resumoDescontos(dados, itens) {
   const brindes = unidades.filter((u) => u.brinde).length;
   if (brindes) out.push({ tipo: 'Brinde', pct: null, valor: null, pecas: brindes, total });
   return out;
-}
-
-// Linhas da nota de um SKU conferido: as primeiras `n` unidades, agrupadas por
-// (preço, desconto) — assim quantidade × desconto da linha é exato
-function linhasPorPreco(unidades, n) {
-  const grupos = [];
-  for (const u of unidades.slice(0, n)) {
-    const g = grupos.find((x) => x.valor === u.preco && x.desc === u.desc);
-    if (g) g.qtd += 1;
-    else grupos.push({ valor: u.preco, desc: u.desc, qtd: 1 });
-  }
-  return grupos;
 }
 
 async function imprimirDanfe(notaId, { cancelada = false } = {}) {
@@ -504,8 +502,189 @@ function ListaSeparados({ onEscolher, origem = 'pedidos' }) {
   );
 }
 
+// ─── Duplicata e minuta (aba Transações) ────────────────────────────────────
+const DUP_STATUS = {
+  enviando: { label: 'duplicata sendo enviada', cls: 'bg-amber-50 text-amber-700 ring-amber-200' },
+  enviada: { label: 'duplicata enviada · aguardando assinatura', cls: 'bg-amber-50 text-amber-700 ring-amber-200' },
+  assinada: { label: 'duplicata assinada', cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200' },
+  erro: { label: 'duplicata não enviada', cls: 'bg-rose-50 text-rose-700 ring-rose-200' },
+  cancelada: { label: 'duplicata cancelada', cls: 'bg-gray-100 text-gray-500 ring-gray-200' },
+};
+// resumo da minuta lida do card do Dryland
+function resumoMinuta(m) {
+  if (!m) return null;
+  if (m.entregue) return { label: 'entregue', cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200' };
+  if (m.correiosObjeto) return { label: `Correios ${m.correiosObjeto}`, cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200' };
+  if (m.latamAwb) return { label: `LATAM ${m.latamAwb}`, cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200' };
+  if (m.azulAwb) return { label: `Azul ${m.azulAwb}`, cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200' };
+  const erro = m.solicitada === 'correios' ? m.etiquetaErro : m.solicitada === 'latam' ? m.latamErro : m.solicitada === 'azul' ? m.azulErro : null;
+  if (erro) return { label: 'minuta parada', cls: 'bg-rose-50 text-rose-700 ring-rose-200', erro };
+  if (m.solicitada) return { label: `minuta ${m.solicitada} na fila`, cls: 'bg-amber-50 text-amber-700 ring-amber-200' };
+  return null;
+}
+
+function BlocoDuplicata({ v, dup, nota, onAcao, busy }) {
+  const st = dup ? DUP_STATUS[dup.status] : null;
+  const podeEnviar = nota?.status === 'autorizada' && v?.status !== 'cancelada';
+  return (
+    <div className="rounded-lg bg-white p-2 ring-1 ring-gray-200">
+      <p className="flex flex-wrap items-center gap-1.5">
+        <Signature size={14} className="text-[#000638]" />
+        <b>Duplicata:</b> {st ? <Chip cls={st.cls}>{st.label}</Chip> : <Chip cls="bg-gray-100 text-gray-600 ring-gray-200">ainda não enviada</Chip>}
+      </p>
+      {dup?.erro && dup.status === 'erro' && <p className="mt-1 text-[11px] text-rose-600">{dup.erro}</p>}
+      {dup?.link && (
+        <p className="mt-1 text-[11px] text-gray-600">
+          Link de assinatura:{' '}
+          <a href={dup.link} target="_blank" rel="noreferrer" className="font-semibold text-blue-700 hover:underline">
+            {dup.link}
+          </a>
+          {dup.telefone ? ` · enviado para ${dup.telefone}` : ''}
+          {dup.enviada_em ? ` em ${fmtDataHora(dup.enviada_em)}` : ''}
+        </p>
+      )}
+      {dup?.assinada_em && (
+        <p className="mt-0.5 text-[11px] font-semibold text-emerald-700">
+          Assinada em {fmtDataHora(dup.assinada_em)}
+          {dup.assinada_url && (
+            <a href={dup.assinada_url} target="_blank" rel="noreferrer" className="ml-1 font-semibold text-blue-700 hover:underline">
+              PDF assinado <ArrowSquareOut size={10} className="inline" />
+            </a>
+          )}
+        </p>
+      )}
+      <div className="mt-1.5 flex flex-wrap gap-1.5">
+        <a
+          href={`${API}/vendas/${v.id}/duplicata/pdf`}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-[11px] font-bold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50"
+        >
+          <FileText size={13} /> Ver o documento
+        </a>
+        {podeEnviar && (!dup || dup.status === 'erro') && (
+          <button
+            onClick={() => onAcao(`${API}/vendas/${v.id}/duplicata`, {})}
+            disabled={busy}
+            className="inline-flex h-8 items-center gap-1 rounded-lg bg-[#000638] px-2.5 text-[11px] font-bold text-white disabled:opacity-50"
+          >
+            {busy ? <Spinner size={13} className="animate-spin" /> : <PaperPlaneTilt size={13} />} Enviar duplicata
+          </button>
+        )}
+        {podeEnviar && dup?.status === 'enviada' && (
+          <>
+            <button
+              onClick={() => onAcao(`${API}/vendas/${v.id}/duplicata/conferir`, {})}
+              disabled={busy}
+              className="inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-[11px] font-bold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50 disabled:opacity-50"
+            >
+              <ArrowsClockwise size={13} /> Conferir assinatura
+            </button>
+            <button
+              onClick={() => window.confirm('Gerar um documento NOVO e mandar outra mensagem para o cliente? O link anterior continua valendo no Autentique.') && onAcao(`${API}/vendas/${v.id}/duplicata`, { forcar: true })}
+              disabled={busy}
+              className="inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-[11px] font-bold text-amber-700 ring-1 ring-amber-300 hover:bg-amber-50 disabled:opacity-50"
+            >
+              <PaperPlaneTilt size={13} /> Reenviar
+            </button>
+          </>
+        )}
+      </div>
+      <p className="mt-1 text-[10.5px] text-gray-400">Mesmo documento e mesma mensagem do Dryland. O lembrete de 3 h e o alerta de 24 h continuam saindo pelo robô de lá.</p>
+    </div>
+  );
+}
+
+function BlocoMinuta({ v, m, dup, temCard, temBoleto, nota, onAcao, busy }) {
+  const [dims, setDims] = useState({ altura: '', largura: '', comprimento: '' });
+  const r = resumoMinuta(m);
+  const emitida = !!(m?.correiosObjeto || m?.latamAwb || m?.azulAwb);
+  // o card do Dryland já tem nota de fora do HeadCoach: o pedido já tinha sido faturado no TOTVS
+  const outraNota = m?.nfNoCard && !m.nfDoHeadcoach && nota?.chave && m.nfNoCard !== nota.chave;
+  const travaDup = temBoleto && dup?.status !== 'assinada' && !(m?.duplicataAssinadaEm && m?.duplicataDoHeadcoach);
+  const motivo = !temCard
+    ? 'Este pedido não tem card na fila do Dryland, que é por onde o robô emite a minuta.'
+    : outraNota
+      ? `O card do Dryland já tem a NF ${m.nfNumeroNoCard || '?'}, emitida fora do HeadCoach: este pedido já tinha sido faturado. Resolva a nota em duplicidade antes de pedir a minuta.`
+    : nota?.status !== 'autorizada'
+      ? 'A NF-e precisa estar autorizada.'
+      : travaDup
+        ? 'Pagamento em boleto: a minuta só é liberada depois que o cliente assinar a duplicata.'
+        : null;
+  const pedir = (body) => onAcao(`${API}/vendas/${v.id}/minuta`, body);
+  const btn = 'inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-[11px] font-bold ring-1 disabled:opacity-40';
+  return (
+    <div className="rounded-lg bg-white p-2 ring-1 ring-gray-200">
+      <p className="flex flex-wrap items-center gap-1.5">
+        <Truck size={14} className="text-[#000638]" />
+        <b>Minuta:</b> {r ? <Chip cls={r.cls}>{r.label}</Chip> : <Chip cls="bg-gray-100 text-gray-600 ring-gray-200">não pedida</Chip>}
+        {m?.rastreioStatus && <span className="text-[11px] text-gray-600">· {m.rastreioStatus}</span>}
+      </p>
+      {r?.erro && <p className="mt-1 text-[11px] text-rose-600">{r.erro}</p>}
+      {m?.latamSemEntrega && <p className="mt-1 text-[11px] text-amber-700">LATAM: o destino não tem entrega em domicílio — retirada na base.</p>}
+      <div className="mt-1 flex flex-wrap gap-1.5">
+        {m?.etiquetaUrl && (
+          <a href={m.etiquetaUrl} target="_blank" rel="noreferrer" className={`${btn} bg-[#000638] text-white ring-[#000638]`}>
+            <Printer size={13} /> Etiqueta dos Correios
+          </a>
+        )}
+        {m?.azulPdfUrl && (
+          <a href={m.azulPdfUrl} target="_blank" rel="noreferrer" className={`${btn} bg-[#000638] text-white ring-[#000638]`}>
+            <Printer size={13} /> Minuta da Azul (PDF)
+          </a>
+        )}
+      </div>
+      {!emitida && (
+        <>
+          {motivo ? (
+            <p className="mt-1 text-[11px] text-amber-700">{motivo}</p>
+          ) : (
+            <>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                <button onClick={() => pedir({ tipo: 'correios', servico: 'PAC' })} disabled={busy} className={`${btn} text-[#000638] ring-gray-300 hover:bg-gray-50`}>
+                  Correios PAC
+                </button>
+                <button onClick={() => pedir({ tipo: 'correios', servico: 'SEDEX' })} disabled={busy} className={`${btn} text-[#000638] ring-gray-300 hover:bg-gray-50`}>
+                  Correios SEDEX
+                </button>
+                <button onClick={() => pedir({ tipo: 'azul' })} disabled={busy} className={`${btn} text-[#000638] ring-gray-300 hover:bg-gray-50`}>
+                  Azul
+                </button>
+              </div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                {['altura', 'largura', 'comprimento'].map((k) => (
+                  <input
+                    key={k}
+                    type="number"
+                    min="1"
+                    value={dims[k]}
+                    onChange={(e) => setDims((x) => ({ ...x, [k]: e.target.value }))}
+                    placeholder={`${k} cm${m?.dimensoes?.[k] ? ` (${m.dimensoes[k]})` : ''}`}
+                    className="mb-0 h-8 w-28 rounded-lg border border-gray-300 px-1.5 text-[11px]"
+                  />
+                ))}
+                <button onClick={() => pedir({ tipo: 'latam', ...dims })} disabled={busy} className={`${btn} text-[#000638] ring-gray-300 hover:bg-gray-50`}>
+                  LATAM
+                </button>
+              </div>
+              {m?.solicitada && !r?.erro && <p className="mt-1 text-[11px] text-gray-500">Pedido feito: o robô do Dryland emite em até 10 minutos e o resultado aparece aqui.</p>}
+            </>
+          )}
+        </>
+      )}
+      <p className="mt-1 text-[10.5px] text-gray-400">
+        Quem emite é o robô do Dryland (Correios, LATAM e Azul). BEE, Baraúnas e taxistas não têm minuta.
+        {v?.transporte?.nome ? ` Transportadora do faturamento: ${v.transporte.nome}.` : ''}
+      </p>
+    </div>
+  );
+}
+
 // ─── Aba Transações ─────────────────────────────────────────────────────────
 function DetalheTransacao({ id, onReprocessar, reprocessando }) {
+  const { user } = useAuth();
+  const [acaoBusy, setAcaoBusy] = useState(false);
+  const [avisoAcao, setAvisoAcao] = useState('');
   const [d, setD] = useState(null);
   const [erro, setErro] = useState('');
   const [versao, setVersao] = useState(0);
@@ -551,9 +730,24 @@ function DetalheTransacao({ id, onReprocessar, reprocessando }) {
       setCancelando(false);
     }
   };
+  const acao = async (url, body) => {
+    setAcaoBusy(true);
+    setAvisoAcao('');
+    try {
+      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...body, por: user?.name || user?.email || null }) });
+      const j = await r.json();
+      setAvisoAcao(j.message || (j.success ? 'Feito' : 'Falhou'));
+      setVersao((x) => x + 1);
+    } catch (e) {
+      setAvisoAcao(e.message);
+    } finally {
+      setAcaoBusy(false);
+    }
+  };
   if (erro) return <p className="px-3 py-2 text-xs text-rose-600">{erro}</p>;
   if (!d) return <Spinner size={16} className="mx-auto my-3 animate-spin text-gray-400" />;
   const v = d.venda;
+  const vendaTemBoleto = (v?.pagamentos || []).some((p) => p.forma === 'boleto');
   const nota = v?.notas?.find((n) => n.status === 'autorizada') || v?.notas?.[0];
   const porProduto = {};
   for (const k of d.kardex) {
@@ -673,6 +867,9 @@ function DetalheTransacao({ id, onReprocessar, reprocessando }) {
             </select>
           </div>
         )}
+        {v && vendaTemBoleto && <BlocoDuplicata v={v} dup={d.duplicata} nota={nota} onAcao={acao} busy={acaoBusy} />}
+        {v && <BlocoMinuta v={v} m={d.minuta} dup={d.duplicata} temCard={d.temCard} temBoleto={vendaTemBoleto} nota={nota} onAcao={acao} busy={acaoBusy} />}
+        {avisoAcao && <p className="rounded-lg bg-blue-50 px-2 py-1 text-[11px] text-blue-800 ring-1 ring-blue-200">{avisoAcao}</p>}
         <p>
           <b>Pagamento:</b>{' '}
           {(v?.pagamentos || []).map((p) => `${FORMAS[p.forma] || p.forma} ${fmtBRL(p.valor)}${p.parcelas > 1 ? ` em ${p.parcelas}x` : ''}${p.nsu ? ` · NSU ${p.nsu}` : ''}${p.autorizacao ? ` · aut ${p.autorizacao}` : ''}`).join(' + ') || '—'}
@@ -689,6 +886,11 @@ function DetalheTransacao({ id, onReprocessar, reprocessando }) {
           <b>Emitido por:</b> {d.faturamento.criado_por || '—'} em {fmtDataHora(d.faturamento.criado_em)}
           {v?.pedido_info?.dataVenda ? (
             <span className="ml-1 rounded bg-amber-50 px-1 font-semibold text-amber-700">VENDA DO DIA {fmtData(v.pedido_info.dataVenda)}</span>
+          ) : null}
+          {(v?.pedido_info?.trocas || []).length > 0 ? (
+            <span className="ml-1 rounded bg-sky-50 px-1 font-semibold text-sky-800">
+              TROCA NO FATURAMENTO: {v.pedido_info.trocas.map((t) => `${t.quantidade}x ${t.de} → ${t.para}`).join(' · ')}
+            </span>
           ) : null}
           {Number(v?.pedido_info?.descontoFaturamento?.pct) > 0 ? (
             <span className="ml-1 rounded bg-amber-50 px-1 font-semibold text-amber-700">
@@ -842,6 +1044,16 @@ function AbaTransacoes() {
                       <Chip cls="bg-amber-50 text-amber-700 ring-amber-200">TOTVS {f.venda?.totvs_transacao_code || '—'}</Chip>
                     )}
                   </span>
+                  {f.duplicata && DUP_STATUS[f.duplicata.status] && (
+                    <span>
+                      <Chip cls={DUP_STATUS[f.duplicata.status].cls}>{f.duplicata.status === 'assinada' ? 'dup. assinada' : f.duplicata.status === 'erro' ? 'dup. não enviada' : 'dup. enviada'}</Chip>
+                    </span>
+                  )}
+                  {resumoMinuta(f.minuta) && (
+                    <span>
+                      <Chip cls={resumoMinuta(f.minuta).cls}>{resumoMinuta(f.minuta).label}</Chip>
+                    </span>
+                  )}
                   <span className="w-28 text-gray-500">{(f.forma_pagamento || '').split(' + ').map((x) => FORMAS[x] || x).join(' + ')}</span>
                   <span className="w-20 text-right tabular-nums">{f.qtd_conferida} pç</span>
                   <span className="w-24 text-right font-semibold tabular-nums">{fmtBRL(f.total)}</span>
@@ -1024,6 +1236,9 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   const [descPct, setDescPct] = useState('');
   const [descLiberado, setDescLiberado] = useState(null); // { nome, email, role, pct }
   const [senhaDescOpen, setSenhaDescOpen] = useState(false);
+  // Trocas na conferência: { skuLidoForaDoPedido: skuDoPedidoQueFalta }
+  const [trocas, setTrocas] = useState({});
+  const trocaLiberada = hojeIso() <= TROCA_LIBERADA_ATE;
   // Saldos do cliente no TOTVS (CREDEV e adiantamento), por empresa
   const [saldos, setSaldos] = useState(null);
   // Faturamentos em andamento: salvos neste computador, por usuário (como na Devolução)
@@ -1070,6 +1285,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     if (Array.isArray(e.vencimentos)) setVencimentos(e.vencimentos);
     setDescPct(e.descPct || '');
     setDescLiberado(e.descLiberado || null);
+    setTrocas(e.trocas || {});
   }, []);
 
   useEffect(() => {
@@ -1103,6 +1319,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     processed.current = new Set();
     setDescPct('');
     setDescLiberado(null);
+    setTrocas({});
     // etiquetas que o portal ainda guarda são do pedido anterior: sem limpar,
     // elas entravam no pedido seguinte como "sobrando"
     portalClear().catch(() => {});
@@ -1351,10 +1568,31 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
 
   // ─── Conferência: SKU do pedido × SKU lido ───────────────────────────────
   const conf = useMemo(() => {
-    const linhas = itensPedido.map((i) => {
+    // 1ª passada: quanto foi lido de cada SKU do pedido
+    const base = itensPedido.map((i) => {
       const l = lidos[i.sku];
       const lido = l ? l.epcs.length + l.manual : 0;
-      const conferido = Math.min(lido, i.qtd);
+      return { i, l, lido, proprio: Math.min(lido, i.qtd) };
+    });
+    // trocas (só no dia liberado): a peça lida que NÃO está no pedido entra no
+    // lugar de uma que falta, pelo valor (e desconto) da que estava no pedido
+    const subs = new Map(); // sku do pedido → [{ sku, nome, epc }]
+    const usado = new Map(); // sku lido → quantas unidades entraram por troca
+    if (trocaLiberada) {
+      for (const [para, de] of Object.entries(trocas)) {
+        const lp = lidos[para];
+        const b = base.find((x) => x.i.sku === de);
+        if (!lp || !b || skusPedido.has(para)) continue;
+        const vagas = b.i.qtd - b.proprio - (subs.get(de)?.length || 0);
+        const pecas = [...lp.epcs.map((epc) => ({ sku: para, nome: lp.nome, epc })), ...Array.from({ length: lp.manual }, () => ({ sku: para, nome: lp.nome, epc: null }))].slice(0, Math.max(0, vagas));
+        if (!pecas.length) continue;
+        subs.set(de, [...(subs.get(de) || []), ...pecas]);
+        usado.set(para, pecas.length);
+      }
+    }
+    const linhas = base.map(({ i, l, lido, proprio }) => {
+      const substitutos = subs.get(i.sku) || [];
+      const conferido = proprio + substitutos.length;
       // unidade sem preço no pedido usa o preço do TOTVS
       const unidades = i.unidades.map((u) => {
         const preco = u.preco > 0 ? u.preco : round2(l?.precoTotvs || 0);
@@ -1380,6 +1618,8 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
         valorConferido,
         valorTotal,
         lido,
+        proprio,
+        substitutos,
         conferido,
         falta: i.qtd - conferido,
         sobra: Math.max(0, lido - i.qtd),
@@ -1387,9 +1627,14 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
         manual: l?.manual || 0,
       };
     });
+    // lidas fora do pedido: "lido" é o que ainda sobra depois das trocas
     const fora = Object.values(lidos)
       .filter((l) => !skusPedido.has(l.sku))
-      .map((l) => ({ ...l, lido: l.epcs.length + l.manual }));
+      .map((l) => {
+        const total = l.epcs.length + l.manual;
+        const u = usado.get(l.sku) || 0;
+        return { ...l, total, usado: u, lido: total - u, trocaPor: trocaLiberada ? trocas[l.sku] || null : null };
+      });
     const esperado = linhas.reduce((s, l) => s + l.qtd, 0);
     const conferidas = linhas.reduce((s, l) => s + l.conferido, 0);
     const faltando = esperado - conferidas;
@@ -1400,7 +1645,13 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     const totalConferido = round2(brutoConferido - descConferido);
     const descExtraConferido = round2(linhas.reduce((s, l) => s + l.descExtraConferido, 0));
     return { linhas, fora, esperado, conferidas, faltando, sobrando, totalPedido, brutoConferido, descConferido, descExtraConferido, totalConferido, ok: esperado > 0 && faltando === 0 && sobrando === 0 };
-  }, [itensPedido, lidos, skusPedido, pctDesc]);
+  }, [itensPedido, lidos, skusPedido, pctDesc, trocas, trocaLiberada]);
+  // resumo das trocas feitas (para o servidor e para a confirmação)
+  const trocasFeitas = conf.linhas.flatMap((l) => {
+    const por = new Map();
+    for (const sb of l.substitutos) por.set(sb.sku, { de: l.sku, deNome: l.descricao, para: sb.sku, paraNome: sb.nome, quantidade: (por.get(sb.sku)?.quantidade || 0) + 1 });
+    return [...por.values()];
+  });
 
   // ─── Totais e pagamento ──────────────────────────────────────────────────
   const temTransportadora = transp.id !== 'RETIRADA' && !!transp.code;
@@ -1477,7 +1728,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
       cliente: customer?.name || card?.dados?.nome_cliente || pedido.separacao?.cliente || null,
       lidas: conf.conferidas + conf.sobrando,
       esperado: conf.esperado,
-      estado: { lidos, naoResolvidos, customer, seller, consumidorFinal, operacao, dataDiferente, dataVenda, transp, pagamentos, vencimentos, descPct, descLiberado },
+      estado: { lidos, naoResolvidos, customer, seller, consumidorFinal, operacao, dataDiferente, dataVenda, transp, pagamentos, vencimentos, descPct, descLiberado, trocas },
     };
     gravarRascunhos((l) => [registro, ...l.filter((d) => d.chave !== chave)].slice(0, 30));
     showToast('ok', 'Faturamento salvo — está em "Em andamento" para continuar depois');
@@ -1516,16 +1767,27 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
           pctDesc > 0
             ? { pct: pctDesc, liberadoPor: pctDesc > LIMITE_DESCONTO_LIVRE ? descLiberado?.nome || (descSemLimite ? user?.name || user?.email : null) : null }
             : null,
+        // cada unidade conferida vai com o valor da unidade do pedido; quando houve
+        // troca, o produto (e a etiqueta) é o da peça que realmente está na caixa
         itens: conf.linhas
           .filter((l) => l.conferido > 0)
           .flatMap((l) => {
-            let ini = 0;
-            return linhasPorPreco(l.unidades, l.conferido).map((g) => {
-              const epcs = l.epcs.slice(ini, ini + g.qtd);
-              ini += g.qtd;
-              return { productCode: Number(l.sku), quantidade: g.qtd, valorUnit: g.valor, descontoUnit: g.desc, nome: l.descricao, epcs };
+            const grupos = [];
+            l.unidades.slice(0, l.conferido).forEach((u, idx) => {
+              const sb = idx >= l.proprio ? l.substitutos[idx - l.proprio] : null;
+              const productCode = Number(sb ? sb.sku : l.sku);
+              const epc = sb ? sb.epc : l.epcs[idx] || null;
+              let g = grupos.find((x) => x.productCode === productCode && x.valorUnit === u.preco && x.descontoUnit === u.desc);
+              if (!g) {
+                g = { productCode, quantidade: 0, valorUnit: u.preco, descontoUnit: u.desc, nome: sb ? sb.nome : l.descricao, epcs: [], ...(sb ? { trocaDe: Number(l.sku) } : {}) };
+                grupos.push(g);
+              }
+              g.quantidade += 1;
+              if (epc) g.epcs.push(epc);
             });
+            return grupos;
           }),
+        trocas: trocasFeitas,
         transporte: temTransportadora
           ? { code: transp.code, servico: transp.servico || null, frete, modFrete: Number(transp.modFrete), volumes: Number(transp.volumes) || 1, pesoB: Number(transp.pesoB) || 0 }
           : { code: null, frete: 0 },
@@ -1550,7 +1812,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
         faltando: conf.linhas.filter((l) => l.falta > 0).map((l) => ({ productCode: l.sku, name: l.descricao, quantidade: l.falta })),
         sobrando: [
           ...conf.linhas.filter((l) => l.sobra > 0).map((l) => ({ productCode: l.sku, name: l.descricao, quantidade: l.sobra, epcs: l.epcs.slice(l.qtd) })),
-          ...conf.fora.map((l) => ({ productCode: l.sku, name: l.nome, quantidade: l.lido, epcs: l.epcs })),
+          ...conf.fora.filter((l) => l.lido > 0).map((l) => ({ productCode: l.sku, name: l.nome, quantidade: l.lido, epcs: l.epcs.slice(Math.min(l.epcs.length, l.usado)) })),
         ],
         por: user?.name || user?.email || null,
       };
@@ -1570,7 +1832,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     } finally {
       setPosting(false);
     }
-  }, [podeFaturar, prep, customer, conf, frete, operacao, dataDiferente, dataVenda, terminal, comoFatura, sellers, seller, chave, ref, consumidorFinal, temTransportadora, transp, pagamentos, cartaoDe, pBoleto, parcelasBoleto, vencimentos, user, showToast, pctDesc, descLiberado, descSemLimite, tirarRascunho]);
+  }, [podeFaturar, prep, customer, conf, frete, operacao, dataDiferente, dataVenda, terminal, comoFatura, sellers, seller, chave, ref, consumidorFinal, temTransportadora, transp, pagamentos, cartaoDe, pBoleto, parcelasBoleto, vencimentos, user, showToast, pctDesc, descLiberado, descSemLimite, tirarRascunho, trocasFeitas]);
 
   const reprocessar = useCallback(async () => {
     if (!resultado?.vendaId) return;
@@ -1883,7 +2145,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                               </div>
                               <div className="shrink-0 text-right">
                                 <p className="text-base font-bold tabular-nums text-[#000638]">
-                                  {l.lido}
+                                  {l.substitutos.length > 0 ? l.conferido : l.lido}
                                   <span className="font-normal text-gray-400">/{l.qtd}</span>
                                 </p>
                                 <p className="text-[10px] font-semibold">
@@ -1897,6 +2159,12 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                                 </p>
                               </div>
                             </div>
+                            {l.substitutos.length > 0 && (
+                              <p className="mt-1 rounded bg-sky-50 px-1.5 py-0.5 text-[11px] font-semibold text-sky-800 ring-1 ring-sky-200">
+                                Trocada no faturamento: entra {[...new Set(l.substitutos.map((sb) => sb.sku))].map((k) => `${l.substitutos.filter((sb) => sb.sku === k).length}x ${k} ${l.substitutos.find((sb) => sb.sku === k).nome}`).join(' · ')} — pelo
+                                mesmo valor desta peça
+                              </p>
+                            )}
                             {(l.epcs.length > 0 || l.manual > 0) && (
                               <div className="mt-1 flex flex-wrap gap-1">
                                 {l.epcs.map((epc) => (
@@ -1927,12 +2195,48 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                       <p className="px-3 pt-2 text-[11px] font-bold uppercase tracking-wide text-rose-700">
                         Lidas que NÃO estão no pedido ({conf.fora.reduce((s, l) => s + l.lido, 0)}) — não entram na nota
                       </p>
+                      {trocaLiberada && (
+                        <p className="px-3 text-[11px] text-sky-800">
+                          Só hoje ({fmtData(TROCA_LIBERADA_ATE)}): se a peça foi trocada, escolha abaixo qual peça que falta ela substitui. Ela entra na nota pelo valor da peça do pedido, e o total não muda.
+                        </p>
+                      )}
                       <ul className="divide-y divide-rose-100">
                         {conf.fora.map((l) => (
                           <li key={l.sku} className="px-3 py-1.5 text-xs">
                             <p className="font-semibold text-rose-800">
-                              {l.nome} <span className="font-mono font-normal">· SKU {l.sku}</span> · {l.lido} pç
+                              {l.nome} <span className="font-mono font-normal">· SKU {l.sku}</span> · {l.total} pç
                             </p>
+                            {trocaLiberada && (
+                              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                                <span className="text-[11px] font-semibold text-[#000638]">Trocar: entra no lugar de</span>
+                                <select
+                                  value={trocas[l.sku] || ''}
+                                  onChange={(e) =>
+                                    setTrocas((t) => {
+                                      const n = { ...t };
+                                      if (e.target.value) n[l.sku] = e.target.value;
+                                      else delete n[l.sku];
+                                      return n;
+                                    })
+                                  }
+                                  className="mb-0 h-8 max-w-full rounded-lg border border-sky-300 bg-white px-1.5 text-xs"
+                                >
+                                  <option value="">— não trocar (fica fora da nota) —</option>
+                                  {conf.linhas
+                                    .filter((x) => x.falta > 0 || trocas[l.sku] === x.sku)
+                                    .map((x) => (
+                                      <option key={x.sku} value={x.sku}>
+                                        {x.sku} · {x.descricao} · {fmtBRL(x.preco)}
+                                      </option>
+                                    ))}
+                                </select>
+                                {l.usado > 0 && (
+                                  <span className="text-[11px] font-semibold text-emerald-700">
+                                    {l.usado} pç entra{l.usado > 1 ? 'm' : ''} na nota pelo valor do pedido{l.lido > 0 ? ` · ${l.lido} continua${l.lido > 1 ? 'm' : ''} de fora` : ''}
+                                  </span>
+                                )}
+                              </div>
+                            )}
                             <div className="mt-0.5 flex flex-wrap gap-1">
                               {l.epcs.map((epc) => (
                                 <span key={epc} className="inline-flex items-center gap-1 rounded-full bg-white px-1.5 py-0.5 font-mono text-[10px] text-rose-700 ring-1 ring-rose-200">
@@ -2638,6 +2942,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                     ['Transporte', temTransportadora ? `${transp.nome || transp.id}${transp.servico ? ` · ${transp.servico}` : ''} · ${transp.volumes} vol · ${transp.pesoB} kg` : 'Retirada (sem transportadora)'],
                     ['Pagamento', pagamentos.map((p) => `${FORMAS[p.forma]} ${fmtBRL(p.valor)}${Number(p.parcelas) > 1 ? ` em ${p.parcelas}x` : ''}`).join(' + ')],
                     ['TOTVS', `documento interno ${operacao} · empresa ${EMPRESA_TOTVS} · data de hoje (${fmtData(hojeIso())}) · terminal ${terminal}`],
+                    ...(trocasFeitas.length ? [['Trocas', trocasFeitas.map((t) => `${t.quantidade}x ${t.de} → ${t.para} ${t.paraNome || ''}`).join(' · ') + ' (mesmo valor)']] : []),
                     ...(dataDiferente && dataVenda ? [['Data diferente', `observação na transação: VENDA DO DIA ${fmtData(dataVenda)}`]] : []),
                     ...(card?.dados?.transacao || card?.dados?.pedido_totvs
                       ? [['Transação no TOTVS (aberta pelo Dryland)', [card.dados.transacao && `transação ${card.dados.transacao}`, card.dados.pedido_totvs && `pedido ${card.dados.pedido_totvs}`].filter(Boolean).join(' · ')]]
