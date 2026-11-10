@@ -50,6 +50,10 @@ import {
   ArrowSquareOut,
   Info,
   WifiHigh,
+  LockKey,
+  ClockCounterClockwise,
+  FloppyDisk,
+  Wallet,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
@@ -64,6 +68,14 @@ import { abrirImpressao } from '../utils/documentoFiscalHtml';
 const EMPRESA = 99; // faturamento (NF-e) sempre pela empresa 99
 const EMPRESA_TOTVS = 990; // empresa do TOTVS que recebe o documento interno + contas a receber
 const API = `${API_BASE_URL}/api/faturamento-expedicao`;
+// Desconto dado na tela (Expedição Brejinho): até 20% é livre para quem tem a
+// tela; acima disso, senha de owner, admin ou financeiro (perfil "user").
+const LIMITE_DESCONTO_LIVRE = 20;
+const ROLES_LIBERAM_DESCONTO = ['owner', 'admin', 'user'];
+// Formas que consomem saldo do cliente no TOTVS → campo do saldo.
+// Vale SÓ o saldo da empresa 99 (Yago, 10/11/2026): saldo de outra empresa não
+// aparece nem pode ser usado.
+const CAMPO_SALDO = { credito_loja: 'credev', adiantamento: 'adiantamento' };
 
 const OPERACOES_DOC_INTERNO = [
   { code: 511, label: '511 - VENDA VAREJO *', canal: 'varejo' },
@@ -78,6 +90,7 @@ const FORMAS = {
   debito: 'Cartão de débito',
   boleto: 'Boleto',
   credito_loja: 'Credev',
+  adiantamento: 'Adiantamento',
   dinheiro: 'Dinheiro',
 };
 
@@ -677,6 +690,12 @@ function DetalheTransacao({ id, onReprocessar, reprocessando }) {
           {v?.pedido_info?.dataVenda ? (
             <span className="ml-1 rounded bg-amber-50 px-1 font-semibold text-amber-700">VENDA DO DIA {fmtData(v.pedido_info.dataVenda)}</span>
           ) : null}
+          {Number(v?.pedido_info?.descontoFaturamento?.pct) > 0 ? (
+            <span className="ml-1 rounded bg-amber-50 px-1 font-semibold text-amber-700">
+              DESCONTO {String(v.pedido_info.descontoFaturamento.pct).replace('.', ',')}% NO FATURAMENTO
+              {v.pedido_info.descontoFaturamento.liberadoPor ? ` · liberado por ${v.pedido_info.descontoFaturamento.liberadoPor}` : ''}
+            </span>
+          ) : null}
         </p>
         {(v?.comprovantes || []).length > 0 && (
           <p className="flex flex-wrap gap-1">
@@ -838,6 +857,77 @@ function AbaTransacoes() {
   );
 }
 
+// ─── Senha de owner/admin/financeiro para desconto acima do limite ──────────
+function SenhaDescontoModal({ pct, pedido, por, onLiberado, onCancelar }) {
+  const [email, setEmail] = useState('');
+  const [senha, setSenha] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState(null);
+  const liberar = async () => {
+    if (!email.trim() || !senha || busy) return;
+    setBusy(true);
+    setErro(null);
+    try {
+      const r = await fetch(`${API}/autorizar-desconto`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), senha, pct, pedido, por }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.success) throw new Error(j?.message || 'Não autorizado');
+      onLiberado({ ...j.data, pct });
+    } catch (e) {
+      setErro(e.message);
+      setSenha('');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl">
+        <div className="flex items-center gap-2">
+          <LockKey size={26} weight="fill" className="text-amber-500" />
+          <h3 className="text-lg font-bold text-[#000638]">Liberar desconto</h3>
+        </div>
+        <p className="mt-1 text-sm text-gray-600">
+          Desconto de <b>{pct.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%</b> passa do limite de {LIMITE_DESCONTO_LIVRE}%. Um <b>owner</b>, <b>admin</b> ou alguém do{' '}
+          <b>financeiro</b> precisa digitar o e-mail e a senha do HeadCoach.
+        </p>
+        <div className="mt-3 space-y-2">
+          <input
+            autoFocus
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="E-mail de quem autoriza"
+            autoComplete="off"
+            className="mb-0 h-10 w-full rounded-lg border border-gray-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
+          />
+          <input
+            type="password"
+            value={senha}
+            onChange={(e) => setSenha(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && liberar()}
+            placeholder="Senha"
+            autoComplete="new-password"
+            className="mb-0 h-10 w-full rounded-lg border border-gray-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
+          />
+        </div>
+        {erro && <p className="mt-2 rounded-lg bg-rose-50 p-2 text-xs text-rose-700 ring-1 ring-rose-200">{erro}</p>}
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <button onClick={onCancelar} disabled={busy} className="h-10 rounded-lg text-sm font-semibold text-gray-600 ring-1 ring-gray-300 hover:bg-gray-50">
+            Cancelar
+          </button>
+          <button onClick={liberar} disabled={busy || !email.trim() || !senha} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-[#000638] text-sm font-bold text-white disabled:opacity-40">
+            {busy ? <Spinner size={14} className="animate-spin" /> : <LockKey size={14} weight="bold" />} Liberar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Página ──────────────────────────────────────────────────────────────────
 const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   const brejinho = origem === 'brejinho';
@@ -930,6 +1020,58 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   const [resultado, setResultado] = useState(null);
   const [modalFat, setModalFat] = useState(false); // confirmação → andamento → resultado
 
+  // Desconto dado na tela (Brejinho): % sobre as peças; acima do limite pede senha
+  const [descPct, setDescPct] = useState('');
+  const [descLiberado, setDescLiberado] = useState(null); // { nome, email, role, pct }
+  const [senhaDescOpen, setSenhaDescOpen] = useState(false);
+  // Saldos do cliente no TOTVS (CREDEV e adiantamento), por empresa
+  const [saldos, setSaldos] = useState(null);
+  // Faturamentos em andamento: salvos neste computador, por usuário (como na Devolução)
+  const chaveRascunhos = `fat_andamento_${brejinho ? 'brj' : 'ped'}_${user?.id || user?.email || 'anon'}`;
+  const [rascunhos, setRascunhos] = useState([]);
+  const [rascunhosOpen, setRascunhosOpen] = useState(false);
+  const rascunhoPendente = useRef(null);
+  useEffect(() => {
+    try {
+      setRascunhos(JSON.parse(localStorage.getItem(chaveRascunhos)) || []);
+    } catch {
+      setRascunhos([]);
+    }
+  }, [chaveRascunhos]);
+  const gravarRascunhos = useCallback(
+    (fn) => {
+      setRascunhos((atual) => {
+        const lista = fn(atual);
+        try {
+          localStorage.setItem(chaveRascunhos, JSON.stringify(lista));
+        } catch {
+          /* storage cheio */
+        }
+        return lista;
+      });
+    },
+    [chaveRascunhos],
+  );
+  const tirarRascunho = useCallback((k) => gravarRascunhos((l) => l.filter((d) => d.chave !== k)), [gravarRascunhos]);
+  // devolve à tela o que estava salvo (leituras, pagamento, transporte, desconto…)
+  const aplicarRascunho = useCallback((r) => {
+    const e = r?.estado || {};
+    setLidos(e.lidos || {});
+    setNaoResolvidos(e.naoResolvidos || []);
+    processed.current = new Set([...Object.values(e.lidos || {}).flatMap((l) => l.epcs || []), ...(e.naoResolvidos || [])]);
+    if (e.customer) setCustomer(e.customer);
+    if (e.seller) setSeller(e.seller);
+    setConsumidorFinal(!!e.consumidorFinal);
+    if (e.operacao) setOperacao(e.operacao);
+    setDataDiferente(!!e.dataDiferente);
+    setDataVenda(e.dataVenda || '');
+    if (e.transp) setTransp(e.transp);
+    if (Array.isArray(e.pagamentos) && e.pagamentos.length) setPagamentos(e.pagamentos);
+    if (Array.isArray(e.vencimentos)) setVencimentos(e.vencimentos);
+    setDescPct(e.descPct || '');
+    setDescLiberado(e.descLiberado || null);
+  }, []);
+
   useEffect(() => {
     try {
       localStorage.setItem('fat_terminal', terminal);
@@ -959,6 +1101,11 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     setLidos({});
     setNaoResolvidos([]);
     processed.current = new Set();
+    setDescPct('');
+    setDescLiberado(null);
+    // etiquetas que o portal ainda guarda são do pedido anterior: sem limpar,
+    // elas entravam no pedido seguinte como "sobrando"
+    portalClear().catch(() => {});
     if (!chave) return undefined;
     let vivo = true;
     setCarregando(true);
@@ -1002,6 +1149,12 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
           })),
         );
         setVencimentos(p.pagamento.vencimentos || []);
+        // faturamento salvo "em andamento" deste pedido: devolve as leituras e o resto
+        const salvo = rascunhoPendente.current;
+        if (salvo && salvo.chave === chave) {
+          rascunhoPendente.current = null;
+          aplicarRascunho(salvo);
+        }
       } catch (e) {
         if (vivo) setErroPedido(e.message);
       } finally {
@@ -1019,6 +1172,29 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
       .then((j) => setSellers(j?.data?.items || []))
       .catch(() => setSellers([]));
   }, []);
+
+  // Saldos do cliente no TOTVS: CREDEV e adiantamento, só da empresa 99
+  useEffect(() => {
+    setSaldos(null);
+    if (!customer?.code) return undefined;
+    let vivo = true;
+    fetch(`${API_BASE_URL}/api/totvs/pdv/customer-balance?code=${customer.code}&branch=${EMPRESA}`)
+      .then((r) => r.json())
+      .then((j) => vivo && setSaldos(j?.success ? j.data : { erro: j?.message || 'não consegui consultar' }))
+      .catch((e) => vivo && setSaldos({ erro: e.message }));
+    return () => {
+      vivo = false;
+    };
+  }, [customer?.code]);
+  const saldoInfo = useCallback(
+    (forma) => {
+      const campo = CAMPO_SALDO[forma];
+      if (!campo || !saldos || saldos.erro) return null;
+      // saldos.credev / saldos.adiantamento já são os da empresa consultada (99)
+      return { total: Math.max(0, round2(Number(saldos[campo]) || 0)) };
+    },
+    [saldos],
+  );
 
   const itensPedido = useMemo(() => (pedido ? itensDoPedido(pedido) : []), [pedido]);
   const difCard = useMemo(() => (pedido ? diferencaCardSeparacao(pedido) : null), [pedido]);
@@ -1170,6 +1346,9 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     });
   }, []);
 
+  // desconto dado na tela (só Brejinho), em % sobre o valor de cada peça
+  const pctDesc = brejinho ? Math.min(100, Math.max(0, round2(Number(String(descPct).replace(',', '.')) || 0))) : 0;
+
   // ─── Conferência: SKU do pedido × SKU lido ───────────────────────────────
   const conf = useMemo(() => {
     const linhas = itensPedido.map((i) => {
@@ -1177,7 +1356,12 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
       const lido = l ? l.epcs.length + l.manual : 0;
       const conferido = Math.min(lido, i.qtd);
       // unidade sem preço no pedido usa o preço do TOTVS
-      const unidades = i.unidades.map((u) => (u.preco > 0 ? u : { ...u, preco: round2(l?.precoTotvs || 0) }));
+      const unidades = i.unidades.map((u) => {
+        const preco = u.preco > 0 ? u.preco : round2(l?.precoTotvs || 0);
+        // desconto do faturamento por cima do que o pedido já trouxe
+        const extra = pctDesc > 0 ? round2(((preco - u.desc) * pctDesc) / 100) : 0;
+        return { ...u, preco, desc: round2(u.desc + extra), descExtra: extra };
+      });
       const precos = unidades.map((u) => u.preco);
       const preco = round2(precos.reduce((s, v) => s + v, 0) / precos.length);
       const confU = unidades.slice(0, conferido);
@@ -1187,6 +1371,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
       const valorTotal = round2(unidades.reduce((s, u) => s + u.preco - u.desc, 0));
       return {
         ...i,
+        descExtraConferido: round2(confU.reduce((s, u) => s + (u.descExtra || 0), 0)),
         unidades,
         precos,
         preco,
@@ -1213,8 +1398,9 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     const brutoConferido = round2(linhas.reduce((s, l) => s + l.brutoConferido, 0));
     const descConferido = round2(linhas.reduce((s, l) => s + l.descConferido, 0));
     const totalConferido = round2(brutoConferido - descConferido);
-    return { linhas, fora, esperado, conferidas, faltando, sobrando, totalPedido, brutoConferido, descConferido, totalConferido, ok: esperado > 0 && faltando === 0 && sobrando === 0 };
-  }, [itensPedido, lidos, skusPedido]);
+    const descExtraConferido = round2(linhas.reduce((s, l) => s + l.descExtraConferido, 0));
+    return { linhas, fora, esperado, conferidas, faltando, sobrando, totalPedido, brutoConferido, descConferido, descExtraConferido, totalConferido, ok: esperado > 0 && faltando === 0 && sobrando === 0 };
+  }, [itensPedido, lidos, skusPedido, pctDesc]);
 
   // ─── Totais e pagamento ──────────────────────────────────────────────────
   const temTransportadora = transp.id !== 'RETIRADA' && !!transp.code;
@@ -1262,9 +1448,51 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   if (!comoFatura && pagamentos.some((p) => (p.forma === 'credito' || p.forma === 'debito') && !cartaoDe(p)?.opcao))
     pendencias.push('Escolha a operadora e o parcelamento do cartão (cadastro do TOTVS).');
   if (Math.abs(somaPag - totalNota) > 0.01) pendencias.push(`Pagamento (${fmtBRL(somaPag)}) não fecha com o total da nota (${fmtBRL(totalNota)}).`);
+  // desconto acima do limite: quem é owner/admin/financeiro passa direto; os demais pedem a senha
+  const descSemLimite = ROLES_LIBERAM_DESCONTO.includes(user?.role);
+  const descPrecisaSenha = pctDesc > LIMITE_DESCONTO_LIVRE && !descSemLimite && !(descLiberado && Number(descLiberado.pct) >= pctDesc);
+  if (descPrecisaSenha) pendencias.push(`Desconto de ${pctDesc.toLocaleString('pt-BR')}% passa de ${LIMITE_DESCONTO_LIVRE}%: precisa da senha de owner, admin ou financeiro.`);
+  if (pctDesc >= 100) pendencias.push('O desconto não pode ser de 100%.');
+  // CREDEV / adiantamento: não pode usar mais do que o cliente tem no TOTVS
+  const usoSaldo = (forma) => round2(pagamentos.filter((p) => p.forma === forma).reduce((t, p) => t + Number(p.valor || 0), 0));
+  for (const forma of Object.keys(CAMPO_SALDO)) {
+    const uso = usoSaldo(forma);
+    if (!(uso > 0)) continue;
+    if (!saldos) pendencias.push(`Aguarde a consulta do saldo de ${FORMAS[forma]} do cliente no TOTVS.`);
+    else if (saldos.erro) pendencias.push(`Não consegui consultar o saldo de ${FORMAS[forma]} no TOTVS (${saldos.erro}).`);
+    else if (uso > (saldoInfo(forma)?.total || 0) + 0.005)
+      pendencias.push(`${FORMAS[forma]} usado (${fmtBRL(uso)}) é maior que o saldo do cliente na empresa ${EMPRESA} (${fmtBRL(saldoInfo(forma)?.total || 0)}).`);
+  }
   if (pBoleto && parcelasBoleto.some((_, i) => !/^\d{4}-\d{2}-\d{2}$/.test(vencimentos[i] || ''))) pendencias.push('Informe o vencimento de cada parcela do boleto.');
   if (precisaConfirmar && !confirmaDuplicar) pendencias.push('Confirme o aviso de lançamento já existente.');
   const podeFaturar = !posting && !resultado && pendencias.length === 0;
+
+  // ─── Faturamento em andamento: salvar e retomar depois ───────────────────
+  const salvarRascunho = () => {
+    if (!chave || !pedido) return;
+    const registro = {
+      chave,
+      em: Date.now(),
+      ref: ref || null,
+      cliente: customer?.name || card?.dados?.nome_cliente || pedido.separacao?.cliente || null,
+      lidas: conf.conferidas + conf.sobrando,
+      esperado: conf.esperado,
+      estado: { lidos, naoResolvidos, customer, seller, consumidorFinal, operacao, dataDiferente, dataVenda, transp, pagamentos, vencimentos, descPct, descLiberado },
+    };
+    gravarRascunhos((l) => [registro, ...l.filter((d) => d.chave !== chave)].slice(0, 30));
+    showToast('ok', 'Faturamento salvo — está em "Em andamento" para continuar depois');
+  };
+  const abrirRascunho = (d) => {
+    setRascunhosOpen(false);
+    if (d.chave === chave && pedido) {
+      aplicarRascunho(d);
+      showToast('ok', 'Faturamento retomado');
+      return;
+    }
+    rascunhoPendente.current = d;
+    setParams({ chave: d.chave });
+  };
+  const rascunhoAtual = rascunhos.find((d) => d.chave === chave) || null;
 
   // ─── FATURAR ─────────────────────────────────────────────────────────────
   const faturar = useCallback(async () => {
@@ -1284,6 +1512,10 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
         dataVenda: dataDiferente && dataVenda ? dataVenda : null,
         terminal: Number(terminal) || 1,
         receberComoFatura: comoFatura,
+        descontoFaturamento:
+          pctDesc > 0
+            ? { pct: pctDesc, liberadoPor: pctDesc > LIMITE_DESCONTO_LIVRE ? descLiberado?.nome || (descSemLimite ? user?.name || user?.email : null) : null }
+            : null,
         itens: conf.linhas
           .filter((l) => l.conferido > 0)
           .flatMap((l) => {
@@ -1330,6 +1562,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
         return;
       }
       setResultado(j.data);
+      if (j.data.fiscal?.ok) tirarRascunho(chave); // virou nota: sai da lista "em andamento"
       beep(j.data.fiscal?.ok && j.data.totvs?.ok);
       showToast(j.data.fiscal?.ok && j.data.totvs?.ok ? 'ok' : 'erro', j.message);
     } catch (e) {
@@ -1337,7 +1570,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     } finally {
       setPosting(false);
     }
-  }, [podeFaturar, prep, customer, conf, frete, operacao, dataDiferente, dataVenda, terminal, comoFatura, sellers, seller, chave, ref, consumidorFinal, temTransportadora, transp, pagamentos, cartaoDe, pBoleto, parcelasBoleto, vencimentos, user, showToast]);
+  }, [podeFaturar, prep, customer, conf, frete, operacao, dataDiferente, dataVenda, terminal, comoFatura, sellers, seller, chave, ref, consumidorFinal, temTransportadora, transp, pagamentos, cartaoDe, pBoleto, parcelasBoleto, vencimentos, user, showToast, pctDesc, descLiberado, descSemLimite, tirarRascunho]);
 
   const reprocessar = useCallback(async () => {
     if (!resultado?.vendaId) return;
@@ -1400,6 +1633,55 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
             </button>
           )}
         </div>
+
+        {aba === 'faturar' && (
+          <>
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => setRascunhosOpen((v) => !v)}
+                className="inline-flex h-8 items-center gap-1 rounded-lg bg-white px-2.5 text-xs font-semibold text-[#000638] shadow-sm ring-1 ring-gray-200 hover:bg-gray-50"
+              >
+                <ClockCounterClockwise size={14} /> Em andamento ({rascunhos.length})
+              </button>
+              {chave && pedido && !resultado && (
+                <button
+                  onClick={salvarRascunho}
+                  className="inline-flex h-8 items-center gap-1 rounded-lg bg-white px-2.5 text-xs font-semibold text-[#000638] shadow-sm ring-1 ring-gray-200 hover:bg-gray-50"
+                >
+                  <FloppyDisk size={14} /> Salvar para continuar depois
+                </button>
+              )}
+              {rascunhoAtual && !resultado && <span className="text-[11px] text-gray-500">Este pedido tem um faturamento salvo em {fmtDataHora(rascunhoAtual.em)}</span>}
+            </div>
+            {rascunhosOpen && (
+              <div className="mb-2 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+                {rascunhos.length === 0 ? (
+                  <p className="text-xs text-gray-400">Nenhum faturamento salvo. Abra um pedido, leia as peças e use “Salvar para continuar depois”.</p>
+                ) : (
+                  <ul className="divide-y divide-gray-100">
+                    {rascunhos.map((d) => (
+                      <li key={d.chave} className="flex items-center gap-2 py-1.5 text-xs">
+                        <span className="w-24 shrink-0 text-gray-400">{fmtDataHora(d.em)}</span>
+                        <span className="w-20 shrink-0 font-mono font-bold text-[#000638]">{d.ref || '—'}</span>
+                        <span className="min-w-0 flex-1 truncate font-medium text-gray-800">{d.cliente || 'Sem cliente'}</span>
+                        <span className="shrink-0 tabular-nums text-gray-500">
+                          {d.lidas || 0} de {d.esperado || 0} pç lidas
+                        </span>
+                        <button onClick={() => abrirRascunho(d)} className="rounded-lg px-2 py-0.5 text-[11px] font-semibold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50">
+                          abrir
+                        </button>
+                        <button onClick={() => tirarRascunho(d.chave)} className="text-gray-300 hover:text-rose-500" title="Apagar">
+                          <Trash size={13} />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p className="mt-1.5 text-[10.5px] text-gray-400">Fica salvo neste computador, no seu usuário. Sai da lista sozinho quando a nota é emitida.</p>
+              </div>
+            )}
+          </>
+        )}
 
         {aba === 'transacoes' ? (
           <AbaTransacoes />
@@ -1781,6 +2063,43 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                       {prep.pagamento.credev ? ` · Credev ${prep.pagamento.credev}` : ''}
                     </p>
                   )}
+                  <div className="mb-2 rounded-lg bg-blue-50 px-2 py-1.5 text-[11px] text-blue-900 ring-1 ring-blue-200">
+                    <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span className="inline-flex items-center gap-1 font-bold">
+                        <Wallet size={13} weight="bold" /> Saldos do cliente no TOTVS (empresa {EMPRESA})
+                      </span>
+                      {!customer ? (
+                        <span className="text-blue-700">escolha o cliente</span>
+                      ) : !saldos ? (
+                        <span className="inline-flex items-center gap-1 text-blue-700">
+                          <Spinner size={11} className="animate-spin" /> consultando…
+                        </span>
+                      ) : saldos.erro ? (
+                        <span className="text-rose-700">não consegui consultar: {saldos.erro}</span>
+                      ) : (
+                        Object.keys(CAMPO_SALDO).map((forma) => {
+                          const si = saldoInfo(forma);
+                          const livre = round2((si?.total || 0) - usoSaldo(forma));
+                          const falta = round2(totalNota - round2(pagamentos.filter((x) => !x.auto).reduce((t, x) => t + Number(x.valor || 0), 0)));
+                          return (
+                            <span key={forma} className="inline-flex items-center gap-1">
+                              {FORMAS[forma]}: <b className="tabular-nums">{fmtBRL(si?.total || 0)}</b>
+                              {livre > 0.005 && falta > 0.005 && (
+                                <button
+                                  onClick={() =>
+                                    setPagamentos((ps) => [...ps, { forma, valor: round2(Math.min(livre, falta)), parcelas: 1, nsu: '', autorizacao: '', bandeira: '', auto: ps.length === 0 }])
+                                  }
+                                  className="rounded bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold text-white hover:bg-blue-700"
+                                >
+                                  usar
+                                </button>
+                              )}
+                            </span>
+                          );
+                        })
+                      )}
+                    </p>
+                  </div>
                   <div className="space-y-2">
                     {pagamentos.map((p, i) => (
                       <div key={i} className="rounded-lg bg-gray-50 p-2 ring-1 ring-gray-200">
@@ -1807,6 +2126,19 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                               className={`${inputCls} ${p.auto ? 'bg-gray-100' : ''}`}
                             />
                           </div>
+                          {CAMPO_SALDO[p.forma] &&
+                            (() => {
+                              const si = saldoInfo(p.forma);
+                              const passou = si && usoSaldo(p.forma) > si.total + 0.005;
+                              return (
+                                <div className="flex flex-col justify-end text-[11px] sm:col-span-2">
+                                  <span className={passou ? 'font-semibold text-rose-600' : 'text-gray-600'}>
+                                    Saldo de {FORMAS[p.forma]} na empresa {EMPRESA}: <b className="tabular-nums">{si ? fmtBRL(si.total) : '…'}</b>
+                                    {passou ? ' — o valor usado passa do saldo.' : ' — o valor usado é consumido do saldo do cliente.'}
+                                  </span>
+                                </div>
+                              );
+                            })()}
                           {p.forma === 'boleto' && (
                             <div>
                               <label className={labelCls}>Parcelas</label>
@@ -1973,6 +2305,38 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                 </Bloco>
 
                 <Bloco titulo="Descontos do pedido" icone={Tag}>
+                  {brejinho && (
+                    <div className="mb-2 rounded-lg bg-amber-50 p-2 ring-1 ring-amber-200">
+                      <label className={labelCls}>Desconto neste faturamento (%)</label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="0"
+                          max="99"
+                          step="0.5"
+                          value={descPct}
+                          onChange={(e) => setDescPct(e.target.value)}
+                          placeholder="0"
+                          className={`${inputCls} w-24 ${descPrecisaSenha ? 'border-amber-500' : ''}`}
+                        />
+                        <span className="text-xs tabular-nums text-amber-800">{pctDesc > 0 ? `− ${fmtBRL(conf.descExtraConferido)} nas peças conferidas` : 'sem desconto extra'}</span>
+                      </div>
+                      {descPrecisaSenha ? (
+                        <button
+                          onClick={() => setSenhaDescOpen(true)}
+                          className="mt-1.5 inline-flex h-8 items-center gap-1 rounded-lg bg-amber-500 px-2.5 text-[11px] font-bold text-white hover:bg-amber-600"
+                        >
+                          <LockKey size={12} weight="fill" /> Liberar com senha (owner, admin ou financeiro)
+                        </button>
+                      ) : pctDesc > LIMITE_DESCONTO_LIVRE ? (
+                        <p className="mt-1 inline-flex items-center gap-1 text-[10.5px] font-semibold text-emerald-700">
+                          <LockKey size={11} weight="fill" /> {descLiberado && Number(descLiberado.pct) >= pctDesc ? `Liberado por ${descLiberado.nome}` : 'Seu perfil libera acima do limite'}
+                        </p>
+                      ) : (
+                        <p className="mt-1 text-[10.5px] text-amber-800">Até {LIMITE_DESCONTO_LIVRE}% é livre; acima disso pede a senha de owner, admin ou financeiro. Entra no valor de cada peça da NF-e.</p>
+                      )}
+                    </div>
+                  )}
                   {descontos.length === 0 ? (
                     <p className="text-xs text-gray-500">Sem desconto — peças no preço do Detalhar.</p>
                   ) : (
@@ -2077,6 +2441,12 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                     <div className="flex justify-between text-amber-700">
                       <span>Desconto (vai na NF-e)</span>
                       <span className="tabular-nums">− {fmtBRL(conf.descConferido)}</span>
+                    </div>
+                  )}
+                  {pctDesc > 0 && (
+                    <div className="flex justify-between text-[11px] text-amber-700">
+                      <span>↳ {pctDesc.toLocaleString('pt-BR')}% dado neste faturamento</span>
+                      <span className="tabular-nums">{fmtBRL(conf.descExtraConferido)}</span>
                     </div>
                   )}
                   <div className="flex justify-between">
@@ -2319,6 +2689,19 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
         </div>
       )}
 
+      {senhaDescOpen && (
+        <SenhaDescontoModal
+          pct={pctDesc}
+          pedido={ref}
+          por={user?.name || user?.email || null}
+          onCancelar={() => setSenhaDescOpen(false)}
+          onLiberado={(a) => {
+            setDescLiberado(a);
+            setSenhaDescOpen(false);
+            showToast('ok', `Desconto de ${pctDesc.toLocaleString('pt-BR')}% liberado por ${a.nome}`);
+          }}
+        />
+      )}
       {potenciaOpen && (
         <PortalPotenciaModal onClose={() => setPotenciaOpen(false)} onSaved={() => showToast('ok', 'Potência do portal gravada')} />
       )}
