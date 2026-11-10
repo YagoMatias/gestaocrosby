@@ -527,7 +527,10 @@ function DetalheTransacao({ id, onReprocessar, reprocessando }) {
           <b>Transporte:</b> {v?.transporte ? `${v.transporte.nome}${v.transporte.servico ? ` · ${v.transporte.servico}` : ''} · ${v.transporte.volumes} vol · ${v.transporte.pesoB || 0} kg` : 'retirada / sem transportadora'} · frete {fmtBRL(v?.frete)}
         </p>
         <p>
-          <b>Emitido por:</b> {d.faturamento.criado_por || '—'} em {fmtDataHora(d.faturamento.criado_em)} · caixa TOTVS {fmtData(v?.data_caixa)}
+          <b>Emitido por:</b> {d.faturamento.criado_por || '—'} em {fmtDataHora(d.faturamento.criado_em)}
+          {v?.pedido_info?.dataVenda ? (
+            <span className="ml-1 rounded bg-amber-50 px-1 font-semibold text-amber-700">VENDA DO DIA {fmtData(v.pedido_info.dataVenda)}</span>
+          ) : null}
         </p>
         {(v?.comprovantes || []).length > 0 && (
           <p className="flex flex-wrap gap-1">
@@ -727,13 +730,11 @@ const FaturamentoPedido = () => {
       return '1';
     }
   });
-  const [dataCaixa, setDataCaixa] = useState(() => {
-    try {
-      return localStorage.getItem('fat_data_caixa') || hojeIso();
-    } catch {
-      return hojeIso();
-    }
-  });
+  // Transação do TOTVS sempre na data de hoje (a API só recebe com caixa do
+  // dia). Venda de outro dia: "transação com data diferente" → a data real vai
+  // na observação da transação (VENDA DO DIA dd/mm/aaaa).
+  const [dataDiferente, setDataDiferente] = useState(false);
+  const [dataVenda, setDataVenda] = useState('');
 
   // Transporte e pagamento
   const [transp, setTransp] = useState({ id: 'RETIRADA', code: null, nome: null, servico: '', frete: 0, modFrete: 0, volumes: 0, pesoB: 0 });
@@ -757,13 +758,12 @@ const FaturamentoPedido = () => {
 
   useEffect(() => {
     try {
-      localStorage.setItem('fat_data_caixa', dataCaixa);
       localStorage.setItem('fat_terminal', terminal);
       localStorage.setItem('fat_como_fatura', comoFatura ? '1' : '0');
     } catch {
       /* sem storage */
     }
-  }, [dataCaixa, terminal, comoFatura]);
+  }, [terminal, comoFatura]);
 
   const limparLeituras = useCallback(() => {
     setLidos({});
@@ -780,6 +780,8 @@ const FaturamentoPedido = () => {
     setResultado(null);
     setConfirmaDuplicar(false);
     setConsumidorFinal(false);
+    setDataDiferente(false);
+    setDataVenda('');
     setLidos({});
     setNaoResolvidos([]);
     processed.current = new Set();
@@ -1071,7 +1073,8 @@ const FaturamentoPedido = () => {
   if (previaErro) pendencias.push(previaErro);
   if (!seller) pendencias.push('Escolha o vendedor.');
   if (!operacao) pendencias.push('Escolha a operação do documento interno.');
-  if (!dataCaixa) pendencias.push('Informe a data do caixa do TOTVS.');
+  if (dataDiferente && !/^\d{4}-\d{2}-\d{2}$/.test(dataVenda)) pendencias.push('Informe a data da venda (transação com data diferente).');
+  if (dataDiferente && dataVenda > hojeIso()) pendencias.push('A data da venda não pode ser depois de hoje.');
   if (conf.conferidas === 0) pendencias.push('Ligue o portal e passe as peças do pedido.');
   if (semPreco) pendencias.push('Há peça conferida sem preço.');
   if (transp.id !== 'RETIRADA' && !transp.code) pendencias.push('Escolha a transportadora (taxista: pesquise pelo nome ou código).');
@@ -1096,7 +1099,7 @@ const FaturamentoPedido = () => {
         vendedorNome: vend?.name || null,
         operacaoDocInterno: Number(operacao),
         consumidorFinal,
-        dataCaixa,
+        dataVenda: dataDiferente && dataVenda ? dataVenda : null,
         terminal: Number(terminal) || 1,
         receberComoFatura: comoFatura,
         itens: conf.linhas
@@ -1146,7 +1149,7 @@ const FaturamentoPedido = () => {
     } finally {
       setPosting(false);
     }
-  }, [podeFaturar, prep, customer, conf, frete, operacao, dataCaixa, terminal, comoFatura, sellers, seller, chave, ref, consumidorFinal, temTransportadora, transp, pagamentos, pBoleto, parcelasBoleto, vencimentos, user, showToast]);
+  }, [podeFaturar, prep, customer, conf, frete, operacao, dataDiferente, dataVenda, terminal, comoFatura, sellers, seller, chave, ref, consumidorFinal, temTransportadora, transp, pagamentos, pBoleto, parcelasBoleto, vencimentos, user, showToast]);
 
   const reprocessar = useCallback(async () => {
     if (!resultado?.vendaId) return;
@@ -1757,15 +1760,34 @@ const FaturamentoPedido = () => {
                   <div className="mt-2 grid grid-cols-[1fr_5rem] gap-2">
                     <div>
                       <label className={labelCls}>
-                        <CalendarBlank size={11} className="mr-0.5 inline" /> Data do caixa
+                        <CalendarBlank size={11} className="mr-0.5 inline" /> Data da transação
                       </label>
-                      <input type="date" value={dataCaixa} onChange={(e) => setDataCaixa(e.target.value)} className={inputCls} />
+                      <div className="flex h-9 items-center rounded-lg bg-gray-50 px-2.5 text-sm font-semibold text-[#000638] ring-1 ring-gray-200">Hoje · {fmtData(hojeIso())}</div>
                     </div>
                     <div>
                       <label className={labelCls}>Terminal</label>
                       <input type="number" min="1" value={terminal} onChange={(e) => setTerminal(e.target.value)} className={inputCls} />
                     </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setDataDiferente((v) => !v)}
+                    className={`mt-2 inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg text-[11px] font-bold ring-1 transition ${
+                      dataDiferente ? 'bg-amber-500 text-white ring-amber-500' : 'bg-white text-amber-700 ring-amber-300 hover:bg-amber-50'
+                    }`}
+                  >
+                    <CalendarBlank size={13} weight="bold" /> TRANSAÇÃO COM DATA DIFERENTE
+                  </button>
+                  {dataDiferente && (
+                    <div className="mt-1.5 rounded-lg bg-amber-50 p-2 ring-1 ring-amber-200">
+                      <label className={labelCls}>Data da venda</label>
+                      <input type="date" value={dataVenda} max={hojeIso()} onChange={(e) => setDataVenda(e.target.value)} className={`${inputCls} ${dataVenda ? '' : 'border-amber-400'}`} />
+                      <p className="mt-1 text-[10.5px] text-amber-800">
+                        A transação continua com a data de hoje. No TOTVS ela leva a observação{' '}
+                        <b>VENDA DO DIA {dataVenda ? fmtData(dataVenda) : 'dd/mm/aaaa'}</b>.
+                      </p>
+                    </div>
+                  )}
                   <label className={`${labelCls} mt-2`}>Recebimento no TOTVS</label>
                   <select value={comoFatura ? 'fatura' : 'forma'} onChange={(e) => setComoFatura(e.target.value === 'fatura')} className={inputCls}>
                     <option value="forma">Pela forma de pagamento (cartão, Pix…)</option>
@@ -1775,7 +1797,7 @@ const FaturamentoPedido = () => {
                     <Info size={11} className="mt-0.5 shrink-0" />
                     {comoFatura
                       ? 'Cada pagamento vira fatura no contas a receber (cartão em N vezes = N faturas a cada 30 dias), sem movimento de caixa.'
-                      : 'O caixa desse terminal precisa estar aberto no TOTVS nessa data. O contas a receber sai com as parcelas e vencimentos acima.'}
+                      : 'O caixa desse terminal precisa estar aberto no TOTVS com a data de hoje. O contas a receber sai com as parcelas e vencimentos acima.'}
                   </p>
                 </Bloco>
 
@@ -1998,7 +2020,8 @@ const FaturamentoPedido = () => {
                     ['Fiscal', cen ? `${cen.label} · CFOP ${cen.cfop} · ${cen.icms}${previa?.aliqDifal ? ` (${previa.cenario.destUf} ${previa.aliqDifal}%)` : ''}` : '—'],
                     ['Transporte', temTransportadora ? `${transp.nome || transp.id}${transp.servico ? ` · ${transp.servico}` : ''} · ${transp.volumes} vol · ${transp.pesoB} kg` : 'Retirada (sem transportadora)'],
                     ['Pagamento', pagamentos.map((p) => `${FORMAS[p.forma]} ${fmtBRL(p.valor)}${Number(p.parcelas) > 1 ? ` em ${p.parcelas}x` : ''}`).join(' + ')],
-                    ['TOTVS', `documento interno ${operacao} · caixa de ${fmtData(dataCaixa)} · terminal ${terminal}`],
+                    ['TOTVS', `documento interno ${operacao} · data de hoje (${fmtData(hojeIso())}) · terminal ${terminal}`],
+                    ...(dataDiferente && dataVenda ? [['Data diferente', `observação na transação: VENDA DO DIA ${fmtData(dataVenda)}`]] : []),
                     ...(card?.dados?.transacao || card?.dados?.pedido_totvs
                       ? [['Transação no TOTVS (aberta pelo Dryland)', [card.dados.transacao && `transação ${card.dados.transacao}`, card.dados.pedido_totvs && `pedido ${card.dados.pedido_totvs}`].filter(Boolean).join(' · ')]]
                       : []),
