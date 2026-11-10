@@ -589,6 +589,213 @@ const ModalSaidasPendentes = ({ de, ate, onClose, onConcluido }) => {
   );
 };
 
+// ─── "Entradas pendentes (todas as contas)" (Inefável, 10/11/2026) ───
+const ModalEntradasPendentes = ({ de, ate, onClose, onConcluido }) => {
+  const [itens, setItens] = useState(null);
+  const [erro, setErro] = useState(null);
+  const [sel, setSel] = useState([]);
+  const [busca, setBusca] = useState('');
+  const [texto, setTexto] = useState('');
+  const [salvando, setSalvando] = useState(null);
+  const [resultado, setResultado] = useState(null);
+  const carregar = useCallback(async () => {
+    setErro(null);
+    setItens(null);
+    try {
+      const r = await fetch(`${API}/conciliacao/entradas-pendentes?de=${de}&ate=${ate}`, { headers: headersUsuario() });
+      const j = await r.json();
+      if (!j?.success) throw new Error(j?.message || 'Falha ao carregar as entradas pendentes.');
+      setItens(j.data.itens || []);
+    } catch (e) {
+      setErro(e.message);
+      setItens([]);
+    }
+  }, [de, ate]);
+  useEffect(() => {
+    carregar();
+  }, [carregar]);
+  useEffect(() => {
+    const h = (e) => e.key === 'Escape' && !salvando && onClose();
+    document.addEventListener('keydown', h);
+    return () => document.removeEventListener('keydown', h);
+  }, [onClose, salvando]);
+
+  const visiveis = useMemo(() => {
+    const q = busca.trim().toLowerCase();
+    return (itens || []).filter((i) => !q || `${i.empresa} ${i.banco} ${i.conta} ${i.forma} ${i.descricao} ${i.memo || ''} ${i.contraparte || ''} ${i.contraparteDoc || ''} ${i.valor}`.toLowerCase().includes(q));
+  }, [itens, busca]);
+  const totalVis = visiveis.reduce((s, i) => s + i.valor, 0);
+  const marcados = (itens || []).filter((i) => sel.includes(i.id));
+  const totalSel = marcados.reduce((s, i) => s + i.valor, 0);
+  const todasVisMarcadas = visiveis.length > 0 && visiveis.every((i) => sel.includes(i.id));
+  const porForma = useMemo(() => {
+    const m = new Map();
+    for (const i of visiveis) {
+      const k = i.forma || 'OUTROS';
+      const x = m.get(k) || { qtd: 0, valor: 0 };
+      x.qtd += 1;
+      x.valor += i.valor;
+      m.set(k, x);
+    }
+    return [...m.entries()].sort((a, b) => b[1].valor - a[1].valor);
+  }, [visiveis]);
+
+  const baixarExcel = () => {
+    const rows = visiveis.map((i) => ({
+      Empresa: i.empresa,
+      Banco: i.banco,
+      Conta: i.conta,
+      Data: fmtData(i.data),
+      Forma: i.forma,
+      Histórico: i.descricao,
+      Detalhe: i.memo,
+      Contraparte: i.contraparte,
+      'CPF/CNPJ contraparte': i.contraparteDoc,
+      Documento: i.documento,
+      Valor: i.valor,
+      Marcada: sel.includes(i.id) ? 'sim' : '',
+    }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Entradas pendentes');
+    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    saveAs(new Blob([buf]), `entradas_pendentes_${de}_a_${ate}.xlsx`);
+  };
+
+  // justifica todas as marcadas com o mesmo texto (conciliação MANUAL, igual ao Justificar da conta)
+  const justificarMarcadas = async () => {
+    const t = texto.trim();
+    if (!t || !marcados.length) return;
+    if (!window.confirm(`Justificar ${marcados.length} entrada(s) (total ${fmt(totalSel)}) como:\n\n"${t}"?`)) return;
+    const acc = { ok: 0, falhas: [] };
+    setResultado(null);
+    for (let k = 0; k < marcados.length; k++) {
+      setSalvando({ feitos: k, total: marcados.length });
+      const i = marcados[k];
+      try {
+        const r = await fetch(`${API}/conciliacao`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headersUsuario() }, body: JSON.stringify({ lancamentoId: i.id, origem: 'MANUAL', referencia: null, justificativa: t }) });
+        const j = await r.json();
+        if (!j?.success) throw new Error(j?.message || 'falha');
+        acc.ok += 1;
+      } catch (e) {
+        acc.falhas.push(`${fmt(i.valor)} ${fmtData(i.data)}: ${e.message}`);
+      }
+    }
+    setSalvando(null);
+    setResultado(acc);
+    setSel([]);
+    setTexto('');
+    await carregar();
+    if (onConcluido) onConcluido();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center p-3 md:p-6 overflow-auto" onClick={() => !salvando && onClose()}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-7xl" onClick={(e) => e.stopPropagation()}>
+        <div className="px-4 py-3 border-b border-gray-200 flex items-start gap-2">
+          <div className="flex-1 min-w-0">
+            <h3 className="text-sm font-bold text-gray-800">Entradas pendentes — todas as contas</h3>
+            <p className="text-xs text-gray-500">
+              {fmtData(de)} a {fmtData(ate)} · {itens ? `${visiveis.length} pendente(s) · ${fmt(totalVis)}` : 'carregando…'} · entradas sem conciliação (mesma regra da tela da conta)
+            </p>
+            {porForma.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                {porForma.map(([f, x]) => (
+                  <button key={f} onClick={() => setBusca(f)} className="px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-[10px] hover:bg-emerald-100" title="Filtrar por esta forma">
+                    {f}: {x.qtd} · {fmt(x.valor)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <button onClick={() => !salvando && onClose()} className="text-gray-400 hover:text-gray-600">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="px-4 py-2 border-b border-gray-200 flex flex-wrap items-center gap-2 text-[11px]">
+          <button onClick={() => setSel(todasVisMarcadas ? [] : visiveis.map((i) => i.id))} disabled={!visiveis.length || !!salvando} className="px-2.5 py-1.5 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-40 font-medium">
+            {todasVisMarcadas ? 'Desmarcar todas' : `Selecionar todas (${visiveis.length})`}
+          </button>
+          <span className="text-gray-600">
+            {marcados.length} marcada(s) · {fmt(totalSel)}
+          </span>
+          <button onClick={baixarExcel} disabled={!visiveis.length} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-green-700 text-white hover:bg-green-800 disabled:opacity-40 font-medium">
+            <Export size={12} /> Baixar Excel
+          </button>
+          <input value={texto} onChange={(e) => setTexto(e.target.value)} disabled={!!salvando} placeholder="Justificativa para as marcadas (ex.: rendimento, devolução Pix…)" className="px-2 py-1.5 border border-gray-300 rounded-lg w-72" />
+          <button onClick={justificarMarcadas} disabled={!marcados.length || !texto.trim() || !!salvando} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 font-medium">
+            {salvando ? <ArrowsClockwise size={12} className="animate-spin" /> : <Check size={12} weight="bold" />} {salvando ? `Salvando ${salvando.feitos}/${salvando.total}…` : `Justificar marcadas (${marcados.length})`}
+          </button>
+          <div className="relative ml-auto">
+            <MagnifyingGlass size={13} className="absolute left-2 top-2 text-gray-400" />
+            <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Filtrar empresa, banco, forma, histórico…" className="pl-7 pr-2 py-1.5 border border-gray-300 rounded-lg w-56" />
+          </div>
+        </div>
+        {(erro || resultado) && (
+          <div className={`px-4 py-2 text-[11px] ${erro || resultado?.falhas?.length ? 'bg-amber-50 text-amber-900' : 'bg-green-50 text-green-800'}`}>
+            {erro || `${resultado.ok} entrada(s) justificada(s)${resultado.falhas.length ? ` · ${resultado.falhas.length} falha(s): ${resultado.falhas.slice(0, 5).join('; ')}${resultado.falhas.length > 5 ? '…' : ''}` : ''}.`}
+          </div>
+        )}
+        <div className="max-h-[65vh] overflow-auto">
+          {!itens ? (
+            <p className="p-6 text-sm text-gray-400 flex items-center gap-2">
+              <ArrowsClockwise size={14} className="animate-spin" /> Carregando as entradas pendentes de todas as contas…
+            </p>
+          ) : (
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-gray-50 z-10">
+                <tr className="border-b border-gray-200">
+                  <Th className="w-6">
+                    <input type="checkbox" checked={todasVisMarcadas} disabled={!visiveis.length || !!salvando} onChange={() => setSel(todasVisMarcadas ? [] : visiveis.map((i) => i.id))} className="accent-emerald-600" />
+                  </Th>
+                  <Th>Empresa</Th>
+                  <Th>Banco / conta</Th>
+                  <Th>Data</Th>
+                  <Th>Forma</Th>
+                  <Th>Histórico / contraparte</Th>
+                  <Th right>Valor</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {visiveis.map((i) => (
+                  <tr key={i.id} className={`border-b border-gray-100 align-top ${sel.includes(i.id) ? 'bg-emerald-50' : 'hover:bg-gray-50'}`}>
+                    <td className="px-2 py-1.5 text-center">
+                      <input type="checkbox" checked={sel.includes(i.id)} disabled={!!salvando} onChange={() => setSel((p) => (p.includes(i.id) ? p.filter((x) => x !== i.id) : [...p, i.id]))} className="accent-emerald-600" />
+                    </td>
+                    <td className="px-3 py-1.5 whitespace-nowrap">{i.empresa}</td>
+                    <td className="px-3 py-1.5 whitespace-nowrap">
+                      {i.banco} · {i.conta}
+                    </td>
+                    <td className="px-3 py-1.5 whitespace-nowrap">{fmtData(i.data)}</td>
+                    <td className="px-3 py-1.5 whitespace-nowrap">{i.forma}</td>
+                    <td className="px-3 py-1.5 max-w-[340px]">
+                      {i.descricao}
+                      {i.memo && i.memo !== i.descricao ? <span className="text-gray-400"> · {i.memo}</span> : null}
+                      {i.contraparte ? (
+                        <div className="text-gray-600">
+                          {i.contraparte}
+                          {i.contraparteDoc ? <span className="text-gray-400"> · {i.contraparteDoc}</span> : null}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-semibold text-emerald-700 whitespace-nowrap">{fmt(i.valor)}</td>
+                  </tr>
+                ))}
+                {!visiveis.length && (
+                  <tr>
+                    <td colSpan={7} className="p-6 text-center text-gray-400">
+                      Nenhuma entrada pendente no período.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ─── lista "Adiantamentos a fornecedor" (Titia, 10/11/2026) ───
 const ModalAdiantamentos = ({ onClose }) => {
   const [itens, setItens] = useState(null);
@@ -947,6 +1154,7 @@ const Conciliacao = () => {
   };
   const [importandoTechfin, setImportandoTechfin] = useState(false);
   const [saidasPendAberta, setSaidasPendAberta] = useState(false);
+  const [entradasPendAberta, setEntradasPendAberta] = useState(false); // janela "Entradas pendentes (todas as contas)"
   const [adiantAberto, setAdiantAberto] = useState(false); // lista "Adiantamentos a fornecedor\" // janela "Saídas pendentes (todas as contas)"
   const importarTechfin = async (arquivos) => {
     if (!arquivos?.length) return;
@@ -1326,6 +1534,13 @@ const Conciliacao = () => {
             <input type="file" accept=".csv,text/csv" multiple className="hidden" disabled={importandoTechfin} onChange={(e) => { importarTechfin(Array.from(e.target.files || [])); e.target.value = ''; }} />
           </label>
           <button
+            onClick={() => setEntradasPendAberta(true)}
+            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-emerald-400 bg-emerald-50 text-emerald-900 hover:bg-emerald-100 text-[11px] font-medium"
+            title="Todas as entradas sem conciliação de todas as contas no período"
+          >
+            <ArrowDown size={12} /> Entradas pendentes (todas as contas)
+          </button>
+          <button
             onClick={() => setAdiantAberto(true)}
             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-amber-400 bg-amber-50 text-amber-900 hover:bg-amber-100 text-[11px] font-medium"
             title="Pagamentos justificados como adiantamento a fornecedor (ainda sem nota fiscal)"
@@ -1350,6 +1565,7 @@ const Conciliacao = () => {
         </div>
       </div>
 
+      {entradasPendAberta && <ModalEntradasPendentes de={de} ate={ate} onClose={() => setEntradasPendAberta(false)} onConcluido={carregar} />}
       {adiantAberto && <ModalAdiantamentos onClose={() => setAdiantAberto(false)} />}
       {saidasPendAberta && <ModalSaidasPendentes de={de} ate={ate} onClose={() => setSaidasPendAberta(false)} onConcluido={carregar} />}
       {contaAberta && (
