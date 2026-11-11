@@ -8,6 +8,9 @@
 //   2. Transferência RFID — leitura pelo portal, embutida e pré-preenchida com
 //      a solicitação escolhida; operação travada pelo POP (7272/7273/7280)
 //   3. Transações — transferências já geradas no TOTVS (TRAFP005)
+// Transferência SAINDO DA EMPRESA 99 não usa o TRAFP005: a NF-e sai pelo
+// HeadCoach e a transação vai para a 990 como documento interno já atendida
+// (TransferenciaNota99.jsx), com as peças do pedido conferidas pelo portal.
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ArrowsLeftRight,
@@ -33,6 +36,10 @@ import { API_BASE_URL } from '../config/constants';
 import { useAuth } from '../components/AuthContext';
 import { getSetoresDoUsuario } from '../services/setoresService';
 import TransferenciaRFID from './TransferenciaRFID';
+import TransferenciaNota99 from './TransferenciaNota99';
+
+// transferência saindo desta empresa tem a nota emitida pelo HeadCoach
+const EMPRESA_NOTA_HEADCOACH = 99;
 
 const fmtBRL = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const fmtDataHora = (d) => (d ? new Date(d).toLocaleString('pt-BR', { timeZone: 'America/Recife' }) : '—');
@@ -94,6 +101,7 @@ const TransferenciasMercadoria = () => {
   const [busca, setBusca] = useState('');
   const [detalhe, setDetalhe] = useState(null);
   const [selecionada, setSelecionada] = useState(null); // solicitação levada para o RFID
+  const [avulsa99, setAvulsa99] = useState(false); // transferência avulsa saindo da 99 (nota pelo HeadCoach)
   const [toast, setToast] = useState(null);
   const [migracaoPendente, setMigracaoPendente] = useState(null);
   const [avisoDryland, setAvisoDryland] = useState(null);
@@ -213,7 +221,8 @@ const TransferenciasMercadoria = () => {
 
   const consultarTransacao = async (t) => {
     try {
-      const qs = new URLSearchParams({ branch: t.empresa, code: t.transacao_code, date: t.transacao_date });
+      if (!t.transacao_code) throw new Error('A transação do TOTVS ainda não foi aberta: use "Tentar de novo"');
+      const qs = new URLSearchParams({ branch: t.empresa_totvs || t.empresa, code: t.transacao_code, date: t.transacao_date });
       const r = await fetch(`${API_BASE_URL}/api/totvs/pdv/transaction-status?${qs}`);
       const j = await r.json();
       const st = j?.data?.status;
@@ -351,7 +360,22 @@ const TransferenciasMercadoria = () => {
     [selecionada, vincular, carregar, showToast],
   );
 
+  // transferência com nota pelo HeadCoach: emite a nota que faltou e abre/atende a transação da 990
+  const reprocessarNota = async (t) => {
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/transferencias/nota/${t.venda_id}/reprocessar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      const j = await r.json();
+      showToast(j.success && j.data?.fiscal?.ok && j.data?.totvs?.ok ? 'ok' : 'erro', j.message || 'Sem resposta');
+      carregarTransacoes();
+      carregar();
+      setTrxDetalhe(null);
+    } catch (e) {
+      showToast('erro', e.message);
+    }
+  };
+
   const irParaRfid = (t) => {
+    setAvulsa99(false);
     setSelecionada(t);
     setDetalhe(null);
     setAba('rfid');
@@ -440,10 +464,22 @@ const TransferenciasMercadoria = () => {
               <button
                 onClick={() => {
                   setSelecionada(null);
+                  setAvulsa99(true);
+                  setAba('rfid');
+                }}
+                className="h-9 px-3 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 inline-flex items-center gap-1.5"
+                title={`Transferência avulsa saindo da empresa ${EMPRESA_NOTA_HEADCOACH}: a nota sai pelo HeadCoach`}
+              >
+                <Receipt size={14} weight="bold" /> Avulsa da {EMPRESA_NOTA_HEADCOACH} (nota pelo HeadCoach)
+              </button>
+              <button
+                onClick={() => {
+                  setSelecionada(null);
+                  setAvulsa99(false);
                   setAba('rfid');
                 }}
                 className="h-9 px-3 rounded-lg text-xs font-bold text-[#000638] ring-1 ring-gray-300 bg-white hover:bg-gray-50 inline-flex items-center gap-1.5"
-                title="Transferência avulsa, sem solicitação"
+                title="Transferência avulsa de outra empresa, sem solicitação (finaliza no TRAFP005)"
               >
                 <Broadcast size={14} weight="bold" /> Transferência avulsa
               </button>
@@ -577,7 +613,24 @@ const TransferenciasMercadoria = () => {
         )}
 
         {/* ───────────── Transferência RFID (embutida) ───────────── */}
-        {aba === 'rfid' && (
+        {aba === 'rfid' && (avulsa99 || Number(selecionada?.empresa_origem) === EMPRESA_NOTA_HEADCOACH) && (
+          <div className="-mx-3 -mb-3 lg:-mx-4 lg:-mb-4">
+            <TransferenciaNota99
+              key={selecionada?.id || 'avulsa'}
+              solicitacao={selecionada}
+              onConcluida={() => {
+                carregar();
+                carregarTransacoes();
+              }}
+              onSair={() => {
+                setSelecionada(null);
+                setAvulsa99(false);
+                setAba('solicitacoes');
+              }}
+            />
+          </div>
+        )}
+        {aba === 'rfid' && !(avulsa99 || Number(selecionada?.empresa_origem) === EMPRESA_NOTA_HEADCOACH) && (
           <div className="-mx-3 -mb-3 lg:-mx-4 lg:-mb-4">
             {!selecionada && (
               <p className="mx-3 lg:mx-4 mb-2 text-xs text-gray-600 bg-white rounded-xl ring-1 ring-gray-200 px-3 py-2">
@@ -675,8 +728,17 @@ const TransferenciasMercadoria = () => {
                     {trxLista.map((t) => (
                       <tr key={t.id} className={`hover:bg-gray-50/60 ${t.transacao_status === 6 ? 'opacity-60' : ''}`}>
                         <td className="px-2 py-1.5 font-mono font-bold text-[#000638]">
-                          {t.transacao_code}
+                          {t.transacao_code ? `${t.empresa_totvs ? `${t.empresa_totvs}/` : ''}${t.transacao_code}` : <span className="font-sans font-semibold text-amber-700">sem transação</span>}
                           {t.transferencia_id && <span className="ml-1 font-sans font-normal text-[10px] text-gray-400">TRF-{t.transferencia_id}</span>}
+                          {t.venda_id && (
+                            <span
+                              className={`mt-0.5 block w-fit rounded-full px-1.5 py-0.5 font-sans text-[9.5px] font-bold ring-1 ${
+                                t.nf_status === 'autorizada' ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : t.nf_status === 'cancelada' ? 'bg-gray-100 text-gray-500 ring-gray-200' : 'bg-rose-50 text-rose-700 ring-rose-200'
+                              }`}
+                            >
+                              {t.nf_numero ? `NF ${t.nf_numero}/${t.nf_serie || ''}` : 'sem NF'} · {t.nf_status || 'pendente'}
+                            </span>
+                          )}
                         </td>
                         <td className="px-2 py-1.5 whitespace-nowrap">{fmtDataHora(t.criado_em)}</td>
                         <td className="px-2 py-1.5 whitespace-nowrap">
@@ -707,6 +769,11 @@ const TransferenciasMercadoria = () => {
                           <button onClick={() => consultarTransacao(t)} className="ml-1 p-1 rounded hover:bg-gray-100 text-[#000638]" title="Consultar a situação no TOTVS">
                             <ArrowsClockwise size={13} />
                           </button>
+                          {t.venda_id && t.nf_status !== 'cancelada' && (t.nf_status !== 'autorizada' || t.transacao_status !== 4) && (
+                            <button onClick={() => reprocessarNota(t)} className="ml-1 px-2 py-0.5 rounded-lg text-[11px] font-bold text-white bg-amber-600 hover:bg-amber-700" title={t.totvs_erro || 'Emite a nota que faltou e abre/atende a transação na 990'}>
+                              Tentar de novo
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -724,8 +791,22 @@ const TransferenciasMercadoria = () => {
               <div className="flex items-start justify-between gap-2 mb-3">
                 <div>
                   <h3 className="text-base font-bold text-[#000638]">
-                    Transação {trxDetalhe.transacao_code} · empresa {trxDetalhe.empresa} → {trxDetalhe.empresa_destino}
+                    Transação {trxDetalhe.transacao_code ? `${trxDetalhe.empresa_totvs ? `${trxDetalhe.empresa_totvs}/` : ''}${trxDetalhe.transacao_code}` : '(ainda não aberta)'} · empresa {trxDetalhe.empresa} → {trxDetalhe.empresa_destino || '—'}
                   </h3>
+                  {trxDetalhe.venda_id && (
+                    <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
+                      <span className={`rounded-full px-2 py-0.5 font-bold ring-1 ${trxDetalhe.nf_status === 'autorizada' ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-rose-50 text-rose-700 ring-rose-200'}`}>
+                        {trxDetalhe.nf_numero ? `NF-e ${trxDetalhe.nf_numero}/${trxDetalhe.nf_serie || ''}` : 'sem NF-e'} · {trxDetalhe.nf_status || 'pendente'}
+                      </span>
+                      <span className="text-gray-500">nota pelo HeadCoach · {trxDetalhe.natureza === 'venda' ? 'venda entre filiais' : 'transferência'}</span>
+                      {trxDetalhe.nota_id && (
+                        <a href={`${API_BASE_URL}/api/pdv-crosby/notas/${trxDetalhe.nota_id}/xml`} className="font-bold text-blue-700 hover:underline">
+                          XML
+                        </a>
+                      )}
+                    </p>
+                  )}
+                  {trxDetalhe.totvs_erro && <p className="mt-1 rounded-lg bg-amber-50 px-2 py-1 text-[11px] text-amber-800 ring-1 ring-amber-200">{trxDetalhe.totvs_erro}</p>}
                   <p className="text-xs text-gray-500">
                     {trxDetalhe.cliente_nome || trxDetalhe.cliente_code} · operação {trxDetalhe.operacao ?? '—'} {OPERACOES_POP[trxDetalhe.operacao] ? `(${OPERACOES_POP[trxDetalhe.operacao]})` : ''} · CFOP{' '}
                     {trxDetalhe.cfop ?? '—'} · {fmtDataHora(trxDetalhe.criado_em)}

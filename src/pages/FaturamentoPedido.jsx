@@ -85,6 +85,14 @@ const API = `${API_BASE_URL}/api/faturamento-expedicao`;
 // Desconto dado na tela (Expedição Brejinho): até 20% é livre para quem tem a
 // tela; acima disso, senha de owner, admin ou financeiro (perfil "user").
 const LIMITE_DESCONTO_LIVRE = 20;
+// REGRAS DO YAGO (11/11/2026), valem para o Faturamento dos pedidos do site:
+//   1. o total fecha SEMPRE no valor do pedido do Dryland (o do comprovante) e as
+//      formas de pagamento vêm exatamente como estão no pedido;
+//   2. o PREÇO DE CADA PEÇA é o do pedido do Dryland e o sistema NUNCA o altera:
+//      só o OPERADOR muda, digitando o preço na linha;
+//   3. o operador pode dar um desconto de ajuste de no máximo 15% (sem senha);
+//   4. valores e formas de pagamento são livres para o operador editar.
+const LIMITE_DESCONTO_PEDIDOS = 15;
 const ROLES_LIBERAM_DESCONTO = ['owner', 'admin', 'user'];
 // Troca de peça na conferência (a que falta sai, a que sobra entra pelo MESMO
 // valor do pedido): liberada até 11/11/2026 (era só 10/11; o Yago estendeu) —
@@ -229,9 +237,36 @@ function diferencaCardSeparacao(dados) {
 // ajustes já aplicados — RV1325: 2555 a 17,50 + 16,39) quando o card tem
 // aquela peça; peça que só existe na separação usa o preço da separação.
 // Sem separação (ex.: Brejinho), valem os itens do card.
-// Cada UNIDADE guarda: preço vendido, sua parte do desconto do pedido (Pix /
-// desconto geral, rateado pelo preço; centavos que sobram na peça mais cara) e
-// as marcas do Dryland (Black %, troca, brinde).
+// Cada UNIDADE guarda: preço vendido, sua parte do desconto do pedido (rateado
+// pelo preço; centavos que sobram na peça mais cara) e as marcas do Dryland
+// (Black %, troca, brinde).
+//
+// O VALOR DO PEDIDO NO DRYLAND MANDA (Yago, 11/11/2026: "sempre tem que
+// acompanhar a informação do Dryland"). O pedido foi fechado e pago por
+// `valor_pedido` (o do comprovante): a nota tem que dar esse valor. Então o
+// desconto das peças não é mais só o que o card declara (desconto + Pix): é o
+// que falta para as peças chegarem em valor_pedido − frete (+ CREDEV, só
+// quando o próprio card traz o CREDEV usado). Caso PE885: peças 1.142,74 +
+// frete 154,54, pedido fechado em 645,09 → desconto de 652,19 nas peças; o
+// HeadCoach NÃO presume CREDEV nem outra forma que o Dryland não informou.
+// Se as peças + frete somam MENOS que o pedido, não há acréscimo: fica como
+// está e a tela avisa que não bate. Brejinho fica fora (o card de lá não é o
+// pedido do site).
+const numeroDe = (v) => {
+  const n = Number(String(v ?? '').replace(',', '.'));
+  return Number.isFinite(n) ? n : 0;
+};
+function descontoDoPedido(dd, somaCard) {
+  const declarado = round2((Number(dd?.desconto) || 0) + (Number(dd?.desconto_pix) || 0));
+  const pago = Number(dd?.valor_pedido) || 0;
+  if (dd?.brejinho || !(pago > 0) || !(somaCard > 0)) return { total: declarado, declarado, ajuste: 0, base: somaCard, pago, alvo: null };
+  const frete = Number(dd.valor_frete) || 0;
+  const credev = numeroDe(dd.credev);
+  const alvo = round2(pago + credev - frete); // quanto as peças valem no pedido do Dryland
+  const total = Math.max(0, round2(somaCard - alvo));
+  if (total >= somaCard) return { total: declarado, declarado, ajuste: 0, base: somaCard, pago, alvo };
+  return { total, declarado, ajuste: round2(total - declarado), base: somaCard, pago, alvo, frete, credev };
+}
 function itensDoPedido(dados) {
   const doCard = unidadesDe(dados?.card?.dados?.itens);
   const daSep = unidadesDe((dados?.itens || []).map((i) => ({ cod: i.cod, descricao: i.descricao, cor: i.cor, tam: i.tamanho, qtd: i.qtd, preco: i.preco })));
@@ -248,16 +283,22 @@ function itensDoPedido(dados) {
       return c ? { ...u, preco: c.preco, black: c.black, troca: c.troca, brinde: c.brinde } : { ...u, soSeparacao: doCard.length > 0 };
     });
   }
-  // desconto do pedido (Pix + desconto geral) rateado nas peças
+  // desconto do pedido rateado nas peças: o que leva as peças ao valor fechado no Dryland.
+  // A proporção sai das peças do CARD (é a elas que valor_pedido se refere); se a
+  // separação trouxe peças diferentes, cada uma leva a mesma proporção.
   const dd = dados?.card?.dados || {};
-  const descPedido = round2((Number(dd.desconto) || 0) + (Number(dd.desconto_pix) || 0));
   const soma = unidades.reduce((s, u) => s + u.preco, 0);
-  if (descPedido > 0 && soma > 0) {
-    unidades.forEach((u) => (u.desc = round2((descPedido * u.preco) / soma)));
-    const sobra = round2(descPedido - unidades.reduce((s, u) => s + u.desc, 0));
-    if (sobra !== 0) {
-      const k = unidades.reduce((m, u, idx) => (u.preco > unidades[m].preco ? idx : m), 0);
-      unidades[k].desc = round2(unidades[k].desc + sobra);
+  const somaCard = doCard.reduce((s, u) => s + u.preco, 0) || soma;
+  const dp = descontoDoPedido(dd, round2(somaCard));
+  if (dp.total > 0 && soma > 0 && dp.base > 0) {
+    unidades.forEach((u) => (u.desc = round2((dp.total * u.preco) / dp.base)));
+    // centavos que sobram: só quando as peças são as mesmas do card
+    if (Math.abs(soma - dp.base) < 0.01) {
+      const sobra = round2(dp.total - unidades.reduce((s, u) => s + u.desc, 0));
+      if (sobra !== 0) {
+        const k = unidades.reduce((m, u, idx) => (u.preco > unidades[m].preco ? idx : m), 0);
+        unidades[k].desc = round2(unidades[k].desc + sobra);
+      }
     }
   }
   const porSku = new Map();
@@ -280,8 +321,24 @@ function resumoDescontos(dados, itens) {
   const pix = Number(dd.desconto_pix) || 0;
   const geral = Number(dd.desconto) || 0;
   const base = Number(dd.valor_cheio) || unidades.reduce((s, u) => s + u.preco, 0);
-  if (pix > 0) out.push({ tipo: 'Desconto Pix', pct: base ? (pix / base) * 100 : null, valor: pix, pecas: total, total });
-  if (geral > 0) out.push({ tipo: 'Desconto do pedido', pct: base ? (geral / base) * 100 : null, valor: geral, pecas: total, total });
+  const somaCard = round2(unidadesDe(dd.itens).reduce((s, u) => s + u.preco, 0)) || round2(unidades.reduce((s, u) => s + u.preco, 0));
+  const dp = descontoDoPedido(dd, somaCard);
+  if (Math.abs(dp.ajuste) > 0.01) {
+    // o card não declara (ou declara diferente) o desconto que fecha no valor do pedido
+    if (dp.total > 0) {
+      out.push({
+        tipo: 'Desconto para fechar no valor do pedido (Dryland)',
+        pct: dp.base ? (dp.total / dp.base) * 100 : null,
+        valor: dp.total,
+        pecas: total,
+        total,
+        nota: `Peças somam ${fmtBRL(dp.base)}${dp.frete ? ` + frete ${fmtBRL(dp.frete)}` : ''}; o pedido foi fechado em ${fmtBRL(dp.pago)}${dp.credev ? ` + CREDEV ${fmtBRL(dp.credev)} do card` : ''}.`,
+      });
+    }
+  } else {
+    if (pix > 0) out.push({ tipo: 'Desconto Pix', pct: base ? (pix / base) * 100 : null, valor: pix, pecas: total, total });
+    if (geral > 0) out.push({ tipo: 'Desconto do pedido', pct: base ? (geral / base) * 100 : null, valor: geral, pecas: total, total });
+  }
   const porPct = {};
   for (const u of unidades.filter((x) => x.black)) {
     let k = u.black.pct;
@@ -1632,6 +1689,9 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
 
   // Desconto dado na tela (Brejinho): % sobre as peças; acima do limite pede senha
   const [descPct, setDescPct] = useState('');
+  // preço digitado pelo operador por produto (sku → valor); vazio = preço do pedido do Dryland
+  const [precoManual, setPrecoManual] = useState({});
+  const [editandoPreco, setEditandoPreco] = useState(null);
   const [descLiberado, setDescLiberado] = useState(null); // { nome, email, role, pct }
   const [senhaDescOpen, setSenhaDescOpen] = useState(false);
   // Trocas na conferência: { skuLidoForaDoPedido: skuDoPedidoQueFalta }
@@ -1683,6 +1743,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     if (Array.isArray(e.pagamentos) && e.pagamentos.length) setPagamentos(e.pagamentos);
     if (Array.isArray(e.vencimentos)) setVencimentos(e.vencimentos);
     setDescPct(e.descPct || '');
+    setPrecoManual(e.precoManual || {});
     setDescLiberado(e.descLiberado || null);
     setTrocas(e.trocas || {});
     setGerarCredito(!!e.gerarCredito);
@@ -1721,6 +1782,8 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     setRemovidas([]);
     processed.current = new Set();
     setDescPct('');
+    setPrecoManual({});
+    setEditandoPreco(null);
     setDescLiberado(null);
     setTrocas({});
     // etiquetas que o portal ainda guarda são do pedido anterior: sem limpar,
@@ -1756,11 +1819,14 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
           volumes: p.transporte.volumes,
           pesoB: p.transporte.pesoB || 0,
         });
-        const formas = p.pagamento.formas.length ? p.pagamento.formas : ['pix'];
+        const formasPedido = p.pagamento.formas.length ? p.pagamento.formas : ['pix'];
+        // CREDEV só quando o próprio card do Dryland informa o valor usado
+        const credevCard = Number(String(p.pagamento.credev ?? '').replace(',', '.')) || 0;
+        const formas = credevCard > 0 && !formasPedido.includes('credito_loja') ? [...formasPedido, 'credito_loja'] : formasPedido;
         setPagamentos(
           formas.map((f, i) => ({
             forma: f,
-            valor: 0,
+            valor: f === 'credito_loja' && credevCard > 0 && formas.length > 1 ? credevCard : 0,
             parcelas: f === 'boleto' || f === 'credito' ? p.pagamento.parcelas || 1 : 1,
             nsu: f === 'credito' || f === 'debito' ? p.pagamento.nsu || '' : '',
             autorizacao: f === 'credito' || f === 'debito' ? p.pagamento.autorizacao || '' : '',
@@ -2015,7 +2081,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   }, []);
 
   // desconto dado na tela (só Brejinho), em % sobre o valor de cada peça
-  const pctDesc = brejinho ? Math.min(100, Math.max(0, round2(Number(String(descPct).replace(',', '.')) || 0))) : 0;
+  const pctDesc = Math.min(100, Math.max(0, round2(Number(String(descPct).replace(',', '.')) || 0)));
 
   // ─── Conferência: SKU do pedido × SKU lido ───────────────────────────────
   const conf = useMemo(() => {
@@ -2044,12 +2110,17 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     const linhas = base.map(({ i, l, lido, proprio }) => {
       const substitutos = subs.get(i.sku) || [];
       const conferido = proprio + substitutos.length;
-      // unidade sem preço no pedido usa o preço do TOTVS
+      // PREÇO = o do pedido do Dryland, sempre. Só muda se o OPERADOR digitar outro
+      // na linha (aí vale o que ele digitou, sem o desconto do pedido por cima).
+      // Unidade que veio sem preço no pedido usa o do TOTVS.
+      const pmTxt = precoManual[i.sku];
+      const pm = pmTxt != null && pmTxt !== '' ? round2(Number(String(pmTxt).replace(',', '.')) || 0) : 0;
       const unidades = i.unidades.map((u) => {
-        const preco = u.preco > 0 ? u.preco : round2(l?.precoTotvs || 0);
-        // desconto do faturamento por cima do que o pedido já trouxe
-        const extra = pctDesc > 0 ? round2(((preco - u.desc) * pctDesc) / 100) : 0;
-        return { ...u, preco, desc: round2(u.desc + extra), descExtra: extra };
+        const preco = pm > 0 ? pm : u.preco > 0 ? u.preco : round2(l?.precoTotvs || 0);
+        const descPedido = pm > 0 ? 0 : u.desc;
+        // desconto do operador neste faturamento, por cima do que o pedido já trouxe
+        const extra = pctDesc > 0 ? round2(((preco - descPedido) * pctDesc) / 100) : 0;
+        return { ...u, preco, precoPedido: u.preco, alterado: pm > 0 && pm !== u.preco, desc: round2(descPedido + extra), descExtra: extra };
       });
       const precos = unidades.map((u) => u.preco);
       const preco = round2(precos.reduce((s, v) => s + v, 0) / precos.length);
@@ -2096,7 +2167,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     const totalConferido = round2(brutoConferido - descConferido);
     const descExtraConferido = round2(linhas.reduce((s, l) => s + l.descExtraConferido, 0));
     return { linhas, fora, esperado, conferidas, faltando, sobrando, totalPedido, brutoConferido, descConferido, descExtraConferido, totalConferido, ok: esperado > 0 && faltando === 0 && sobrando === 0 };
-  }, [itensPedido, lidos, skusPedido, pctDesc, trocas, trocaLiberada]);
+  }, [itensPedido, lidos, skusPedido, pctDesc, trocas, trocaLiberada, precoManual]);
   // resumo das trocas feitas (para o servidor e para a confirmação)
   const trocasFeitas = conf.linhas.flatMap((l) => {
     const por = new Map();
@@ -2173,7 +2244,8 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   if (Math.abs(somaPag - totalNota) > 0.01) pendencias.push(`Pagamento (${fmtBRL(somaPag)}) não fecha com o total da nota (${fmtBRL(totalNota)}).`);
   // desconto acima do limite: quem é owner/admin/financeiro passa direto; os demais pedem a senha
   const descSemLimite = ROLES_LIBERAM_DESCONTO.includes(user?.role);
-  const descPrecisaSenha = pctDesc > LIMITE_DESCONTO_LIVRE && !descSemLimite && !(descLiberado && Number(descLiberado.pct) >= pctDesc);
+  const descPrecisaSenha = brejinho && pctDesc > LIMITE_DESCONTO_LIVRE && !descSemLimite && !(descLiberado && Number(descLiberado.pct) >= pctDesc);
+  if (!brejinho && pctDesc > LIMITE_DESCONTO_PEDIDOS) pendencias.push(`O desconto do operador é de no máximo ${LIMITE_DESCONTO_PEDIDOS}%.`);
   if (descPrecisaSenha) pendencias.push(`Desconto de ${pctDesc.toLocaleString('pt-BR')}% passa de ${LIMITE_DESCONTO_LIVRE}%: precisa da senha de owner, admin ou financeiro.`);
   if (pctDesc >= 100) pendencias.push('O desconto não pode ser de 100%.');
   // CREDEV / adiantamento: não pode usar mais do que o cliente tem no TOTVS
@@ -2207,7 +2279,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
       cliente: customer?.name || card?.dados?.nome_cliente || pedido.separacao?.cliente || null,
       lidas: conf.conferidas + conf.sobrando,
       esperado: conf.esperado,
-      estado: { lidos, naoResolvidos, customer, seller, consumidorFinal, operacao, dataDiferente, dataVenda, transp, pagamentos, vencimentos, descPct, descLiberado, trocas, gerarCredito, removidas },
+      estado: { lidos, naoResolvidos, customer, seller, consumidorFinal, operacao, dataDiferente, dataVenda, transp, pagamentos, vencimentos, descPct, descLiberado, trocas, gerarCredito, removidas, precoManual },
     };
     gravarRascunhos((l) => [registro, ...l.filter((d) => d.chave !== chave)].slice(0, 30));
     showToast('ok', 'Faturamento salvo — está em "Em andamento" para continuar depois');
@@ -2244,7 +2316,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
         receberComoFatura: comoFatura,
         descontoFaturamento:
           pctDesc > 0
-            ? { pct: pctDesc, liberadoPor: pctDesc > LIMITE_DESCONTO_LIVRE ? descLiberado?.nome || (descSemLimite ? user?.name || user?.email : null) : null }
+            ? { pct: pctDesc, liberadoPor: brejinho && pctDesc > LIMITE_DESCONTO_LIVRE ? descLiberado?.nome || (descSemLimite ? user?.name || user?.email : null) : null }
             : null,
         // cada unidade conferida vai com o valor da unidade do pedido; quando houve
         // troca, o produto (e a etiqueta) é o da peça que realmente está na caixa
@@ -2286,7 +2358,20 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
         }),
         vencimentos: pBoleto ? parcelasBoleto.map((_, i) => vencimentos[i]) : [],
         comprovantes: prep?.comprovantes || [],
-        pedidoInfo: { forma: prep?.pagamento?.formaTexto, nsu: prep?.pagamento?.nsu, autorizacao: prep?.pagamento?.autorizacao, pix: prep?.pagamento?.pix || null },
+        pedidoInfo: {
+          forma: prep?.pagamento?.formaTexto,
+          nsu: prep?.pagamento?.nsu,
+          autorizacao: prep?.pagamento?.autorizacao,
+          pix: prep?.pagamento?.pix || null,
+          // preço mudado pelo operador (o padrão é sempre o do pedido do Dryland)
+          ...(conf.linhas.some((l) => l.unidades.some((u) => u.alterado))
+            ? {
+                precosAlterados: conf.linhas
+                  .filter((l) => l.unidades.some((u) => u.alterado))
+                  .map((l) => ({ sku: l.sku, de: l.unidades[0].precoPedido, para: l.unidades[0].preco, por: user?.name || user?.email || null })),
+              }
+            : {}),
+        },
         qtdPedido: conf.esperado,
         faltando: conf.linhas.filter((l) => l.falta > 0).map((l) => ({ productCode: l.sku, name: l.descricao, quantidade: l.falta })),
         // peça em falta com o cliente ficando com o crédito
@@ -2616,6 +2701,46 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                                   SKU <b className="font-mono text-[#000638]">{l.sku}</b>
                                   {l.cor ? ` · ${l.cor}` : ''}
                                   {l.tam ? ` · ${l.tam}` : ''} · {[...new Set(l.precos)].map((v) => fmtBRL(v)).join(' + ')}
+                                  {!resultado &&
+                                    (editandoPreco === l.sku ? (
+                                      <span className="ml-1 inline-flex items-center gap-1">
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          step="0.01"
+                                          autoFocus
+                                          value={precoManual[l.sku] ?? ''}
+                                          onChange={(e) => setPrecoManual((pm) => ({ ...pm, [l.sku]: e.target.value }))}
+                                          onKeyDown={(e) => e.key === 'Enter' && setEditandoPreco(null)}
+                                          placeholder={String(l.unidades[0]?.precoPedido ?? '')}
+                                          className="mb-0 h-6 w-20 rounded border border-gray-300 px-1 text-[11px]"
+                                        />
+                                        <button type="button" onClick={() => setEditandoPreco(null)} className="font-bold text-emerald-700">
+                                          ok
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setPrecoManual((pm) => {
+                                              const n = { ...pm };
+                                              delete n[l.sku];
+                                              return n;
+                                            });
+                                            setEditandoPreco(null);
+                                          }}
+                                          className="text-gray-500 underline"
+                                        >
+                                          voltar ao do pedido
+                                        </button>
+                                      </span>
+                                    ) : (
+                                      <button type="button" onClick={() => setEditandoPreco(l.sku)} className="ml-1 text-[10.5px] font-semibold text-blue-700 underline" title="O preço é sempre o do pedido do Dryland. Só o operador altera.">
+                                        alterar preço
+                                      </button>
+                                    ))}
+                                  {l.unidades.some((u) => u.alterado) && (
+                                    <span className="ml-1 rounded bg-fuchsia-50 px-1 font-semibold text-fuchsia-700">preço alterado pelo operador (pedido: {fmtBRL(l.unidades[0].precoPedido)})</span>
+                                  )}
                                   {l.unidades.some((u) => u.black) && (
                                     <span className="ml-1 rounded bg-rose-50 px-1 font-semibold text-rose-700">
                                       Black −{l.unidades.find((u) => u.black).black.pct ?? '?'}%
@@ -2997,16 +3122,21 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                             </select>
                           </div>
                           <div>
-                            <label className={labelCls}>Valor {p.auto && <span className="normal-case text-gray-400">(automático)</span>}</label>
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={p.valor}
-                              readOnly={p.auto}
-                              onChange={(e) => setPag(i, { valor: e.target.value })}
-                              className={`${inputCls} ${p.auto ? 'bg-gray-100' : ''}`}
-                            />
+                            <label className={labelCls}>
+                              Valor {p.auto && <span className="normal-case text-gray-400">(acompanha o total)</span>}
+                              {!p.auto && (
+                                <button
+                                  type="button"
+                                  onClick={() => setPagamentos((ps) => ps.map((x, k) => ({ ...x, auto: k === i })))}
+                                  className="ml-1 normal-case font-semibold text-blue-700 underline"
+                                  title="Este valor volta a acompanhar o total da nota (total menos as outras formas)"
+                                >
+                                  fechar o total
+                                </button>
+                              )}
+                            </label>
+                            {/* o operador digita o valor que quiser: ao digitar, a forma deixa de acompanhar o total */}
+                            <input type="number" min="0" step="0.01" value={p.valor} onChange={(e) => setPag(i, { valor: e.target.value, auto: false })} className={inputCls} />
                           </div>
                           {CAMPO_SALDO[p.forma] &&
                             (() => {
@@ -3199,6 +3329,29 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                 </Bloco>
 
                 <Bloco titulo="Descontos do pedido" icone={Tag}>
+                  {!brejinho && (
+                    <div className="mb-2 rounded-lg bg-amber-50 p-2 ring-1 ring-amber-200">
+                      <label className={labelCls}>Desconto do operador (%) · máximo {LIMITE_DESCONTO_PEDIDOS}%</label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="0"
+                          max={LIMITE_DESCONTO_PEDIDOS}
+                          step="0.5"
+                          value={descPct}
+                          onChange={(e) => setDescPct(e.target.value)}
+                          placeholder="0"
+                          className={`${inputCls} w-24 ${pctDesc > LIMITE_DESCONTO_PEDIDOS ? 'border-rose-500' : ''}`}
+                        />
+                        <span className="text-xs tabular-nums text-amber-800">{pctDesc > 0 ? `− ${fmtBRL(conf.descExtraConferido)} nas peças conferidas` : 'sem desconto do operador'}</span>
+                      </div>
+                      <p className={`mt-1 text-[10.5px] ${pctDesc > LIMITE_DESCONTO_PEDIDOS ? 'font-semibold text-rose-600' : 'text-amber-800'}`}>
+                        {pctDesc > LIMITE_DESCONTO_PEDIDOS
+                          ? `Passou de ${LIMITE_DESCONTO_PEDIDOS}%: reduza o desconto.`
+                          : 'Use só para acertar o valor quando ele não fechou com o pedido. Entra no valor de cada peça da NF-e.'}
+                      </p>
+                    </div>
+                  )}
                   {brejinho && (
                     <div className="mb-2 rounded-lg bg-amber-50 p-2 ring-1 ring-amber-200">
                       <label className={labelCls}>Desconto neste faturamento (%)</label>
@@ -3246,6 +3399,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                             {d.pecas === d.total ? `em todas as ${d.total} peças` : d.pecas === 1 ? `em 1 peça de ${d.total}` : `em ${d.pecas} de ${d.total} peças`}
                             {d.tipo.startsWith('Desconto') ? ' — rateado no valor de cada peça da NF-e' : ''}
                           </p>
+                          {d.nota && <p className="text-[11px] text-amber-700">{d.nota}</p>}
                         </li>
                       ))}
                     </ul>
