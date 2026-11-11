@@ -904,6 +904,113 @@ const ModalEntradasPendentes = ({ de, ate, onClose, onConcluido }) => {
   );
 };
 
+// ─── Importar fatura do cartão (PagBank) — Titia, 11/11/2026 ───
+const STATUS_PAG_FATURA = {
+  pronta: { t: 'pronta para conciliar', c: 'bg-sky-100 text-sky-800' },
+  conciliada: { t: 'conciliada', c: 'bg-green-100 text-green-800' },
+  ja_conciliada: { t: 'já conciliada', c: 'bg-gray-100 text-gray-700' },
+  aguardando_extrato: { t: 'aguardando extrato', c: 'bg-amber-100 text-amber-800' },
+  sem_saida_no_extrato: { t: 'saída não achada', c: 'bg-amber-100 text-amber-800' },
+  sem_lancamento: { t: 'compra sem lançamento', c: 'bg-red-100 text-red-700' },
+  nao_fecha: { t: 'não fecha', c: 'bg-red-100 text-red-700' },
+  erro: { t: 'erro', c: 'bg-red-100 text-red-700' },
+};
+const ModalFaturaCartao = ({ dados, ocupado, onConfirmar, onClose }) => {
+  const f = dados.fatura;
+  const prontas = dados.pagamentos.filter((p) => p.status === 'pronta');
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/50 flex items-start justify-center p-3 md:p-6 overflow-auto" onClick={() => !ocupado && onClose()}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl" onClick={(e) => e.stopPropagation()}>
+        <div className="px-4 py-3 border-b border-gray-200 flex items-start gap-2">
+          <div className="flex-1">
+            <h3 className="text-sm font-bold text-gray-800">
+              Fatura do cartão {dados.conta.banco} {f.cartao ? `final ${f.cartao}` : ''} · vencimento {fmtData(f.vencimento)} · total {fmt(f.total)}
+            </h3>
+            <p className="text-xs text-gray-500">
+              fatura anterior {fmt(f.faturaAnterior)} + compras {fmt(f.somaCompras)} − pagamentos {fmt(f.somaPagamentos)}{' '}
+              {f.confere ? <span className="text-green-700 font-semibold">= total ✓</span> : <span className="text-red-600 font-semibold">≠ total — confira o PDF</span>}
+              {dados.pagamentosFaturaAnterior?.length ? ` · ${dados.pagamentosFaturaAnterior.map((p) => `${fmtData(p.data)} ${fmt(p.valor)}`).join(', ')} pagou a fatura anterior (concilie importando a fatura anterior)` : ''}
+            </p>
+          </div>
+          <button onClick={() => !ocupado && onClose()} className="text-gray-400 hover:text-gray-600">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="max-h-[68vh] overflow-auto p-4 space-y-4 text-xs">
+          <div>
+            <h4 className="font-semibold text-gray-700 mb-1">Pagamentos desta fatura</h4>
+            <table className="w-full">
+              <thead className="bg-gray-50">
+                <tr className="border-b border-gray-200">
+                  <Th>Pagamento</Th>
+                  <Th right>Valor</Th>
+                  <Th>Compras (títulos do contas a pagar)</Th>
+                  <Th>Situação</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {dados.pagamentos.map((p, i) => {
+                  const st = STATUS_PAG_FATURA[p.status] || { t: p.status, c: 'bg-gray-100' };
+                  return (
+                    <tr key={i} className="border-b border-gray-100 align-top">
+                      <td className="px-3 py-1.5 whitespace-nowrap">
+                        {fmtData(p.data)}
+                        <div className="text-[10px] text-gray-500">{p.tipo === 'total' ? 'pagamento do total' : 'antecipado'}{p.distribuicao ? ` · ${p.distribuicao}` : ''}</div>
+                      </td>
+                      <td className="px-3 py-1.5 text-right font-semibold whitespace-nowrap">{fmt(p.valor)}</td>
+                      <td className="px-3 py-1.5">
+                        {p.compras.map((c, k) => (
+                          <div key={k} className={c.status === 'ok' ? '' : 'text-red-600'}>
+                            {fmtData(c.data)} {c.descricao} · {fmt(c.valor)}
+                            {c.parcial ? ` (parte de ${fmt(c.valorCompra)})` : ''}
+                            <span className="text-gray-400"> → {c.titulo ? `dup ${c.titulo.duplicata}/${c.titulo.parcela} ${c.titulo.fornecedor || ''}` : 'sem título no contas a pagar'}</span>
+                          </div>
+                        ))}
+                      </td>
+                      <td className="px-3 py-1.5">
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${st.c}`}>{st.t}</span>
+                        {p.motivo && <div className="text-[10px] text-gray-500 mt-0.5 max-w-[260px]">{p.motivo}</div>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div>
+            <h4 className="font-semibold text-gray-700 mb-1">Compras da fatura</h4>
+            <table className="w-full">
+              <tbody>
+                {dados.compras.map((c) => (
+                  <tr key={c.n} className="border-b border-gray-100">
+                    <td className="px-3 py-1 whitespace-nowrap">{fmtData(c.data)}</td>
+                    <td className="px-3 py-1">{c.descricao}</td>
+                    <td className="px-3 py-1 text-right whitespace-nowrap">{fmt(c.valor)}</td>
+                    <td className={`px-3 py-1 ${c.titulo ? 'text-gray-600' : 'text-red-600 font-medium'}`}>
+                      {c.titulo ? `empresa ${c.titulo.empresa} · dup ${c.titulo.duplicata}/${c.titulo.parcela} · ${c.titulo.fornecedor || ''}` : c.status === 'credito' ? 'crédito/estorno' : 'NÃO lançada no contas a pagar'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div className="px-4 py-3 border-t border-gray-200 flex items-center gap-2 justify-end">
+          <span className="text-[11px] text-gray-500 mr-auto">Só concilia pagamento com todas as compras lançadas no contas a pagar.</span>
+          <button onClick={onClose} disabled={ocupado} className="px-3 py-1.5 text-xs rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50">
+            Fechar
+          </button>
+          {dados.simulado && (
+            <button onClick={onConfirmar} disabled={ocupado || !prontas.length} className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-md bg-sky-700 text-white hover:bg-sky-800 disabled:opacity-40 font-medium">
+              {ocupado ? <ArrowsClockwise size={12} className="animate-spin" /> : <Check size={12} weight="bold" />} Conciliar {prontas.length} pagamento(s)
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ─── lista "Adiantamentos a fornecedor" (Titia, 10/11/2026) ───
 const ModalAdiantamentos = ({ onClose }) => {
   const [itens, setItens] = useState(null);
@@ -1748,6 +1855,36 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
       if (csvRef.current) csvRef.current.value = '';
     }
   };
+  // fatura do cartão (PagBank) → concilia os pagamentos — Titia, 11/11/2026
+  const faturaRef = useRef(null);
+  const [fatura, setFatura] = useState(null); // { arquivo, dados }
+  const [faturaOcupado, setFaturaOcupado] = useState(false);
+  const enviarFatura = async (arquivo, simular) => {
+    if (!arquivo) return;
+    setFaturaOcupado(true);
+    setCsvMsg(null);
+    try {
+      const fd = new FormData();
+      fd.append('arquivo', arquivo);
+      fd.append('contaId', String(c.fluxo.id));
+      fd.append('simular', simular ? 'true' : 'false');
+      const resp = await fetch(`${API}/conciliacao/fatura-cartao`, { method: 'POST', body: fd, headers: headersUsuario() });
+      const j = await resp.json();
+      if (!j?.success) throw new Error(j?.message || 'Falha ao ler a fatura.');
+      setFatura({ arquivo, dados: j.data });
+      if (!simular) {
+        const n = j.data.pagamentos.filter((p) => p.status === 'conciliada').length;
+        setCsvMsg({ ok: true, texto: `Fatura ${fmtData(j.data.fatura.vencimento)}: ${n} pagamento(s) conciliado(s).` });
+        if (onRecarregar) await onRecarregar();
+      }
+    } catch (e) {
+      setCsvMsg({ ok: false, texto: e.message });
+      setFatura(null);
+    } finally {
+      setFaturaOcupado(false);
+      if (faturaRef.current) faturaRef.current.value = '';
+    }
+  };
   // tarifas marcadas → duplicata TOTVS + Solicitação + conciliação (João, 09/11/2026)
   const [criandoTarifas, setCriandoTarifas] = useState(false);
   const criarDuplicatasTarifas = async (ids) => {
@@ -2246,6 +2383,21 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
             </>
           )}
         </div>
+        {String(c?.fluxo?.banco || '').toUpperCase() === 'PAGBANK' && (
+          <div className="px-4 py-1.5 border-b border-gray-100 flex items-center gap-2 text-[11px]">
+            <input ref={faturaRef} type="file" accept=".pdf" className="hidden" onChange={(e) => enviarFatura(e.target.files?.[0], true)} />
+            <button
+              onClick={() => faturaRef.current?.click()}
+              disabled={faturaOcupado}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-sky-700 text-white hover:bg-sky-800 disabled:opacity-40 font-medium"
+              title="Envie o PDF da fatura do cartão PagBank: o HeadCoach acha cada compra no contas a pagar e concilia os pagamentos da fatura (antecipados e o do total)"
+            >
+              {faturaOcupado ? <ArrowsClockwise size={12} className="animate-spin" /> : <UploadSimple size={12} />} Importar fatura do cartão (PDF)
+            </button>
+            <span className="text-gray-500">mostra o plano antes de conciliar · senha do PDF = CNPJ do titular (automático)</span>
+          </div>
+        )}
+        {fatura && <ModalFaturaCartao dados={fatura.dados} ocupado={faturaOcupado} onConfirmar={() => enviarFatura(fatura.arquivo, false)} onClose={() => setFatura(null)} />}
         {csvMsg && <div className={`px-4 py-1.5 text-[11px] ${csvMsg.ok ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-700'}`}>{csvMsg.texto}</div>}
 
         <div className="flex-1 overflow-auto">
