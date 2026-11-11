@@ -117,6 +117,15 @@ function beep(ok = true) {
 //   solicitacao         solicitação de transferência: pré-preenche origem e destino
 //   onTransacaoGerada   (trx) chamado quando a transação nasce no TOTVS
 //   onStatusTransacao   (trx, status) chamado a cada mudança de status
+// Inclusão manual de peça (sem etiqueta): o operador informa a QUANTIDADE e
+// entram todas de uma vez, até 1000 por inclusão (Yago, 11/11/2026).
+const LIMITE_INCLUSAO_MANUAL = 1000;
+const qtdDaInclusao = (txt) => {
+  const n = Math.floor(Number(String(txt ?? '').replace(',', '.')) || 0);
+  if (n > LIMITE_INCLUSAO_MANUAL) return null;
+  return Math.max(1, n);
+};
+
 const TransferenciaRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada, onStatusTransacao } = {}) => {
   const { user } = useAuth();
   const storageKey = `transf_rfid_drafts_${user?.email || user?.id || 'anon'}`;
@@ -161,6 +170,7 @@ const TransferenciaRFID = ({ embutido = false, solicitacao = null, onTransacaoGe
 
   const [globalDiscount, setGlobalDiscount] = useState('');
   const [manualCode, setManualCode] = useState('');
+  const [manualQtd, setManualQtd] = useState('1');
   const [manualBusy, setManualBusy] = useState(false);
   const [importBusy, setImportBusy] = useState(false);
   const txtInputRef = useRef(null);
@@ -458,6 +468,12 @@ const TransferenciaRFID = ({ embutido = false, solicitacao = null, onTransacaoGe
       showToast('erro', 'Selecione a empresa antes');
       return;
     }
+    const qtd = qtdDaInclusao(manualQtd);
+    if (qtd == null) {
+      beep(false);
+      showToast('erro', `No máximo ${LIMITE_INCLUSAO_MANUAL} peças por inclusão`);
+      return;
+    }
     setManualBusy(true);
     try {
       const res = await consultarProduto(code);
@@ -466,15 +482,16 @@ const TransferenciaRFID = ({ embutido = false, solicitacao = null, onTransacaoGe
         showToast('erro', res?.message || `Código ${code} não encontrado`);
         return;
       }
-      mergeProduto(res.data, { manual: 1 });
+      mergeProduto(res.data, { manual: qtd });
       setManualCode('');
+      setManualQtd('1');
     } catch (e) {
       beep(false);
       showToast('erro', `Erro na consulta: ${e.message}`);
     } finally {
       setManualBusy(false);
     }
-  }, [manualCode, manualBusy, consultarProduto, mergeProduto, showToast]);
+  }, [manualCode, manualQtd, manualBusy, consultarProduto, mergeProduto, showToast]);
 
   // Importa um .txt com os códigos (um por linha; repetido = +1 peça)
   const importarCodigosTxt = useCallback(
@@ -1242,16 +1259,32 @@ const TransferenciaRFID = ({ embutido = false, solicitacao = null, onTransacaoGe
                   e.preventDefault();
                   adicionarManual();
                 }}
-                className="relative"
+                className="flex items-center gap-1"
               >
-                <Barcode size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                <div className="relative min-w-0 flex-1">
+                  <Barcode size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <input
+                    value={manualCode}
+                    onChange={(e) => setManualCode(e.target.value)}
+                    placeholder="Sem tag? SKU / cód. barras"
+                    className="w-full h-9 pl-8 pr-8 rounded-lg border border-gray-300 bg-white text-xs mb-0 focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
+                  />
+                  {manualBusy && <Spinner size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 animate-spin" />}
+                </div>
                 <input
-                  value={manualCode}
-                  onChange={(e) => setManualCode(e.target.value)}
-                  placeholder="Sem tag? SKU / cód. barras"
-                  className="w-full h-9 pl-8 pr-8 rounded-lg border border-gray-300 bg-white text-xs mb-0 focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
+                  type="number"
+                  min="1"
+                  max={LIMITE_INCLUSAO_MANUAL}
+                  step="1"
+                  value={manualQtd}
+                  onChange={(e) => setManualQtd(e.target.value)}
+                  title={`Quantidade desta peça (até ${LIMITE_INCLUSAO_MANUAL} por inclusão)`}
+                  aria-label="Quantidade"
+                  className="h-9 w-14 shrink-0 rounded-lg border border-gray-300 bg-white px-1 text-center text-xs mb-0 focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
                 />
-                {manualBusy && <Spinner size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 animate-spin" />}
+                <button type="submit" disabled={manualBusy || !manualCode.trim()} className="h-9 shrink-0 rounded-lg bg-[#000638] px-2.5 text-xs font-bold text-white disabled:opacity-40">
+                  +{qtdDaInclusao(manualQtd) ?? '?'}
+                </button>
               </form>
 
               <input ref={txtInputRef} type="file" accept=".txt,text/plain" className="hidden" onChange={(e) => importarCodigosTxt(e.target.files?.[0])} />

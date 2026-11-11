@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import {
   Storefront,
@@ -28,6 +28,21 @@ const Home = () => {
   const noApp = typeof window !== 'undefined' && !!window.pdv;
   // app Android "Balanço RFID": a Home é a própria tela de contagem
   const noAppBalanco = typeof window !== 'undefined' && !!window.HeadcoachRfid;
+  // versão do PDV instalada neste computador (e a nova, quando já baixou)
+  const [pdv, setPdv] = useState(null);
+  useEffect(() => {
+    const at = typeof window !== 'undefined' ? window.pdv?.atualizacao : null;
+    if (!at?.estado) return undefined;
+    let vivo = true;
+    at.estado()
+      .then((e) => vivo && setPdv(e))
+      .catch(() => {});
+    const sair = at.onStatus?.((e) => vivo && setPdv((p) => ({ ...p, ...e })));
+    return () => {
+      vivo = false;
+      if (typeof sair === 'function') sair();
+    };
+  }, []);
   const podeVer = (href) =>
     user?.allowedPages === '*' ||
     (Array.isArray(user?.allowedPages) && user.allowedPages.includes(href));
@@ -51,6 +66,18 @@ const Home = () => {
               ? 'Você está no PDV CROSBY — HEADCOACH.'
               : 'Você está logado no sistema HEADCOACH CROSBY.'}
           </p>
+          {noApp && pdv?.versaoAtual && (
+            <p className="flex flex-wrap items-center justify-center gap-2 md:justify-start">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#000638] px-3 py-1 text-sm font-bold text-white font-barlow" title="Versão do PDV Crosby instalada neste computador">
+                PDV versão {pdv.versaoAtual}
+              </span>
+              {pdv.versao && pdv.versao !== pdv.versaoAtual && (pdv.status === 'pronto' || pdv.status === 'baixando') && (
+                <span className="inline-flex items-center rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800 ring-1 ring-amber-300">
+                  {pdv.status === 'pronto' ? `versão ${pdv.versao} pronta para instalar` : `baixando a versão ${pdv.versao}…`}
+                </span>
+              )}
+            </p>
+          )}
         </div>
         <div className="flex-1 flex justify-center">
           <img src="/crosbyazul.png" alt="Logo" className="w-40 md:w-72" />

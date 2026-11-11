@@ -56,7 +56,6 @@ import {
   Printer,
   DownloadSimple,
   ListBullets,
-  CaretDown,
   CaretRight,
   Storefront,
   ArrowSquareOut,
@@ -93,6 +92,14 @@ const LIMITE_DESCONTO_LIVRE = 25;
 //   3. o operador pode dar um desconto de ajuste de no máximo 15% (sem senha);
 //   4. valores e formas de pagamento são livres para o operador editar.
 const LIMITE_DESCONTO_PEDIDOS = 15;
+// Inclusão manual de peça (sem etiqueta): o operador informa a QUANTIDADE e
+// entram todas de uma vez, até 1000 por inclusão (Yago, 11/11/2026).
+const LIMITE_INCLUSAO_MANUAL = 1000;
+const qtdDaInclusao = (txt) => {
+  const n = Math.floor(Number(String(txt ?? '').replace(',', '.')) || 0);
+  if (n > LIMITE_INCLUSAO_MANUAL) return null;
+  return Math.max(1, n);
+};
 const ROLES_LIBERAM_DESCONTO = ['owner', 'admin', 'user'];
 // Troca de peça na conferência (a que falta sai, a que sobra entra pelo MESMO
 // valor do pedido): liberada até 11/11/2026 (era só 10/11; o Yago estendeu) —
@@ -201,33 +208,6 @@ function unidadesDe(lista) {
   return unidades;
 }
 
-// Peças que estão no card do Painel e não na separação, e o contrário
-// (só informativo: o que vale para faturar é a separação)
-function diferencaCardSeparacao(dados) {
-  if (dados?.separacaoIncompleta) return null;
-  const sep = dados?.itens || [];
-  const card = dados?.card?.dados?.itens || [];
-  if (!sep.length || !card.length) return null;
-  const conta = (lista) => {
-    const m = new Map();
-    for (const i of lista) {
-      const sku = String(i.cod || '').trim();
-      if (!sku) continue;
-      const cur = m.get(sku) || { sku, nome: i.descricao || '', qtd: 0 };
-      cur.qtd += Number(i.qtd) || 1;
-      m.set(sku, cur);
-    }
-    return m;
-  };
-  const a = conta(sep);
-  const b = conta(card);
-  const soSeparacao = [];
-  const soCard = [];
-  for (const [sku, x] of a) if ((b.get(sku)?.qtd || 0) < x.qtd) soSeparacao.push({ ...x, qtd: x.qtd - (b.get(sku)?.qtd || 0) });
-  for (const [sku, x] of b) if ((a.get(sku)?.qtd || 0) < x.qtd) soCard.push({ ...x, qtd: x.qtd - (a.get(sku)?.qtd || 0) });
-  return soSeparacao.length || soCard.length ? { soSeparacao, soCard } : null;
-}
-
 // Itens do pedido agrupados por SKU (código do produto no TOTVS).
 // AS PEÇAS vêm da SEPARAÇÃO do Dryland (tela /separar — "Loja Virtual Max",
 // pedidos finalizados): é ela que diz o que realmente vai na caixa (trocas,
@@ -259,9 +239,12 @@ const numeroDe = (v) => {
 function descontoDoPedido(dd, somaCard) {
   const declarado = round2((Number(dd?.desconto) || 0) + (Number(dd?.desconto_pix) || 0));
   const pago = Number(dd?.valor_pedido) || 0;
-  if (dd?.brejinho || !(pago > 0) || !(somaCard > 0)) return { total: declarado, declarado, ajuste: 0, base: somaCard, pago, alvo: null };
+  // CREDEV informado no card é forma de pagamento como as outras: o pedido vale
+  // pago + CREDEV (Yago, 11/11/2026 — PE781: 34,59 em Pix + 869,49 em CREDEV = 904,08).
+  // Pedido só em CREDEV vem com valor_pedido 0 e o CREDEV cheio.
+  const credev = numeroDe(dd?.credev);
+  if (dd?.brejinho || !(pago + credev > 0) || !(somaCard > 0)) return { total: declarado, declarado, ajuste: 0, base: somaCard, pago, alvo: null };
   const frete = Number(dd.valor_frete) || 0;
-  const credev = numeroDe(dd.credev);
   const alvo = round2(pago + credev - frete); // quanto as peças valem no pedido do Dryland
   const total = Math.max(0, round2(somaCard - alvo));
   if (total >= somaCard) return { total: declarado, declarado, ajuste: 0, base: somaCard, pago, alvo };
@@ -282,6 +265,20 @@ function itensDoPedido(dados) {
       const c = fila.get(u.sku)?.shift();
       return c ? { ...u, preco: c.preco, black: c.black, troca: c.troca, brinde: c.brinde } : { ...u, soSeparacao: doCard.length > 0 };
     });
+    // Peça que CONTINUA no card do Dryland mas saiu da separação sem ser separada
+    // (linha desmarcada — VJ1290, 11/11/2026: a 54403 vinha de outro estoque). Ela
+    // faz parte do pedido e do valor pago: entra na lista como peça EM FALTA (vira
+    // crédito do cliente + chamado no Dryland) em vez de sumir e o valor não fechar.
+    // Peça "não achada" que o Dryland já tirou do card não entra aqui.
+    const desmarcadas = new Map();
+    for (const r of dados?.itensRemovidos || []) {
+      const sku = String(r.cod || '').trim();
+      if (sku) desmarcadas.set(sku, (desmarcadas.get(sku) || 0) + (Number(r.qtd) || 1));
+    }
+    for (const [sku, resto] of fila) {
+      let n = Math.min(resto.length, desmarcadas.get(sku) || 0);
+      while (n-- > 0) unidades.push({ ...resto.shift(), naoSeparada: true });
+    }
   }
   // desconto do pedido rateado nas peças: o que leva as peças ao valor fechado no Dryland.
   // A proporção sai das peças do CARD (é a elas que valor_pedido se refere); se a
@@ -1275,9 +1272,17 @@ function AbaTransacoes() {
   const [de, setDe] = useState(() => new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10));
   const [ate, setAte] = useState(hojeIso);
   const [filtro, setFiltro] = useState('todos'); // todos | ok | totvs | nf | cancelado
+  // faturamento aberto no modal de detalhe (a linha clicada) e contador que recarrega o detalhe
   const [aberto, setAberto] = useState(null);
+  const [recarga, setRecarga] = useState(0);
   const [reprocessando, setReprocessando] = useState(false);
   const [aviso, setAviso] = useState('');
+  useEffect(() => {
+    if (!aberto) return undefined;
+    const esc = (e) => e.key === 'Escape' && setAberto(null);
+    window.addEventListener('keydown', esc);
+    return () => window.removeEventListener('keydown', esc);
+  }, [aberto]);
   const carregar = useCallback(async () => {
     setLista(null);
     try {
@@ -1309,7 +1314,7 @@ function AbaTransacoes() {
       const j = await r.json();
       setAviso(j.message || '');
       await carregar();
-      setAberto(null);
+      setRecarga((n) => n + 1);
     } catch (e) {
       setAviso(e.message);
     } finally {
@@ -1328,6 +1333,8 @@ function AbaTransacoes() {
     return r;
   }, [linhas]);
   const visiveis = filtro === 'todos' ? linhas : linhas.filter((f) => f.sit === filtro);
+  // a linha do modal, já com o que a lista trouxe de novo depois de um "tentar de novo"
+  const noModal = aberto ? linhas.find((f) => f.id === aberto.id) || aberto : null;
   const quadros = [
     { k: 'todos', label: 'No período', num: 'text-[#000638]', sub: `${fmtBRL(resumo.todos.valor)} com nota autorizada` },
     { k: 'ok', label: SITUACOES.ok.plural, num: SITUACOES.ok.num, sub: fmtBRL(resumo.ok.valor) },
@@ -1370,7 +1377,7 @@ function AbaTransacoes() {
             <ArrowsClockwise size={13} className={lista === null ? 'animate-spin' : ''} /> Buscar
           </button>
         </div>
-        {aviso && <p className="mx-3 mt-2 rounded-lg bg-blue-50 px-2 py-1.5 text-xs text-blue-800 ring-1 ring-blue-200">{aviso}</p>}
+        {aviso && !noModal && <p className="mx-3 mt-2 rounded-lg bg-blue-50 px-2 py-1.5 text-xs text-blue-800 ring-1 ring-blue-200">{aviso}</p>}
         {lista === null ? (
           <div className="py-10 text-center text-gray-400">
             <Spinner size={20} className="mx-auto animate-spin" />
@@ -1400,9 +1407,18 @@ function AbaTransacoes() {
                 const min = resumoMinuta(f.minuta);
                 const totvsAberta = f.sit === 'cancelado' && !!v?.totvs_transacao_code && st !== 6;
                 return (
-                  <li key={f.id} className={`border-l-4 ${S.barra} ${aberto === f.id ? 'bg-slate-50/70' : ''}`}>
-                    <button onClick={() => setAberto(aberto === f.id ? null : f.id)} className={`${GRADE_TRX} w-full px-3 py-2.5 text-left text-xs hover:bg-gray-50 ${f.sit === 'cancelado' ? 'text-gray-400' : ''}`}>
-                      <span className="text-gray-400">{aberto === f.id ? <CaretDown size={12} weight="bold" /> : <CaretRight size={12} weight="bold" />}</span>
+                  <li key={f.id} className={`border-l-4 ${S.barra}`}>
+                    <button
+                      onClick={() => {
+                        setAviso('');
+                        setAberto(f);
+                      }}
+                      title="Abrir os detalhes"
+                      className={`${GRADE_TRX} w-full px-3 py-2.5 text-left text-xs hover:bg-gray-50 ${f.sit === 'cancelado' ? 'text-gray-400' : ''}`}
+                    >
+                      <span className="text-gray-400">
+                        <CaretRight size={12} weight="bold" />
+                      </span>
                       <span className="tabular-nums text-gray-500">{fmtDataHora(f.criado_em)}</span>
                       <span className="font-mono font-bold text-[#000638]">{f.numero_site || '—'}</span>
                       <span className="min-w-[160px] flex-1 lg:min-w-0">
@@ -1446,6 +1462,10 @@ function AbaTransacoes() {
                         {f.duplicata && DUP_STATUS[f.duplicata.status] && (
                           <Chip cls={DUP_STATUS[f.duplicata.status].cls}>{f.duplicata.status === 'assinada' ? 'dup. assinada' : f.duplicata.status === 'erro' ? 'dup. não enviada' : 'dup. enviada'}</Chip>
                         )}
+                        {/* pedido em fatura (boleto) com a nota autorizada e sem duplicata ainda */}
+                        {!f.duplicata && /boleto/i.test(f.forma_pagamento || '') && nf?.status === 'autorizada' && f.sit !== 'cancelado' && (
+                          <Chip cls="bg-rose-50 text-rose-700 ring-rose-200">dup. a enviar</Chip>
+                        )}
                         {min && <Chip cls={min.cls}>{min.label}</Chip>}
                         {Number(v?.pedido_info?.creditoFalta?.valor) > 0 && (
                           <Chip cls={(CREDITO_STATUS[v.pedido_info.creditoFalta.status] || CREDITO_STATUS.pendente).cls}>crédito {fmtBRL(v.pedido_info.creditoFalta.valor)}</Chip>
@@ -1454,7 +1474,6 @@ function AbaTransacoes() {
                       <span className="text-right tabular-nums text-gray-500">{f.qtd_conferida} pç</span>
                       <span className={`text-right font-bold tabular-nums ${f.sit === 'cancelado' ? 'text-gray-400 line-through' : 'text-[#000638]'}`}>{fmtBRL(f.total)}</span>
                     </button>
-                    {aberto === f.id && <DetalheTransacao id={f.id} onReprocessar={reprocessar} reprocessando={reprocessando} />}
                   </li>
                 );
               })}
@@ -1462,6 +1481,30 @@ function AbaTransacoes() {
           </>
         )}
       </div>
+
+      {/* detalhe do faturamento, em modal (fecha no X, no Esc ou clicando fora) */}
+      {noModal && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#000638]/50 p-2 backdrop-blur-[2px] sm:p-5" onMouseDown={(e) => e.target === e.currentTarget && setAberto(null)}>
+          <div className="w-full max-w-6xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+            <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-l-4 border-gray-200 ${SITUACOES[noModal.sit].barra} px-4 py-3`}>
+              <span className="font-mono text-base font-bold text-[#000638]">{noModal.numero_site || '—'}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-semibold text-gray-800">{noModal.cliente_nome || '—'}</span>
+                <span className="block truncate text-[11px] text-gray-500">
+                  {[fmtDataHora(noModal.criado_em), formasTexto(noModal.forma_pagamento), noModal.criado_por && `por ${noModal.criado_por}`, `${noModal.qtd_conferida} pç`].filter(Boolean).join(' · ')}
+                </span>
+              </span>
+              <Chip cls={SITUACOES[noModal.sit].cls}>{SITUACOES[noModal.sit].label}</Chip>
+              <span className={`text-lg font-bold tabular-nums ${noModal.sit === 'cancelado' ? 'text-gray-400 line-through' : 'text-[#000638]'}`}>{fmtBRL(noModal.total)}</span>
+              <button onClick={() => setAberto(null)} title="Fechar (Esc)" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-gray-500 ring-1 ring-gray-200 hover:bg-gray-100">
+                <X size={15} weight="bold" />
+              </button>
+            </div>
+            {aviso && <p className="mx-3 mt-2 rounded-lg bg-blue-50 px-2 py-1.5 text-xs text-blue-800 ring-1 ring-blue-200">{aviso}</p>}
+            <DetalheTransacao key={`${noModal.id}-${recarga}`} id={noModal.id} onReprocessar={reprocessar} reprocessando={reprocessando} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1683,6 +1726,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   const [naoResolvidos, setNaoResolvidos] = useState([]);
   const processed = useRef(new Set());
   const [codigoManual, setCodigoManual] = useState('');
+  const [qtdManual, setQtdManual] = useState('1');
   const [manualBusy, setManualBusy] = useState(false);
 
   // Faturamento
@@ -1705,8 +1749,10 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   const [editandoPreco, setEditandoPreco] = useState(null);
   const [descLiberado, setDescLiberado] = useState(null); // { nome, email, role, pct }
   const [senhaDescOpen, setSenhaDescOpen] = useState(false);
-  // Trocas na conferência: { skuLidoForaDoPedido: skuDoPedidoQueFalta }
+  // Trocas na conferência: { skuDoPedidoQueFalta: [skuLidoForaDoPedido, ...] } — uma entrada por unidade substituída
   const [trocas, setTrocas] = useState({});
+  // linha do pedido com o "Substituir por" aberto
+  const [trocandoSku, setTrocandoSku] = useState(null);
   const trocaLiberada = hojeIso() <= TROCA_LIBERADA_ATE;
   // Saldos do cliente no TOTVS (CREDEV e adiantamento), por empresa
   const [saldos, setSaldos] = useState(null);
@@ -1799,6 +1845,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     setEditandoPreco(null);
     setDescLiberado(null);
     setTrocas({});
+    setTrocandoSku(null);
     // etiquetas que o portal ainda guarda são do pedido anterior: sem limpar,
     // elas entravam no pedido seguinte como "sobrando"
     portalClear().catch(() => {});
@@ -1835,16 +1882,25 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
         const formasPedido = p.pagamento.formas.length ? p.pagamento.formas : ['pix'];
         // CREDEV só quando o próprio card do Dryland informa o valor usado
         const credevCard = Number(String(p.pagamento.credev ?? '').replace(',', '.')) || 0;
-        const formas = credevCard > 0 && !formasPedido.includes('credito_loja') ? [...formasPedido, 'credito_loja'] : formasPedido;
+        // Pedido com CREDEV: as formas já vêm no valor do pedido — o que foi pago fora
+        // (Pix, cartão…) = valor_pedido do card, e o CREDEV = o valor que o card informa.
+        // O total da transação é a soma dos dois. Pedido só em CREDEV fica com uma forma só.
+        const pagoFora = round2(Number(d.card?.dados?.valor_pedido) || 0);
+        const formas =
+          credevCard > 0
+            ? [...(pagoFora > 0 ? formasPedido.filter((f) => f !== 'credito_loja') : []), 'credito_loja']
+            : formasPedido;
+        const iFora = formas.findIndex((f) => f !== 'credito_loja');
         setPagamentos(
           formas.map((f, i) => ({
             forma: f,
-            valor: f === 'credito_loja' && credevCard > 0 && formas.length > 1 ? credevCard : 0,
+            valor: credevCard > 0 ? (f === 'credito_loja' ? credevCard : i === iFora ? pagoFora : 0) : 0,
             parcelas: f === 'boleto' || f === 'credito' ? p.pagamento.parcelas || 1 : 1,
             nsu: f === 'credito' || f === 'debito' ? p.pagamento.nsu || '' : '',
             autorizacao: f === 'credito' || f === 'debito' ? p.pagamento.autorizacao || '' : '',
             bandeira: f === 'credito' || f === 'debito' ? String(p.pagamento.bandeira || '').toLowerCase() : '',
-            auto: i === 0,
+            // com CREDEV os valores são os do pedido (fixos); sem CREDEV a primeira forma acompanha o total
+            auto: credevCard > 0 ? false : i === 0,
           })),
         );
         setVencimentos(p.pagamento.vencimentos || []);
@@ -1910,8 +1966,23 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   );
 
   const itensPedido = useMemo(() => (pedido ? itensDoPedido(pedido) : []), [pedido]);
-  const difCard = useMemo(() => (pedido ? diferencaCardSeparacao(pedido) : null), [pedido]);
   const descontos = useMemo(() => (pedido ? resumoDescontos(pedido, itensPedido) : []), [pedido, itensPedido]);
+  // peças que continuam no pedido do Dryland mas saíram da separação sem ser separadas:
+  // ao abrir o pedido, um modal avisa que falta a peça e que o crédito precisa ser gerado
+  const naoSeparadas = useMemo(
+    () =>
+      itensPedido
+        .map((i) => {
+          const us = i.unidades.filter((u) => u.naoSeparada);
+          return us.length ? { sku: i.sku, descricao: i.descricao, qtd: us.length, valor: round2(us.reduce((t, u) => t + u.preco - u.desc, 0)) } : null;
+        })
+        .filter(Boolean),
+    [itensPedido],
+  );
+  const [avisoFalta, setAvisoFalta] = useState(false);
+  useEffect(() => {
+    setAvisoFalta(naoSeparadas.length > 0);
+  }, [chave, naoSeparadas.length]);
   const skusPedido = useMemo(() => new Set(itensPedido.map((i) => i.sku)), [itensPedido]);
 
   // ─── Prévia fiscal (cenário + CFOP por peça) ─────────────────────────────
@@ -2020,6 +2091,12 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   const adicionarManual = useCallback(async () => {
     const code = codigoManual.trim();
     if (!code || manualBusy) return;
+    const qtd = qtdDaInclusao(qtdManual);
+    if (qtd == null) {
+      beep(false);
+      showToast('erro', `No máximo ${LIMITE_INCLUSAO_MANUAL} peças por inclusão`);
+      return;
+    }
     setManualBusy(true);
     setCodigoManual('');
     try {
@@ -2029,14 +2106,15 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
         showToast('erro', res.message || `Código ${code} não encontrado`);
         return;
       }
-      somar(res.data, { manual: 1 });
+      somar(res.data, { manual: qtd });
+      setQtdManual('1');
     } catch (e) {
       beep(false);
       showToast('erro', `Erro na consulta: ${e.message}`);
     } finally {
       setManualBusy(false);
     }
-  }, [codigoManual, manualBusy, consultarProduto, somar, showToast]);
+  }, [codigoManual, qtdManual, manualBusy, consultarProduto, somar, showToast]);
   const removerEpc = useCallback((sku, epc) => {
     setRemovidas((l) => (l.includes(epc) ? l : [...l, epc]));
     setLidos((prev) => {
@@ -2104,27 +2182,30 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
       const lido = l ? l.epcs.length + l.manual : 0;
       return { i, l, lido, proprio: Math.min(lido, i.qtd) };
     });
-    // trocas (só no dia liberado): a peça lida que NÃO está no pedido entra no
-    // lugar de uma que falta, pelo valor (e desconto) da que estava no pedido
+    // TROCAS (só no período liberado): a peça lida que NÃO está no pedido entra no
+    // lugar de uma que falta, pelo valor (e desconto) da que estava no pedido.
+    // trocas[sku do pedido] = lista com o SKU de fora que substitui CADA unidade em
+    // falta. Cada linha do pedido guarda as suas: trocar uma não mexe nas outras.
+    const porLinha = new Map();
+    for (const [k, v] of Object.entries(trocas)) {
+      const lista = (Array.isArray(v) ? v : [v]).filter(Boolean).map(String);
+      if (skusPedido.has(k)) porLinha.set(k, [...(porLinha.get(k) || []), ...lista]);
+      // rascunho salvo no formato antigo: { sku de fora: [sku do pedido, ...] }
+      else for (const de of lista) if (skusPedido.has(de)) porLinha.set(de, [...(porLinha.get(de) || []), k]);
+    }
     const subs = new Map(); // sku do pedido → [{ sku, nome, epc }]
-    // trocas[sku lido] = lista: para CADA unidade lida daquele produto, o SKU do
-    // pedido que ela substitui ('' = não troca). Cada troca é independente: fazer
-    // a segunda não desfaz a primeira (antes havia uma escolha só por produto).
-    const usado = new Map(); // sku lido → índices das unidades que entraram por troca
+    const usado = new Map(); // sku de fora → quantas unidades já entraram por troca
     if (trocaLiberada) {
-      for (const [para, alvo] of Object.entries(trocas)) {
-        const alvos = Array.isArray(alvo) ? alvo : [alvo];
-        const lp = lidos[para];
-        if (!lp || skusPedido.has(para)) continue;
-        const pecas = [...lp.epcs.map((epc) => ({ sku: para, nome: lp.nome, epc })), ...Array.from({ length: lp.manual }, () => ({ sku: para, nome: lp.nome, epc: null }))];
-        alvos.forEach((de, k) => {
-          if (!de || !pecas[k]) return;
-          const b = base.find((x) => x.i.sku === de);
-          if (!b) return;
-          if (b.i.qtd - b.proprio - (subs.get(de)?.length || 0) <= 0) return; // sem vaga: aquela peça já está completa
-          subs.set(de, [...(subs.get(de) || []), pecas[k]]);
-          usado.set(para, [...(usado.get(para) || []), k]);
-        });
+      for (const b of base) {
+        for (const para of porLinha.get(b.i.sku) || []) {
+          const lp = lidos[para];
+          if (!lp || skusPedido.has(para)) continue;
+          const u = usado.get(para) || 0;
+          if (u >= lp.epcs.length + lp.manual) continue; // aquela peça de fora não está mais lida
+          if (b.i.qtd - b.proprio - (subs.get(b.i.sku)?.length || 0) <= 0) continue; // a peça do pedido já está completa
+          subs.set(b.i.sku, [...(subs.get(b.i.sku) || []), { sku: para, nome: lp.nome, epc: lp.epcs[u] || null }]);
+          usado.set(para, u + 1);
+        }
       }
     }
     // preço e desconto do pedido de cada unidade (antes do desconto do operador)
@@ -2141,7 +2222,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     const extras = new Map(); // "sku|índice" → desconto do operador naquela unidade
     if (pctDesc > 0) {
       let dado = 0;
-      let maior = null;
+      const conferidasU = []; // unidades conferidas, para acertar os centavos
       for (const { i, l, proprio } of base) {
         const nConf = proprio + (subs.get(i.sku)?.length || 0);
         precosDe(i, l).forEach((x, k) => {
@@ -2149,13 +2230,26 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
           extras.set(`${i.sku}|${k}`, e);
           if (k < nConf) {
             dado += e;
-            if (!maior || x.preco > maior.preco) maior = { chave: `${i.sku}|${k}`, preco: x.preco };
+            conferidasU.push({ chave: `${i.sku}|${k}`, preco: x.preco });
           }
         });
       }
-      if (descModo === 'valor' && maior) {
-        const sobra = round2(Math.min(descDigitado, baseOperador) - round2(dado));
-        if (sobra !== 0) extras.set(maior.chave, round2(extras.get(maior.chave) + sobra));
+      // O desconto TOTAL tem que ser exato: em R$, o valor digitado; em %, o que leva o
+      // total das peças a "total × (1 − %)" arredondado uma vez só. Arredondando peça a
+      // peça os centavos acumulam (BRJ 22620, 51 peças a 15%: 4.453,32 em vez de 4.453,58).
+      // A diferença é espalhada de 1 em 1 centavo, começando pelas peças mais caras.
+      // (em centavos inteiros, para o meio centavo arredondar sempre para cima: 4.453,575 → 4.453,58)
+      const totalComPct = Math.round((Math.round(baseOperador * 100) * (100 - pctDesc)) / 100) / 100;
+      const alvoDesc = descModo === 'valor' ? round2(Math.min(descDigitado, baseOperador)) : round2(baseOperador - totalComPct);
+      let centavos = Math.round((alvoDesc - round2(dado)) * 100);
+      if (centavos !== 0 && conferidasU.length) {
+        conferidasU.sort((a, b) => b.preco - a.preco);
+        const passo = centavos > 0 ? 0.01 : -0.01;
+        for (let n = 0; centavos !== 0; n += 1) {
+          const { chave } = conferidasU[n % conferidasU.length];
+          extras.set(chave, round2(extras.get(chave) + passo));
+          centavos -= centavos > 0 ? 1 : -1;
+        }
       }
     }
     const linhas = base.map(({ i, l, lido, proprio }) => {
@@ -2201,13 +2295,14 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
       };
     });
     // lidas fora do pedido: "lido" é o que ainda sobra depois das trocas
+    // (as primeiras unidades — etiquetas antes das digitadas — são as que entraram por troca)
     const fora = Object.values(lidos)
       .filter((l) => !skusPedido.has(l.sku))
       .map((l) => {
         const total = l.epcs.length + l.manual;
-        const idx = usado.get(l.sku) || [];
-        const alvo = trocas[l.sku];
-        return { ...l, total, usado: idx.length, usadoIdx: idx, lido: total - idx.length, alvos: !trocaLiberada || !alvo ? [] : Array.isArray(alvo) ? alvo : [alvo] };
+        const u = usado.get(l.sku) || 0;
+        const entraPor = [...subs].filter(([, lista]) => lista.some((sb) => sb.sku === l.sku)).map(([de]) => de);
+        return { ...l, total, usado: u, lido: total - u, entraPor };
       });
     const esperado = linhas.reduce((s, l) => s + l.qtd, 0);
     const conferidas = linhas.reduce((s, l) => s + l.conferido, 0);
@@ -2222,6 +2317,20 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   }, [itensPedido, lidos, skusPedido, descDigitado, descModo, trocas, trocaLiberada, precoManual]);
   // % efetivo do desconto do operador (o digitado, ou o que o valor em R$ representa)
   const pctDesc = conf.pctDesc;
+  // as trocas que estão valendo agora, já no formato { sku do pedido: [sku de fora, ...] }
+  // (deixa para trás o que ficou sem efeito, p.ex. a peça de fora que foi tirada)
+  const trocasValendo = () => Object.fromEntries(conf.linhas.filter((l) => l.substitutos.length > 0).map((l) => [l.sku, l.substitutos.map((sb) => sb.sku)]));
+  const substituirPor = (de, para) => {
+    const t = trocasValendo();
+    setTrocas({ ...t, [de]: [...(t[de] || []), String(para)] });
+  };
+  const desfazerTroca = (de, idx) => {
+    const t = trocasValendo();
+    const lista = (t[de] || []).filter((_, k) => k !== idx);
+    if (lista.length) t[de] = lista;
+    else delete t[de];
+    setTrocas(t);
+  };
   // resumo das trocas feitas (para o servidor e para a confirmação)
   const trocasFeitas = conf.linhas.flatMap((l) => {
     const por = new Map();
@@ -2440,7 +2549,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
         })(),
         sobrando: [
           ...conf.linhas.filter((l) => l.sobra > 0).map((l) => ({ productCode: l.sku, name: l.descricao, quantidade: l.sobra, epcs: l.epcs.slice(l.qtd) })),
-          ...conf.fora.filter((l) => l.lido > 0).map((l) => ({ productCode: l.sku, name: l.nome, quantidade: l.lido, epcs: l.epcs.filter((_, k) => !l.usadoIdx.includes(k)) })),
+          ...conf.fora.filter((l) => l.lido > 0).map((l) => ({ productCode: l.sku, name: l.nome, quantidade: l.lido, epcs: l.epcs.slice(l.usado) })),
         ],
         por: user?.name || user?.email || null,
       };
@@ -2730,13 +2839,6 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                         ? 'Peças da separação do Dryland (tela Separar · Loja Virtual Max).'
                         : 'Este pedido não tem separação no Dryland: peças do card do pedido.'}
                   </p>
-                  {difCard && (
-                    <div className="border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] text-amber-800">
-                      <b>O card do Painel está diferente da separação.</b> Vale a separação.
-                      {difCard.soSeparacao.length > 0 && <span className="block">Só na separação (entra na nota): {difCard.soSeparacao.map((x) => `${x.qtd}x ${x.sku} ${x.nome}`).join(' · ')}</span>}
-                      {difCard.soCard.length > 0 && <span className="block">Só no card (fica fora da nota): {difCard.soCard.map((x) => `${x.qtd}x ${x.sku} ${x.nome}`).join(' · ')}</span>}
-                    </div>
-                  )}
                   {conf.linhas.length === 0 ? (
                     <p className="px-3 py-8 text-center text-xs text-gray-400">Este pedido não tem itens no Dryland.</p>
                   ) : (
@@ -2751,9 +2853,23 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                                 ? 'border-l-amber-400 bg-amber-50/30'
                                 : 'border-l-gray-200';
                         const fx = cfopPor.get(l.sku);
+                        // peça do pedido que não bateu: clicar nela abre o "Substituir por"
+                        const podeTrocar = trocaLiberada && !resultado && l.falta > 0;
+                        const paraTrocar = conf.fora.filter((f) => f.lido > 0);
                         return (
                           <li key={l.sku} className={`border-l-4 px-3 py-2 ${cor}`}>
-                            <div className="flex items-start gap-2">
+                            <div
+                              className={`flex items-start gap-2 ${podeTrocar ? 'cursor-pointer' : ''}`}
+                              title={podeTrocar ? 'Clique para substituir esta peça por uma que foi lida fora do pedido' : undefined}
+                              onClick={
+                                podeTrocar
+                                  ? (e) => {
+                                      if (e.target.closest('button, input, select')) return;
+                                      setTrocandoSku((k) => (k === l.sku ? null : l.sku));
+                                    }
+                                  : undefined
+                              }
+                            >
                               <div className="min-w-0 flex-1">
                                 <p className="truncate text-sm font-semibold text-gray-800">{l.descricao || `SKU ${l.sku}`}</p>
                                 <p className="text-[11px] text-gray-500">
@@ -2808,9 +2924,15 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                                     </span>
                                   )}
                                   {l.unidades.some((u) => u.troca) && <span className="ml-1 rounded bg-sky-50 px-1 font-semibold text-sky-700">troca de {l.unidades.find((u) => u.troca).troca}</span>}
-                                  {l.unidades.some((u) => u.desc > 0) && (
+                                  {l.unidades.some((u) => u.naoSeparada) && <span className="ml-1 rounded bg-rose-50 px-1 font-semibold text-rose-700">não separada no Dryland</span>}
+                                  {l.unidades.some((u) => u.desc - (u.descExtra || 0) > 0.004) && (
                                     <span className="ml-1 rounded bg-amber-50 px-1 font-semibold text-amber-700">
-                                      − {fmtBRL(l.unidades.reduce((s, u) => s + u.desc, 0))} desc. pedido
+                                      − {fmtBRL(l.unidades.reduce((s, u) => s + u.desc - (u.descExtra || 0), 0))} desc. pedido
+                                    </span>
+                                  )}
+                                  {l.unidades.some((u) => u.descExtra > 0) && (
+                                    <span className="ml-1 rounded bg-fuchsia-50 px-1 font-semibold text-fuchsia-700">
+                                      − {fmtBRL(l.unidades.reduce((s, u) => s + (u.descExtra || 0), 0))} desc. operador
                                     </span>
                                   )}
                                   {fx && (
@@ -2835,13 +2957,48 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                                     <span className="text-amber-700">falta {l.falta}</span>
                                   )}
                                 </p>
+                                {podeTrocar && <p className="text-[10px] font-bold text-sky-700 underline">substituir</p>}
                               </div>
                             </div>
+                            {podeTrocar && trocandoSku === l.sku && (
+                              <div className="mt-1.5 flex flex-wrap items-center gap-1.5 rounded-lg bg-sky-50 px-2 py-1.5 ring-1 ring-sky-200">
+                                <span className="text-[11px] font-bold text-[#000638]">Substituir por</span>
+                                {paraTrocar.length === 0 ? (
+                                  <span className="text-[11px] text-gray-600">bipe a peça que vai no lugar — ela aparece em Produto fora do Pedido.</span>
+                                ) : (
+                                  <select
+                                    value=""
+                                    onChange={(e) => {
+                                      if (!e.target.value) return;
+                                      substituirPor(l.sku, e.target.value);
+                                      if (l.falta <= 1) setTrocandoSku(null);
+                                    }}
+                                    className="mb-0 h-8 min-w-0 max-w-full flex-1 rounded-lg border border-sky-300 bg-white px-1.5 text-xs"
+                                  >
+                                    <option value="">— escolha a peça —</option>
+                                    {paraTrocar.map((f) => (
+                                      <option key={f.sku} value={f.sku}>
+                                        {f.sku} · {f.nome}
+                                        {f.lido > 1 ? ` (${f.lido} pç)` : ''}
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
+                              </div>
+                            )}
                             {l.substitutos.length > 0 && (
-                              <p className="mt-1 rounded bg-sky-50 px-1.5 py-0.5 text-[11px] font-semibold text-sky-800 ring-1 ring-sky-200">
-                                Trocada no faturamento: entra {[...new Set(l.substitutos.map((sb) => sb.sku))].map((k) => `${l.substitutos.filter((sb) => sb.sku === k).length}x ${k} ${l.substitutos.find((sb) => sb.sku === k).nome}`).join(' · ')} — pelo
-                                mesmo valor desta peça
-                              </p>
+                              <div className="mt-1 flex flex-wrap items-center gap-1">
+                                {l.substitutos.map((sb, k) => (
+                                  <span key={k} className="inline-flex items-center gap-1 rounded bg-sky-50 px-1.5 py-0.5 text-[11px] font-semibold text-sky-800 ring-1 ring-sky-200">
+                                    Substituída por {sb.sku} {sb.nome}
+                                    {!resultado && (
+                                      <button onClick={() => desfazerTroca(l.sku, k)} className="text-sky-500 hover:text-rose-600" title="Desfazer esta substituição">
+                                        <X size={11} weight="bold" />
+                                      </button>
+                                    )}
+                                  </span>
+                                ))}
+                              </div>
                             )}
                             {(l.epcs.length > 0 || l.manual > 0) && (
                               <div className="mt-1 flex flex-wrap items-center gap-1">
@@ -2890,94 +3047,27 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                   )}
                   {conf.fora.length > 0 && (
                     <div className="border-t border-rose-200 bg-rose-50/60">
-                      <p className="px-3 pt-2 text-[11px] font-bold uppercase tracking-wide text-rose-700">
-                        Lidas que NÃO estão no pedido ({conf.fora.reduce((s, l) => s + l.lido, 0)}) — não entram na nota
-                      </p>
-                      {trocaLiberada && (
-                        <p className="px-3 text-[11px] text-sky-800">
-                          Liberado até {fmtData(TROCA_LIBERADA_ATE)}: se a peça foi trocada, escolha abaixo qual peça que falta ela substitui. Ela entra na nota pelo valor da peça do pedido, e o total não muda.
-                        </p>
-                      )}
+                      <p className="px-3 pt-2 text-[11px] font-bold uppercase tracking-wide text-rose-700">Produto fora do Pedido</p>
                       <ul className="divide-y divide-rose-100">
                         {conf.fora.map((l) => (
-                          <li key={l.sku} className="px-3 py-1.5 text-xs">
-                            <p className="font-semibold text-rose-800">
+                          <li key={l.sku} className="flex items-center gap-2 px-3 py-1.5 text-xs">
+                            <p className="min-w-0 flex-1 truncate font-semibold text-rose-800">
                               {l.nome} <span className="font-mono font-normal">· SKU {l.sku}</span> · {l.total} pç
                             </p>
-                            {trocaLiberada && (
-                              <div className="mt-1 space-y-1">
-                                {Array.from({ length: l.total }, (_, k) => {
-                                  const atual = l.alvos[k] || '';
-                                  const entrou = l.usadoIdx.includes(k);
-                                  return (
-                                    <div key={k} className="flex flex-wrap items-center gap-1.5">
-                                      <span className="text-[11px] font-semibold text-[#000638]">{l.total > 1 ? `${k + 1}ª peça: entra no lugar de` : 'Trocar: entra no lugar de'}</span>
-                                      <select
-                                        value={atual}
-                                        onChange={(e) =>
-                                          setTrocas((t) => {
-                                            const lista = Array.isArray(t[l.sku]) ? [...t[l.sku]] : t[l.sku] ? [t[l.sku]] : [];
-                                            while (lista.length <= k) lista.push('');
-                                            lista[k] = e.target.value;
-                                            const n = { ...t };
-                                            if (lista.some(Boolean)) n[l.sku] = lista;
-                                            else delete n[l.sku];
-                                            return n;
-                                          })
-                                        }
-                                        className="mb-0 h-8 max-w-full rounded-lg border border-sky-300 bg-white px-1.5 text-xs"
-                                      >
-                                        <option value="">— não trocar (fica fora da nota) —</option>
-                                        {conf.linhas
-                                          .filter((x) => x.falta > 0 || atual === x.sku)
-                                          .map((x) => (
-                                            <option key={x.sku} value={x.sku}>
-                                              {x.sku} · {x.descricao} · {fmtBRL(x.preco)}
-                                            </option>
-                                          ))}
-                                      </select>
-                                      {entrou && <span className="text-[11px] font-semibold text-emerald-700">entra na nota pelo valor do pedido</span>}
-                                      {atual && !entrou && <span className="text-[11px] font-semibold text-amber-700">essa peça do pedido já está completa</span>}
-                                    </div>
-                                  );
-                                })}
-                              </div>
+                            {l.usado > 0 && (
+                              <span className="shrink-0 rounded bg-sky-50 px-1.5 py-0.5 text-[10.5px] font-semibold text-sky-800 ring-1 ring-sky-200">
+                                {l.lido > 0 ? `${l.usado} de ${l.total} ` : ''}no lugar de {l.entraPor.join(', ')}
+                              </span>
                             )}
-                            <div className="mt-0.5 flex flex-wrap items-center gap-1">
-                              {!resultado && (
-                                <>
-                                  <button
-                                    onClick={() => removerPeca(l.sku)}
-                                    title="Tirar UMA peça deste produto"
-                                    className="inline-flex h-6 items-center gap-0.5 rounded-md bg-white px-1.5 text-[10px] font-bold text-rose-600 ring-1 ring-rose-200 hover:bg-rose-100"
-                                  >
-                                    <Minus size={10} weight="bold" /> tirar 1
-                                  </button>
-                                  {l.total > 1 && (
-                                    <button
-                                      onClick={() => removerTodasDaPeca(l.sku)}
-                                      title="Tirar todas as peças deste produto"
-                                      className="inline-flex h-6 items-center rounded-md bg-white px-1.5 text-rose-600 ring-1 ring-rose-200 hover:bg-rose-100"
-                                    >
-                                      <Trash size={11} />
-                                    </button>
-                                  )}
-                                </>
-                              )}
-                              {l.epcs.map((epc) => (
-                                <span key={epc} className="inline-flex items-center gap-1 rounded-full bg-white px-1.5 py-0.5 font-mono text-[10px] text-rose-700 ring-1 ring-rose-200">
-                                  <Tag size={9} /> {epc}
-                                  <button onClick={() => removerEpc(l.sku, epc)} className="text-rose-400 hover:text-rose-600" title="Tirar esta etiqueta">
-                                    <X size={11} weight="bold" />
-                                  </button>
-                                </span>
-                              ))}
-                              {l.manual > 0 && (
-                                <button onClick={() => tirarManual(l.sku)} className="rounded-full bg-white px-1.5 py-0.5 text-[10px] text-rose-700 ring-1 ring-rose-200">
-                                  {l.manual} digitada(s) · tirar uma
-                                </button>
-                              )}
-                            </div>
+                            {!resultado && (
+                              <button
+                                onClick={() => removerPeca(l.sku)}
+                                title="Tirar UMA peça deste produto"
+                                className="inline-flex h-6 shrink-0 items-center gap-0.5 rounded-md bg-white px-1.5 text-[10px] font-bold text-rose-600 ring-1 ring-rose-200 hover:bg-rose-100"
+                              >
+                                <Minus size={10} weight="bold" /> tirar 1
+                              </button>
+                            )}
                           </li>
                         ))}
                       </ul>
@@ -3379,7 +3469,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                     </button>
                   </div>
                   <div className="mt-2 border-t border-gray-100 pt-2">
-                    <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-gray-500">Peça sem etiqueta (código / barras)</label>
+                    <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-gray-500">Peça sem etiqueta (código / barras) · quantidade</label>
                     <div className="flex gap-1">
                       <input
                         value={codigoManual}
@@ -3388,8 +3478,21 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                         placeholder="SKU ou código de barras"
                         className="mb-0 h-9 min-w-0 flex-1 rounded-lg border border-gray-300 px-2 text-sm"
                       />
+                      <input
+                        type="number"
+                        min="1"
+                        max={LIMITE_INCLUSAO_MANUAL}
+                        step="1"
+                        value={qtdManual}
+                        onChange={(e) => setQtdManual(e.target.value)}
+                        onWheel={(e) => e.currentTarget.blur()}
+                        onKeyDown={(e) => e.key === 'Enter' && adicionarManual()}
+                        title={`Quantidade desta peça (até ${LIMITE_INCLUSAO_MANUAL} por inclusão)`}
+                        aria-label="Quantidade"
+                        className="mb-0 h-9 w-16 rounded-lg border border-gray-300 px-1.5 text-center text-sm"
+                      />
                       <button onClick={adicionarManual} disabled={manualBusy || !codigoManual.trim()} className="h-9 rounded-lg bg-[#000638] px-3 text-xs font-bold text-white disabled:opacity-40">
-                        {manualBusy ? <Spinner size={13} className="animate-spin" /> : '+1'}
+                        {manualBusy ? <Spinner size={13} className="animate-spin" /> : `+${qtdDaInclusao(qtdManual) ?? '?'}`}
                       </button>
                     </div>
                   </div>
@@ -3424,6 +3527,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                           step={descModo === 'valor' ? '0.01' : '0.5'}
                           value={descPct}
                           onChange={(e) => setDescPct(e.target.value)}
+                          onWheel={(e) => e.currentTarget.blur()}
                           placeholder={descModo === 'valor' ? '0,00' : '0'}
                           className={`${inputCls} w-28 ${pctDesc > LIMITE_DESCONTO_PEDIDOS + 0.005 ? 'border-rose-500' : ''}`}
                         />
@@ -3466,6 +3570,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                           step={descModo === 'valor' ? '0.01' : '0.5'}
                           value={descPct}
                           onChange={(e) => setDescPct(e.target.value)}
+                          onWheel={(e) => e.currentTarget.blur()}
                           placeholder={descModo === 'valor' ? '0,00' : '0'}
                           className={`${inputCls} w-28 ${descPrecisaSenha ? 'border-amber-500' : ''}`}
                         />
@@ -3610,12 +3715,31 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                     <span className="font-semibold text-[#000638]">Total da NF-e</span>
                     <span className="text-xl font-bold tabular-nums text-[#000638]">{fmtBRL(totalNota)}</span>
                   </div>
-                  {Number(card?.dados?.valor_pedido) > 0 && (
-                    <div className={`flex justify-between ${conf.ok && Math.abs(Number(card.dados.valor_pedido) - totalNota) > 0.01 ? 'font-semibold text-rose-600' : 'text-gray-500'}`}>
-                      <span>Pago no pedido{conf.ok && Math.abs(Number(card.dados.valor_pedido) - totalNota) > 0.01 ? ' — não bate!' : ''}</span>
-                      <span className="tabular-nums">{fmtBRL(card.dados.valor_pedido)}</span>
-                    </div>
-                  )}
+                  {(() => {
+                    // valor do pedido no Dryland = o que foi pago fora + o CREDEV que o card informa
+                    const pagoFora = Number(card?.dados?.valor_pedido) || 0;
+                    const credevPedido = card?.dados?.brejinho ? 0 : numeroDe(card?.dados?.credev);
+                    const valorPedido = round2(pagoFora + credevPedido);
+                    if (!(valorPedido > 0)) return null;
+                    const naoBate = conf.ok && Math.abs(valorPedido - totalNota) > 0.01;
+                    return (
+                      <div className={naoBate ? 'font-semibold text-rose-600' : 'text-gray-500'}>
+                        <div className="flex justify-between">
+                          <span>
+                            {credevPedido > 0 ? 'Valor do pedido' : 'Pago no pedido'}
+                            {naoBate ? ' — não bate!' : ''}
+                          </span>
+                          <span className="tabular-nums">{fmtBRL(valorPedido)}</span>
+                        </div>
+                        {credevPedido > 0 && (
+                          <p className="text-right text-[10.5px] font-normal text-gray-500">
+                            {pagoFora > 0 ? `${fmtBRL(pagoFora)} pago + ` : ''}
+                            {fmtBRL(credevPedido)} em Credev
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
                   {creditoPossivel && !resultado && !bloqueio && (
                     <label className={`mt-2 flex cursor-pointer items-start gap-2 rounded-lg p-2 text-[11px] ring-1 ${gerarCredito ? 'bg-sky-50 text-sky-900 ring-sky-300' : 'bg-gray-50 text-gray-700 ring-gray-200'}`}>
                       <input type="checkbox" checked={gerarCredito} onChange={(e) => setGerarCredito(e.target.checked)} className="mb-0 mt-0.5 !h-4 !w-4 shrink-0 accent-sky-700" />
@@ -3918,6 +4042,74 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
         </div>
       )}
 
+      {/* Pedido com peça que não foi separada: aviso claro assim que ele abre no faturamento */}
+      {avisoFalta &&
+        naoSeparadas.length > 0 &&
+        aba === 'faturar' &&
+        !resultado &&
+        !bloqueio &&
+        (() => {
+          const totalFalta = round2(naoSeparadas.reduce((t, x) => t + x.valor, 0));
+          const emBoleto = /BOLETO/i.test(String(card?.dados?.forma_pagamento || ''));
+          const cliente = card?.cliente || pedido?.separacao?.cliente || customer?.name || 'o cliente';
+          const fechar = () => {
+            if (!emBoleto) setGerarCredito(true);
+            setAvisoFalta(false);
+          };
+          return (
+            <div className="fixed inset-0 z-[65] flex items-center justify-center bg-[#000638]/60 p-4 backdrop-blur-[2px]">
+              <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
+                <div className="flex items-center gap-3 bg-rose-600 px-5 py-4 text-white">
+                  <Warning size={30} weight="fill" className="shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-bold uppercase tracking-wide text-rose-100">Peça em falta no pedido</p>
+                    <h3 className="truncate text-lg font-bold leading-tight">
+                      Pedido {ref || ''} não tem {naoSeparadas.length === 1 && naoSeparadas[0].qtd === 1 ? 'o produto' : 'os produtos'} abaixo
+                    </h3>
+                  </div>
+                </div>
+                <div className="space-y-3 px-5 py-4 text-sm text-gray-700">
+                  <ul className="divide-y divide-gray-100 rounded-xl bg-rose-50/60 ring-1 ring-rose-200">
+                    {naoSeparadas.map((x) => (
+                      <li key={x.sku} className="flex items-center gap-3 px-3 py-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-bold text-gray-900">{x.descricao || `SKU ${x.sku}`}</p>
+                          <p className="text-xs text-gray-600">
+                            SKU <b className="font-mono text-[#000638]">{x.sku}</b> · {x.qtd} peça{x.qtd === 1 ? '' : 's'}
+                          </p>
+                        </div>
+                        <span className="shrink-0 text-base font-bold tabular-nums text-rose-700">{fmtBRL(x.valor)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p>
+                    {naoSeparadas.length === 1 && naoSeparadas[0].qtd === 1 ? 'Essa peça está' : 'Essas peças estão'} no pedido do Dryland e no valor pago, mas <b>não {naoSeparadas.length === 1 && naoSeparadas[0].qtd === 1 ? 'foi separada' : 'foram separadas'}</b>.
+                  </p>
+                  {emBoleto ? (
+                    <p className="rounded-xl bg-amber-50 px-3 py-2 text-amber-900 ring-1 ring-amber-200">
+                      Pedido em <b>boleto</b>: não há crédito a gerar. A nota e o boleto saem só com o valor das peças que existem.
+                    </p>
+                  ) : (
+                    <div className="rounded-xl bg-sky-50 px-3 py-2 text-sky-900 ring-1 ring-sky-200">
+                      <p>
+                        É preciso gerar o <b>crédito de {fmtBRL(totalFalta)}</b> para <b>{cliente}</b>.
+                      </p>
+                      <p className="mt-1">
+                        Ao faturar, a peça fica fora da nota e o HeadCoach <b>abre o chamado no Dryland para o Financeiro gerar o crédito</b>.
+                      </p>
+                    </div>
+                  )}
+                  <p className="text-xs text-gray-500">Se a peça estiver na caixa, é só bipar: ela entra na nota e nenhum crédito é gerado.</p>
+                </div>
+                <div className="flex justify-end border-t border-gray-100 bg-gray-50 px-5 py-3">
+                  <button onClick={fechar} autoFocus className="inline-flex h-10 items-center rounded-lg bg-[#000638] px-5 text-sm font-bold text-white hover:bg-[#000638]/90">
+                    Entendi
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       {senhaDescOpen && (
         <SenhaDescontoModal
           pct={pctDesc}

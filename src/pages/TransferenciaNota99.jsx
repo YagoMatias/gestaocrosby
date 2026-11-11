@@ -37,6 +37,14 @@ import PortalPotenciaModal from '../components/PortalPotenciaModal';
 import { imprimirDanfe, salvarDanfePdf, avisoDoPdf } from '../utils/danfeAcoes';
 
 const EMPRESA = 99;
+// Inclusão manual de peça (sem etiqueta): o operador informa a QUANTIDADE e
+// entram todas de uma vez, até 1000 por inclusão (Yago, 11/11/2026).
+const LIMITE_INCLUSAO_MANUAL = 1000;
+const qtdDaInclusao = (txt) => {
+  const n = Math.floor(Number(String(txt ?? '').replace(',', '.')) || 0);
+  if (n > LIMITE_INCLUSAO_MANUAL) return null;
+  return Math.max(1, n);
+};
 // Preço da transferência quando o pedido não traz: tabela 4 (atacado) menos 25%,
 // a mesma regra que a expedição usa nos pedidos de transferência do Dryland
 // ("preço = tabela 4 -25%"). Na avulsa o valor pode ser corrigido na linha.
@@ -88,6 +96,7 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
   const [portalBusy, setPortalBusy] = useState(false);
   const [potenciaOpen, setPotenciaOpen] = useState(false);
   const [codigoManual, setCodigoManual] = useState('');
+  const [qtdManual, setQtdManual] = useState('1');
   const [manualBusy, setManualBusy] = useState(false);
   const [confirmar, setConfirmar] = useState(false);
   const [posting, setPosting] = useState(false);
@@ -226,6 +235,12 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
   const adicionarManual = async () => {
     const code = codigoManual.trim();
     if (!code || manualBusy) return;
+    const qtd = qtdDaInclusao(qtdManual);
+    if (qtd == null) {
+      beep(false);
+      avisar('erro', `No máximo ${LIMITE_INCLUSAO_MANUAL} peças por inclusão`);
+      return;
+    }
     setManualBusy(true);
     try {
       const res = await consultarProduto(code);
@@ -234,8 +249,9 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
         avisar('erro', res.message || `Código ${code} não encontrado`);
         return;
       }
-      somar(res.data, { manual: 1 });
+      somar(res.data, { manual: qtd });
       setCodigoManual('');
+      setQtdManual('1');
     } catch (e) {
       avisar('erro', `Erro na consulta: ${e.message}`);
     } finally {
@@ -702,11 +718,24 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
                   </button>
                 </div>
                 <div className="mt-2 border-t border-gray-100 pt-2">
-                  <label className={labelCls}>Peça sem etiqueta (código / barras)</label>
+                  <label className={labelCls}>Peça sem etiqueta (código / barras) · quantidade</label>
                   <div className="flex gap-1.5">
                     <input value={codigoManual} onChange={(e) => setCodigoManual(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && adicionarManual()} placeholder="SKU ou código de barras" className={inputCls} disabled={!!resultado} />
-                    <button onClick={adicionarManual} disabled={manualBusy || !codigoManual.trim() || !!resultado} className="h-9 rounded-lg bg-[#000638] px-3 text-xs font-bold text-white disabled:opacity-40">
-                      {manualBusy ? <Spinner size={13} className="animate-spin" /> : '+1'}
+                    <input
+                      type="number"
+                      min="1"
+                      max={LIMITE_INCLUSAO_MANUAL}
+                      step="1"
+                      value={qtdManual}
+                      onChange={(e) => setQtdManual(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && adicionarManual()}
+                      title={`Quantidade desta peça (até ${LIMITE_INCLUSAO_MANUAL} por inclusão)`}
+                      aria-label="Quantidade"
+                      disabled={!!resultado}
+                      className="mb-0 h-9 w-16 shrink-0 rounded-lg border border-gray-300 px-1.5 text-center text-sm"
+                    />
+                    <button onClick={adicionarManual} disabled={manualBusy || !codigoManual.trim() || !!resultado} className="h-9 shrink-0 rounded-lg bg-[#000638] px-3 text-xs font-bold text-white disabled:opacity-40">
+                      {manualBusy ? <Spinner size={13} className="animate-spin" /> : `+${qtdDaInclusao(qtdManual) ?? '?'}`}
                     </button>
                   </div>
                 </div>
