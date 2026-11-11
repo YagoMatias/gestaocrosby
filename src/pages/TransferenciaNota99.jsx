@@ -34,8 +34,7 @@ import { API_BASE_URL } from '../config/constants';
 import { useAuth } from '../components/AuthContext';
 import { portalConnect, portalDisconnect, portalTags, portalClear } from '../utils/portalApi';
 import PortalPotenciaModal from '../components/PortalPotenciaModal';
-import { gerarHtmlDanfeDeXml } from '../utils/danfeHtml';
-import { abrirImpressao } from '../utils/documentoFiscalHtml';
+import { imprimirDanfe, salvarDanfePdf, avisoDoPdf } from '../utils/danfeAcoes';
 
 const EMPRESA = 99;
 // Preço da transferência quando o pedido não traz: tabela 4 (atacado) menos 25%,
@@ -68,11 +67,6 @@ function beep(ok = true) {
   }
 }
 
-async function imprimirDanfe(notaId) {
-  const r = await fetch(`${API_BASE_URL}/api/pdv-crosby/notas/${notaId}/xml`);
-  if (!r.ok) throw new Error('XML da nota não encontrado');
-  abrirImpressao(gerarHtmlDanfeDeXml(await r.text(), {}));
-}
 
 const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
   const { user } = useAuth();
@@ -758,7 +752,17 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
                       {resultado.fiscal?.ok && notaRes?.id && (
                         <div className="mt-1.5 flex gap-1.5">
                           <button onClick={() => imprimirDanfe(notaRes.id).catch((e) => avisar('erro', e.message))} className="inline-flex h-8 items-center gap-1 rounded-lg bg-[#000638] px-2.5 text-[11px] font-bold text-white">
-                            <Printer size={13} /> DANFE
+                            <Printer size={13} /> Imprimir
+                          </button>
+                          <button
+                            onClick={() =>
+                              salvarDanfePdf(notaRes.id)
+                                .then((r) => avisoDoPdf(r) && avisar('ok', avisoDoPdf(r)))
+                                .catch((e) => avisar('erro', e.message))
+                            }
+                            className="inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-[11px] font-bold text-[#000638] ring-1 ring-gray-300"
+                          >
+                            <DownloadSimple size={13} /> Salvar PDF
                           </button>
                           <a href={`${API_BASE_URL}/api/pdv-crosby/notas/${notaRes.id}/xml`} className="inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-[11px] font-bold text-[#000638] ring-1 ring-gray-300">
                             <DownloadSimple size={13} /> XML

@@ -325,7 +325,7 @@ export function gerarHtmlDanfeDeXml(xmlString, opcoes = {}) {
 <body>
   <div class="bar">
     <span>${esc(titulo)}${tpAmb === '2' ? ' <span class="amb">· HOMOLOGAÇÃO — SEM VALOR FISCAL</span>' : ''}${opcoes.cancelada ? ' <span class="amb">· CANCELADA</span>' : ''}</span>
-    <button onclick="window.print()">Imprimir / Salvar PDF</button>
+    <button onclick="window.print()">Imprimir</button>
   </div>
   <div class="page">
     ${marca ? `<div class="marca">${marca}</div>` : ''}

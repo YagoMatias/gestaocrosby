@@ -75,8 +75,7 @@ import { useAuth } from '../components/AuthContext';
 import { ClientePicker } from './DevolucaoRFID';
 import { portalConnect, portalDisconnect, portalTags, portalClear } from '../utils/portalApi';
 import PortalPotenciaModal from '../components/PortalPotenciaModal';
-import { gerarHtmlDanfeDeXml } from '../utils/danfeHtml';
-import { abrirImpressao } from '../utils/documentoFiscalHtml';
+import { imprimirDanfe, salvarDanfePdf, avisoDoPdf } from '../utils/danfeAcoes';
 
 // ─── Configuração ────────────────────────────────────────────────────────────
 const EMPRESA = 99; // faturamento (NF-e) sempre pela empresa 99
@@ -84,7 +83,8 @@ const EMPRESA_TOTVS = 990; // empresa do TOTVS que recebe o documento interno + 
 const API = `${API_BASE_URL}/api/faturamento-expedicao`;
 // Desconto dado na tela (Expedição Brejinho): até 20% é livre para quem tem a
 // tela; acima disso, senha de owner, admin ou financeiro (perfil "user").
-const LIMITE_DESCONTO_LIVRE = 20;
+// Brejinho: 25% desde 11/11/2026 (era 20%), a pedido do Yago
+const LIMITE_DESCONTO_LIVRE = 25;
 // REGRAS DO YAGO (11/11/2026), valem para o Faturamento dos pedidos do site:
 //   1. o total fecha SEMPRE no valor do pedido do Dryland (o do comprovante) e as
 //      formas de pagamento vêm exatamente como estão no pedido;
@@ -355,10 +355,9 @@ function resumoDescontos(dados, itens) {
   return out;
 }
 
-async function imprimirDanfe(notaId, { cancelada = false } = {}) {
-  const r = await fetch(`${API_BASE_URL}/api/pdv-crosby/notas/${notaId}/xml`);
-  if (!r.ok) throw new Error('XML da nota não encontrado');
-  abrirImpressao(gerarHtmlDanfeDeXml(await r.text(), { cancelada }));
+// salva o DANFE em PDF e devolve o texto do aviso (ou null se o operador desistiu)
+async function salvarPdfDaNota(notaId, opcoes) {
+  return avisoDoPdf(await salvarDanfePdf(notaId, opcoes));
 }
 
 function Bloco({ titulo, icone: Icone, children, extra }) {
@@ -998,7 +997,17 @@ function DetalheTransacao({ id, onReprocessar, reprocessando }) {
           {(nota?.status === 'autorizada' || nota?.status === 'cancelada') && (
             <div className="mt-2 flex flex-wrap gap-1.5">
               <button onClick={() => imprimirDanfe(nota.id, { cancelada: nota.status === 'cancelada' }).catch((e) => alert(e.message))} className={`${btn} bg-[#000638] text-white`}>
-                <Printer size={13} /> DANFE
+                <Printer size={13} /> Imprimir
+              </button>
+              <button
+                onClick={() =>
+                  salvarPdfDaNota(nota.id, { cancelada: nota.status === 'cancelada' })
+                    .then((m) => m && setAvisoCancel(m))
+                    .catch((e) => alert(e.message))
+                }
+                className={`${btn} text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50`}
+              >
+                <FloppyDisk size={13} /> Salvar PDF
               </button>
               <a href={`${API_BASE_URL}/api/pdv-crosby/notas/${nota.id}/xml`} className={`${btn} text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50`}>
                 <DownloadSimple size={13} /> XML
@@ -1689,6 +1698,8 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
 
   // Desconto dado na tela (Brejinho): % sobre as peças; acima do limite pede senha
   const [descPct, setDescPct] = useState('');
+  // o desconto do operador pode ser digitado em % ou em R$ (o valor vira % sobre o que foi conferido)
+  const [descModo, setDescModo] = useState('pct');
   // preço digitado pelo operador por produto (sku → valor); vazio = preço do pedido do Dryland
   const [precoManual, setPrecoManual] = useState({});
   const [editandoPreco, setEditandoPreco] = useState(null);
@@ -1743,6 +1754,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     if (Array.isArray(e.pagamentos) && e.pagamentos.length) setPagamentos(e.pagamentos);
     if (Array.isArray(e.vencimentos)) setVencimentos(e.vencimentos);
     setDescPct(e.descPct || '');
+    setDescModo(e.descModo === 'valor' ? 'valor' : 'pct');
     setPrecoManual(e.precoManual || {});
     setDescLiberado(e.descLiberado || null);
     setTrocas(e.trocas || {});
@@ -1782,6 +1794,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     setRemovidas([]);
     processed.current = new Set();
     setDescPct('');
+    setDescModo('pct');
     setPrecoManual({});
     setEditandoPreco(null);
     setDescLiberado(null);
@@ -2081,7 +2094,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   }, []);
 
   // desconto dado na tela (só Brejinho), em % sobre o valor de cada peça
-  const pctDesc = Math.min(100, Math.max(0, round2(Number(String(descPct).replace(',', '.')) || 0)));
+  const descDigitado = Math.max(0, round2(Number(String(descPct).replace(',', '.')) || 0));
 
   // ─── Conferência: SKU do pedido × SKU lido ───────────────────────────────
   const conf = useMemo(() => {
@@ -2094,17 +2107,55 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     // trocas (só no dia liberado): a peça lida que NÃO está no pedido entra no
     // lugar de uma que falta, pelo valor (e desconto) da que estava no pedido
     const subs = new Map(); // sku do pedido → [{ sku, nome, epc }]
-    const usado = new Map(); // sku lido → quantas unidades entraram por troca
+    // trocas[sku lido] = lista: para CADA unidade lida daquele produto, o SKU do
+    // pedido que ela substitui ('' = não troca). Cada troca é independente: fazer
+    // a segunda não desfaz a primeira (antes havia uma escolha só por produto).
+    const usado = new Map(); // sku lido → índices das unidades que entraram por troca
     if (trocaLiberada) {
-      for (const [para, de] of Object.entries(trocas)) {
+      for (const [para, alvo] of Object.entries(trocas)) {
+        const alvos = Array.isArray(alvo) ? alvo : [alvo];
         const lp = lidos[para];
-        const b = base.find((x) => x.i.sku === de);
-        if (!lp || !b || skusPedido.has(para)) continue;
-        const vagas = b.i.qtd - b.proprio - (subs.get(de)?.length || 0);
-        const pecas = [...lp.epcs.map((epc) => ({ sku: para, nome: lp.nome, epc })), ...Array.from({ length: lp.manual }, () => ({ sku: para, nome: lp.nome, epc: null }))].slice(0, Math.max(0, vagas));
-        if (!pecas.length) continue;
-        subs.set(de, [...(subs.get(de) || []), ...pecas]);
-        usado.set(para, pecas.length);
+        if (!lp || skusPedido.has(para)) continue;
+        const pecas = [...lp.epcs.map((epc) => ({ sku: para, nome: lp.nome, epc })), ...Array.from({ length: lp.manual }, () => ({ sku: para, nome: lp.nome, epc: null }))];
+        alvos.forEach((de, k) => {
+          if (!de || !pecas[k]) return;
+          const b = base.find((x) => x.i.sku === de);
+          if (!b) return;
+          if (b.i.qtd - b.proprio - (subs.get(de)?.length || 0) <= 0) return; // sem vaga: aquela peça já está completa
+          subs.set(de, [...(subs.get(de) || []), pecas[k]]);
+          usado.set(para, [...(usado.get(para) || []), k]);
+        });
+      }
+    }
+    // preço e desconto do pedido de cada unidade (antes do desconto do operador)
+    const precosDe = (i, l) => {
+      const pmTxt = precoManual[i.sku];
+      const pm = pmTxt != null && pmTxt !== '' ? round2(Number(String(pmTxt).replace(',', '.')) || 0) : 0;
+      return i.unidades.map((u) => ({ pm, preco: pm > 0 ? pm : u.preco > 0 ? u.preco : round2(l?.precoTotvs || 0), descPedido: pm > 0 ? 0 : u.desc }));
+    };
+    // DESCONTO DO OPERADOR em % ou em R$. Em R$, o valor digitado vira % sobre o
+    // líquido das peças conferidas e os centavos que sobram do rateio vão na peça
+    // mais cara, para o desconto dar exatamente o valor digitado.
+    const baseOperador = round2(base.reduce((s, { i, l, proprio }) => s + precosDe(i, l).slice(0, proprio + (subs.get(i.sku)?.length || 0)).reduce((t, x) => t + x.preco - x.descPedido, 0), 0));
+    const pctDesc = descModo === 'valor' ? (baseOperador > 0 ? Math.min(100, (descDigitado / baseOperador) * 100) : 0) : Math.min(100, descDigitado);
+    const extras = new Map(); // "sku|índice" → desconto do operador naquela unidade
+    if (pctDesc > 0) {
+      let dado = 0;
+      let maior = null;
+      for (const { i, l, proprio } of base) {
+        const nConf = proprio + (subs.get(i.sku)?.length || 0);
+        precosDe(i, l).forEach((x, k) => {
+          const e = round2(((x.preco - x.descPedido) * pctDesc) / 100);
+          extras.set(`${i.sku}|${k}`, e);
+          if (k < nConf) {
+            dado += e;
+            if (!maior || x.preco > maior.preco) maior = { chave: `${i.sku}|${k}`, preco: x.preco };
+          }
+        });
+      }
+      if (descModo === 'valor' && maior) {
+        const sobra = round2(Math.min(descDigitado, baseOperador) - round2(dado));
+        if (sobra !== 0) extras.set(maior.chave, round2(extras.get(maior.chave) + sobra));
       }
     }
     const linhas = base.map(({ i, l, lido, proprio }) => {
@@ -2115,11 +2166,11 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
       // Unidade que veio sem preço no pedido usa o do TOTVS.
       const pmTxt = precoManual[i.sku];
       const pm = pmTxt != null && pmTxt !== '' ? round2(Number(String(pmTxt).replace(',', '.')) || 0) : 0;
-      const unidades = i.unidades.map((u) => {
+      const unidades = i.unidades.map((u, k) => {
         const preco = pm > 0 ? pm : u.preco > 0 ? u.preco : round2(l?.precoTotvs || 0);
         const descPedido = pm > 0 ? 0 : u.desc;
         // desconto do operador neste faturamento, por cima do que o pedido já trouxe
-        const extra = pctDesc > 0 ? round2(((preco - descPedido) * pctDesc) / 100) : 0;
+        const extra = extras.get(`${i.sku}|${k}`) || 0;
         return { ...u, preco, precoPedido: u.preco, alterado: pm > 0 && pm !== u.preco, desc: round2(descPedido + extra), descExtra: extra };
       });
       const precos = unidades.map((u) => u.preco);
@@ -2154,8 +2205,9 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
       .filter((l) => !skusPedido.has(l.sku))
       .map((l) => {
         const total = l.epcs.length + l.manual;
-        const u = usado.get(l.sku) || 0;
-        return { ...l, total, usado: u, lido: total - u, trocaPor: trocaLiberada ? trocas[l.sku] || null : null };
+        const idx = usado.get(l.sku) || [];
+        const alvo = trocas[l.sku];
+        return { ...l, total, usado: idx.length, usadoIdx: idx, lido: total - idx.length, alvos: !trocaLiberada || !alvo ? [] : Array.isArray(alvo) ? alvo : [alvo] };
       });
     const esperado = linhas.reduce((s, l) => s + l.qtd, 0);
     const conferidas = linhas.reduce((s, l) => s + l.conferido, 0);
@@ -2166,8 +2218,10 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     const descConferido = round2(linhas.reduce((s, l) => s + l.descConferido, 0));
     const totalConferido = round2(brutoConferido - descConferido);
     const descExtraConferido = round2(linhas.reduce((s, l) => s + l.descExtraConferido, 0));
-    return { linhas, fora, esperado, conferidas, faltando, sobrando, totalPedido, brutoConferido, descConferido, descExtraConferido, totalConferido, ok: esperado > 0 && faltando === 0 && sobrando === 0 };
-  }, [itensPedido, lidos, skusPedido, pctDesc, trocas, trocaLiberada, precoManual]);
+    return { linhas, fora, esperado, conferidas, faltando, sobrando, totalPedido, brutoConferido, descConferido, descExtraConferido, totalConferido, pctDesc: round2(pctDesc), baseOperador, ok: esperado > 0 && faltando === 0 && sobrando === 0 };
+  }, [itensPedido, lidos, skusPedido, descDigitado, descModo, trocas, trocaLiberada, precoManual]);
+  // % efetivo do desconto do operador (o digitado, ou o que o valor em R$ representa)
+  const pctDesc = conf.pctDesc;
   // resumo das trocas feitas (para o servidor e para a confirmação)
   const trocasFeitas = conf.linhas.flatMap((l) => {
     const por = new Map();
@@ -2245,7 +2299,8 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   // desconto acima do limite: quem é owner/admin/financeiro passa direto; os demais pedem a senha
   const descSemLimite = ROLES_LIBERAM_DESCONTO.includes(user?.role);
   const descPrecisaSenha = brejinho && pctDesc > LIMITE_DESCONTO_LIVRE && !descSemLimite && !(descLiberado && Number(descLiberado.pct) >= pctDesc);
-  if (!brejinho && pctDesc > LIMITE_DESCONTO_PEDIDOS) pendencias.push(`O desconto do operador é de no máximo ${LIMITE_DESCONTO_PEDIDOS}%.`);
+  if (!brejinho && pctDesc > LIMITE_DESCONTO_PEDIDOS + 0.005)
+    pendencias.push(`O desconto do operador é de no máximo ${LIMITE_DESCONTO_PEDIDOS}%${descModo === 'valor' ? ` (${fmtBRL((conf.baseOperador * LIMITE_DESCONTO_PEDIDOS) / 100)} nestas peças)` : ''}.`);
   if (descPrecisaSenha) pendencias.push(`Desconto de ${pctDesc.toLocaleString('pt-BR')}% passa de ${LIMITE_DESCONTO_LIVRE}%: precisa da senha de owner, admin ou financeiro.`);
   if (pctDesc >= 100) pendencias.push('O desconto não pode ser de 100%.');
   // CREDEV / adiantamento: não pode usar mais do que o cliente tem no TOTVS
@@ -2279,7 +2334,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
       cliente: customer?.name || card?.dados?.nome_cliente || pedido.separacao?.cliente || null,
       lidas: conf.conferidas + conf.sobrando,
       esperado: conf.esperado,
-      estado: { lidos, naoResolvidos, customer, seller, consumidorFinal, operacao, dataDiferente, dataVenda, transp, pagamentos, vencimentos, descPct, descLiberado, trocas, gerarCredito, removidas, precoManual },
+      estado: { lidos, naoResolvidos, customer, seller, consumidorFinal, operacao, dataDiferente, dataVenda, transp, pagamentos, vencimentos, descPct, descModo, descLiberado, trocas, gerarCredito, removidas, precoManual },
     };
     gravarRascunhos((l) => [registro, ...l.filter((d) => d.chave !== chave)].slice(0, 30));
     showToast('ok', 'Faturamento salvo — está em "Em andamento" para continuar depois');
@@ -2316,7 +2371,11 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
         receberComoFatura: comoFatura,
         descontoFaturamento:
           pctDesc > 0
-            ? { pct: pctDesc, liberadoPor: brejinho && pctDesc > LIMITE_DESCONTO_LIVRE ? descLiberado?.nome || (descSemLimite ? user?.name || user?.email : null) : null }
+            ? {
+                pct: pctDesc,
+                ...(descModo === 'valor' ? { valor: Math.min(descDigitado, conf.baseOperador) } : {}),
+                liberadoPor: brejinho && pctDesc > LIMITE_DESCONTO_LIVRE ? descLiberado?.nome || (descSemLimite ? user?.name || user?.email : null) : null,
+              }
             : null,
         // cada unidade conferida vai com o valor da unidade do pedido; quando houve
         // troca, o produto (e a etiqueta) é o da peça que realmente está na caixa
@@ -2381,7 +2440,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
         })(),
         sobrando: [
           ...conf.linhas.filter((l) => l.sobra > 0).map((l) => ({ productCode: l.sku, name: l.descricao, quantidade: l.sobra, epcs: l.epcs.slice(l.qtd) })),
-          ...conf.fora.filter((l) => l.lido > 0).map((l) => ({ productCode: l.sku, name: l.nome, quantidade: l.lido, epcs: l.epcs.slice(Math.min(l.epcs.length, l.usado)) })),
+          ...conf.fora.filter((l) => l.lido > 0).map((l) => ({ productCode: l.sku, name: l.nome, quantidade: l.lido, epcs: l.epcs.filter((_, k) => !l.usadoIdx.includes(k)) })),
         ],
         por: user?.name || user?.email || null,
       };
@@ -2846,34 +2905,42 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                               {l.nome} <span className="font-mono font-normal">· SKU {l.sku}</span> · {l.total} pç
                             </p>
                             {trocaLiberada && (
-                              <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                                <span className="text-[11px] font-semibold text-[#000638]">Trocar: entra no lugar de</span>
-                                <select
-                                  value={trocas[l.sku] || ''}
-                                  onChange={(e) =>
-                                    setTrocas((t) => {
-                                      const n = { ...t };
-                                      if (e.target.value) n[l.sku] = e.target.value;
-                                      else delete n[l.sku];
-                                      return n;
-                                    })
-                                  }
-                                  className="mb-0 h-8 max-w-full rounded-lg border border-sky-300 bg-white px-1.5 text-xs"
-                                >
-                                  <option value="">— não trocar (fica fora da nota) —</option>
-                                  {conf.linhas
-                                    .filter((x) => x.falta > 0 || trocas[l.sku] === x.sku)
-                                    .map((x) => (
-                                      <option key={x.sku} value={x.sku}>
-                                        {x.sku} · {x.descricao} · {fmtBRL(x.preco)}
-                                      </option>
-                                    ))}
-                                </select>
-                                {l.usado > 0 && (
-                                  <span className="text-[11px] font-semibold text-emerald-700">
-                                    {l.usado} pç entra{l.usado > 1 ? 'm' : ''} na nota pelo valor do pedido{l.lido > 0 ? ` · ${l.lido} continua${l.lido > 1 ? 'm' : ''} de fora` : ''}
-                                  </span>
-                                )}
+                              <div className="mt-1 space-y-1">
+                                {Array.from({ length: l.total }, (_, k) => {
+                                  const atual = l.alvos[k] || '';
+                                  const entrou = l.usadoIdx.includes(k);
+                                  return (
+                                    <div key={k} className="flex flex-wrap items-center gap-1.5">
+                                      <span className="text-[11px] font-semibold text-[#000638]">{l.total > 1 ? `${k + 1}ª peça: entra no lugar de` : 'Trocar: entra no lugar de'}</span>
+                                      <select
+                                        value={atual}
+                                        onChange={(e) =>
+                                          setTrocas((t) => {
+                                            const lista = Array.isArray(t[l.sku]) ? [...t[l.sku]] : t[l.sku] ? [t[l.sku]] : [];
+                                            while (lista.length <= k) lista.push('');
+                                            lista[k] = e.target.value;
+                                            const n = { ...t };
+                                            if (lista.some(Boolean)) n[l.sku] = lista;
+                                            else delete n[l.sku];
+                                            return n;
+                                          })
+                                        }
+                                        className="mb-0 h-8 max-w-full rounded-lg border border-sky-300 bg-white px-1.5 text-xs"
+                                      >
+                                        <option value="">— não trocar (fica fora da nota) —</option>
+                                        {conf.linhas
+                                          .filter((x) => x.falta > 0 || atual === x.sku)
+                                          .map((x) => (
+                                            <option key={x.sku} value={x.sku}>
+                                              {x.sku} · {x.descricao} · {fmtBRL(x.preco)}
+                                            </option>
+                                          ))}
+                                      </select>
+                                      {entrou && <span className="text-[11px] font-semibold text-emerald-700">entra na nota pelo valor do pedido</span>}
+                                      {atual && !entrou && <span className="text-[11px] font-semibold text-amber-700">essa peça do pedido já está completa</span>}
+                                    </div>
+                                  );
+                                })}
                               </div>
                             )}
                             <div className="mt-0.5 flex flex-wrap items-center gap-1">
@@ -3331,22 +3398,41 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                 <Bloco titulo="Descontos do pedido" icone={Tag}>
                   {!brejinho && (
                     <div className="mb-2 rounded-lg bg-amber-50 p-2 ring-1 ring-amber-200">
-                      <label className={labelCls}>Desconto do operador (%) · máximo {LIMITE_DESCONTO_PEDIDOS}%</label>
-                      <div className="flex items-center gap-2">
+                      <label className={labelCls}>Desconto do operador · em % ou em R$ · máximo {LIMITE_DESCONTO_PEDIDOS}%</label>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="inline-flex rounded-lg bg-white p-0.5 ring-1 ring-amber-300">
+                          {[
+                            ['pct', '%'],
+                            ['valor', 'R$'],
+                          ].map(([m, rot]) => (
+                            <button
+                              key={m}
+                              type="button"
+                              onClick={() => {
+                                if (m !== descModo) setDescPct('');
+                                setDescModo(m);
+                              }}
+                              className={`h-8 min-w-[34px] rounded-md px-2 text-xs font-bold ${descModo === m ? 'bg-[#000638] text-white' : 'text-[#000638] hover:bg-amber-100'}`}
+                            >
+                              {rot}
+                            </button>
+                          ))}
+                        </div>
                         <input
                           type="number"
                           min="0"
-                          max={LIMITE_DESCONTO_PEDIDOS}
-                          step="0.5"
+                          step={descModo === 'valor' ? '0.01' : '0.5'}
                           value={descPct}
                           onChange={(e) => setDescPct(e.target.value)}
-                          placeholder="0"
-                          className={`${inputCls} w-24 ${pctDesc > LIMITE_DESCONTO_PEDIDOS ? 'border-rose-500' : ''}`}
+                          placeholder={descModo === 'valor' ? '0,00' : '0'}
+                          className={`${inputCls} w-28 ${pctDesc > LIMITE_DESCONTO_PEDIDOS + 0.005 ? 'border-rose-500' : ''}`}
                         />
-                        <span className="text-xs tabular-nums text-amber-800">{pctDesc > 0 ? `− ${fmtBRL(conf.descExtraConferido)} nas peças conferidas` : 'sem desconto do operador'}</span>
+                        <span className="text-xs tabular-nums text-amber-800">
+                          {pctDesc > 0 ? `− ${fmtBRL(conf.descExtraConferido)} nas peças conferidas (${pctDesc.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%)` : 'sem desconto do operador'}
+                        </span>
                       </div>
-                      <p className={`mt-1 text-[10.5px] ${pctDesc > LIMITE_DESCONTO_PEDIDOS ? 'font-semibold text-rose-600' : 'text-amber-800'}`}>
-                        {pctDesc > LIMITE_DESCONTO_PEDIDOS
+                      <p className={`mt-1 text-[10.5px] ${pctDesc > LIMITE_DESCONTO_PEDIDOS + 0.005 ? 'font-semibold text-rose-600' : 'text-amber-800'}`}>
+                        {pctDesc > LIMITE_DESCONTO_PEDIDOS + 0.005
                           ? `Passou de ${LIMITE_DESCONTO_PEDIDOS}%: reduza o desconto.`
                           : 'Use só para acertar o valor quando ele não fechou com o pedido. Entra no valor de cada peça da NF-e.'}
                       </p>
@@ -3354,19 +3440,38 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                   )}
                   {brejinho && (
                     <div className="mb-2 rounded-lg bg-amber-50 p-2 ring-1 ring-amber-200">
-                      <label className={labelCls}>Desconto neste faturamento (%)</label>
-                      <div className="flex items-center gap-2">
+                      <label className={labelCls}>Desconto neste faturamento · em % ou em R$</label>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="inline-flex rounded-lg bg-white p-0.5 ring-1 ring-amber-300">
+                          {[
+                            ['pct', '%'],
+                            ['valor', 'R$'],
+                          ].map(([m, rot]) => (
+                            <button
+                              key={m}
+                              type="button"
+                              onClick={() => {
+                                if (m !== descModo) setDescPct('');
+                                setDescModo(m);
+                              }}
+                              className={`h-8 min-w-[34px] rounded-md px-2 text-xs font-bold ${descModo === m ? 'bg-[#000638] text-white' : 'text-[#000638] hover:bg-amber-100'}`}
+                            >
+                              {rot}
+                            </button>
+                          ))}
+                        </div>
                         <input
                           type="number"
                           min="0"
-                          max="99"
-                          step="0.5"
+                          step={descModo === 'valor' ? '0.01' : '0.5'}
                           value={descPct}
                           onChange={(e) => setDescPct(e.target.value)}
-                          placeholder="0"
-                          className={`${inputCls} w-24 ${descPrecisaSenha ? 'border-amber-500' : ''}`}
+                          placeholder={descModo === 'valor' ? '0,00' : '0'}
+                          className={`${inputCls} w-28 ${descPrecisaSenha ? 'border-amber-500' : ''}`}
                         />
-                        <span className="text-xs tabular-nums text-amber-800">{pctDesc > 0 ? `− ${fmtBRL(conf.descExtraConferido)} nas peças conferidas` : 'sem desconto extra'}</span>
+                        <span className="text-xs tabular-nums text-amber-800">
+                          {pctDesc > 0 ? `− ${fmtBRL(conf.descExtraConferido)} nas peças conferidas (${pctDesc.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%)` : 'sem desconto extra'}
+                        </span>
                       </div>
                       {descPrecisaSenha ? (
                         <button
@@ -3542,7 +3647,17 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                         {resultado.fiscal?.ok && notaRes?.id && (
                           <div className="mt-1.5 flex gap-1.5">
                             <button onClick={() => imprimirDanfe(notaRes.id).catch((e) => showToast('erro', e.message))} className="inline-flex h-8 items-center gap-1 rounded-lg bg-[#000638] px-2.5 text-[11px] font-bold text-white">
-                              <Printer size={13} /> DANFE
+                              <Printer size={13} /> Imprimir
+                            </button>
+                            <button
+                              onClick={() =>
+                                salvarPdfDaNota(notaRes.id)
+                                  .then((m) => m && showToast('ok', m))
+                                  .catch((e) => showToast('erro', e.message))
+                              }
+                              className="inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-[11px] font-bold text-[#000638] ring-1 ring-gray-300"
+                            >
+                              <FloppyDisk size={13} /> Salvar PDF
                             </button>
                             <a href={`${API_BASE_URL}/api/pdv-crosby/notas/${notaRes.id}/xml`} className="inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-[11px] font-bold text-[#000638] ring-1 ring-gray-300">
                               <DownloadSimple size={13} /> XML
@@ -3688,7 +3803,17 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                   {resultado.fiscal?.ok && notaRes?.id && (
                     <>
                       <button onClick={() => imprimirDanfe(notaRes.id).catch((e) => showToast('erro', e.message))} className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl bg-[#000638] px-3 text-sm font-bold text-white">
-                        <Printer size={15} /> DANFE
+                        <Printer size={15} /> Imprimir
+                      </button>
+                      <button
+                        onClick={() =>
+                          salvarPdfDaNota(notaRes.id)
+                            .then((m) => m && showToast('ok', m))
+                            .catch((e) => showToast('erro', e.message))
+                        }
+                        className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-bold text-[#000638] ring-1 ring-gray-300"
+                      >
+                        <FloppyDisk size={15} /> Salvar PDF
                       </button>
                       <a href={`${API_BASE_URL}/api/pdv-crosby/notas/${notaRes.id}/xml`} className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-bold text-[#000638] ring-1 ring-gray-300">
                         <DownloadSimple size={15} /> XML
