@@ -30,6 +30,9 @@ import {
   Tag,
   ListMagnifyingGlass,
   ArrowRight,
+  Printer,
+  FloppyDisk,
+  DownloadSimple,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
@@ -37,6 +40,7 @@ import { useAuth } from '../components/AuthContext';
 import { getSetoresDoUsuario } from '../services/setoresService';
 import TransferenciaRFID from './TransferenciaRFID';
 import TransferenciaNota99 from './TransferenciaNota99';
+import { imprimirDanfe, salvarDanfePdf, avisoDoPdf } from '../utils/danfeAcoes';
 
 // transferência saindo desta empresa tem a nota emitida pelo HeadCoach
 const EMPRESA_NOTA_HEADCOACH = 99;
@@ -114,6 +118,7 @@ const TransferenciasMercadoria = () => {
   const [trxAte, setTrxAte] = useState(hojeBR());
   const [trxBusca, setTrxBusca] = useState('');
   const [trxDetalhe, setTrxDetalhe] = useState(null);
+  const [reprocessando, setReprocessando] = useState(null); // id da transação em "Tentar de novo"
 
   // Local da mercadoria: só owner/admin/user, setor DP ou financeiro alteram
   // (mesma regra das Devoluções)
@@ -361,18 +366,26 @@ const TransferenciasMercadoria = () => {
   );
 
   // transferência com nota pelo HeadCoach: emite a nota que faltou e abre/atende a transação da 990
-  const reprocessarNota = async (t) => {
+  // (com o detalhe aberto, ele continua aberto e é recarregado com o resultado)
+  const reprocessarNota = async (t, { manterDetalhe = false } = {}) => {
+    if (reprocessando) return;
+    setReprocessando(t.id);
     try {
       const r = await fetch(`${API_BASE_URL}/api/transferencias/nota/${t.venda_id}/reprocessar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
       const j = await r.json();
       showToast(j.success && j.data?.fiscal?.ok && j.data?.totvs?.ok ? 'ok' : 'erro', j.message || 'Sem resposta');
       carregarTransacoes();
       carregar();
-      setTrxDetalhe(null);
+      if (manterDetalhe) await detalharTransacao(t);
+      else setTrxDetalhe(null);
     } catch (e) {
       showToast('erro', e.message);
+    } finally {
+      setReprocessando(null);
     }
   };
+  // transferência com nota pelo HeadCoach em que ainda falta alguma etapa (nota ou transação da 990)
+  const podeTentarDeNovo = (t) => !!t?.venda_id && t.nf_status !== 'cancelada' && (t.nf_status !== 'autorizada' || t.transacao_status !== 4);
 
   const irParaRfid = (t) => {
     setAvulsa99(false);
@@ -760,6 +773,16 @@ const TransferenciasMercadoria = () => {
                           </span>
                         </td>
                         <td className="px-2 py-1.5 whitespace-nowrap">
+                          {podeTentarDeNovo(t) && (
+                            <button
+                              onClick={() => reprocessarNota(t)}
+                              disabled={!!reprocessando}
+                              className="mr-1 px-2 py-0.5 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-50"
+                              title={t.totvs_erro || 'Emite a nota que faltou e abre/atende a transação na 990'}
+                            >
+                              {reprocessando === t.id && <Spinner size={11} className="animate-spin" />} Tentar de novo
+                            </button>
+                          )}
                           <button
                             onClick={() => detalharTransacao(t)}
                             className="px-2 py-0.5 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 text-white bg-[#000638] hover:bg-[#000638]/90"
@@ -769,11 +792,6 @@ const TransferenciasMercadoria = () => {
                           <button onClick={() => consultarTransacao(t)} className="ml-1 p-1 rounded hover:bg-gray-100 text-[#000638]" title="Consultar a situação no TOTVS">
                             <ArrowsClockwise size={13} />
                           </button>
-                          {t.venda_id && t.nf_status !== 'cancelada' && (t.nf_status !== 'autorizada' || t.transacao_status !== 4) && (
-                            <button onClick={() => reprocessarNota(t)} className="ml-1 px-2 py-0.5 rounded-lg text-[11px] font-bold text-white bg-amber-600 hover:bg-amber-700" title={t.totvs_erro || 'Emite a nota que faltou e abre/atende a transação na 990'}>
-                              Tentar de novo
-                            </button>
-                          )}
                         </td>
                       </tr>
                     ))}
@@ -799,12 +817,36 @@ const TransferenciasMercadoria = () => {
                         {trxDetalhe.nf_numero ? `NF-e ${trxDetalhe.nf_numero}/${trxDetalhe.nf_serie || ''}` : 'sem NF-e'} · {trxDetalhe.nf_status || 'pendente'}
                       </span>
                       <span className="text-gray-500">nota pelo HeadCoach · {trxDetalhe.natureza === 'venda' ? 'venda entre filiais' : 'transferência'}</span>
-                      {trxDetalhe.nota_id && (
-                        <a href={`${API_BASE_URL}/api/pdv-crosby/notas/${trxDetalhe.nota_id}/xml`} className="font-bold text-blue-700 hover:underline">
-                          XML
-                        </a>
-                      )}
                     </p>
+                  )}
+                  {trxDetalhe.venda_id && trxDetalhe.nota_id && (trxDetalhe.nf_status === 'autorizada' || trxDetalhe.nf_status === 'cancelada') && (
+                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                      <button
+                        onClick={() => imprimirDanfe(trxDetalhe.nota_id, { cancelada: trxDetalhe.nf_status === 'cancelada' }).catch((e) => showToast('erro', e.message))}
+                        className="inline-flex h-8 items-center gap-1 rounded-lg bg-[#000638] px-2.5 text-[11px] font-bold text-white hover:bg-[#000638]/90"
+                      >
+                        <Printer size={13} /> Imprimir DANFE
+                      </button>
+                      <button
+                        onClick={() =>
+                          salvarDanfePdf(trxDetalhe.nota_id, { cancelada: trxDetalhe.nf_status === 'cancelada' })
+                            .then((r) => {
+                              const m = avisoDoPdf(r);
+                              if (m) showToast('ok', m);
+                            })
+                            .catch((e) => showToast('erro', e.message))
+                        }
+                        className="inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-[11px] font-bold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50"
+                      >
+                        <FloppyDisk size={13} /> Salvar DANFE em PDF
+                      </button>
+                      <a
+                        href={`${API_BASE_URL}/api/pdv-crosby/notas/${trxDetalhe.nota_id}/xml`}
+                        className="inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-[11px] font-bold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50"
+                      >
+                        <DownloadSimple size={13} /> XML
+                      </a>
+                    </div>
                   )}
                   {trxDetalhe.totvs_erro && <p className="mt-1 rounded-lg bg-amber-50 px-2 py-1 text-[11px] text-amber-800 ring-1 ring-amber-200">{trxDetalhe.totvs_erro}</p>}
                   <p className="text-xs text-gray-500">
@@ -883,6 +925,16 @@ const TransferenciasMercadoria = () => {
                 <span className={`inline-flex px-2 py-1 rounded-full ring-1 text-[11px] font-semibold ${clsTrx(trxDetalhe.transacao_status)}`}>
                   TOTVS: {TRX_STATUS[trxDetalhe.transacao_status] || trxDetalhe.transacao_status}
                 </span>
+                {!trxDetalhe.carregando && podeTentarDeNovo(trxDetalhe) && (
+                  <button
+                    onClick={() => reprocessarNota(trxDetalhe, { manterDetalhe: true })}
+                    disabled={!!reprocessando}
+                    title="Emite a nota que faltou e abre/atende a transação na 990; se ela já foi finalizada no TOTVS, só confere"
+                    className="h-8 px-3 rounded-lg text-[11px] font-bold text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-50 inline-flex items-center gap-1"
+                  >
+                    {reprocessando ? <Spinner size={12} className="animate-spin" /> : <ArrowsClockwise size={12} weight="bold" />} Tentar de novo
+                  </button>
+                )}
                 <button
                   onClick={() => consultarTransacao(trxDetalhe)}
                   className="h-8 px-2.5 rounded-lg text-[11px] font-semibold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50 inline-flex items-center gap-1"
