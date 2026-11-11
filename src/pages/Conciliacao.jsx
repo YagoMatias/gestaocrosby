@@ -2955,9 +2955,10 @@ const TabelaCandidatos = ({ candidatos, selecao, onToggle, onUsar, ocupado, keyC
         const marcado = selecao.some((x) => keyCand(x) === keyCand(cand));
         const disponivel = cand.restante ?? cand.valor;
         // Solicitação: só consulta — aprovar o pagamento no Financeiro e conciliar com a Liberação (Titia, 11/11/2026)
-        const soConsulta = cand.origem === 'SOLICITACAO';
+        // + Liberação sem duplicata lançada no contas a pagar do TOTVS (cand.bloqueio vem do backend)
+        const soConsulta = cand.origem === 'SOLICITACAO' || !!cand.bloqueio;
         const travada = !!cand.esgotada || soConsulta;
-        const motivoTrava = soConsulta ? 'Solicitação só para consulta: aprove o pagamento no Financeiro (Liberação de Pagamento) e concilie com a Liberação' : 'Já conciliada em outra linha';
+        const motivoTrava = cand.bloqueio || (soConsulta ? 'Solicitação só para consulta: aprove o pagamento no Financeiro (Liberação de Pagamento) e concilie com a Liberação' : 'Já conciliada em outra linha');
         return (
           <tr key={keyCand(cand)} className={`border-b border-gray-100 hover:bg-gray-50 ${marcado ? 'bg-emerald-50' : ''}`}>
             <td className="px-2 py-2 text-center">
@@ -2966,7 +2967,11 @@ const TabelaCandidatos = ({ candidatos, selecao, onToggle, onUsar, ocupado, keyC
             <td className="px-3 py-2 whitespace-nowrap">
               <Badge cfg={origemCfg(cand.origem)}>{origemCfg(cand.origem).label}</Badge>
               {cand.pago === false && <span className="block text-[10px] text-amber-700">em aberto</span>}
-              {soConsulta && <span className="block text-[10px] text-amber-800 font-medium">só consulta · aprovar no Financeiro</span>}
+              {soConsulta && (
+                <span className="block text-[10px] text-amber-800 font-medium max-w-[180px]" title={motivoTrava}>
+                  {cand.origem === 'SOLICITACAO' ? 'só consulta · aprovar no Financeiro' : 'só consulta · duplicata não lançada no TOTVS'}
+                </span>
+              )}
             </td>
             <td className="px-3 py-2">
               <div className="font-medium text-gray-800">{cand.nome || '(sem nome)'}{cand.doc ? <span className="text-gray-400 font-normal"> · {fmtDoc(cand.doc)}</span> : null}</div>
