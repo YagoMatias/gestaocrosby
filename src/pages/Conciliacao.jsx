@@ -1871,9 +1871,12 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
         duplicata: null,
         motivos: ['duplicata criada a partir desta saída'],
       };
-      await salvar(l.id, 'SOLICITACAO', refDe(ref), `Duplicata criada na conciliação · ${sol.supplier_name || ''} · ${sol.tipo_solicitacao || ''}`.trim(), null);
+      // Titia, 11/11/2026: não concilia com a Solicitação — a saída fica pendente até
+      // o Financeiro aprovar e a Liberação marcar PAGO (aí concilia sozinha).
+      void ref;
       setCriandoSol(null);
       setPicker(null);
+      setErroModal(`Solicitação criada (${sol.supplier_name || 'fornecedor'}). A saída continua pendente: aprove o pagamento no Financeiro — quando a Liberação marcar PAGO, ela concilia sozinha.`);
     } catch (e) {
       setErroModal(e.message);
     } finally {
@@ -2534,7 +2537,7 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
                       <ChatText size={13} /> Justificar manualmente
                     </button>
                     {picker.lancamento.valor < 0 && (
-                      <button onClick={() => setCriandoSol({ lancamento: picker.lancamento })} className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-md border border-indigo-300 text-indigo-800 bg-indigo-50 hover:bg-indigo-100" title="Abre o formulário de Solicitação Crosby já com valor, data e fornecedor desta saída; ao enviar, a saída fica conciliada com a solicitação (pendente até o pagamento)">
+                      <button onClick={() => setCriandoSol({ lancamento: picker.lancamento })} className="inline-flex items-center gap-1 px-3 py-1.5 text-xs rounded-md border border-indigo-300 text-indigo-800 bg-indigo-50 hover:bg-indigo-100" title="Abre o formulário de Solicitação Crosby já com valor, data e fornecedor desta saída; a saída continua pendente até o Financeiro aprovar e a Liberação marcar PAGO">
                         <Plus size={13} weight="bold" /> Criar duplicata
                       </button>
                     )}
@@ -2574,7 +2577,7 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
                           Criar duplicata para a saída de {fmt(Math.abs(criandoSol.lancamento.valor))} em {fmtData(criandoSol.lancamento.data)}
                         </h4>
                         <p className="text-xs text-gray-500 truncate">
-                          {criandoSol.lancamento.descricao} · {criandoSol.lancamento.nomeExibicao || criandoSol.lancamento.memo} — ao enviar, a saída fica conciliada com a solicitação e segue PENDENTE até constar como PAGO na Liberação de Pagamento ou no TOTVS.
+                          {criandoSol.lancamento.descricao} · {criandoSol.lancamento.nomeExibicao || criandoSol.lancamento.memo} — a saída continua PENDENTE: o Financeiro aprova o pagamento e, quando a Liberação marcar PAGO, ela concilia sozinha.
                         </p>
                       </div>
                       <button onClick={() => setCriandoSol(null)} className="text-gray-400 hover:text-gray-600">
@@ -2684,6 +2687,18 @@ const BotaoComprovanteBot = ({ comp }) =>
     </button>
   ) : null;
 
+// nº da(s) duplicata(s) conciliada(s) — "99246637/1" (Titia, 11/11/2026)
+const fmtDupConc = (d) => {
+  if (!d) return null;
+  const [n, p] = String(d).split('|');
+  return n ? (p ? `${n}/${p}` : n) : null;
+};
+const duplicatasDaConciliacao = (c) => {
+  const ref = c?.referencia || {};
+  const lista = Array.isArray(ref.itens) && ref.itens.length ? ref.itens.map((it) => fmtDupConc(it.duplicata)) : [fmtDupConc(ref.duplicata)];
+  return [...new Set(lista.filter(Boolean))];
+};
+
 // ─── célula de conciliação (OK / pendente + ações) ─────────────
 const CelulaConciliacao = ({ l, podeConciliar = l.valor < 0, ocupado, onConciliar, onJustificar, onDesfazer, onDetalhe }) => {
   if (ocupado) return <ArrowsClockwise size={14} className="animate-spin text-blue-600" />;
@@ -2720,6 +2735,11 @@ const CelulaConciliacao = ({ l, podeConciliar = l.valor < 0, ocupado, onConcilia
           <div className="text-[11px] text-gray-600 truncate max-w-[260px]" title={c.justificativa || ''}>
             {c.justificativa || c.referencia?.nome || ''}
           </div>
+          {duplicatasDaConciliacao(c).length > 0 && (
+            <div className="text-[10px] text-gray-700 font-medium truncate max-w-[260px]" title={duplicatasDaConciliacao(c).join(', ')}>
+              dup {duplicatasDaConciliacao(c).join(', ')}
+            </div>
+          )}
           {c.usuario && <div className="text-[10px] text-gray-400">por {c.usuario}</div>}
         </div>
         {c.id && (
@@ -2934,14 +2954,19 @@ const TabelaCandidatos = ({ candidatos, selecao, onToggle, onUsar, ocupado, keyC
       {candidatos.map((cand) => {
         const marcado = selecao.some((x) => keyCand(x) === keyCand(cand));
         const disponivel = cand.restante ?? cand.valor;
+        // Solicitação: só consulta — aprovar o pagamento no Financeiro e conciliar com a Liberação (Titia, 11/11/2026)
+        const soConsulta = cand.origem === 'SOLICITACAO';
+        const travada = !!cand.esgotada || soConsulta;
+        const motivoTrava = soConsulta ? 'Solicitação só para consulta: aprove o pagamento no Financeiro (Liberação de Pagamento) e concilie com a Liberação' : 'Já conciliada em outra linha';
         return (
           <tr key={keyCand(cand)} className={`border-b border-gray-100 hover:bg-gray-50 ${marcado ? 'bg-emerald-50' : ''}`}>
             <td className="px-2 py-2 text-center">
-              <input type="checkbox" checked={marcado} disabled={!!cand.esgotada} onChange={() => onToggle(cand)} className="accent-green-600" title={cand.esgotada ? 'Já conciliada em outra linha' : 'Marcar para somar'} />
+              <input type="checkbox" checked={marcado} disabled={travada} onChange={() => onToggle(cand)} className="accent-green-600" title={travada ? motivoTrava : 'Marcar para somar'} />
             </td>
             <td className="px-3 py-2 whitespace-nowrap">
               <Badge cfg={origemCfg(cand.origem)}>{origemCfg(cand.origem).label}</Badge>
               {cand.pago === false && <span className="block text-[10px] text-amber-700">em aberto</span>}
+              {soConsulta && <span className="block text-[10px] text-amber-800 font-medium">só consulta · aprovar no Financeiro</span>}
             </td>
             <td className="px-3 py-2">
               <div className="font-medium text-gray-800">{cand.nome || '(sem nome)'}{cand.doc ? <span className="text-gray-400 font-normal"> · {fmtDoc(cand.doc)}</span> : null}</div>
@@ -2957,7 +2982,7 @@ const TabelaCandidatos = ({ candidatos, selecao, onToggle, onUsar, ocupado, keyC
             </td>
             {mostrarPontos && <td className="px-3 py-2 text-right whitespace-nowrap">{cand.score}</td>}
             <td className="px-3 py-2 text-right">
-              <button disabled={ocupado || !!cand.esgotada} onClick={() => onUsar(cand)} className="px-2.5 py-1 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50" title={cand.esgotada ? 'Já conciliada em outra linha' : 'Conciliar só com esta'}>
+              <button disabled={ocupado || travada} onClick={() => onUsar(cand)} className="px-2.5 py-1 rounded-md bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed" title={travada ? motivoTrava : 'Conciliar só com esta'}>
                 Usar
               </button>
             </td>
@@ -3290,6 +3315,7 @@ const DetalheConciliacao = ({ detalhe, onClose, onAnexar, onRemoverAnexo }) => {
             <h4 className="text-sm font-bold text-gray-800 flex items-center gap-2 flex-wrap">
               {l.valor < 0 ? 'Saída' : 'Entrada'} de {fmt(Math.abs(l.valor))} em {fmtData(l.data)}
               <Badge cfg={cfg}>{cfg.label}</Badge>
+              {duplicatasDaConciliacao(c).length > 0 && <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-800 text-[11px] font-semibold">dup {duplicatasDaConciliacao(c).join(', ')}</span>}
               {c?.referencia?.parcial && <span className="px-1.5 rounded bg-orange-100 text-orange-800 text-[10px]">pagamento parcial</span>}
             </h4>
             <p className="text-xs text-gray-500 truncate">{l.descricao} · {l.nomeExibicao || l.memo}</p>
