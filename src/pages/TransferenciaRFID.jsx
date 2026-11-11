@@ -845,9 +845,22 @@ const TransferenciaRFID = ({ embutido = false, solicitacao = null, onTransacaoGe
           <div className="mb-2 flex flex-wrap items-center gap-2 bg-blue-50 rounded-xl ring-1 ring-blue-200 px-3 py-2 text-xs text-[#000638]">
             <ArrowsLeftRight size={14} weight="bold" />
             <span>
-              Solicitação <b>TRF-{solicitacao.id}</b> · empresa {solicitacao.empresa_origem} → {solicitacao.empresa_destino} · {solicitacao.qtd_pecas}{' '}
-              peça(s) declarada(s)
+              Solicitação <b>TRF-{solicitacao.id}</b>
+              {solicitacao.origem === 'dryland' ? ` (Dryland ${solicitacao.origem_ref || ''})` : ''} · empresa {solicitacao.empresa_origem} →{' '}
+              {solicitacao.empresa_destino || 'destino a definir'} · {solicitacao.qtd_pecas} peça(s) declarada(s)
             </span>
+            {Array.isArray(solicitacao.itens) && solicitacao.itens.length > 0 && (
+              <details className="basis-full">
+                <summary className="cursor-pointer font-semibold">Ver as peças do pedido ({solicitacao.itens.length} linha(s))</summary>
+                <ul className="mt-1 grid gap-x-4 gap-y-0.5 sm:grid-cols-2 lg:grid-cols-3">
+                  {solicitacao.itens.map((i, n) => (
+                    <li key={`${i.cod}-${i.cor}-${i.tam}-${n}`} className="truncate">
+                      <b>{i.qtd}×</b> <span className="font-mono">{i.cod}</span> {i.descricao} · {i.cor} · {i.tam}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
           </div>
         )}
         {filiaisErro && (

@@ -1185,6 +1185,13 @@ const expedicao = [
     icon: Receipt,
     color: 'text-emerald-600',
   },
+  // pedidos de transferência entre lojas do Dryland viram solicitações nesta tela
+  {
+    name: 'Transferências',
+    href: '/transferencias-mercadoria',
+    icon: ArrowsLeftRight,
+    color: 'text-sky-600',
+  },
   {
     name: 'Expedição Brejinho',
     href: '#',

@@ -2,7 +2,9 @@
 // Mesmo desenho das Devoluções de Mercadoria, para transferir mercadoria entre
 // filiais. Três abas:
 //   1. Solicitações — pedidos de transferência (o formulário de abertura ainda
-//      não existe; a aba já lista, filtra, cancela e leva para o RFID)
+//      não existe; a aba já lista, filtra, cancela e leva para o RFID). Os
+//      pedidos de TRANSFERÊNCIA ENTRE LOJAS do Dryland (cards TR### e
+//      TRU-<LOJA>-<BJ|MAX> do varejo) entram aqui sozinhos, com as peças
 //   2. Transferência RFID — leitura pelo portal, embutida e pré-preenchida com
 //      a solicitação escolhida; operação travada pelo POP (7272/7273/7280)
 //   3. Transações — transferências já geradas no TOTVS (TRAFP005)
@@ -94,6 +96,7 @@ const TransferenciasMercadoria = () => {
   const [selecionada, setSelecionada] = useState(null); // solicitação levada para o RFID
   const [toast, setToast] = useState(null);
   const [migracaoPendente, setMigracaoPendente] = useState(null);
+  const [avisoDryland, setAvisoDryland] = useState(null);
   // Aba Transações
   const [trxLista, setTrxLista] = useState([]);
   const [trxResumo, setTrxResumo] = useState(null);
@@ -131,12 +134,14 @@ const TransferenciasMercadoria = () => {
     setTimeout(() => setToast(null), 4500);
   }, []);
 
-  const carregar = useCallback(async () => {
+  const carregar = useCallback(async (opcoes) => {
     setLoading(true);
     try {
       const qs = new URLSearchParams();
       if (filtroStatus) qs.set('status', filtroStatus);
       if (busca.trim()) qs.set('busca', busca.trim());
+      // botão Atualizar: relê na hora os pedidos de transferência do Dryland
+      if (opcoes?.refresh === true) qs.set('refresh', '1');
       const r = await fetch(`${API_BASE_URL}/api/transferencias?${qs}`);
       const j = await r.json();
       if (!r.ok || !j.success) {
@@ -150,6 +155,7 @@ const TransferenciasMercadoria = () => {
       setMigracaoPendente(null);
       setItems(j.data.items || []);
       setResumo(j.data.resumo || null);
+      setAvisoDryland(j.data.dryland?.erro ? `Não consegui ler os pedidos de transferência do Dryland agora: ${j.data.dryland.erro}` : null);
     } catch (e) {
       showToast('erro', e.message);
     } finally {
@@ -427,7 +433,7 @@ const TransferenciasMercadoria = () => {
                   className={`${inputCls} pl-8 w-64`}
                 />
               </div>
-              <button onClick={carregar} className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-[#000638] hover:bg-[#000638]/90 inline-flex items-center gap-1.5">
+              <button onClick={() => carregar({ refresh: true })} className="h-9 px-3 rounded-lg text-xs font-semibold text-white bg-[#000638] hover:bg-[#000638]/90 inline-flex items-center gap-1.5">
                 <ArrowsClockwise size={14} className={loading ? 'animate-spin' : ''} /> Atualizar
               </button>
               <div className="flex-1" />
@@ -443,6 +449,12 @@ const TransferenciasMercadoria = () => {
               </button>
             </div>
 
+            {avisoDryland && <p className="mb-2 text-xs text-amber-700 bg-amber-50 rounded-xl px-3 py-2 ring-1 ring-amber-200">{avisoDryland}</p>}
+            {items.some((t) => t.origem === 'dryland') && (
+              <p className="mb-2 text-xs text-sky-800 bg-sky-50 rounded-xl px-3 py-2 ring-1 ring-sky-200">
+                As solicitações marcadas <b>DRYLAND</b> são os pedidos de transferência entre lojas da expedição (TR e TRU). Clique em <b>abrir</b> para ver as peças e em <b>RFID</b> para bipar e gerar a transferência.
+              </p>
+            )}
             <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
@@ -481,14 +493,21 @@ const TransferenciasMercadoria = () => {
                       const info = LOCAL_INFO[t.local || 'origem'];
                       return (
                         <tr key={t.id} className={`hover:bg-gray-50/60 ${t.status === 'cancelada' ? 'opacity-60' : ''}`}>
-                          <td className="px-2 py-1.5 font-mono font-semibold text-[#000638]">TRF-{t.id}</td>
+                          <td className="px-2 py-1.5">
+                            <p className="font-mono font-semibold text-[#000638]">TRF-{t.id}</p>
+                            {t.origem === 'dryland' && (
+                              <p className="mt-0.5 inline-flex items-center whitespace-nowrap rounded-full bg-sky-50 px-1.5 py-0.5 text-[9.5px] font-bold text-sky-700 ring-1 ring-sky-200" title="Pedido de transferência entre lojas do Dryland">
+                                DRYLAND · {t.origem_ref || '—'}
+                              </p>
+                            )}
+                          </td>
                           <td className="px-2 py-1.5 whitespace-nowrap">{fmtDataHora(t.criado_em)}</td>
                           <td className="px-2 py-1.5">
                             <p className="font-medium text-[#000638]">{t.empresa_origem}</p>
                             <p className="text-[10px] text-gray-400 truncate max-w-[160px]">{t.empresa_origem_nome || ''}</p>
                           </td>
                           <td className="px-2 py-1.5">
-                            <p className="font-medium text-[#000638]">{t.empresa_destino}</p>
+                            <p className={`font-medium ${t.empresa_destino ? 'text-[#000638]' : 'text-amber-700'}`}>{t.empresa_destino || 'a definir'}</p>
                             <p className="text-[10px] text-gray-400 truncate max-w-[160px]">
                               {t.empresa_destino_nome || ''}
                               {t.cliente_code ? ` · cliente ${t.cliente_code}` : ''}
@@ -498,7 +517,10 @@ const TransferenciasMercadoria = () => {
                             {t.operacao || '—'}
                           </td>
                           <td className="px-2 py-1.5 truncate max-w-[140px]">{t.solicitante_nome || t.solicitante_email || '—'}</td>
-                          <td className="px-2 py-1.5 text-right tabular-nums">{t.qtd_pecas}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums">
+                            {t.qtd_pecas}
+                            {Number(t.valor) > 0 && <p className="text-[10px] text-gray-400">{fmtBRL(t.valor)}</p>}
+                          </td>
                           <td className="px-2 py-1.5">
                             {t.transacao_code ? (
                               <button onClick={() => consultarTrxSolicitacao(t)} className="font-mono text-[#000638] hover:underline" title="Consultar a situação no TOTVS">
@@ -804,7 +826,10 @@ const TransferenciasMercadoria = () => {
               <div className="flex items-start justify-between gap-2 mb-3">
                 <div>
                   <h3 className="text-base font-bold text-[#000638]">
-                    TRF-{detalhe.id} · empresa {detalhe.empresa_origem} → {detalhe.empresa_destino}
+                    TRF-{detalhe.id} · empresa {detalhe.empresa_origem} → {detalhe.empresa_destino || 'a definir'}
+                    {detalhe.origem === 'dryland' && (
+                      <span className="ml-2 inline-flex items-center rounded-full bg-sky-50 px-2 py-0.5 align-middle text-[10px] font-bold text-sky-700 ring-1 ring-sky-200">DRYLAND · {detalhe.origem_ref || '—'}</span>
+                    )}
                   </h3>
                   <p className="text-xs text-gray-500">
                     {detalhe.empresa_origem_nome || '—'} → {detalhe.empresa_destino_nome || '—'}
@@ -826,7 +851,10 @@ const TransferenciasMercadoria = () => {
                 </div>
                 <div className="rounded-xl bg-gray-50 ring-1 ring-gray-200 p-2">
                   <p className="text-[10px] text-gray-500 uppercase">Peças</p>
-                  <p className="font-semibold">{detalhe.qtd_pecas}</p>
+                  <p className="font-semibold">
+                    {detalhe.qtd_pecas}
+                    {Number(detalhe.valor) > 0 && <span className="font-normal text-gray-500"> · {fmtBRL(detalhe.valor)}</span>}
+                  </p>
                 </div>
                 <div className="rounded-xl bg-gray-50 ring-1 ring-gray-200 p-2">
                   <p className="text-[10px] text-gray-500 uppercase">Solicitante</p>
@@ -840,8 +868,43 @@ const TransferenciasMercadoria = () => {
 
               {detalhe.observacao && (
                 <p className="text-xs text-gray-700 bg-amber-50 rounded-xl ring-1 ring-amber-200 px-3 py-2 mb-3">
-                  <b>Solicitante:</b> {detalhe.observacao}
+                  <b>{detalhe.origem === 'dryland' ? 'Pedido:' : 'Solicitante:'}</b> {detalhe.observacao}
                 </p>
+              )}
+              {Array.isArray(detalhe.itens) && detalhe.itens.length > 0 && (
+                <div className="mb-3 rounded-xl ring-1 ring-gray-200 overflow-hidden">
+                  <p className="bg-gray-50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-gray-500">
+                    Peças do pedido ({detalhe.itens.reduce((n, i) => n + (Number(i.qtd) || 0), 0)})
+                  </p>
+                  <div className="max-h-64 overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead className="text-[10px] uppercase tracking-wide text-gray-400">
+                        <tr>
+                          <th className="px-3 py-1 text-left">Ref.</th>
+                          <th className="px-2 py-1 text-left">Peça</th>
+                          <th className="px-2 py-1 text-left">Cor</th>
+                          <th className="px-2 py-1 text-left">Tam.</th>
+                          <th className="px-2 py-1 text-right">Qtd</th>
+                          <th className="px-2 py-1 text-right">Preço</th>
+                          <th className="px-3 py-1 text-left">Pedido</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {detalhe.itens.map((i, n) => (
+                          <tr key={`${i.cod}-${i.cor}-${i.tam}-${n}`}>
+                            <td className="px-3 py-1 font-mono text-[#000638]">{i.cod || '—'}</td>
+                            <td className="px-2 py-1">{i.descricao || '—'}</td>
+                            <td className="px-2 py-1 text-gray-600">{i.cor || '—'}</td>
+                            <td className="px-2 py-1 text-gray-600">{i.tam || '—'}</td>
+                            <td className="px-2 py-1 text-right tabular-nums font-semibold">{i.qtd}</td>
+                            <td className="px-2 py-1 text-right tabular-nums text-gray-600">{Number(i.preco) > 0 ? fmtBRL(i.preco) : '—'}</td>
+                            <td className="px-3 py-1 text-gray-500">{i.tr || '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               )}
               {detalhe.motivo_cancelamento && detalhe.status === 'cancelada' && (
                 <p className="text-xs text-gray-600 bg-gray-50 rounded-xl ring-1 ring-gray-200 px-3 py-2 mb-3">
