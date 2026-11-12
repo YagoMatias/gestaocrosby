@@ -11,6 +11,11 @@ import {
   Money,
   ShoppingBag,
   Receipt,
+  ListMagnifyingGlass,
+  Database,
+  CashRegister,
+  LockOpen,
+  LockKey,
   FileText,
   Calendar,
   CalendarCheck,
@@ -1163,6 +1168,27 @@ const minhaFranquiaItem = {
   ],
 };
 
+// HEADCOACH: dados do próprio HeadCoach, sem o TOTVS (etapa a etapa da saída do TOTVS)
+const headcoach = [
+  {
+    name: 'Transações',
+    href: '/headcoach/transacoes',
+    icon: ListMagnifyingGlass,
+    color: 'text-indigo-600',
+  },
+  {
+    name: 'Caixa',
+    href: '#',
+    icon: CashRegister,
+    color: 'text-indigo-600',
+    children: [
+      { name: 'Abertura', href: '/headcoach/caixa/abertura', icon: LockOpen, color: 'text-indigo-600' },
+      { name: 'Contagem', href: '/headcoach/caixa/contagem', icon: Coins, color: 'text-indigo-600' },
+      { name: 'Fechamento e encerramento', href: '/headcoach/caixa/fechamento', icon: LockKey, color: 'text-indigo-600' },
+    ],
+  },
+];
+
 const recuperacaoCredito = [
   {
     name: 'Recuperação de Crédito',
@@ -1508,6 +1534,17 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
             color: 'text-blue-600',
           }}
           isActive={pathname === '/home'}
+        />
+
+        {/* Seção HEADCOACH */}
+        <MenuSection
+          {...menuProps}
+          title="HeadCoach"
+          items={headcoach}
+          isOpen={openSection === 'headcoach'}
+          onToggle={() => handleSectionToggle('headcoach')}
+          icon={Database}
+          color="text-indigo-600"
         />
 
         {/* Seção Solicitaçõ Crosby */}

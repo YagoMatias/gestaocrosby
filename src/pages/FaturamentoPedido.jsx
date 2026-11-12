@@ -1595,8 +1595,8 @@ function BlocoCredito({ v, credito, nota, onAcao, busy }) {
   );
 }
 
-// ─── Senha de owner/admin/financeiro para desconto acima do limite ──────────
-function SenhaDescontoModal({ pct, pedido, por, onLiberado, onCancelar }) {
+// ─── Senha de owner/admin/financeiro (desconto acima do limite / troca de cliente) ─
+function SenhaDescontoModal({ pct, pedido, por, onLiberado, onCancelar, titulo, texto, rota = 'autorizar-desconto', corpo = {}, botao = 'Liberar' }) {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [busy, setBusy] = useState(false);
@@ -1606,10 +1606,10 @@ function SenhaDescontoModal({ pct, pedido, por, onLiberado, onCancelar }) {
     setBusy(true);
     setErro(null);
     try {
-      const r = await fetch(`${API}/autorizar-desconto`, {
+      const r = await fetch(`${API}/${rota}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), senha, pct, pedido, por }),
+        body: JSON.stringify({ email: email.trim(), senha, pct, pedido, por, ...corpo }),
       });
       const j = await r.json();
       if (!r.ok || !j.success) throw new Error(j?.message || 'Não autorizado');
@@ -1626,11 +1626,15 @@ function SenhaDescontoModal({ pct, pedido, por, onLiberado, onCancelar }) {
       <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl">
         <div className="flex items-center gap-2">
           <LockKey size={26} weight="fill" className="text-amber-500" />
-          <h3 className="text-lg font-bold text-[#000638]">Liberar desconto</h3>
+          <h3 className="text-lg font-bold text-[#000638]">{titulo || 'Liberar desconto'}</h3>
         </div>
         <p className="mt-1 text-sm text-gray-600">
-          Desconto de <b>{pct.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%</b> passa do limite de {LIMITE_DESCONTO_LIVRE}%. Um <b>owner</b>, <b>admin</b> ou alguém do{' '}
-          <b>financeiro</b> precisa digitar o e-mail e a senha do HeadCoach.
+          {texto || (
+            <>
+              Desconto de <b>{Number(pct || 0).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%</b> passa do limite de {LIMITE_DESCONTO_LIVRE}%.
+            </>
+          )}{' '}
+          Um <b>owner</b>, <b>admin</b> ou alguém do <b>financeiro</b> precisa digitar o e-mail e a senha do HeadCoach.
         </p>
         <div className="mt-3 space-y-2">
           <input
@@ -1658,7 +1662,7 @@ function SenhaDescontoModal({ pct, pedido, por, onLiberado, onCancelar }) {
             Cancelar
           </button>
           <button onClick={liberar} disabled={busy || !email.trim() || !senha} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-[#000638] text-sm font-bold text-white disabled:opacity-40">
-            {busy ? <Spinner size={14} className="animate-spin" /> : <LockKey size={14} weight="bold" />} Liberar
+            {busy ? <Spinner size={14} className="animate-spin" /> : <LockKey size={14} weight="bold" />} {botao}
           </button>
         </div>
       </div>
@@ -1784,6 +1788,9 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   const [precoManual, setPrecoManual] = useState({});
   const [editandoPreco, setEditandoPreco] = useState(null);
   const [descLiberado, setDescLiberado] = useState(null); // { nome, email, role, pct }
+  // troca do cliente que veio no pedido: liberada por owner/admin/financeiro ({ nome, email, role })
+  const [trocaCliente, setTrocaCliente] = useState(null);
+  const [senhaClienteOpen, setSenhaClienteOpen] = useState(false);
   const [senhaDescOpen, setSenhaDescOpen] = useState(false);
   // Trocas na conferência: { skuDoPedidoQueFalta: [skuLidoForaDoPedido, ...] } — uma entrada por unidade substituída
   const [trocas, setTrocas] = useState({});
@@ -1839,6 +1846,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     setDescModo(e.descModo === 'valor' ? 'valor' : 'pct');
     setPrecoManual(e.precoManual || {});
     setDescLiberado(e.descLiberado || null);
+    setTrocaCliente(e.trocaCliente || null);
     setTrocas(e.trocas || {});
     setGerarCredito(!!e.gerarCredito);
     setAnexados(Array.isArray(e.anexados) ? e.anexados : []);
@@ -1881,6 +1889,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     setPrecoManual({});
     setEditandoPreco(null);
     setDescLiberado(null);
+    setTrocaCliente(null);
     setTrocas({});
     setTrocandoSku(null);
     setAnexados([]);
@@ -2485,6 +2494,8 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
 
   // ─── Validação ───────────────────────────────────────────────────────────
   const card = pedido?.card || null;
+  // cliente que veio no pedido do Dryland (com cadastro válido): trocar pede senha
+  const clientePedido = !avulso && prep?.cliente?.code && !prep?.cliente?.erro ? Number(prep.cliente.code) : null;
   const ref =
     prep?.ref ||
     card?.numero_site ||
@@ -2513,6 +2524,8 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   else if (creditoAtivo && !pagamentos.some((p) => FORMAS_QUE_GERAM_CREDITO.includes(p.forma) && Number(p.valor) > 0))
     pendencias.push('Crédito de peça em falta só vale quando o pedido foi pago em Pix, cartão ou dinheiro.');
   if (!customer) pendencias.push('Escolha o cliente.');
+  else if (clientePedido && String(customer.code) !== String(clientePedido) && !trocaCliente)
+    pendencias.push(`O pedido é do cliente ${clientePedido}: trocar o cliente pede a senha de owner, admin ou financeiro.`);
   if (previa && !previa.cliente.temEndereco) pendencias.push('Cliente sem endereço completo no TOTVS (a NF-e exige).');
   if (previa && !previa.difalOk) pendencias.push(`DIFAL de ${previa.cenario.destUf} ainda não conferido — fature esta pelo TOTVS ou marque se o cliente tem IE.`);
   if (previaErro) pendencias.push(previaErro);
@@ -2565,7 +2578,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
       cliente: customer?.name || card?.dados?.nome_cliente || pedido.separacao?.cliente || null,
       lidas: conf.conferidas + conf.sobrando,
       esperado: conf.esperado,
-      estado: { lidos, naoResolvidos, customer, seller, consumidorFinal, operacao, dataDiferente, dataVenda, transp, pagamentos, vencimentos, descPct, descModo, descLiberado, trocas, gerarCredito, removidas, precoManual, anexados },
+      estado: { lidos, naoResolvidos, customer, seller, consumidorFinal, operacao, dataDiferente, dataVenda, transp, pagamentos, vencimentos, descPct, descModo, descLiberado, trocas, gerarCredito, removidas, precoManual, anexados, trocaCliente },
     };
     gravarRascunhos((l) => [registro, ...l.filter((d) => d.chave !== chave)].slice(0, 30));
     showToast('ok', 'Faturamento salvo — está em "Em andamento" para continuar depois');
@@ -2594,6 +2607,8 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
         // avulso: o canal é o da operação escolhida na tela
         canal: avulso ? OPERACOES_DOC_INTERNO.find((o) => String(o.code) === String(operacao))?.canal || null : prep?.canal,
         clienteCode: customer.code,
+        clientePedido: clientePedido || null,
+        trocaCliente: clientePedido && String(customer.code) !== String(clientePedido) && trocaCliente ? { liberadoPor: trocaCliente.nome || trocaCliente.email } : null,
         vendedorCode: Number(seller),
         vendedorNome: vend?.name || null,
         operacaoDocInterno: Number(operacao),
@@ -2692,7 +2707,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     } finally {
       setPosting(false);
     }
-  }, [gerarCredito, podeFaturar, prep, customer, conf, frete, operacao, dataDiferente, dataVenda, terminal, comoFatura, sellers, seller, chave, ref, consumidorFinal, temTransportadora, transp, pagamentos, cartaoDe, pBoleto, parcelasBoleto, vencimentos, user, showToast, pctDesc, descLiberado, descSemLimite, tirarRascunho, trocasFeitas]);
+  }, [gerarCredito, podeFaturar, prep, customer, conf, frete, operacao, dataDiferente, dataVenda, terminal, comoFatura, sellers, seller, chave, ref, consumidorFinal, temTransportadora, transp, pagamentos, cartaoDe, pBoleto, parcelasBoleto, vencimentos, user, showToast, pctDesc, descLiberado, descSemLimite, tirarRascunho, trocasFeitas, clientePedido, trocaCliente]);
 
   const reprocessar = useCallback(async () => {
     if (!resultado?.vendaId) return;
@@ -2878,13 +2893,43 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                         <Buildings size={15} className="text-gray-400" /> {EMPRESA} · {prep.emitente.uf}
                       </div>
                     </div>
-                    <ClientePicker
-                      value={customer}
-                      onSelect={(c) => {
-                        setCustomer(c);
-                        setConsumidorFinal(false);
-                      }}
-                    />
+                    {clientePedido && !trocaCliente && !resultado ? (
+                      // o pedido já veio com cliente: trocar pede senha de owner/admin/financeiro
+                      <div>
+                        <label className={labelCls}>Cliente</label>
+                        <div className="flex h-9 items-center gap-1.5 rounded-lg bg-gray-50 px-2.5 text-sm ring-1 ring-gray-200">
+                          <LockKey size={14} className="shrink-0 text-gray-400" />
+                          <span className="min-w-0 flex-1 truncate font-semibold text-[#000638]" title={customer?.name || ''}>
+                            {customer ? `${customer.code} — ${customer.name}` : `${clientePedido} — cliente do pedido`}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (ROLES_LIBERAM_DESCONTO.includes(user?.role)) setTrocaCliente({ nome: user?.name || user?.email, email: user?.email, role: user?.role });
+                              else setSenhaClienteOpen(true);
+                            }}
+                            className="shrink-0 text-[11px] font-bold text-blue-700 underline"
+                            title="Trocar o cliente do pedido (pede senha de owner, admin ou financeiro)"
+                          >
+                            trocar
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <ClientePicker
+                          value={customer}
+                          onSelect={(c) => {
+                            setCustomer(c);
+                            setConsumidorFinal(false);
+                          }}
+                        />
+                        {clientePedido && trocaCliente && (
+                          <p className="mt-0.5 text-[10.5px] font-semibold text-amber-700">Troca de cliente liberada por {trocaCliente.nome || trocaCliente.email} (o pedido era do {clientePedido})</p>
+                        )}
+                        {!clientePedido && !avulso && !resultado && <p className="mt-0.5 text-[10.5px] font-semibold text-amber-700">O pedido veio sem cliente: escolha o cliente.</p>}
+                      </div>
+                    )}
                     <div>
                       <label className={labelCls}>Vendedor</label>
                       <div className="relative">
@@ -4323,6 +4368,23 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
             setDescLiberado(a);
             setSenhaDescOpen(false);
             showToast('ok', `Desconto de ${pctDesc.toLocaleString('pt-BR')}% liberado por ${a.nome}`);
+          }}
+        />
+      )}
+      {senhaClienteOpen && (
+        <SenhaDescontoModal
+          titulo="Trocar o cliente do pedido"
+          texto={`O pedido ${ref || ''} é do cliente ${clientePedido}${customer?.name ? ` (${customer.name})` : ''}.`}
+          rota="autorizar-troca-cliente"
+          corpo={{ de: clientePedido }}
+          botao="Liberar troca"
+          pedido={ref}
+          por={user?.name || user?.email || null}
+          onCancelar={() => setSenhaClienteOpen(false)}
+          onLiberado={(a) => {
+            setTrocaCliente(a);
+            setSenhaClienteOpen(false);
+            showToast('ok', `Troca de cliente liberada por ${a.nome}`);
           }}
         />
       )}

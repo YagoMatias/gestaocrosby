@@ -196,6 +196,11 @@ const MinhasSolicitacoes = lazy(() => import('./pages/MinhasSolicitacoes'));
 const DuplicataVendas = lazy(() => import('./pages/DuplicataVendas'));
 const PedidosVenda = lazy(() => import('./pages/PedidosVenda'));
 const FaturamentoPedido = lazy(() => import('./pages/FaturamentoPedido'));
+const HcTransacoes = lazy(() => import('./pages/HcTransacoes'));
+const HcCaixa = lazy(() => import('./pages/HcCaixa'));
+const HcCaixaAbertura = (props) => <HcCaixa {...props} etapa="abertura" />;
+const HcCaixaContagem = (props) => <HcCaixa {...props} etapa="contagem" />;
+const HcCaixaFechamento = (props) => <HcCaixa {...props} etapa="fechamento" />;
 const BrejinhoPedidos = lazy(() => import('./pages/BrejinhoPedidos'));
 const FaturamentoBrejinho = (props) => <FaturamentoPedido {...props} origem="brejinho" />;
 const PagamentosFabricas = lazy(() => import('./pages/PagamentosFabricas'));
@@ -380,6 +385,10 @@ const protectedRoutes = [
   { path: '/minhas-solicitacoes', component: MinhasSolicitacoes },
   { path: '/cadastrar-cliente', component: CadastrarCliente },
   { path: '/duplicata-vendas', component: DuplicataVendas },
+  { path: '/headcoach/transacoes', component: HcTransacoes },
+  { path: '/headcoach/caixa/abertura', component: HcCaixaAbertura },
+  { path: '/headcoach/caixa/contagem', component: HcCaixaContagem },
+  { path: '/headcoach/caixa/fechamento', component: HcCaixaFechamento },
   { path: '/expedicao/pedidos-venda', component: PedidosVenda },
   { path: '/expedicao/faturamento', component: FaturamentoPedido },
   { path: '/expedicao/brejinho/pedidos', component: BrejinhoPedidos },

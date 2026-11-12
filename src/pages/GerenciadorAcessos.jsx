@@ -518,6 +518,16 @@ const AVAILABLE_PAGES = [
     category: 'Recuperação de Crédito',
   },
 
+  // ─── HeadCoach ──────────────────────────────────────────────
+  {
+    path: '/headcoach/transacoes',
+    name: 'Transações (HeadCoach)',
+    category: 'HeadCoach',
+  },
+  { path: '/headcoach/caixa/abertura', name: 'Caixa — Abertura', category: 'HeadCoach' },
+  { path: '/headcoach/caixa/contagem', name: 'Caixa — Contagem', category: 'HeadCoach' },
+  { path: '/headcoach/caixa/fechamento', name: 'Caixa — Fechamento e encerramento', category: 'HeadCoach' },
+
   // ─── Expedição ──────────────────────────────────────────────
   {
     path: '/expedicao/pedidos-venda',
