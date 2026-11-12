@@ -26,6 +26,8 @@ import {
   FileArrowUp,
   Eye,
   CalendarBlank,
+  SquaresFour,
+  ListBullets,
 } from '@phosphor-icons/react';
 import { API_BASE_URL } from '../config/constants';
 import { getSupabaseAuth } from '../lib/supabase';
@@ -220,6 +222,25 @@ const DESPESAS_FIXAS = [
     match: (ds) => /condom[ií]nio/i.test(ds),
   },
 ];
+
+// Visualização em lista: estas aparecem sempre em toda loja (mesmo sem
+// cadastro, para enxergar o buraco); as demais só quando houver fornecedor.
+const ORDEM_LISTA = ['agua', 'energia', 'agua_mineral', 'internet'];
+const CATEGORIAS_LISTA = [
+  ...ORDEM_LISTA.map((k) => DESPESAS_FIXAS.find((c) => c.key === k)),
+  ...DESPESAS_FIXAS.filter((c) => !ORDEM_LISTA.includes(c.key)),
+];
+
+const VIEW_STORAGE_KEY = 'despesaFilial.visualizacao';
+const lerVisualizacao = () => {
+  try {
+    return localStorage.getItem(VIEW_STORAGE_KEY) === 'lista'
+      ? 'lista'
+      : 'cards';
+  } catch {
+    return 'cards';
+  }
+};
 
 // ─── Formulário inline para adicionar / editar fornecedor ────────
 const FORMAS_PGTO = [
@@ -1063,6 +1084,131 @@ const FilialCard = ({ filial, alerta, onClick }) => {
   );
 };
 
+// ─── Visualização em lista: loja → despesa → fornecedor ──────────
+const ListaDespesas = ({ filiais, despesas, onAbrir }) => {
+  const porFilial = {};
+  despesas.forEach((d) => {
+    (porFilial[d.cd_filial] ||= []).push(d);
+  });
+
+  const th =
+    'px-3 py-2 text-left text-[10px] font-bold uppercase tracking-wide text-gray-500';
+  const td = 'px-3 py-1.5 text-xs text-gray-700 align-top';
+
+  return (
+    <div className="bg-white rounded-xl shadow border border-gray-200 overflow-x-auto">
+      <table className="w-full min-w-[720px] border-collapse">
+        <thead className="bg-gray-50 border-b border-gray-200">
+          <tr>
+            <th className={`${th} pl-8`}>Despesa</th>
+            <th className={th}>Fornecedor</th>
+            <th className={th}>Código</th>
+            <th className={th}>Vencimento</th>
+            <th className={th}>Pagamento</th>
+            <th className={th}>Observação</th>
+          </tr>
+        </thead>
+        {filiais.map((f) => {
+          const itens = porFilial[f.cd] || [];
+          const linhas = CATEGORIAS_LISTA.flatMap((cat) => {
+            const doTipo = itens.filter(
+              (i) => i.tipo_despesa === cat.key.toUpperCase(),
+            );
+            if (doTipo.length === 0) {
+              return ORDEM_LISTA.includes(cat.key)
+                ? [{ cat, item: null, primeira: true }]
+                : [];
+            }
+            return doTipo.map((item, idx) => ({
+              cat,
+              item,
+              primeira: idx === 0,
+            }));
+          });
+
+          return (
+            <tbody key={f.cd} className="border-b border-gray-200">
+              <tr
+                className="bg-[#000638] cursor-pointer hover:bg-[#001060]"
+                onClick={() => onAbrir(f)}
+                title="Clique para editar as despesas desta loja"
+              >
+                <td colSpan={6} className="px-3 py-2">
+                  <div className="flex items-center gap-2 text-white">
+                    <Storefront size={15} weight="bold" />
+                    <span className="text-xs font-bold uppercase tracking-wide">
+                      {f.grupoEmpresa || f.nome}
+                    </span>
+                    <span className="text-[10px] text-white/60">
+                      {f.status === 'manual' ? 'IMÓVEL' : `FILIAL ${f.cd}`}
+                    </span>
+                    <span className="ml-auto flex items-center gap-1 text-[10px] text-white/70">
+                      <Pencil size={11} weight="bold" />
+                      Editar
+                    </span>
+                  </div>
+                </td>
+              </tr>
+              {linhas.map(({ cat, item, primeira }, idx) => {
+                const Icon = cat.icon;
+                const st = item ? statusContrato(item.contrato_vencimento) : null;
+                return (
+                  <tr
+                    key={item?.id || `${f.cd}-${cat.key}`}
+                    className={idx % 2 ? 'bg-gray-50/60' : 'bg-white'}
+                  >
+                    <td className={`${td} pl-8 whitespace-nowrap`}>
+                      {primeira && (
+                        <span
+                          className={`inline-flex items-center gap-1.5 font-bold uppercase ${cat.color}`}
+                        >
+                          <Icon size={13} weight="bold" />
+                          {cat.label}
+                        </span>
+                      )}
+                    </td>
+                    {item ? (
+                      <>
+                        <td className={`${td} font-semibold text-gray-800`}>
+                          <span className="inline-flex items-center gap-1.5">
+                            {item.nm_fornecedor}
+                            <AlertaContratoDot status={st} />
+                          </span>
+                        </td>
+                        <td className={td}>{item.cd_fornecedor || '—'}</td>
+                        <td className={`${td} whitespace-nowrap`}>
+                          {item.vencimento ? `dia ${item.vencimento}` : '—'}
+                          {item.contrato_vencimento && (
+                            <div
+                              className={`text-[10px] ${st ? 'text-red-600 font-semibold' : 'text-gray-400'}`}
+                            >
+                              contrato até {fmtData(item.contrato_vencimento)}
+                            </div>
+                          )}
+                        </td>
+                        <td className={`${td} whitespace-nowrap`}>
+                          {item.forma_pagamento || '—'}
+                        </td>
+                        <td className={`${td} text-gray-500 italic`}>
+                          {item.observacao || ''}
+                        </td>
+                      </>
+                    ) : (
+                      <td colSpan={5} className={`${td} text-gray-400 italic`}>
+                        Não cadastrado
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
+            </tbody>
+          );
+        })}
+      </table>
+    </div>
+  );
+};
+
 const DespesaFilial = () => {
   const [filiais, setFiliais] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1071,24 +1217,38 @@ const DespesaFilial = () => {
   const [busca, setBusca] = useState('');
   // cd_filial → status do contrato mais próximo de vencer
   const [alertas, setAlertas] = useState({});
+  // Todas as despesas cadastradas (visualização em lista)
+  const [despesas, setDespesas] = useState([]);
+  const [visualizacao, setVisualizacao] = useState(lerVisualizacao);
 
-  // Contratos de aluguel de todas as filiais, para o pontinho nos cards
+  const trocarVisualizacao = (v) => {
+    setVisualizacao(v);
+    try {
+      localStorage.setItem(VIEW_STORAGE_KEY, v);
+    } catch {
+      /* sem storage: só não lembra a escolha */
+    }
+  };
+
+  // Despesas de todas as filiais: alimentam a lista e o pontinho de
+  // contrato de aluguel a vencer nos cards
   const carregarAlertas = useCallback(async () => {
     const { data, error } = await getSupabaseAuth()
       .from('despesas_fixas_filial')
-      .select('cd_filial, contrato_vencimento')
-      .eq('tipo_despesa', 'ALUGUEL')
-      .not('contrato_vencimento', 'is', null);
+      .select('*')
+      .order('nm_fornecedor');
     if (error) {
-      console.error('[despesa-filial] alertas de contrato:', error.message);
+      console.error('[despesa-filial] despesas:', error.message);
       return;
     }
     const mapa = {};
     (data || []).forEach((r) => {
+      if (r.tipo_despesa !== 'ALUGUEL') return;
       const st = statusContrato(r.contrato_vencimento);
       if (st) mapa[r.cd_filial] = maisCritico(mapa[r.cd_filial], st);
     });
     setAlertas(mapa);
+    setDespesas(data || []);
   }, []);
 
   useEffect(() => {
@@ -1188,7 +1348,7 @@ const DespesaFilial = () => {
       )}
 
       {/* Filtro de filial */}
-      <div className="mb-4 flex items-center gap-2 max-w-xl mx-auto">
+      <div className="mb-4 flex flex-wrap items-center gap-2 max-w-2xl mx-auto">
         <div className="relative flex-1">
           <MagnifyingGlass
             size={15}
@@ -1218,20 +1378,49 @@ const DespesaFilial = () => {
             ? '—'
             : `${filiaisFiltradas.length} de ${filiais.length} filiais`}
         </span>
+        <div className="flex rounded-lg border border-[#000638]/20 bg-white overflow-hidden flex-shrink-0">
+          {[
+            { v: 'cards', icon: SquaresFour, label: 'Cards' },
+            { v: 'lista', icon: ListBullets, label: 'Lista' },
+          ].map(({ v, icon: Ic, label }) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => trocarVisualizacao(v)}
+              className={`flex items-center gap-1 px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${
+                visualizacao === v
+                  ? 'bg-[#000638] text-white'
+                  : 'text-[#000638] hover:bg-[#000638]/5'
+              }`}
+              title={`Visualizar em ${label.toLowerCase()}`}
+            >
+              <Ic size={14} weight="bold" />
+              {label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {loading
-          ? FILIAIS_CROSBY.map((f) => <CardSkeleton key={f.cd} />)
-          : filiaisFiltradas.map((f) => (
-              <FilialCard
-                key={f.cd}
-                filial={f}
-                alerta={alertas[f.cd]}
-                onClick={setFilialSelecionada}
-              />
-            ))}
-      </div>
+      {visualizacao === 'lista' && !loading ? (
+        <ListaDespesas
+          filiais={filiaisFiltradas}
+          despesas={despesas}
+          onAbrir={setFilialSelecionada}
+        />
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {loading
+            ? FILIAIS_CROSBY.map((f) => <CardSkeleton key={f.cd} />)
+            : filiaisFiltradas.map((f) => (
+                <FilialCard
+                  key={f.cd}
+                  filial={f}
+                  alerta={alertas[f.cd]}
+                  onClick={setFilialSelecionada}
+                />
+              ))}
+        </div>
+      )}
 
       {!loading && filiaisFiltradas.length === 0 && (
         <div className="text-center py-12 text-sm text-gray-400">
