@@ -64,6 +64,7 @@ import {
   LockKey,
   ClockCounterClockwise,
   FloppyDisk,
+  Paperclip,
   Wallet,
   Signature,
   PaperPlaneTilt,
@@ -102,14 +103,28 @@ const qtdDaInclusao = (txt) => {
 };
 const ROLES_LIBERAM_DESCONTO = ['owner', 'admin', 'user'];
 // Troca de peça na conferência (a que falta sai, a que sobra entra pelo MESMO
-// valor do pedido): liberada até 11/11/2026 (era só 10/11; o Yago estendeu) —
-// pedidos cuja separação se perdeu nas 72 h do Dryland e tiveram peça trocada.
-// O servidor também confere a data.
-const TROCA_LIBERADA_ATE = '2026-11-11';
+// valor do pedido): liberada até 13/11/2026 (era 10/11, depois 11/11; em 12/11 o
+// Yago pediu mais 2 dias) — pedidos cuja separação se perdeu nas 72 h do Dryland
+// e tiveram peça trocada. O servidor também confere a data.
+const TROCA_LIBERADA_ATE = '2026-11-13';
 // Formas que consomem saldo do cliente no TOTVS → campo do saldo.
 // Vale SÓ o saldo da empresa 99 (Yago, 10/11/2026): saldo de outra empresa não
 // aparece nem pode ser usado.
 const CAMPO_SALDO = { credito_loja: 'credev', adiantamento: 'adiantamento' };
+
+// FATURAMENTO AVULSO (Yago, 12/11/2026): cliente que compra presencialmente na
+// matriz, sem pedido no Dryland. A tela abre vazia com a chave "AVULSO:<id>":
+// o operador escolhe cliente, operação e pagamento, bipa as peças (tudo o que
+// for lido entra na nota, com o preço da tabela do cliente — sem tabela, atacado,
+// como na Devolução) e o resto é o faturamento normal.
+const ehAvulso = (chave) => /^AVULSO:/i.test(String(chave || ''));
+const novaChaveAvulsa = () => `AVULSO:${Date.now().toString(36).toUpperCase()}`;
+// preço de um produto consultado: tabela do cliente quando veio; senão o da lista (atacado)
+const precoDoProduto = (data) => {
+  if (Number(data?.tablePrice?.price) > 0) return { preco: Number(data.tablePrice.price), fonte: 'tabela' };
+  const padrao = (data?.prices || []).find((x) => x.promotionalPrice > 0 || x.price > 0);
+  return { preco: padrao ? (padrao.promotionalPrice > 0 ? padrao.promotionalPrice : padrao.price) : 0, fonte: 'atacado' };
+};
 
 const OPERACOES_DOC_INTERNO = [
   { code: 511, label: '511 - VENDA VAREJO *', canal: 'varejo' },
@@ -516,6 +531,15 @@ function ListaSeparados({ onEscolher, origem = 'pedidos' }) {
         <button onClick={carregar} className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50">
           <ArrowsClockwise size={13} className={itens === null ? 'animate-spin' : ''} /> Atualizar
         </button>
+        {!brejinho && (
+          <button
+            onClick={() => onEscolher(novaChaveAvulsa())}
+            title="Venda presencial na matriz, sem pedido do Dryland: escolha o cliente, bipe as peças e emita a nota"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-xs font-bold text-white hover:bg-emerald-700"
+          >
+            <Receipt size={14} weight="bold" /> FATURAR AVULSO
+          </button>
+        )}
       </div>
       {!brejinho && (
         <div className="mb-2 flex flex-wrap gap-1.5">
@@ -1650,6 +1674,9 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   const [params, setParams] = useSearchParams();
   const chave = params.get('chave') || '';
   const aba = params.get('aba') || 'faturar';
+  // faturamento avulso (sem pedido do Dryland) e quem tem desconto pela regra do Brejinho
+  const avulso = ehAvulso(chave);
+  const descLivre = brejinho || avulso;
 
   const [toast, setToast] = useState(null);
   const showToast = useCallback((type, msg) => {
@@ -1736,6 +1763,15 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   // etiquetas tiradas à mão, uma a uma: continuam "já vistas" para o portal não
   // devolver a peça na leitura seguinte (ele guarda as etiquetas até limpar)
   const [removidas, setRemovidas] = useState([]);
+  // AVULSO: tabela de preço do cliente e comprovantes anexados na tela
+  const [tabela, setTabela] = useState(null); // { carregada, code, nome }
+  const tabelaRef = useRef(null);
+  tabelaRef.current = avulso ? tabela?.code ?? null : null;
+  const lidosRef = useRef(lidos);
+  lidosRef.current = lidos;
+  const [anexados, setAnexados] = useState([]); // [{ url, path, nome }]
+  const [anexando, setAnexando] = useState(false);
+  const anexoRef = useRef(null);
   const [posting, setPosting] = useState(false);
   const [resultado, setResultado] = useState(null);
   const [modalFat, setModalFat] = useState(false); // confirmação → andamento → resultado
@@ -1805,6 +1841,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     setDescLiberado(e.descLiberado || null);
     setTrocas(e.trocas || {});
     setGerarCredito(!!e.gerarCredito);
+    setAnexados(Array.isArray(e.anexados) ? e.anexados : []);
   }, []);
 
   useEffect(() => {
@@ -1846,6 +1883,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     setDescLiberado(null);
     setTrocas({});
     setTrocandoSku(null);
+    setAnexados([]);
     // etiquetas que o portal ainda guarda são do pedido anterior: sem limpar,
     // elas entravam no pedido seguinte como "sobrando"
     portalClear().catch(() => {});
@@ -1855,7 +1893,10 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     (async () => {
       try {
         const [r1, r2] = await Promise.all([
-          fetch(`${API_BASE_URL}/api/pedidos-venda/${encodeURIComponent(chave)}`).then((r) => r.json()),
+          // avulso: não há pedido no Dryland; as peças são as que forem lidas na tela
+          ehAvulso(chave)
+            ? Promise.resolve({ success: true, data: { chave, avulso: true, card: null, separacao: null, itens: [], faturamentos: [] } })
+            : fetch(`${API_BASE_URL}/api/pedidos-venda/${encodeURIComponent(chave)}`).then((r) => r.json()),
           fetch(`${API}/preparar/${encodeURIComponent(chave)}`).then((r) => r.json()),
         ]);
         if (!r1.success) throw new Error(r1.message || 'Pedido não encontrado');
@@ -1965,7 +2006,20 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     [saldos],
   );
 
-  const itensPedido = useMemo(() => (pedido ? itensDoPedido(pedido) : []), [pedido]);
+  const itensPedido = useMemo(() => {
+    if (!pedido) return [];
+    if (!pedido.avulso) return itensDoPedido(pedido);
+    // AVULSO: cada produto lido vira uma linha, com o preço da tabela do cliente
+    return Object.values(lidos)
+      .map((l) => {
+        const n = l.epcs.length + l.manual;
+        const preco = round2(l.precoTotvs || 0);
+        const unidades = Array.from({ length: n }, () => ({ sku: l.sku, descricao: l.nome || '', cor: '', tam: '', preco, desc: 0, black: null, troca: null, brinde: false }));
+        return { sku: l.sku, descricao: l.nome || '', cor: '', tam: '', unidades, qtd: n, precos: unidades.map((u) => u.preco), preco, fonte: l.fonte || null };
+      })
+      .filter((i) => i.qtd > 0)
+      .sort((a, b) => a.descricao.localeCompare(b.descricao));
+  }, [pedido, lidos]);
   const descontos = useMemo(() => (pedido ? resumoDescontos(pedido, itensPedido) : []), [pedido, itensPedido]);
   // peças que continuam no pedido do Dryland mas saíram da separação sem ser separadas:
   // ao abrir o pedido, um modal avisa que falta a peça e que o crédito precisa ser gerado
@@ -2039,7 +2093,9 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     }
   }, []);
   const consultarProduto = useCallback(async (code) => {
-    const r = await fetch(`${API_BASE_URL}/api/totvs/pdv/product/${encodeURIComponent(code)}?branch=${EMPRESA}&priceCodes=4`);
+    // avulso: preço pela tabela do cliente (como na Devolução); sem tabela, atacado
+    const pt = tabelaRef.current;
+    const r = await fetch(`${API_BASE_URL}/api/totvs/pdv/product/${encodeURIComponent(code)}?branch=${EMPRESA}&priceCodes=4${pt ? `&priceTable=${pt}` : ''}`);
     const j = await r.json();
     return { ok: r.ok && !!j?.data?.product, data: j?.data, message: j?.message };
   }, []);
@@ -2047,16 +2103,82 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     (data, { epc = null, manual = 0 }) => {
       const p = data.product;
       const sku = String(p.productCode);
-      const padrao = (data.prices || []).find((x) => x.promotionalPrice > 0 || x.price > 0);
-      const precoTotvs = padrao ? (padrao.promotionalPrice > 0 ? padrao.promotionalPrice : padrao.price) : 0;
+      const { preco: precoTotvs, fonte } = precoDoProduto(data);
       setLidos((prev) => {
-        const cur = prev[sku] || { sku, nome: p.productName, epcs: [], manual: 0, precoTotvs };
+        const cur = prev[sku] || { sku, nome: p.productName, epcs: [], manual: 0, precoTotvs, fonte };
         return { ...prev, [sku]: { ...cur, epcs: epc && !cur.epcs.includes(epc) ? [...cur.epcs, epc] : cur.epcs, manual: cur.manual + manual } };
       });
-      beep(skusPedido.has(sku));
+      // no avulso tudo o que é lido entra: sempre o bipe de "certo"
+      beep(avulso || skusPedido.has(sku));
     },
-    [skusPedido],
+    [skusPedido, avulso],
   );
+  // AVULSO: dados do cliente → tabela de preço dele
+  useEffect(() => {
+    setTabela(null);
+    if (!avulso || !customer?.code) return undefined;
+    let vivo = true;
+    fetch(`${API_BASE_URL}/api/totvs/pdv/customer/${customer.code}`)
+      .then((r) => r.json())
+      .then((j) => vivo && setTabela({ carregada: true, code: j?.data?.priceTableCode ?? null, nome: j?.data?.priceTableDescription || null }))
+      .catch(() => vivo && setTabela({ carregada: true, code: null, nome: null, erro: true }));
+    return () => {
+      vivo = false;
+    };
+  }, [avulso, customer?.code]);
+  // AVULSO: trocou o cliente (ou a tabela chegou) com peças já lidas → refaz o preço delas
+  useEffect(() => {
+    if (!avulso || !tabela?.carregada) return undefined;
+    const skus = Object.keys(lidosRef.current);
+    if (!skus.length) return undefined;
+    let vivo = true;
+    (async () => {
+      for (const sku of skus) {
+        try {
+          const res = await consultarProduto(sku);
+          if (!vivo) return;
+          if (!res.ok) continue;
+          const { preco, fonte } = precoDoProduto(res.data);
+          setLidos((prev) => (prev[sku] ? { ...prev, [sku]: { ...prev[sku], precoTotvs: preco, fonte } } : prev));
+        } catch {
+          /* fica com o preço que tinha */
+        }
+      }
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, [avulso, tabela?.carregada, tabela?.code, consultarProduto]);
+  // AVULSO: anexa o comprovante de pagamento (foto ou PDF) — vai junto da transação
+  const anexarComprovante = async (file) => {
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      showToast('erro', 'Arquivo maior que 10 MB');
+      return;
+    }
+    setAnexando(true);
+    try {
+      const base64 = await new Promise((ok, falha) => {
+        const fr = new FileReader();
+        fr.onload = () => ok(fr.result);
+        fr.onerror = () => falha(new Error('Não consegui ler o arquivo'));
+        fr.readAsDataURL(file);
+      });
+      const r = await fetch(`${API_BASE_URL}/api/pedidos-venda/${encodeURIComponent(chave)}/comprovante`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ base64, nome: file.name, tipo: file.type }),
+      });
+      const j = await r.json();
+      if (!j.success || !j.data?.comprovante_url) throw new Error(j.message || 'Não consegui salvar o comprovante');
+      setAnexados((l) => [...l, { url: j.data.comprovante_url, path: j.data.comprovante_nome || file.name, nome: file.name }]);
+      showToast('ok', 'Comprovante anexado');
+    } catch (e) {
+      showToast('erro', e.message);
+    } finally {
+      setAnexando(false);
+    }
+  };
   const resolverEpc = useCallback(
     async (epc) => {
       try {
@@ -2398,7 +2520,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   if (!operacao) pendencias.push('Escolha a operação do documento interno.');
   if (dataDiferente && !/^\d{4}-\d{2}-\d{2}$/.test(dataVenda)) pendencias.push('Informe a data da venda (transação com data diferente).');
   if (dataDiferente && dataVenda > hojeIso()) pendencias.push('A data da venda não pode ser depois de hoje.');
-  if (conf.conferidas === 0) pendencias.push('Ligue o portal e passe as peças do pedido.');
+  if (conf.conferidas === 0) pendencias.push(avulso ? 'Ligue o portal ou digite o código das peças.' : 'Ligue o portal e passe as peças do pedido.');
   if (semPreco) pendencias.push('Há peça conferida sem preço.');
   if (transp.id !== 'RETIRADA' && !transp.code) pendencias.push('Escolha a transportadora (em "Outro", pesquise pelo nome ou código).');
   if (!pagamentos.length) pendencias.push('Informe o pagamento.');
@@ -2407,8 +2529,8 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   if (Math.abs(somaPag - totalNota) > 0.01) pendencias.push(`Pagamento (${fmtBRL(somaPag)}) não fecha com o total da nota (${fmtBRL(totalNota)}).`);
   // desconto acima do limite: quem é owner/admin/financeiro passa direto; os demais pedem a senha
   const descSemLimite = ROLES_LIBERAM_DESCONTO.includes(user?.role);
-  const descPrecisaSenha = brejinho && pctDesc > LIMITE_DESCONTO_LIVRE && !descSemLimite && !(descLiberado && Number(descLiberado.pct) >= pctDesc);
-  if (!brejinho && pctDesc > LIMITE_DESCONTO_PEDIDOS + 0.005)
+  const descPrecisaSenha = descLivre && pctDesc > LIMITE_DESCONTO_LIVRE && !descSemLimite && !(descLiberado && Number(descLiberado.pct) >= pctDesc);
+  if (!descLivre && pctDesc > LIMITE_DESCONTO_PEDIDOS + 0.005)
     pendencias.push(`O desconto do operador é de no máximo ${LIMITE_DESCONTO_PEDIDOS}%${descModo === 'valor' ? ` (${fmtBRL((conf.baseOperador * LIMITE_DESCONTO_PEDIDOS) / 100)} nestas peças)` : ''}.`);
   if (descPrecisaSenha) pendencias.push(`Desconto de ${pctDesc.toLocaleString('pt-BR')}% passa de ${LIMITE_DESCONTO_LIVRE}%: precisa da senha de owner, admin ou financeiro.`);
   if (pctDesc >= 100) pendencias.push('O desconto não pode ser de 100%.');
@@ -2443,7 +2565,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
       cliente: customer?.name || card?.dados?.nome_cliente || pedido.separacao?.cliente || null,
       lidas: conf.conferidas + conf.sobrando,
       esperado: conf.esperado,
-      estado: { lidos, naoResolvidos, customer, seller, consumidorFinal, operacao, dataDiferente, dataVenda, transp, pagamentos, vencimentos, descPct, descModo, descLiberado, trocas, gerarCredito, removidas, precoManual },
+      estado: { lidos, naoResolvidos, customer, seller, consumidorFinal, operacao, dataDiferente, dataVenda, transp, pagamentos, vencimentos, descPct, descModo, descLiberado, trocas, gerarCredito, removidas, precoManual, anexados },
     };
     gravarRascunhos((l) => [registro, ...l.filter((d) => d.chave !== chave)].slice(0, 30));
     showToast('ok', 'Faturamento salvo — está em "Em andamento" para continuar depois');
@@ -2469,7 +2591,8 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
       const body = {
         chave,
         numeroSite: ref,
-        canal: prep?.canal,
+        // avulso: o canal é o da operação escolhida na tela
+        canal: avulso ? OPERACOES_DOC_INTERNO.find((o) => String(o.code) === String(operacao))?.canal || null : prep?.canal,
         clienteCode: customer.code,
         vendedorCode: Number(seller),
         vendedorNome: vend?.name || null,
@@ -2483,7 +2606,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
             ? {
                 pct: pctDesc,
                 ...(descModo === 'valor' ? { valor: Math.min(descDigitado, conf.baseOperador) } : {}),
-                liberadoPor: brejinho && pctDesc > LIMITE_DESCONTO_LIVRE ? descLiberado?.nome || (descSemLimite ? user?.name || user?.email : null) : null,
+                liberadoPor: descLivre && pctDesc > LIMITE_DESCONTO_LIVRE ? descLiberado?.nome || (descSemLimite ? user?.name || user?.email : null) : null,
               }
             : null,
         // cada unidade conferida vai com o valor da unidade do pedido; quando houve
@@ -2525,7 +2648,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
           };
         }),
         vencimentos: pBoleto ? parcelasBoleto.map((_, i) => vencimentos[i]) : [],
-        comprovantes: prep?.comprovantes || [],
+        comprovantes: [...(prep?.comprovantes || []), ...anexados.map((c) => ({ url: c.url, path: c.path }))],
         pedidoInfo: {
           forma: prep?.pagamento?.formaTexto,
           nsu: prep?.pagamento?.nsu,
@@ -2697,7 +2820,8 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
             {/* Pedido */}
             <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs text-[#000638] shadow-sm">
               <span className="font-mono text-sm font-bold">{ref || '—'}</span>
-              <span className="font-semibold">{card?.dados?.nome_cliente || pedido.separacao?.cliente || card?.titulo}</span>
+              <span className="font-semibold">{avulso ? customer?.name || 'Escolha o cliente' : card?.dados?.nome_cliente || pedido.separacao?.cliente || card?.titulo}</span>
+              {avulso && <Chip cls="bg-emerald-50 text-emerald-700 ring-emerald-200">AVULSO · venda presencial, sem pedido do Dryland</Chip>}
               <span className="text-gray-500">{CANAIS[prep.canal] || prep.canal}</span>
               <span className="text-gray-500">{prep.pagamento.formaTexto || ''}</span>
               <span>
@@ -2803,6 +2927,22 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                         </div>
                       )}
                       {previaErro && <span className="text-rose-600">{previaErro}</span>}
+                      {avulso && (
+                        <p className="mt-1 flex flex-wrap items-center gap-1.5">
+                          <b className="text-gray-500">Tabela de preço:</b>
+                          {!tabela ? (
+                            <span className="inline-flex items-center gap-1 text-gray-400">
+                              <Spinner size={12} className="animate-spin" /> buscando a tabela do cliente…
+                            </span>
+                          ) : tabela.code ? (
+                            <Chip cls="bg-emerald-50 text-emerald-700 ring-emerald-200">
+                              {tabela.code} — {tabela.nome || 'tabela do cliente'}
+                            </Chip>
+                          ) : (
+                            <Chip cls="bg-amber-50 text-amber-800 ring-amber-200">{tabela.erro ? 'não consegui buscar a tabela · usando ATACADO' : 'cliente sem tabela · usando ATACADO'}</Chip>
+                          )}
+                        </p>
+                      )}
                     </div>
                   )}
                 </Bloco>
@@ -2811,10 +2951,18 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                 <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-100 px-3 py-2 text-xs">
                     <span className="inline-flex items-center gap-1 font-bold text-[#000638]">
-                      <Package size={14} /> Produtos do pedido
+                      <Package size={14} /> {avulso ? 'Produtos' : 'Produtos do pedido'}
                     </span>
                     <span className="text-emerald-700">
-                      <b>{conf.conferidas}</b> de {conf.esperado} conferidas
+                      {avulso ? (
+                        <>
+                          <b>{conf.conferidas}</b> peça(s) lida(s)
+                        </>
+                      ) : (
+                        <>
+                          <b>{conf.conferidas}</b> de {conf.esperado} conferidas
+                        </>
+                      )}
                     </span>
                     {conf.faltando > 0 && (
                       <span className="text-amber-700">
@@ -2826,21 +2974,23 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                         <b>{conf.sobrando}</b> sobrando
                       </span>
                     )}
-                    {conf.ok && (
+                    {conf.ok && !avulso && (
                       <span className="inline-flex items-center gap-1 font-bold text-emerald-700">
                         <CheckCircle size={14} weight="fill" /> tudo confere
                       </span>
                     )}
                   </div>
                   <p className="border-b border-gray-100 bg-gray-50 px-3 py-1 text-[10.5px] text-gray-500">
-                    {pedido?.separacaoIncompleta
+                    {avulso
+                      ? 'Faturamento avulso: entra na nota tudo o que for bipado ou digitado. Preço pela tabela do cliente (sem tabela, atacado); use "alterar preço" se precisar.'
+                      : pedido?.separacaoIncompleta
                       ? 'Pedido antigo: a separação saiu da tela do Dryland antes de o HeadCoach guardar todas as linhas. Peças do card do pedido (com as trocas registradas nele).'
                       : (pedido?.itens || []).length > 0
                         ? 'Peças da separação do Dryland (tela Separar · Loja Virtual Max).'
                         : 'Este pedido não tem separação no Dryland: peças do card do pedido.'}
                   </p>
                   {conf.linhas.length === 0 ? (
-                    <p className="px-3 py-8 text-center text-xs text-gray-400">Este pedido não tem itens no Dryland.</p>
+                    <p className="px-3 py-8 text-center text-xs text-gray-400">{avulso ? 'Nenhuma peça ainda: ligue o portal ou digite o código ao lado.' : 'Este pedido não tem itens no Dryland.'}</p>
                   ) : (
                     <ul className="divide-y divide-gray-100">
                       {conf.linhas.map((l) => {
@@ -2933,6 +3083,11 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                                   {l.unidades.some((u) => u.descExtra > 0) && (
                                     <span className="ml-1 rounded bg-fuchsia-50 px-1 font-semibold text-fuchsia-700">
                                       − {fmtBRL(l.unidades.reduce((s, u) => s + (u.descExtra || 0), 0))} desc. operador
+                                    </span>
+                                  )}
+                                  {avulso && l.fonte && !l.unidades.some((u) => u.alterado) && (
+                                    <span className={`ml-1 rounded px-1 font-semibold ${l.fonte === 'tabela' ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-600'}`} title={l.fonte === 'tabela' ? 'Preço da tabela do cliente' : 'O cliente não tem tabela, ou a tabela dele não tem preço para esta peça: preço de atacado'}>
+                                      {l.fonte === 'tabela' ? 'tabela do cliente' : 'atacado'}
                                     </span>
                                   )}
                                   {fx && (
@@ -3432,6 +3587,49 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                       ))}
                     </p>
                   )}
+                  {avulso && (
+                    <div className="mt-2 border-t border-gray-100 pt-2 text-[11px]">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <b className="text-gray-500">Comprovante de pagamento:</b>
+                        {anexados.length === 0 && <span className="text-gray-400">nenhum anexado</span>}
+                        {anexados.map((c, i) => (
+                          <span key={c.url} className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 ring-1 ring-blue-200">
+                            <a href={c.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-0.5 font-semibold text-blue-700 hover:underline" title={c.nome || ''}>
+                              comprovante {i + 1} <ArrowSquareOut size={10} />
+                            </a>
+                            {!resultado && (
+                              <button type="button" onClick={() => setAnexados((l) => l.filter((x) => x.url !== c.url))} className="text-blue-300 hover:text-rose-600" title="Tirar este comprovante">
+                                <X size={11} weight="bold" />
+                              </button>
+                            )}
+                          </span>
+                        ))}
+                        {!resultado && (
+                          <>
+                            <input
+                              ref={anexoRef}
+                              type="file"
+                              accept="image/*,application/pdf"
+                              className="hidden"
+                              onChange={(e) => {
+                                anexarComprovante(e.target.files?.[0]);
+                                e.target.value = '';
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => anexoRef.current?.click()}
+                              disabled={anexando}
+                              className="inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-[11px] font-bold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                            >
+                              {anexando ? <Spinner size={13} className="animate-spin" /> : <Paperclip size={13} />} Anexar comprovante
+                            </button>
+                          </>
+                        )}
+                      </div>
+                      <p className="mt-0.5 text-gray-400">Foto ou PDF, até 10 MB. Fica guardado junto da transação (aba Transações).</p>
+                    </div>
+                  )}
                 </Bloco>
               </div>
 
@@ -3499,7 +3697,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                 </Bloco>
 
                 <Bloco titulo="Descontos do pedido" icone={Tag}>
-                  {!brejinho && (
+                  {!descLivre && (
                     <div className="mb-2 rounded-lg bg-amber-50 p-2 ring-1 ring-amber-200">
                       <label className={labelCls}>Desconto do operador · em % ou em R$ · máximo {LIMITE_DESCONTO_PEDIDOS}%</label>
                       <div className="flex flex-wrap items-center gap-2">
@@ -3542,7 +3740,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                       </p>
                     </div>
                   )}
-                  {brejinho && (
+                  {descLivre && (
                     <div className="mb-2 rounded-lg bg-amber-50 p-2 ring-1 ring-amber-200">
                       <label className={labelCls}>Desconto neste faturamento · em % ou em R$</label>
                       <div className="flex flex-wrap items-center gap-2">
@@ -3595,7 +3793,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                     </div>
                   )}
                   {descontos.length === 0 ? (
-                    <p className="text-xs text-gray-500">Sem desconto — peças no preço do Detalhar.</p>
+                    <p className="text-xs text-gray-500">{avulso ? 'Sem desconto — peças no preço da tabela do cliente.' : 'Sem desconto — peças no preço do Detalhar.'}</p>
                   ) : (
                     <ul className="space-y-1.5 text-xs">
                       {descontos.map((d) => (
@@ -3813,6 +4011,11 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                       {!(resultado.fiscal?.ok && resultado.totvs?.ok) && (
                         <button onClick={reprocessar} disabled={posting} className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-amber-600 text-xs font-bold text-white disabled:opacity-50">
                           {posting ? <Spinner size={14} className="animate-spin" /> : <ArrowsClockwise size={14} />} Tentar de novo
+                        </button>
+                      )}
+                      {avulso && (
+                        <button onClick={() => escolherPedido(novaChaveAvulsa())} className="h-9 w-full rounded-lg bg-emerald-600 text-xs font-bold text-white hover:bg-emerald-700">
+                          Novo faturamento avulso
                         </button>
                       )}
                       <button onClick={() => escolherPedido('')} className="h-9 w-full rounded-lg bg-[#000638] text-xs font-bold text-white hover:bg-[#000638]/90">

@@ -70,6 +70,11 @@ const LOCAL_INFO = {
 };
 
 const TRX_STATUS = { 1: 'Em andamento', 2: 'Encerrada', 3: 'Processo externo', 4: 'ATENDIDA', 6: 'CANCELADA' };
+// Transferência com nota pelo HeadCoach (saindo da 99): fica registrada só no HeadCoach,
+// sem transação no TOTVS. A situação é a da nota.
+const soHeadcoach = (t) => !!t?.venda_id;
+const SITUACAO_NOTA = { 1: 'NF pendente', 4: 'CONCLUÍDA', 6: 'CANCELADA' };
+const situacaoDe = (t) => (soHeadcoach(t) ? SITUACAO_NOTA[t.transacao_status] || 'NF pendente' : TRX_STATUS[t.transacao_status] || `status ${t.transacao_status}`);
 const clsTrx = (st) =>
   st === 4 ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : st === 6 ? 'bg-rose-50 text-rose-700 ring-rose-200' : 'bg-amber-50 text-amber-700 ring-amber-200';
 const inputCls = 'h-9 px-2 rounded-lg border border-gray-300 bg-white text-sm mb-0 focus:outline-none focus:ring-2 focus:ring-[#000638]/30';
@@ -365,7 +370,7 @@ const TransferenciasMercadoria = () => {
     [selecionada, vincular, carregar, showToast],
   );
 
-  // transferência com nota pelo HeadCoach: emite a nota que faltou e abre/atende a transação da 990
+  // transferência com nota pelo HeadCoach: emite a nota que faltou
   // (com o detalhe aberto, ele continua aberto e é recarregado com o resultado)
   const reprocessarNota = async (t, { manterDetalhe = false } = {}) => {
     if (reprocessando) return;
@@ -373,7 +378,7 @@ const TransferenciasMercadoria = () => {
     try {
       const r = await fetch(`${API_BASE_URL}/api/transferencias/nota/${t.venda_id}/reprocessar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
       const j = await r.json();
-      showToast(j.success && j.data?.fiscal?.ok && j.data?.totvs?.ok ? 'ok' : 'erro', j.message || 'Sem resposta');
+      showToast(j.success && j.data?.fiscal?.ok ? 'ok' : 'erro', j.message || 'Sem resposta');
       carregarTransacoes();
       carregar();
       if (manterDetalhe) await detalharTransacao(t);
@@ -384,8 +389,8 @@ const TransferenciasMercadoria = () => {
       setReprocessando(null);
     }
   };
-  // transferência com nota pelo HeadCoach em que ainda falta alguma etapa (nota ou transação da 990)
-  const podeTentarDeNovo = (t) => !!t?.venda_id && t.nf_status !== 'cancelada' && (t.nf_status !== 'autorizada' || t.transacao_status !== 4);
+  // transferência com nota pelo HeadCoach em que a NF-e ainda não saiu (não há transação no TOTVS)
+  const podeTentarDeNovo = (t) => soHeadcoach(t) && t.nf_status !== 'cancelada' && t.nf_status !== 'autorizada';
 
   const irParaRfid = (t) => {
     setAvulsa99(false);
@@ -571,7 +576,11 @@ const TransferenciasMercadoria = () => {
                             {Number(t.valor) > 0 && <p className="text-[10px] text-gray-400">{fmtBRL(t.valor)}</p>}
                           </td>
                           <td className="px-2 py-1.5">
-                            {t.transacao_code ? (
+                            {soHeadcoach(t) ? (
+                              <span className="font-semibold text-[#000638]" title="Nota pelo HeadCoach · sem transação no TOTVS">
+                                {t.nf_numero ? `NF ${t.nf_numero}` : 'sem NF'}
+                              </span>
+                            ) : t.transacao_code ? (
                               <button onClick={() => consultarTrxSolicitacao(t)} className="font-mono text-[#000638] hover:underline" title="Consultar a situação no TOTVS">
                                 {t.transacao_code}
                               </button>
@@ -718,7 +727,7 @@ const TransferenciasMercadoria = () => {
                       <th className="px-2 py-2 text-right">Peças</th>
                       <th className="px-2 py-2 text-right">EPCs</th>
                       <th className="px-2 py-2 text-right">Total</th>
-                      <th className="px-2 py-2 text-left">TOTVS</th>
+                      <th className="px-2 py-2 text-left">Situação</th>
                       <th className="px-2 py-2" />
                     </tr>
                   </thead>
@@ -741,7 +750,15 @@ const TransferenciasMercadoria = () => {
                     {trxLista.map((t) => (
                       <tr key={t.id} className={`hover:bg-gray-50/60 ${t.transacao_status === 6 ? 'opacity-60' : ''}`}>
                         <td className="px-2 py-1.5 font-mono font-bold text-[#000638]">
-                          {t.transacao_code ? `${t.empresa_totvs ? `${t.empresa_totvs}/` : ''}${t.transacao_code}` : <span className="font-sans font-semibold text-amber-700">sem transação</span>}
+                          {soHeadcoach(t) ? (
+                            <span className="font-sans" title="Nota pelo HeadCoach · sem transação no TOTVS">
+                              HeadCoach
+                            </span>
+                          ) : t.transacao_code ? (
+                            `${t.empresa_totvs ? `${t.empresa_totvs}/` : ''}${t.transacao_code}`
+                          ) : (
+                            <span className="font-sans font-semibold text-amber-700">sem transação</span>
+                          )}
                           {t.transferencia_id && <span className="ml-1 font-sans font-normal text-[10px] text-gray-400">TRF-{t.transferencia_id}</span>}
                           {t.venda_id && (
                             <span
@@ -769,7 +786,7 @@ const TransferenciasMercadoria = () => {
                         <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtBRL(t.total)}</td>
                         <td className="px-2 py-1.5">
                           <span className={`inline-flex px-1.5 py-0.5 rounded-full ring-1 text-[10px] font-semibold ${clsTrx(t.transacao_status)}`}>
-                            {TRX_STATUS[t.transacao_status] || `status ${t.transacao_status}`}
+                            {situacaoDe(t)}
                           </span>
                         </td>
                         <td className="px-2 py-1.5 whitespace-nowrap">
@@ -778,7 +795,7 @@ const TransferenciasMercadoria = () => {
                               onClick={() => reprocessarNota(t)}
                               disabled={!!reprocessando}
                               className="mr-1 px-2 py-0.5 rounded-lg text-[11px] font-bold inline-flex items-center gap-1 text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-50"
-                              title={t.totvs_erro || 'Emite a nota que faltou e abre/atende a transação na 990'}
+                              title="Emite a NF-e que não saiu"
                             >
                               {reprocessando === t.id && <Spinner size={11} className="animate-spin" />} Tentar de novo
                             </button>
@@ -789,9 +806,11 @@ const TransferenciasMercadoria = () => {
                           >
                             <ListMagnifyingGlass size={12} weight="bold" /> detalhar
                           </button>
-                          <button onClick={() => consultarTransacao(t)} className="ml-1 p-1 rounded hover:bg-gray-100 text-[#000638]" title="Consultar a situação no TOTVS">
-                            <ArrowsClockwise size={13} />
-                          </button>
+                          {!soHeadcoach(t) && (
+                            <button onClick={() => consultarTransacao(t)} className="ml-1 p-1 rounded hover:bg-gray-100 text-[#000638]" title="Consultar a situação no TOTVS">
+                              <ArrowsClockwise size={13} />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -809,14 +828,19 @@ const TransferenciasMercadoria = () => {
               <div className="flex items-start justify-between gap-2 mb-3">
                 <div>
                   <h3 className="text-base font-bold text-[#000638]">
-                    Transação {trxDetalhe.transacao_code ? `${trxDetalhe.empresa_totvs ? `${trxDetalhe.empresa_totvs}/` : ''}${trxDetalhe.transacao_code}` : '(ainda não aberta)'} · empresa {trxDetalhe.empresa} → {trxDetalhe.empresa_destino || '—'}
+                    {soHeadcoach(trxDetalhe)
+                      ? `Transferência ${trxDetalhe.nf_numero ? `NF ${trxDetalhe.nf_numero}` : '(sem nota)'}`
+                      : `Transação ${trxDetalhe.transacao_code ? `${trxDetalhe.empresa_totvs ? `${trxDetalhe.empresa_totvs}/` : ''}${trxDetalhe.transacao_code}` : '(ainda não aberta)'}`}{' '}
+                    · empresa {trxDetalhe.empresa} → {trxDetalhe.empresa_destino || '—'}
                   </h3>
                   {trxDetalhe.venda_id && (
                     <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
                       <span className={`rounded-full px-2 py-0.5 font-bold ring-1 ${trxDetalhe.nf_status === 'autorizada' ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-rose-50 text-rose-700 ring-rose-200'}`}>
                         {trxDetalhe.nf_numero ? `NF-e ${trxDetalhe.nf_numero}/${trxDetalhe.nf_serie || ''}` : 'sem NF-e'} · {trxDetalhe.nf_status || 'pendente'}
                       </span>
-                      <span className="text-gray-500">nota pelo HeadCoach · {trxDetalhe.natureza === 'venda' ? 'venda entre filiais' : 'transferência'}</span>
+                      <span className="text-gray-500">
+                        nota pelo HeadCoach · {trxDetalhe.natureza === 'venda' ? 'venda entre filiais' : 'transferência'} · registrada só no HeadCoach (sem transação no TOTVS)
+                      </span>
                     </p>
                   )}
                   {trxDetalhe.venda_id && trxDetalhe.nota_id && (trxDetalhe.nf_status === 'autorizada' || trxDetalhe.nf_status === 'cancelada') && (
@@ -848,7 +872,7 @@ const TransferenciasMercadoria = () => {
                       </a>
                     </div>
                   )}
-                  {trxDetalhe.totvs_erro && <p className="mt-1 rounded-lg bg-amber-50 px-2 py-1 text-[11px] text-amber-800 ring-1 ring-amber-200">{trxDetalhe.totvs_erro}</p>}
+                  {!soHeadcoach(trxDetalhe) && trxDetalhe.totvs_erro && <p className="mt-1 rounded-lg bg-amber-50 px-2 py-1 text-[11px] text-amber-800 ring-1 ring-amber-200">{trxDetalhe.totvs_erro}</p>}
                   <p className="text-xs text-gray-500">
                     {trxDetalhe.cliente_nome || trxDetalhe.cliente_code} · operação {trxDetalhe.operacao ?? '—'} {OPERACOES_POP[trxDetalhe.operacao] ? `(${OPERACOES_POP[trxDetalhe.operacao]})` : ''} · CFOP{' '}
                     {trxDetalhe.cfop ?? '—'} · {fmtDataHora(trxDetalhe.criado_em)}
@@ -923,30 +947,34 @@ const TransferenciasMercadoria = () => {
 
               <div className="flex flex-wrap items-center gap-2">
                 <span className={`inline-flex px-2 py-1 rounded-full ring-1 text-[11px] font-semibold ${clsTrx(trxDetalhe.transacao_status)}`}>
-                  TOTVS: {TRX_STATUS[trxDetalhe.transacao_status] || trxDetalhe.transacao_status}
+                  {soHeadcoach(trxDetalhe) ? situacaoDe(trxDetalhe) : `TOTVS: ${TRX_STATUS[trxDetalhe.transacao_status] || trxDetalhe.transacao_status}`}
                 </span>
                 {!trxDetalhe.carregando && podeTentarDeNovo(trxDetalhe) && (
                   <button
                     onClick={() => reprocessarNota(trxDetalhe, { manterDetalhe: true })}
                     disabled={!!reprocessando}
-                    title="Emite a nota que faltou e abre/atende a transação na 990; se ela já foi finalizada no TOTVS, só confere"
+                    title="Emite a NF-e que não saiu"
                     className="h-8 px-3 rounded-lg text-[11px] font-bold text-white bg-amber-600 hover:bg-amber-700 disabled:opacity-50 inline-flex items-center gap-1"
                   >
                     {reprocessando ? <Spinner size={12} className="animate-spin" /> : <ArrowsClockwise size={12} weight="bold" />} Tentar de novo
                   </button>
                 )}
-                <button
-                  onClick={() => consultarTransacao(trxDetalhe)}
-                  className="h-8 px-2.5 rounded-lg text-[11px] font-semibold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50 inline-flex items-center gap-1"
-                >
-                  <ArrowsClockwise size={12} /> consultar no TOTVS
-                </button>
-                <button
-                  onClick={() => copiar(trxDetalhe.transacao_code)}
-                  className="h-8 px-2.5 rounded-lg text-[11px] text-gray-500 ring-1 ring-gray-200 hover:bg-gray-50 inline-flex items-center gap-1"
-                >
-                  <Copy size={12} /> nº da transação
-                </button>
+                {!soHeadcoach(trxDetalhe) && (
+                  <>
+                    <button
+                      onClick={() => consultarTransacao(trxDetalhe)}
+                      className="h-8 px-2.5 rounded-lg text-[11px] font-semibold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50 inline-flex items-center gap-1"
+                    >
+                      <ArrowsClockwise size={12} /> consultar no TOTVS
+                    </button>
+                    <button
+                      onClick={() => copiar(trxDetalhe.transacao_code)}
+                      className="h-8 px-2.5 rounded-lg text-[11px] text-gray-500 ring-1 ring-gray-200 hover:bg-gray-50 inline-flex items-center gap-1"
+                    >
+                      <Copy size={12} /> nº da transação
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -1045,7 +1073,22 @@ const TransferenciasMercadoria = () => {
                 </p>
               )}
 
-              {detalhe.transacao_code && (
+              {soHeadcoach(detalhe) && (
+                <div className="text-xs rounded-xl ring-1 ring-emerald-200 bg-emerald-50 p-3 mb-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-700 mb-1">Transferência com nota pelo HeadCoach</p>
+                  <p>
+                    {detalhe.nf_numero ? (
+                      <>
+                        NF-e <b className="font-mono">{detalhe.nf_numero}</b>
+                      </>
+                    ) : (
+                      'NF-e ainda não emitida'
+                    )}{' '}
+                    · registrada só no HeadCoach (sem transação no TOTVS). DANFE e XML na aba Transações.
+                  </p>
+                </div>
+              )}
+              {!soHeadcoach(detalhe) && detalhe.transacao_code && (
                 <div className="text-xs rounded-xl ring-1 ring-purple-200 bg-purple-50 p-3 mb-3">
                   <p className="text-[10px] font-bold uppercase tracking-wide text-purple-700 mb-1">Transação de transferência no TOTVS</p>
                   <p>

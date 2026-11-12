@@ -4,9 +4,9 @@
 //     PORTAL RFID confere: conferido / faltando / a mais. Só o conferido entra.
 //   • peça lida que não é do pedido fica de fora; dá para tirar uma a uma
 //   • sem pedido (transferência avulsa da 99): entra tudo o que for lido
-//   • EMITIR: a NF-e de transferência sai pelo HeadCoach (empresa 99) e o TOTVS
-//     recebe a transação na empresa 990 como documento interno, sem nota e sem
-//     financeiro, já atendida
+//   • EMITIR: a NF-e de transferência sai pelo HeadCoach (empresa 99) e a
+//     transferência fica registrada só no HeadCoach — sem transação no TOTVS
+//     (Yago, 11/11/2026: a API do TOTVS não finaliza transferência)
 // Backend: /api/transferencias/nota (services/transferenciaNota.js).
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -85,7 +85,6 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
   const [destino, setDestino] = useState(''); // pessoa da loja de destino (avulsa)
   const [sellers, setSellers] = useState([]);
   const [seller, setSeller] = useState('');
-  const [terminal, setTerminal] = useState('1');
   // leituras: sku → { sku, nome, epcs[], manual, precoTotvs }
   const [lidos, setLidos] = useState({});
   const [naoResolvidos, setNaoResolvidos] = useState([]);
@@ -383,7 +382,6 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
         destinoClienteCode: prep.destino.personCode,
         vendedorCode: Number(seller),
         vendedorNome: vend?.name || null,
-        terminal: Number(terminal) || 1,
         itens: itensDaNota(),
         faltando: conf.linhas.filter((l) => l.falta > 0).map((l) => ({ productCode: l.sku, name: l.nome, quantidade: l.falta })),
         sobrando: temPedido
@@ -400,8 +398,8 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
       }
       setResultado(j.data);
       setConfirmar(false);
-      beep(j.data.fiscal?.ok && j.data.totvs?.ok);
-      avisar(j.data.fiscal?.ok && j.data.totvs?.ok ? 'ok' : 'erro', j.message);
+      beep(!!j.data.fiscal?.ok);
+      avisar(j.data.fiscal?.ok ? 'ok' : 'erro', j.message);
       onConcluida?.(j.data);
     } catch (e) {
       avisar('erro', `Falha ao emitir: ${e.message}`);
@@ -416,7 +414,7 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
       const r = await fetch(`${API}/nota/${resultado.vendaId}/reprocessar`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
       const j = await r.json();
       if (j.success) setResultado(j.data);
-      avisar(j.success && j.data.fiscal?.ok && j.data.totvs?.ok ? 'ok' : 'erro', j.message);
+      avisar(j.success && j.data.fiscal?.ok ? 'ok' : 'erro', j.message);
       onConcluida?.(j.data);
     } catch (e) {
       avisar('erro', e.message);
@@ -450,7 +448,7 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
               {prep.naturezaNome} · CFOP {prep.cenario.cfops.join(' / ') || '—'} · {prep.cenario.texto}
             </span>
             <span className="rounded-full bg-gray-100 px-2 py-0.5 font-semibold text-gray-600 ring-1 ring-gray-200">
-              TOTVS: empresa {prep.empresaTotvs} · operação {prep.operacaoDocInterno} (documento interno)
+              Registrada só no HeadCoach · sem transação no TOTVS
             </span>
             <span className={`rounded-full px-2 py-0.5 font-semibold ring-1 ${Number(prep.numeracao.ambiente) === 1 ? 'bg-rose-50 text-rose-700 ring-rose-200' : 'bg-amber-50 text-amber-700 ring-amber-200'}`}>
               NF-e série {prep.numeracao.serie} · {Number(prep.numeracao.ambiente) === 1 ? 'PRODUÇÃO' : 'homologação'}
@@ -496,7 +494,7 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
                 <p className="text-sm font-bold">TRANSFERÊNCIA JÁ EMITIDA</p>
                 <p>
                   NF-e {prep.jaEmitida.numero}/{prep.jaEmitida.serie}
-                  {prep.jaEmitida.transacao ? ` · transação ${prep.empresaTotvs}/${prep.jaEmitida.transacao}` : ''}. Para emitir de novo, cancele a nota (aba Transações).
+                  . Para emitir de novo, cancele a nota (aba Transações).
                 </p>
               </div>
             </div>
@@ -763,10 +761,6 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
                     <span className="font-semibold text-[#000638]">Total da NF-e</span>
                     <span className="text-xl font-bold tabular-nums text-[#000638]">{fmtBRL(conf.total)}</span>
                   </div>
-                  <div className="flex items-center justify-between text-gray-500">
-                    <span>Terminal do TOTVS</span>
-                    <input type="number" min="1" value={terminal} onChange={(e) => setTerminal(e.target.value)} className="mb-0 h-7 w-14 rounded-lg border border-gray-300 px-1.5 text-xs" />
-                  </div>
                 </div>
 
                 {resultado ? (
@@ -799,14 +793,12 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
                         </div>
                       )}
                     </div>
-                    <div className={`rounded-lg p-2 ring-1 ${resultado.totvs?.ok ? 'bg-emerald-50 ring-emerald-200' : 'bg-amber-50 ring-amber-200'}`}>
-                      <p className={`inline-flex items-center gap-1 font-bold ${resultado.totvs?.ok ? 'text-emerald-800' : 'text-amber-800'}`}>
-                        {resultado.totvs?.ok ? <CheckCircle size={14} weight="fill" /> : <Warning size={14} weight="fill" />}
-                        {resultado.totvs?.ok ? `TOTVS: transação ${prep.empresaTotvs}/${resultado.totvs.transactionCode} atendida` : 'TOTVS ainda não atendeu'}
+                    {resultado.fiscal?.ok && (
+                      <p className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 p-2 text-[11px] font-semibold text-emerald-800 ring-1 ring-emerald-200">
+                        <CheckCircle size={14} weight="fill" /> Transferência registrada no HeadCoach (sem transação no TOTVS)
                       </p>
-                      {!resultado.totvs?.ok && <p className="text-[11px] text-amber-800">{resultado.totvs?.mensagem}</p>}
-                    </div>
-                    {!(resultado.fiscal?.ok && resultado.totvs?.ok) && (
+                    )}
+                    {!resultado.fiscal?.ok && (
                       <button onClick={reprocessar} disabled={posting} className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-amber-600 text-xs font-bold text-white disabled:opacity-50">
                         {posting ? <Spinner size={14} className="animate-spin" /> : <ArrowsClockwise size={14} />} Tentar de novo
                       </button>
@@ -861,7 +853,7 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
                 <b>Destino:</b> {prep.destino.razao} · CNPJ {prep.destino.cnpj}
               </p>
               <p>
-                <b>TOTVS:</b> empresa {prep.empresaTotvs}, operação {prep.operacaoDocInterno} (documento interno, sem nota e sem financeiro), já atendida
+                <b>Registro:</b> só no HeadCoach — não é aberta transação no TOTVS
               </p>
               <div className="rounded-lg bg-gray-50 p-2 ring-1 ring-gray-200">
                 <div className="flex justify-between">
@@ -874,7 +866,7 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
                   </p>
                 )}
               </div>
-              <p className="text-[11px] text-gray-500">A nota é real (SEFAZ). Depois dela o TOTVS recebe a transferência na empresa {prep.empresaTotvs}.</p>
+              <p className="text-[11px] text-gray-500">A nota é real (SEFAZ). A transferência fica registrada no HeadCoach (aba Transações).</p>
               <div className="flex gap-2 pt-2">
                 <button onClick={() => setConfirmar(false)} disabled={posting} className="h-11 flex-1 rounded-xl text-sm font-bold text-gray-600 ring-1 ring-gray-300 disabled:opacity-50">
                   Cancelar

@@ -412,6 +412,13 @@ const PedidosVenda = () => {
               );
             })}
           </div>
+          <button
+            onClick={() => navigate(`/expedicao/faturamento?chave=${encodeURIComponent(`AVULSO:${Date.now().toString(36).toUpperCase()}`)}`)}
+            className="h-9 px-3 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 inline-flex items-center gap-1.5"
+            title="Venda presencial na matriz, sem pedido do Dryland: escolha o cliente, bipe as peças e emita a nota"
+          >
+            <Receipt size={14} weight="bold" /> FATURAR AVULSO
+          </button>
           {visao !== 'painel' && (
           <button
             onClick={sincronizar}
