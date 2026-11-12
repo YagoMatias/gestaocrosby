@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { CHAINWAY_HID, frameChainway, framesChainway } from '../hooks/useRfidReader';
 import {
   Printer,
   Barcode,
@@ -131,11 +132,55 @@ Se você leu isto, está tudo certo.
 
   // ---- RFID .bat (leitor de mesa, USB-serial) ----
   const detectarLeitor = async () => {
-    if (!('serial' in navigator)) {
-      setStatus('bat', false, 'Web Serial indisponível neste ambiente');
+    setBusyK('bat', true);
+    // 1) Leitor Chainway de mesa: não cria porta COM, entra como USB HID
+    try {
+      if ('hid' in navigator) {
+        const ehChainway = (d) => d.vendorId === CHAINWAY_HID.vendorId && d.productId === CHAINWAY_HID.productId;
+        let leitor = (await navigator.hid.getDevices()).find(ehChainway);
+        if (!leitor) [leitor] = await navigator.hid.requestDevice({ filters: [CHAINWAY_HID] }).catch(() => []);
+        if (leitor) {
+          const jaAberto = leitor.opened;
+          if (!jaAberto) await leitor.open();
+          const estado = { pendente: null };
+          const versao = await new Promise((resolve) => {
+            const t = setTimeout(() => resolve(null), 1500);
+            const ouvir = (e) => {
+              const u8 = new Uint8Array(e.data.buffer, e.data.byteOffset, e.data.byteLength);
+              const f = framesChainway(u8, estado).find((x) => x.cmd === 0x03);
+              if (!f) return;
+              clearTimeout(t);
+              leitor.removeEventListener('inputreport', ouvir);
+              resolve(Array.from(f.data).join('.'));
+            };
+            leitor.addEventListener('inputreport', ouvir);
+            const buf = new Uint8Array(64);
+            buf.set(frameChainway(0x02));
+            leitor.sendReport(0, buf).catch(() => resolve(null));
+          });
+          if (!jaAberto) await leitor.close().catch(() => {});
+          setStatus(
+            'bat',
+            !!versao,
+            versao
+              ? `Leitor Chainway de mesa encontrado (USB HID, sem porta COM) — firmware ${versao}. Respondeu ao comando de versão.`
+              : 'Leitor Chainway encontrado na USB, mas não respondeu ao comando de versão. Tire e recoloque o cabo USB.',
+          );
+          setBusyK('bat', false);
+          return;
+        }
+      }
+    } catch (e) {
+      setStatus('bat', false, `Leitor Chainway (USB HID) encontrado, mas não abriu: ${e?.message || 'erro'}.`);
+      setBusyK('bat', false);
       return;
     }
-    setBusyK('bat', true);
+    // 2) Leitor .bat (USB-serial)
+    if (!('serial' in navigator)) {
+      setStatus('bat', false, 'Nenhum leitor de mesa encontrado (Web Serial indisponível neste ambiente)');
+      setBusyK('bat', false);
+      return;
+    }
     try {
       // No app, quem escolhe a porta é o processo principal (porta salva →
       // chip CP210x do leitor → primeira porta). Aqui só confirmamos.
@@ -150,7 +195,7 @@ Se você leu isto, está tudo certo.
       const pid = info.usbProductId ? info.usbProductId.toString(16).padStart(4, '0').toUpperCase() : '—';
       setStatus('bat', true, `Leitor encontrado${nome ? ` em ${nome}` : ''} (VID ${vid} / PID ${pid}). Porta aberta e fechada com sucesso a 57600 bps.`);
     } catch (e) {
-      setStatus('bat', false, `Nenhum leitor respondeu: ${e?.message || 'porta não encontrada'}.\nConfira o cabo USB e o driver CP210x.`);
+      setStatus('bat', false, `Nenhum leitor respondeu: ${e?.message || 'porta não encontrada'}.\nConfira o cabo USB (leitor .bat: driver CP210x; leitor Chainway: não precisa de driver).`);
     } finally {
       setBusyK('bat', false);
     }
@@ -210,7 +255,7 @@ Se você leu isto, está tudo certo.
           <Status {...(st.imp || {})} />
         </Card>
 
-        <Card icon={Barcode} titulo="RFID .bat (leitor de mesa)" subtitulo="USB-serial, chip CP210x, 57600 bps">
+        <Card icon={Barcode} titulo="RFID de mesa (.bat ou Chainway)" subtitulo=".bat: USB-serial CP210x 57600 bps · Chainway: USB HID, sem porta COM">
           <Label>Porta preferida (deixe vazio para detectar sozinho)</Label>
           <input
             className={inputCls}

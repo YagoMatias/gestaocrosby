@@ -151,7 +151,48 @@ const CENARIOS = {
   interna: { label: 'Dentro do RN', cfop: '5101 / 5102', icms: 'ICMS 20%' },
   interContrib: { label: 'Fora do RN · cliente com IE', cfop: '6101 / 6102', icms: 'ICMS 12%' },
   interNaoContrib: { label: 'Fora do RN · consumidor final', cfop: '6107 / 6108', icms: 'ICMS 12% + DIFAL' },
+  suframa: { label: 'SUFRAMA (Zona Franca / ALC)', cfop: '6109 / 6110', icms: 'ICMS 12% desonerado, abatido do total · PIS/COFINS isentos' },
 };
+
+// SUFRAMA: ICMS desonerado de cada item da nota — a MESMA conta do servidor e da
+// NF-e (services/pdvFiscal.js › desoneracaoSuframa): 12% de (vProd − vDesc + frete
+// rateado), por linha da nota, e o total sai do valor da nota.
+function desoneracaoSuframa(itens, frete, pct) {
+  const liq = itens.map((it) => round2(Number(it.quantidade) * round2(it.valorUnit) - Number(it.quantidade) * Number(it.descontoUnit || 0)));
+  const f = round2(frete || 0);
+  const somaLiq = liq.reduce((t, v) => t + v, 0);
+  const fretes = liq.map((v) => (f > 0 && somaLiq > 0 ? round2((f * v) / somaLiq) : 0));
+  if (f > 0 && somaLiq > 0) {
+    const sobra = round2(f - fretes.reduce((t, v) => t + v, 0));
+    if (sobra !== 0) {
+      const iMaior = liq.indexOf(Math.max(...liq));
+      fretes[iMaior] = round2(fretes[iMaior] + sobra);
+    }
+  }
+  return round2(liq.reduce((t, v, i) => t + round2(((v + fretes[i]) * pct) / 100), 0));
+}
+// linhas da nota: cada unidade conferida com o seu valor; quando houve troca, o
+// produto (e a etiqueta) é o da peça que está na caixa. Agrupa por (produto, preço, desconto).
+function itensDaNota(conf) {
+  return conf.linhas
+    .filter((l) => l.conferido > 0)
+    .flatMap((l) => {
+      const grupos = [];
+      l.unidades.slice(0, l.conferido).forEach((u, idx) => {
+        const sb = idx >= l.proprio ? l.substitutos[idx - l.proprio] : null;
+        const productCode = Number(sb ? sb.sku : l.sku);
+        const epc = sb ? sb.epc : l.epcs[idx] || null;
+        let g = grupos.find((x) => x.productCode === productCode && x.valorUnit === u.preco && x.descontoUnit === u.desc);
+        if (!g) {
+          g = { productCode, quantidade: 0, valorUnit: u.preco, descontoUnit: u.desc, nome: sb ? sb.nome : l.descricao, epcs: [], ...(sb ? { trocaDe: Number(l.sku) } : {}) };
+          grupos.push(g);
+        }
+        g.quantidade += 1;
+        if (epc) g.epcs.push(epc);
+      });
+      return grupos;
+    });
+}
 
 const TOTVS_STATUS = {
   1: { label: 'em andamento', cls: 'bg-amber-50 text-amber-700 ring-amber-200' },
@@ -251,7 +292,7 @@ const numeroDe = (v) => {
   const n = Number(String(v ?? '').replace(',', '.'));
   return Number.isFinite(n) ? n : 0;
 };
-function descontoDoPedido(dd, somaCard) {
+function descontoDoPedido(dd, somaCard, pctSuframa = 0) {
   const declarado = round2((Number(dd?.desconto) || 0) + (Number(dd?.desconto_pix) || 0));
   const pago = Number(dd?.valor_pedido) || 0;
   // CREDEV informado no card é forma de pagamento como as outras: o pedido vale
@@ -260,12 +301,15 @@ function descontoDoPedido(dd, somaCard) {
   const credev = numeroDe(dd?.credev);
   if (dd?.brejinho || !(pago + credev > 0) || !(somaCard > 0)) return { total: declarado, declarado, ajuste: 0, base: somaCard, pago, alvo: null };
   const frete = Number(dd.valor_frete) || 0;
-  const alvo = round2(pago + credev - frete); // quanto as peças valem no pedido do Dryland
+  // quanto as peças valem no pedido do Dryland. SUFRAMA: o pedido já vem com o ICMS
+  // desonerado abatido (o mesmo total da nota do TOTVS), então as peças valem
+  // (pedido ÷ (1 − 12%)) − frete (PE 2405,55 da NF 16250 = 2733,60 × 0,88).
+  const alvo = pctSuframa > 0 ? round2((pago + credev) / (1 - pctSuframa / 100) - frete) : round2(pago + credev - frete);
   const total = Math.max(0, round2(somaCard - alvo));
   if (total >= somaCard) return { total: declarado, declarado, ajuste: 0, base: somaCard, pago, alvo };
   return { total, declarado, ajuste: round2(total - declarado), base: somaCard, pago, alvo, frete, credev };
 }
-function itensDoPedido(dados) {
+function itensDoPedido(dados, pctSuframa = 0) {
   const doCard = unidadesDe(dados?.card?.dados?.itens);
   const daSep = unidadesDe((dados?.itens || []).map((i) => ({ cod: i.cod, descricao: i.descricao, cor: i.cor, tam: i.tamanho, qtd: i.qtd, preco: i.preco })));
   let unidades = doCard;
@@ -301,7 +345,7 @@ function itensDoPedido(dados) {
   const dd = dados?.card?.dados || {};
   const soma = unidades.reduce((s, u) => s + u.preco, 0);
   const somaCard = doCard.reduce((s, u) => s + u.preco, 0) || soma;
-  const dp = descontoDoPedido(dd, round2(somaCard));
+  const dp = descontoDoPedido(dd, round2(somaCard), pctSuframa);
   if (dp.total > 0 && soma > 0 && dp.base > 0) {
     unidades.forEach((u) => (u.desc = round2((dp.total * u.preco) / dp.base)));
     // centavos que sobram: só quando as peças são as mesmas do card
@@ -325,7 +369,7 @@ function itensDoPedido(dados) {
 }
 
 // Resumo dos descontos do pedido (para a tela)
-function resumoDescontos(dados, itens) {
+function resumoDescontos(dados, itens, pctSuframa = 0) {
   const dd = dados?.card?.dados || {};
   const unidades = itens.flatMap((i) => i.unidades);
   const total = unidades.length;
@@ -334,7 +378,7 @@ function resumoDescontos(dados, itens) {
   const geral = Number(dd.desconto) || 0;
   const base = Number(dd.valor_cheio) || unidades.reduce((s, u) => s + u.preco, 0);
   const somaCard = round2(unidadesDe(dd.itens).reduce((s, u) => s + u.preco, 0)) || round2(unidades.reduce((s, u) => s + u.preco, 0));
-  const dp = descontoDoPedido(dd, somaCard);
+  const dp = descontoDoPedido(dd, somaCard, pctSuframa);
   if (Math.abs(dp.ajuste) > 0.01) {
     // o card não declara (ou declara diferente) o desconto que fecha no valor do pedido
     if (dp.total > 0) {
@@ -2015,9 +2059,11 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     [saldos],
   );
 
+  // SUFRAMA do cliente do pedido (o desconto que fecha no valor do pedido depende dele)
+  const pctSuframaPedido = prep?.cenario?.suframa ? Number(prep.cenario.pctSuframa) || 12 : 0;
   const itensPedido = useMemo(() => {
     if (!pedido) return [];
-    if (!pedido.avulso) return itensDoPedido(pedido);
+    if (!pedido.avulso) return itensDoPedido(pedido, pctSuframaPedido);
     // AVULSO: cada produto lido vira uma linha, com o preço da tabela do cliente
     return Object.values(lidos)
       .map((l) => {
@@ -2028,8 +2074,8 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
       })
       .filter((i) => i.qtd > 0)
       .sort((a, b) => a.descricao.localeCompare(b.descricao));
-  }, [pedido, lidos]);
-  const descontos = useMemo(() => (pedido ? resumoDescontos(pedido, itensPedido) : []), [pedido, itensPedido]);
+  }, [pedido, lidos, pctSuframaPedido]);
+  const descontos = useMemo(() => (pedido ? resumoDescontos(pedido, itensPedido, pctSuframaPedido) : []), [pedido, itensPedido, pctSuframaPedido]);
   // peças que continuam no pedido do Dryland mas saíram da separação sem ser separadas:
   // ao abrir o pedido, um modal avisa que falta a peça e que o crédito precisa ser gerado
   const naoSeparadas = useMemo(
@@ -2472,7 +2518,11 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   // ─── Totais e pagamento ──────────────────────────────────────────────────
   const temTransportadora = transp.id !== 'RETIRADA' && !!transp.code;
   const frete = temTransportadora ? round2(transp.frete) : 0;
-  const totalNota = round2(conf.totalConferido + frete);
+  const cenarioCliente = previa?.cenario || prep?.cenario || null;
+  const pctSuframa = cenarioCliente?.suframa ? Number(cenarioCliente.pctSuframa) || 12 : 0;
+  const itensNota = useMemo(() => itensDaNota(conf), [conf]);
+  const icmsSuframa = pctSuframa > 0 ? desoneracaoSuframa(itensNota, frete, pctSuframa) : 0;
+  const totalNota = round2(conf.totalConferido + frete - icmsSuframa);
   // forma "automática" (a primeira) acompanha o total: total − as outras formas
   useEffect(() => {
     setPagamentos((ps) => {
@@ -2626,24 +2676,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
             : null,
         // cada unidade conferida vai com o valor da unidade do pedido; quando houve
         // troca, o produto (e a etiqueta) é o da peça que realmente está na caixa
-        itens: conf.linhas
-          .filter((l) => l.conferido > 0)
-          .flatMap((l) => {
-            const grupos = [];
-            l.unidades.slice(0, l.conferido).forEach((u, idx) => {
-              const sb = idx >= l.proprio ? l.substitutos[idx - l.proprio] : null;
-              const productCode = Number(sb ? sb.sku : l.sku);
-              const epc = sb ? sb.epc : l.epcs[idx] || null;
-              let g = grupos.find((x) => x.productCode === productCode && x.valorUnit === u.preco && x.descontoUnit === u.desc);
-              if (!g) {
-                g = { productCode, quantidade: 0, valorUnit: u.preco, descontoUnit: u.desc, nome: sb ? sb.nome : l.descricao, epcs: [], ...(sb ? { trocaDe: Number(l.sku) } : {}) };
-                grupos.push(g);
-              }
-              g.quantidade += 1;
-              if (epc) g.epcs.push(epc);
-            });
-            return grupos;
-          }),
+        itens: itensNota,
         trocas: trocasFeitas,
         transporte: temTransportadora
           ? { code: transp.code, servico: transp.servico || null, frete, modFrete: Number(transp.modFrete), volumes: Number(transp.volumes) || 1, pesoB: Number(transp.pesoB) || 0 }
@@ -2707,7 +2740,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     } finally {
       setPosting(false);
     }
-  }, [gerarCredito, podeFaturar, prep, customer, conf, frete, operacao, dataDiferente, dataVenda, terminal, comoFatura, sellers, seller, chave, ref, consumidorFinal, temTransportadora, transp, pagamentos, cartaoDe, pBoleto, parcelasBoleto, vencimentos, user, showToast, pctDesc, descLiberado, descSemLimite, tirarRascunho, trocasFeitas, clientePedido, trocaCliente]);
+  }, [gerarCredito, podeFaturar, prep, customer, conf, frete, operacao, dataDiferente, dataVenda, terminal, comoFatura, sellers, seller, chave, ref, consumidorFinal, temTransportadora, transp, pagamentos, cartaoDe, pBoleto, parcelasBoleto, vencimentos, user, showToast, pctDesc, descLiberado, descSemLimite, tirarRascunho, trocasFeitas, clientePedido, trocaCliente, itensNota]);
 
   const reprocessar = useCallback(async () => {
     if (!resultado?.vendaId) return;
@@ -2962,6 +2995,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                           <Chip cls="bg-indigo-50 text-[#000638] ring-indigo-200">
                             {cen?.label} · CFOP {cen?.cfop} · {cen?.icms}
                             {previa.aliqDifal ? ` (${previa.cenario.destUf} ${previa.aliqDifal}%)` : ''}
+                            {previa.cenario.suframa ? ` · inscrição SUFRAMA ${previa.cenario.isuf}` : ''}
                           </Chip>
                           {(previa.cliente.ie || consumidorFinal) && previa.cenario.interestadual && (
                             <label className="inline-flex cursor-pointer items-center gap-1 text-gray-600" title="Use quando o cliente tem IE mas o TOTVS o trata como consumidor final (ex.: MEI): vira CFOP 6107/6108 com DIFAL">
@@ -3954,6 +3988,12 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                     <span className="text-gray-500">Frete</span>
                     <span className="tabular-nums">{fmtBRL(frete)}</span>
                   </div>
+                  {icmsSuframa > 0 && (
+                    <div className="flex justify-between text-sky-700" title="Cliente SUFRAMA: o ICMS de 12% é desonerado e sai do total da nota (como no TOTVS)">
+                      <span>ICMS desonerado SUFRAMA ({pctSuframa}%)</span>
+                      <span className="tabular-nums">− {fmtBRL(icmsSuframa)}</span>
+                    </div>
+                  )}
                   <div className="flex items-baseline justify-between border-t border-gray-100 pt-1">
                     <span className="font-semibold text-[#000638]">Total da NF-e</span>
                     <span className="text-xl font-bold tabular-nums text-[#000638]">{fmtBRL(totalNota)}</span>

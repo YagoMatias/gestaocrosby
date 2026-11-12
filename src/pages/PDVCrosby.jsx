@@ -1802,7 +1802,7 @@ const PDVCrosby = () => {
                 </button>
               ) : (
                 <p className="text-[11px] text-amber-600 bg-amber-50 rounded-lg p-2 ring-1 ring-amber-200">
-                  Navegador sem Web Serial — use Chrome ou Edge.
+                  Navegador sem suporte ao leitor USB — use Chrome ou Edge.
                 </p>
               )}
               {rfidError && (
