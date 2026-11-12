@@ -1974,6 +1974,7 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
   };
   const conciliarSelecionadas = async () => {
     if (!picker || !selecao.length) return;
+    if (!confirmarFornecedor(picker.lancamento, selecao)) return;
     const l = picker.lancamento;
     setOcupado(l.id);
     try {
@@ -2100,6 +2101,7 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
   };
   const escolher = async (cand) => {
     const l = picker.lancamento;
+    if (!confirmarFornecedor(l, [cand])) return;
     setOcupado(l.id);
     try {
       await salvar(l.id, cand.origem, refDe(cand), justDe(cand), cand.score);
@@ -2838,6 +2840,33 @@ const BotaoComprovanteBot = ({ comp }) =>
       <FilePdf size={12} className="text-red-600" /> comprovante
     </button>
   ) : null;
+
+// fornecedor do candidato × favorecido da saída: avisa quando não há nenhuma
+// palavra em comum (REELTEX conciliado com ELIAN — Titia, 12/11/2026)
+const PALAVRAS_GENERICAS = new Set(['LTDA', 'EIRELI', 'COMERCIO', 'INDUSTRIA', 'SERVICOS', 'SERVICO', 'BRASIL', 'TEXTIL', 'CONFECCOES', 'CONFECCAO', 'DISTRIBUIDORA', 'TRANSFERENCIA', 'PAGAMENTO', 'TRANSF', 'ENVIADO', 'RECEBIDO']);
+const palavrasNome = (s) =>
+  new Set(
+    String(s || '')
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '')
+      .toUpperCase()
+      .replace(/[^A-Z ]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length >= 4 && !PALAVRAS_GENERICAS.has(w)),
+  );
+const fornecedorDiferente = (l, nomeCand) => {
+  const a = palavrasNome(l?.contraparte_nome || l?.nomeExibicao);
+  const b = palavrasNome(nomeCand);
+  if (!a.size || !b.size) return false;
+  return ![...a].some((w) => b.has(w));
+};
+const confirmarFornecedor = (l, cands) => {
+  const dif = cands.filter((c) => c.nome && fornecedorDiferente(l, c.nome));
+  if (!dif.length) return true;
+  return window.confirm(`Atenção: a saída foi para "${l.contraparte_nome || l.nomeExibicao}" e você está conciliando com ${dif.map((c) => `"${c.nome}"`).join(', ')}.
+
+Fornecedor diferente — conciliar mesmo assim?`);
+};
 
 // nº da(s) duplicata(s) conciliada(s) — "99246637/1" (Titia, 11/11/2026)
 const fmtDupConc = (d) => {
