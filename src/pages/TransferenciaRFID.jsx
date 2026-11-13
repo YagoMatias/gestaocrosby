@@ -212,7 +212,8 @@ const TransferenciaRFID = ({ embutido = false, solicitacao = null, onTransacaoGe
       return;
     }
     getUserCompanies(user.id).then(({ data }) => {
-      setEmpresasUsuario(data && data.length > 0 ? data.map(String) : null);
+      // vendedor sem loja vinculada no Painel Admin não vê nenhuma empresa (Yago, 13/11/2026)
+      setEmpresasUsuario(data && data.length > 0 ? data.map(String) : ['guest', 'vendedor'].includes(user.role) ? [] : null);
     });
   }, [user?.id, user?.role]);
 

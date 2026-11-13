@@ -76,6 +76,7 @@ import { ClientePicker } from './DevolucaoRFID';
 import { portalConnect, portalDisconnect, portalTags, portalClear } from '../utils/portalApi';
 import PortalPotenciaModal from '../components/PortalPotenciaModal';
 import { imprimirDanfe, salvarDanfePdf, avisoDoPdf } from '../utils/danfeAcoes';
+import { lerCaixa, CaixaCard, CaixaFechadoModal, dataBR } from '../components/hc/CaixaHeadcoach';
 
 // ─── Configuração ────────────────────────────────────────────────────────────
 const EMPRESA = 99; // faturamento (NF-e) sempre pela empresa 99
@@ -107,7 +108,7 @@ const ROLES_LIBERAM_DESCONTO = ['owner', 'admin', 'user'];
 // Yago pediu mais 2 dias) — pedidos cuja separação se perdeu nas 72 h do Dryland
 // e tiveram peça trocada. O servidor também confere a data.
 const TROCA_LIBERADA_ATE = '2026-11-13';
-// Formas que consomem saldo do cliente no TOTVS → campo do saldo.
+// Formas que consomem saldo do cliente (CREDEV/adiantamento do HeadCoach) → campo do saldo.
 // Vale SÓ o saldo da empresa 99 (Yago, 10/11/2026): saldo de outra empresa não
 // aparece nem pode ser usado.
 const CAMPO_SALDO = { credito_loja: 'credev', adiantamento: 'adiantamento' };
@@ -840,13 +841,16 @@ function BlocoMinuta({ v, m, dup, temCard, temBoleto, nota, onAcao, busy }) {
 // Situação do faturamento numa palavra só: cor da linha, filtros e resumo
 const SITUACOES = {
   ok: { label: 'Faturado', plural: 'Faturados', barra: 'border-l-emerald-500', cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200', num: 'text-emerald-700' },
-  totvs: { label: 'TOTVS pendente', plural: 'TOTVS pendente', barra: 'border-l-amber-500', cls: 'bg-amber-50 text-amber-800 ring-amber-200', num: 'text-amber-700' },
+  totvs: { label: 'Transação pendente', plural: 'Transação pendente', barra: 'border-l-amber-500', cls: 'bg-amber-50 text-amber-800 ring-amber-200', num: 'text-amber-700' },
   nf: { label: 'NF-e com problema', plural: 'NF-e com problema', barra: 'border-l-rose-500', cls: 'bg-rose-50 text-rose-700 ring-rose-200', num: 'text-rose-700' },
   cancelado: { label: 'Cancelado', plural: 'Cancelados', barra: 'border-l-gray-300', cls: 'bg-gray-100 text-gray-500 ring-gray-200', num: 'text-gray-500' },
 };
-function situacaoFat(nota, venda) {
+// desde 13/11/2026 a transação e o contas a receber são só do HeadCoach
+const soHeadcoach = (venda) => !!venda?.pedido_info?.somenteHeadcoach;
+function situacaoFat(nota, venda, cr) {
   if (venda?.status === 'cancelada' || nota?.status === 'cancelada') return 'cancelado';
   if (nota?.status !== 'autorizada') return 'nf';
+  if (soHeadcoach(venda)) return cr?.qtd > 0 ? 'ok' : 'totvs';
   if (venda?.totvs_status !== 4) return 'totvs';
   return 'ok';
 }
@@ -959,10 +963,11 @@ function DetalheTransacao({ id, onReprocessar, reprocessando }) {
   const vendaTemBoleto = (v?.pagamentos || []).some((p) => p.forma === 'boleto');
   const nota = v?.notas?.find((n) => n.status === 'autorizada') || v?.notas?.[0];
   const empTotvs = empresaTotvsDe(v);
-  const sit = situacaoFat(nota, v);
+  const sit = situacaoFat(nota, v, d.cr);
+  const hc = soHeadcoach(v);
   // nota cancelada com a transação do TOTVS ainda de pé: o pedido continua travado
   const totvsAberta = sit === 'cancelado' && !!v?.totvs_transacao_code && v?.totvs_status !== 6;
-  const podeTentar = nota?.status !== 'cancelada' && v?.status !== 'cancelada' && (nota?.status !== 'autorizada' || v?.totvs_status !== 4);
+  const podeTentar = nota?.status !== 'cancelada' && v?.status !== 'cancelada' && (nota?.status !== 'autorizada' || (hc ? !(d.cr?.qtd > 0) : v?.totvs_status !== 4));
   const porProduto = {};
   for (const k of d.kardex) {
     porProduto[k.product_code] = porProduto[k.product_code] || { nome: k.produto_nome, epcs: [] };
@@ -982,11 +987,17 @@ function DetalheTransacao({ id, onReprocessar, reprocessando }) {
       texto: nota ? `${nota.numero}/${nota.serie}${nota.status !== 'autorizada' ? ` · ${nota.status}` : ''}` : 'sem nota',
       tom: nota?.status === 'autorizada' ? 'ok' : nota?.status === 'cancelada' ? 'cancel' : 'ruim',
     },
-    {
-      nome: 'TOTVS',
-      texto: v?.totvs_transacao_code ? `${empTotvs}/${v.totvs_transacao_code}${v.totvs_status === 6 ? ' · cancelada' : v.totvs_status === 4 ? '' : ' · aberta'}` : 'não aberta',
-      tom: v?.totvs_status === 4 ? (totvsAberta ? 'falta' : 'ok') : v?.totvs_status === 6 ? 'cancel' : sit === 'cancelado' && !v?.totvs_transacao_code ? 'cancel' : v?.totvs_erro ? 'ruim' : 'falta',
-    },
+    hc
+      ? {
+          nome: 'Contas a receber',
+          texto: d.cr?.qtd > 0 ? `fatura ${d.cr.fatura} · ${d.cr.qtd} título(s)` : d.cr?.cancelados ? 'cancelado' : 'não gerado',
+          tom: d.cr?.qtd > 0 ? 'ok' : sit === 'cancelado' ? 'cancel' : v?.totvs_erro ? 'ruim' : 'falta',
+        }
+      : {
+          nome: 'TOTVS',
+          texto: v?.totvs_transacao_code ? `${empTotvs}/${v.totvs_transacao_code}${v.totvs_status === 6 ? ' · cancelada' : v.totvs_status === 4 ? '' : ' · aberta'}` : 'não aberta',
+          tom: v?.totvs_status === 4 ? (totvsAberta ? 'falta' : 'ok') : v?.totvs_status === 6 ? 'cancel' : sit === 'cancelado' && !v?.totvs_transacao_code ? 'cancel' : v?.totvs_erro ? 'ruim' : 'falta',
+        },
     ...(vendaTemBoleto
       ? [
           {
@@ -1090,7 +1101,9 @@ function DetalheTransacao({ id, onReprocessar, reprocessando }) {
                 Cancelar a NF-e {nota.numero}/{nota.serie} na SEFAZ
               </p>
               <p className="text-[10.5px] text-rose-700">
-                Não tem volta. A transação do TOTVS não é cancelada por aqui: cancele-a no TOTVS. O pedido só volta a poder ser faturado com a nota e a transação canceladas.
+                {hc
+                  ? 'Não tem volta. A transação e os títulos do contas a receber do HeadCoach são cancelados junto, e o pedido volta a poder ser faturado.'
+                  : 'Não tem volta. A transação do TOTVS não é cancelada por aqui: cancele-a no TOTVS. O pedido só volta a poder ser faturado com a nota e a transação canceladas.'}
               </p>
               <textarea
                 value={justificativa}
@@ -1112,7 +1125,53 @@ function DetalheTransacao({ id, onReprocessar, reprocessando }) {
           {avisoCancel && <p className="mt-2 rounded-lg bg-blue-50 px-2 py-1 text-[11px] text-blue-800 ring-1 ring-blue-200">{avisoCancel}</p>}
         </Cartao>
 
-        {/* ── TOTVS ── */}
+        {/* ── Transação + contas a receber no HeadCoach (desde 13/11/2026) ── */}
+        {hc && (
+          <Cartao
+            titulo="Transação e contas a receber · HeadCoach"
+            icone={Receipt}
+            chip={
+              d.cr?.qtd > 0 ? (
+                <Chip cls="bg-emerald-50 text-emerald-700 ring-emerald-200">{d.cr.qtd} título(s)</Chip>
+              ) : sit === 'cancelado' ? (
+                <Chip cls="bg-gray-100 text-gray-500 ring-gray-200">cancelada</Chip>
+              ) : (
+                <Chip cls="bg-amber-50 text-amber-700 ring-amber-200">sem contas a receber</Chip>
+              )
+            }
+          >
+            <div className="grid grid-cols-2 gap-x-3 gap-y-2 sm:grid-cols-4 lg:grid-cols-2 xl:grid-cols-4">
+              <Campo rotulo="Transação">nº {v?.id}</Campo>
+              <Campo rotulo="Caixa">{v?.caixa_id ? `#${v.caixa_id}` : '—'}</Campo>
+              <Campo rotulo="Data de caixa">{fmtData(v?.data_caixa)}</Campo>
+              <Campo rotulo="Fatura">{d.cr?.fatura || (v?.id ? 9000000000 + Number(v.id) : '—')}</Campo>
+            </div>
+            {(d.cr?.titulos || []).length > 0 && (
+              <ul className="mt-2 divide-y divide-gray-100">
+                {d.cr.titulos.map((t) => (
+                  <li key={t.parcela} className={`flex items-baseline gap-2 py-1 ${t.situacao === 'cancelado' ? 'text-gray-400 line-through' : ''}`}>
+                    <span className="w-6 tabular-nums text-gray-400">{t.parcela}</span>
+                    <span className="min-w-0 flex-1 truncate font-semibold text-gray-800">{FORMAS[t.forma] || t.forma}</span>
+                    <span className="text-[10.5px] text-gray-500">{t.situacao === 'aberto' ? `vence ${fmtData(t.vencimento)}` : t.situacao === 'pago' ? 'pago' : t.situacao}</span>
+                    <span className="w-24 text-right font-semibold tabular-nums">{fmtBRL(t.valor)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {v?.totvs_erro && <p className="mt-2 rounded-lg bg-rose-50 px-2 py-1 text-[11px] text-rose-700 ring-1 ring-rose-200">{v.totvs_erro}</p>}
+            <p className="mt-2 text-[10.5px] text-gray-500">Nada vai para o TOTVS. Os títulos ficam em HeadCoach › Contas a Receber.</p>
+            {podeTentar && (
+              <div className="mt-2 border-t border-gray-100 pt-2">
+                <button onClick={() => onReprocessar(v.id)} disabled={reprocessando} className={`${btn} bg-amber-600 text-white disabled:opacity-50`}>
+                  {reprocessando ? <Spinner size={13} className="animate-spin" /> : <ArrowsClockwise size={13} />} Tentar de novo
+                </button>
+              </div>
+            )}
+          </Cartao>
+        )}
+
+        {/* ── TOTVS (vendas faturadas até 12/11/2026) ── */}
+        {!hc && (
         <Cartao
           titulo="TOTVS · documento interno"
           icone={Buildings}
@@ -1184,6 +1243,7 @@ function DetalheTransacao({ id, onReprocessar, reprocessando }) {
             </div>
           )}
         </Cartao>
+        )}
 
         {/* ── Pagamento ── */}
         <Cartao titulo="Pagamento" icone={CreditCard} chip={<span className="text-sm font-bold tabular-nums text-[#000638]">{fmtBRL(v?.total ?? fat.total)}</span>}>
@@ -1389,7 +1449,7 @@ function AbaTransacoes() {
       setReprocessando(false);
     }
   };
-  const linhas = useMemo(() => (lista || []).map((f) => ({ ...f, sit: situacaoFat(f.nota, f.venda) })), [lista]);
+  const linhas = useMemo(() => (lista || []).map((f) => ({ ...f, sit: situacaoFat(f.nota, f.venda, f.cr) })), [lista]);
   const resumo = useMemo(() => {
     const r = { todos: { n: linhas.length, valor: 0 }, ok: { n: 0, valor: 0 }, totvs: { n: 0, valor: 0 }, nf: { n: 0, valor: 0 }, cancelado: { n: 0, valor: 0 } };
     for (const f of linhas) {
@@ -1460,7 +1520,7 @@ function AbaTransacoes() {
               <span>Pedido</span>
               <span>Cliente</span>
               <span>NF-e</span>
-              <span>TOTVS</span>
+              <span>Transação</span>
               <span>Duplicata · minuta</span>
               <span className="text-right">Peças</span>
               <span className="text-right">Valor</span>
@@ -1506,7 +1566,17 @@ function AbaTransacoes() {
                         )}
                       </span>
                       <span>
-                        {totvsAberta ? (
+                        {soHeadcoach(v) ? (
+                          f.cr?.qtd > 0 ? (
+                            <Chip cls="bg-emerald-50 text-emerald-700 ring-emerald-200">
+                              <CheckCircle size={11} weight="fill" /> nº {v.id} · {f.cr.qtd} tít.
+                            </Chip>
+                          ) : f.sit === 'cancelado' ? (
+                            <Chip cls="bg-gray-100 text-gray-500 ring-gray-200">cancelada</Chip>
+                          ) : (
+                            <Chip cls="bg-rose-50 text-rose-700 ring-rose-200">sem contas a receber</Chip>
+                          )
+                        ) : totvsAberta ? (
                           <Chip cls="bg-amber-50 text-amber-800 ring-amber-200">
                             <Warning size={11} weight="fill" /> cancelar {emp}/{v.totvs_transacao_code}
                           </Chip>
@@ -1746,23 +1816,27 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   const [previa, setPrevia] = useState(null);
   const [previaErro, setPreviaErro] = useState('');
   const [operacao, setOperacao] = useState('');
-  const [comoFatura, setComoFatura] = useState(() => {
-    try {
-      return localStorage.getItem('fat_como_fatura') === '1';
-    } catch {
-      return false;
-    }
-  });
-  const [terminal, setTerminal] = useState(() => {
-    try {
-      return localStorage.getItem('fat_terminal') || '1';
-    } catch {
-      return '1';
-    }
-  });
-  // Transação do TOTVS sempre na data de hoje (a API só recebe com caixa do
-  // dia). Venda de outro dia: "transação com data diferente" → a data real vai
-  // na observação da transação (VENDA DO DIA dd/mm/aaaa).
+  // Desde 13/11/2026 a transação e o contas a receber são só do HeadCoach,
+  // no CAIXA DO HEADCOACH da empresa 99 (sem terminal nem recebimento no TOTVS)
+  const comoFatura = false;
+  const [caixaSit, setCaixaSit] = useState(null);
+  const [pedirCaixa, setPedirCaixa] = useState(false);
+  const carregarCaixa = useCallback(async () => {
+    const sit = await lerCaixa(EMPRESA);
+    setCaixaSit(sit);
+    return sit;
+  }, []);
+  useEffect(() => {
+    carregarCaixa();
+    const t = setInterval(carregarCaixa, 60000);
+    window.addEventListener('focus', carregarCaixa);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener('focus', carregarCaixa);
+    };
+  }, [carregarCaixa]);
+  // A transação fica na data de caixa. Venda de outro dia: "transação com data
+  // diferente" → a data real vai na observação (VENDA DO DIA dd/mm/aaaa).
   const [dataDiferente, setDataDiferente] = useState(false);
   const [dataVenda, setDataVenda] = useState('');
 
@@ -1841,7 +1915,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   // linha do pedido com o "Substituir por" aberto
   const [trocandoSku, setTrocandoSku] = useState(null);
   const trocaLiberada = hojeIso() <= TROCA_LIBERADA_ATE;
-  // Saldos do cliente no TOTVS (CREDEV e adiantamento), por empresa
+  // Saldos do cliente no HeadCoach (CREDEV e adiantamento) da empresa 99
   const [saldos, setSaldos] = useState(null);
   // Faturamentos em andamento: salvos neste computador, por usuário (como na Devolução)
   const chaveRascunhos = `fat_andamento_${brejinho ? 'brj' : 'ped'}_${user?.id || user?.email || 'anon'}`;
@@ -1895,15 +1969,6 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     setGerarCredito(!!e.gerarCredito);
     setAnexados(Array.isArray(e.anexados) ? e.anexados : []);
   }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('fat_terminal', terminal);
-      localStorage.setItem('fat_como_fatura', comoFatura ? '1' : '0');
-    } catch {
-      /* sem storage */
-    }
-  }, [terminal, comoFatura]);
 
   const limparLeituras = useCallback(() => {
     setLidos({});
@@ -2022,12 +2087,13 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
       .catch(() => setSellers([]));
   }, []);
 
-  // Saldos do cliente no TOTVS: CREDEV e adiantamento, só da empresa 99
+  // Saldos do cliente no HeadCoach: CREDEV e adiantamento, só da empresa 99
+  // (desde 13/11/2026 não vem mais do TOTVS — HeadCoach › Saldos de Clientes)
   useEffect(() => {
     setSaldos(null);
     if (!customer?.code) return undefined;
     let vivo = true;
-    fetch(`${API_BASE_URL}/api/totvs/pdv/customer-balance?code=${customer.code}&branch=${EMPRESA}`)
+    fetch(`${API}/saldos-cliente/${customer.code}`)
       .then((r) => r.json())
       .then((j) => vivo && setSaldos(j?.success ? j.data : { erro: j?.message || 'não consegui consultar' }))
       .catch((e) => vivo && setSaldos({ erro: e.message }));
@@ -2597,13 +2663,13 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     pendencias.push(`O desconto do operador é de no máximo ${LIMITE_DESCONTO_PEDIDOS}%${descModo === 'valor' ? ` (${fmtBRL((conf.baseOperador * LIMITE_DESCONTO_PEDIDOS) / 100)} nestas peças)` : ''}.`);
   if (descPrecisaSenha) pendencias.push(`Desconto de ${pctDesc.toLocaleString('pt-BR')}% passa de ${LIMITE_DESCONTO_LIVRE}%: precisa da senha de owner, admin ou financeiro.`);
   if (pctDesc >= 100) pendencias.push('O desconto não pode ser de 100%.');
-  // CREDEV / adiantamento: não pode usar mais do que o cliente tem no TOTVS
+  // CREDEV / adiantamento: não pode usar mais do que o cliente tem no HeadCoach
   const usoSaldo = (forma) => round2(pagamentos.filter((p) => p.forma === forma).reduce((t, p) => t + Number(p.valor || 0), 0));
   for (const forma of Object.keys(CAMPO_SALDO)) {
     const uso = usoSaldo(forma);
     if (!(uso > 0)) continue;
-    if (!saldos) pendencias.push(`Aguarde a consulta do saldo de ${FORMAS[forma]} do cliente no TOTVS.`);
-    else if (saldos.erro) pendencias.push(`Não consegui consultar o saldo de ${FORMAS[forma]} no TOTVS (${saldos.erro}).`);
+    if (!saldos) pendencias.push(`Aguarde a consulta do saldo de ${FORMAS[forma]} do cliente.`);
+    else if (saldos.erro) pendencias.push(`Não consegui consultar o saldo de ${FORMAS[forma]} do cliente (${saldos.erro}).`);
     else if (uso > (saldoInfo(forma)?.total || 0) + 0.005)
       pendencias.push(`${FORMAS[forma]} usado (${fmtBRL(uso)}) é maior que o saldo do cliente na empresa ${EMPRESA} (${fmtBRL(saldoInfo(forma)?.total || 0)}).`);
   }
@@ -2664,8 +2730,6 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
         operacaoDocInterno: Number(operacao),
         consumidorFinal,
         dataVenda: dataDiferente && dataVenda ? dataVenda : null,
-        terminal: Number(terminal) || 1,
-        receberComoFatura: comoFatura,
         descontoFaturamento:
           pctDesc > 0
             ? {
@@ -2740,7 +2804,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     } finally {
       setPosting(false);
     }
-  }, [gerarCredito, podeFaturar, prep, customer, conf, frete, operacao, dataDiferente, dataVenda, terminal, comoFatura, sellers, seller, chave, ref, consumidorFinal, temTransportadora, transp, pagamentos, cartaoDe, pBoleto, parcelasBoleto, vencimentos, user, showToast, pctDesc, descLiberado, descSemLimite, tirarRascunho, trocasFeitas, clientePedido, trocaCliente, itensNota]);
+  }, [gerarCredito, podeFaturar, prep, customer, conf, frete, operacao, dataDiferente, dataVenda, sellers, seller, chave, ref, consumidorFinal, temTransportadora, transp, pagamentos, cartaoDe, pBoleto, parcelasBoleto, vencimentos, user, showToast, pctDesc, descLiberado, descSemLimite, tirarRascunho, trocasFeitas, clientePedido, trocaCliente, itensNota]);
 
   const reprocessar = useCallback(async () => {
     if (!resultado?.vendaId) return;
@@ -2749,7 +2813,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
       const r = await fetch(`${API}/vendas/${resultado.vendaId}/reprocessar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ terminal: Number(terminal) || 1, comoFatura }),
+        body: JSON.stringify({}),
       });
       const j = await r.json();
       if (j.success) setResultado(j.data);
@@ -2759,7 +2823,22 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     } finally {
       setPosting(false);
     }
-  }, [resultado, terminal, comoFatura, showToast]);
+  }, [resultado, showToast]);
+
+  // FATURAR: só com o caixa do HeadCoach aberto (confere na hora; fechado → modal para abrir)
+  const pedirFaturamento = async () => {
+    if (!podeFaturar) return;
+    const cx = await carregarCaixa();
+    if (!cx || cx.erro) {
+      showToast('erro', `Não consegui conferir o caixa${cx?.erro ? `: ${cx.erro}` : ''}. Tente de novo.`);
+      return;
+    }
+    if (!cx.aberto) {
+      setPedirCaixa(true);
+      return;
+    }
+    setModalFat(true);
+  };
 
   const escolherPedido = (k) => setParams(k ? { chave: k } : {});
   const irAba = (a) => setParams(a === 'transacoes' ? { aba: 'transacoes' } : chave ? { chave } : {});
@@ -2772,7 +2851,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
       <div className="mx-auto max-w-6xl">
         <PageTitle
           title={brejinho ? 'Faturamento — Brejinho' : 'Faturamento'}
-          subtitle="NF-e emitida pelo HeadCoach (empresa 99) + documento interno e contas a receber no TOTVS (empresa 990)"
+          subtitle="NF-e, transação e contas a receber pelo HeadCoach (empresa 99), no caixa do HeadCoach — nada vai para o TOTVS"
           icon={Receipt}
         />
 
@@ -3430,7 +3509,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                   <div className="mb-2 rounded-lg bg-blue-50 px-2 py-1.5 text-[11px] text-blue-900 ring-1 ring-blue-200">
                     <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
                       <span className="inline-flex items-center gap-1 font-bold">
-                        <Wallet size={13} weight="bold" /> Saldos do cliente no TOTVS (empresa {EMPRESA})
+                        <Wallet size={13} weight="bold" /> Saldos do cliente no HeadCoach (empresa {EMPRESA})
                       </span>
                       {!customer ? (
                         <span className="text-blue-700">escolha o cliente</span>
@@ -3893,7 +3972,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                   )}
                 </Bloco>
 
-                <Bloco titulo={`TOTVS (documento interno · empresa ${EMPRESA_TOTVS})`} icone={Storefront}>
+                <Bloco titulo={`Transação · HeadCoach (empresa ${EMPRESA})`} icone={Storefront}>
                   <label className={labelCls}>Operação</label>
                   <select value={operacao} onChange={(e) => setOperacao(e.target.value)} className={inputCls}>
                     <option value="">Selecione…</option>
@@ -3903,17 +3982,16 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                       </option>
                     ))}
                   </select>
-                  <div className="mt-2 grid grid-cols-[1fr_5rem] gap-2">
-                    <div>
+                  <div className="mt-2 flex items-end gap-2">
+                    <div className="min-w-0 flex-1">
                       <label className={labelCls}>
-                        <CalendarBlank size={11} className="mr-0.5 inline" /> Data da transação
+                        <CalendarBlank size={11} className="mr-0.5 inline" /> Data de caixa
                       </label>
-                      <div className="flex h-9 items-center rounded-lg bg-gray-50 px-2.5 text-sm font-semibold text-[#000638] ring-1 ring-gray-200">Hoje · {fmtData(hojeIso())}</div>
+                      <div className="flex h-9 items-center rounded-lg bg-gray-50 px-2.5 text-sm font-semibold text-[#000638] ring-1 ring-gray-200">
+                        {caixaSit?.data ? dataBR(caixaSit.data) : '—'}
+                      </div>
                     </div>
-                    <div>
-                      <label className={labelCls}>Terminal</label>
-                      <input type="number" min="1" value={terminal} onChange={(e) => setTerminal(e.target.value)} className={inputCls} />
-                    </div>
+                    <CaixaCard branch={EMPRESA} sit={caixaSit} temItens={conf.conferidas > 0} />
                   </div>
                   <button
                     type="button"
@@ -3929,22 +4007,20 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                       <label className={labelCls}>Data da venda</label>
                       <input type="date" value={dataVenda} max={hojeIso()} onChange={(e) => setDataVenda(e.target.value)} className={`${inputCls} ${dataVenda ? '' : 'border-amber-400'}`} />
                       <p className="mt-1 text-[10.5px] text-amber-800">
-                        A transação continua com a data de hoje. No TOTVS ela leva a observação{' '}
+                        A transação continua na data de caixa e leva a observação{' '}
                         <b>VENDA DO DIA {dataVenda ? fmtData(dataVenda) : 'dd/mm/aaaa'}</b>.
                       </p>
                     </div>
                   )}
-                  <label className={`${labelCls} mt-2`}>Recebimento no TOTVS</label>
-                  <select value={comoFatura ? 'fatura' : 'forma'} onChange={(e) => setComoFatura(e.target.value === 'fatura')} className={inputCls}>
-                    <option value="forma">Pela forma de pagamento (cartão, Pix…)</option>
-                    <option value="fatura">Tudo como FATURA (título a receber)</option>
-                  </select>
-                  <p className="mt-1 flex items-start gap-1 text-[10.5px] text-gray-500">
+                  <p className="mt-2 flex items-start gap-1 text-[10.5px] text-gray-500">
                     <Info size={11} className="mt-0.5 shrink-0" />
-                    {comoFatura
-                      ? 'Cada pagamento vira fatura no contas a receber (cartão em N vezes = N faturas a cada 30 dias), sem movimento de caixa.'
-                      : `O caixa desse terminal da empresa ${EMPRESA_TOTVS} precisa estar aberto no TOTVS com a data de hoje. O contas a receber sai com as parcelas e vencimentos acima.`}
+                    A transação e o contas a receber ficam só no HeadCoach (HeadCoach › Contas a Receber), no caixa aberto da empresa {EMPRESA}. Nada vai para o TOTVS.
                   </p>
+                  {caixaSit && !caixaSit.erro && !caixaSit.aberto && (
+                    <p className="mt-1 flex items-center gap-1 text-[10.5px] font-semibold text-rose-600">
+                      <Warning size={11} weight="fill" /> Caixa fechado: abra o caixa para faturar.
+                    </p>
+                  )}
                 </Bloco>
 
                 <section className="space-y-1 rounded-xl border border-gray-200 bg-white p-3 text-xs shadow-sm">
@@ -4075,10 +4151,12 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                       <div className={`rounded-lg p-2 ring-1 ${resultado.totvs?.ok ? 'bg-emerald-50 ring-emerald-200' : 'bg-amber-50 ring-amber-200'}`}>
                         <p className={`inline-flex items-center gap-1 font-bold ${resultado.totvs?.ok ? 'text-emerald-800' : 'text-amber-800'}`}>
                           {resultado.totvs?.ok ? <CheckCircle size={14} weight="fill" /> : <Warning size={14} weight="fill" />}
-                          {resultado.totvs?.ok ? `TOTVS: documento interno ${resultado.totvs.transactionCode}` : 'TOTVS ainda não recebeu'}
+                          {resultado.totvs?.ok ? `Transação nº ${resultado.vendaId} · contas a receber gerado` : 'Contas a receber ainda não gerado'}
                         </p>
                         <p className="text-[11px] text-gray-700">
-                          {resultado.totvs?.ok ? `${TOTVS_STATUS[resultado.totvs.status]?.label || ''} · ${fmtData(resultado.totvs.transactionDate)}` : resultado.totvs?.mensagem}
+                          {resultado.contasReceber?.ok
+                            ? `Fatura ${resultado.contasReceber.fatura} · ${resultado.contasReceber.titulos.length} título(s) · ${fmtBRL(resultado.contasReceber.total)}`
+                            : resultado.contasReceber?.mensagem || resultado.totvs?.mensagem}
                         </p>
                       </div>
                       {Number(resultado.credito?.valor) > 0 && (
@@ -4088,7 +4166,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                           </p>
                           <p className="text-[11px] text-gray-700">
                             {resultado.credito.aguardandoTotvs
-                              ? 'Sai quando a transação do TOTVS for atendida (Tentar de novo).'
+                              ? 'Sai quando o contas a receber for gerado (Tentar de novo).'
                               : 'Peça em falta: o valor virou saldo bônus do cliente e o chamado para o Financeiro está sendo aberto no Dryland. Acompanhe na aba Transações.'}
                           </p>
                         </div>
@@ -4110,14 +4188,14 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                   ) : (
                     <>
                       <button
-                        onClick={() => setModalFat(true)}
+                        onClick={pedirFaturamento}
                         disabled={!podeFaturar}
                         className="mt-2 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-40"
                       >
                         {posting ? <Spinner size={16} className="animate-spin" /> : <Receipt size={16} weight="bold" />}
                         {posting ? 'FATURANDO…' : `FATURAR (${conf.conferidas} pç)`}
                       </button>
-                      {posting && <p className="text-[10.5px] text-gray-500">Emitindo a NF-e na SEFAZ e gravando no TOTVS — pode levar até 1 minuto.</p>}
+                      {posting && <p className="text-[10.5px] text-gray-500">Emitindo a NF-e na SEFAZ e gerando o contas a receber — pode levar até 1 minuto.</p>}
                       {!posting && pendencias.length > 0 && (
                         <ul className="list-disc space-y-0.5 pl-4 text-[10.5px] text-amber-700">
                           {pendencias.slice(0, 4).map((p) => (
@@ -4135,6 +4213,21 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
         ) : null}
       </div>
 
+      {/* Caixa do HeadCoach fechado: abre aqui mesmo e segue para o faturamento */}
+      {pedirCaixa && (
+        <CaixaFechadoModal
+          branch={EMPRESA}
+          sit={caixaSit}
+          temItens={conf.conferidas > 0}
+          onCancelar={() => setPedirCaixa(false)}
+          onAberto={async (c) => {
+            setPedirCaixa(false);
+            await carregarCaixa();
+            showToast('ok', `Caixa #${c?.id || ''} aberto`);
+            setModalFat(true);
+          }}
+        />
+      )}
       {modalFat && pedido && prep && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#000638]/50 backdrop-blur-[2px] sm:items-center sm:p-4" onClick={() => !posting && setModalFat(false)}>
           <div className="w-full overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:max-w-lg sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
@@ -4178,25 +4271,23 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                 <div className={`rounded-xl p-3 ring-1 ${resultado.totvs?.ok ? 'bg-emerald-50 ring-emerald-200' : 'bg-amber-50 ring-amber-200'}`}>
                   <p className={`flex items-center gap-1.5 text-sm font-bold ${resultado.totvs?.ok ? 'text-emerald-800' : 'text-amber-800'}`}>
                     {resultado.totvs?.ok ? <CheckCircle size={18} weight="fill" /> : <Warning size={18} weight="fill" />}
-                    {resultado.totvs?.ok ? 'Transação no TOTVS (documento interno)' : 'TOTVS ainda não recebeu'}
+                    {resultado.totvs?.ok ? 'Transação e contas a receber (HeadCoach)' : 'Contas a receber ainda não gerado'}
                   </p>
                   {resultado.totvs?.ok ? (
                     <>
                       <p className="mt-1 text-2xl font-extrabold tabular-nums text-emerald-800">
-                        Nº {resultado.totvs.transactionCode}
-                        <span className="text-sm font-semibold text-emerald-700"> · {fmtData(resultado.totvs.transactionDate)}</span>
+                        Nº {resultado.vendaId}
+                        <span className="text-sm font-semibold text-emerald-700"> · caixa #{resultado.venda?.caixa_id || '—'} · {fmtData(resultado.venda?.data_caixa)}</span>
                       </p>
-                      <p className="text-xs text-gray-600">
-                        Operação {operacao} · empresa {resultado.venda?.pedido_info?.empresaTotvs || EMPRESA} · {TOTVS_STATUS[resultado.totvs.status]?.label || ''}
-                      </p>
+                      {resultado.contasReceber?.ok && (
+                        <p className="text-xs text-gray-600">
+                          Fatura {resultado.contasReceber.fatura} ·{' '}
+                          {resultado.contasReceber.titulos.map((t) => `${FORMAS[t.forma] || t.forma} ${fmtBRL(t.valor)}${t.situacao === 'aberto' ? ` vence ${fmtData(t.vencimento)}` : ''}`).join(' · ')}
+                        </p>
+                      )}
                     </>
                   ) : (
-                    <>
-                      {resultado.venda?.totvs_transacao_code && (
-                        <p className="mt-1 text-sm font-bold tabular-nums text-amber-800">Transação {resultado.venda.totvs_transacao_code} aberta, sem recebimento</p>
-                      )}
-                      <p className="mt-1 text-xs text-amber-800">{resultado.totvs?.mensagem}</p>
-                    </>
+                    <p className="mt-1 text-xs text-amber-800">{resultado.contasReceber?.mensagem || resultado.totvs?.mensagem}</p>
                   )}
                 </div>
                 {Number(resultado.credito?.valor) > 0 && (
@@ -4206,7 +4297,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                     </p>
                     <p className="mt-1 text-xs text-gray-700">
                       {resultado.credito.aguardandoTotvs
-                        ? 'O crédito e o chamado saem quando a transação do TOTVS for atendida (Tentar de novo).'
+                        ? 'O crédito e o chamado saem quando o contas a receber for gerado (Tentar de novo).'
                         : 'Peça em falta: o valor virou saldo bônus do cliente e o chamado para o Financeiro está sendo aberto no Dryland. Acompanhe na aba Transações.'}
                     </p>
                   </div>
@@ -4251,7 +4342,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
             ) : posting ? (
               <div className="p-8 text-center">
                 <Spinner size={34} className="mx-auto animate-spin text-[#000638]" />
-                <p className="mt-3 text-sm font-semibold text-[#000638]">Emitindo a NF-e na SEFAZ e gravando no TOTVS…</p>
+                <p className="mt-3 text-sm font-semibold text-[#000638]">Emitindo a NF-e na SEFAZ e gerando o contas a receber…</p>
                 <p className="mt-1 text-xs text-gray-500">Pode levar até 1 minuto. Não feche esta janela.</p>
               </div>
             ) : (
@@ -4264,7 +4355,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                     ['Fiscal', cen ? `${cen.label} · CFOP ${cen.cfop} · ${cen.icms}${previa?.aliqDifal ? ` (${previa.cenario.destUf} ${previa.aliqDifal}%)` : ''}` : '—'],
                     ['Transporte', temTransportadora ? `${transp.nome || transp.id}${transp.servico ? ` · ${transp.servico}` : ''} · ${transp.volumes} vol · ${transp.pesoB} kg` : 'Retirada (sem transportadora)'],
                     ['Pagamento', pagamentos.map((p) => `${FORMAS[p.forma]} ${fmtBRL(p.valor)}${Number(p.parcelas) > 1 ? ` em ${p.parcelas}x` : ''}`).join(' + ')],
-                    ['TOTVS', `documento interno ${operacao} · empresa ${EMPRESA_TOTVS} · data de hoje (${fmtData(hojeIso())}) · terminal ${terminal}`],
+                    ['Transação', `HeadCoach · caixa #${caixaSit?.id || '—'} · data de caixa ${caixaSit?.data ? dataBR(caixaSit.data) : '—'} · contas a receber no HeadCoach (nada vai para o TOTVS)`],
                     ...(trocasFeitas.length ? [['Trocas', trocasFeitas.map((t) => `${t.quantidade}x ${t.de} → ${t.para} ${t.paraNome || ''}`).join(' · ') + ' (mesmo valor)']] : []),
                     ...(dataDiferente && dataVenda ? [['Data diferente', `observação na transação: VENDA DO DIA ${fmtData(dataVenda)}`]] : []),
                     ...(card?.dados?.transacao || card?.dados?.pedido_totvs
@@ -4315,7 +4406,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                     </p>
                   </div>
                 )}
-                <p className="mt-2 text-[11px] text-gray-500">A nota é real (SEFAZ, produção). Depois dela, o TOTVS recebe o documento interno e o contas a receber na empresa {EMPRESA_TOTVS}.</p>
+                <p className="mt-2 text-[11px] text-gray-500">A nota é real (SEFAZ, produção). Depois dela, a transação e o contas a receber ficam no HeadCoach (HeadCoach › Contas a Receber), sem passar pelo TOTVS.</p>
                 <div className="mt-4 flex gap-2">
                   <button onClick={() => setModalFat(false)} className="h-11 flex-1 rounded-xl text-sm font-bold text-gray-600 ring-1 ring-gray-300 hover:bg-gray-50">
                     Cancelar

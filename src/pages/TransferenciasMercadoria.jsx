@@ -36,6 +36,7 @@ import {
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
+import { authHeaders } from '../utils/apiAuth';
 import { useAuth } from '../components/AuthContext';
 import { getSetoresDoUsuario } from '../services/setoresService';
 import TransferenciaRFID from './TransferenciaRFID';
@@ -160,7 +161,7 @@ const TransferenciasMercadoria = () => {
       if (busca.trim()) qs.set('busca', busca.trim());
       // botão Atualizar: relê na hora os pedidos de transferência do Dryland
       if (opcoes?.refresh === true) qs.set('refresh', '1');
-      const r = await fetch(`${API_BASE_URL}/api/transferencias?${qs}`);
+      const r = await fetch(`${API_BASE_URL}/api/transferencias?${qs}`, { headers: await authHeaders() });
       const j = await r.json();
       if (!r.ok || !j.success) {
         if (j?.error === 'MIGRATION_PENDING') {
@@ -191,7 +192,7 @@ const TransferenciasMercadoria = () => {
     try {
       const qs = new URLSearchParams({ de: trxDe, ate: trxAte });
       if (trxBusca.trim()) qs.set('busca', trxBusca.trim());
-      const r = await fetch(`${API_BASE_URL}/api/transferencias/transacoes?${qs}`);
+      const r = await fetch(`${API_BASE_URL}/api/transferencias/transacoes?${qs}`, { headers: await authHeaders() });
       const j = await r.json();
       if (!r.ok || !j.success) {
         if (j?.error === 'MIGRATION_PENDING') {
@@ -219,7 +220,7 @@ const TransferenciasMercadoria = () => {
   const detalharTransacao = async (t) => {
     setTrxDetalhe({ ...t, itens: [], carregando: true });
     try {
-      const r = await fetch(`${API_BASE_URL}/api/transferencias/transacoes/${t.id}`);
+      const r = await fetch(`${API_BASE_URL}/api/transferencias/transacoes/${t.id}`, { headers: await authHeaders() });
       const j = await r.json();
       if (!r.ok || !j.success) throw new Error(j?.message || 'Falha ao abrir o detalhe');
       setTrxDetalhe(j.data);

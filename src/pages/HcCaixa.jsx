@@ -2,11 +2,15 @@
 // HEADCOACH › CAIXA — Abertura, Contagem e Fechamento (com o encerramento do
 // dia junto). Yago, 12/11/2026: o mesmo roteiro do TOTVS (PDVFM001 › Menu
 // Caixa e GERFP010), mais enxuto:
-//   • Abertura: empresa + terminal na data de caixa da empresa, fundo de troco
+//   • Um caixa por empresa (sem terminal — Yago, 12/11/2026).
+//   • Abertura: a empresa, na data de caixa dela, com o fundo de troco
 //     (sugere o que o caixa anterior deixou); com o caixa aberto, suprimento e
 //     retirada (com senha) e estorno do que foi lançado errado.
-//   • Contagem: dinheiro por cédula/moeda + conferência de cada forma contra o
-//     que o sistema registrou; mostra a diferença na hora.
+//   • Contagem: o valor total em dinheiro + conferência de cada forma contra o
+//     que o sistema registrou; mostra a diferença na hora. Salvou, fica travada
+//     (cadeado): só owner, admin ou financeiro reabre, com senha.
+//   • Voltar data: owner, admin ou financeiro volta a data de caixa quando o dia
+//     foi encerrado para a data errada.
 //   • Fechamento: resumo, fundo que fica para o próximo caixa, senha, comprovante;
 //     e logo abaixo o encerramento do dia (data de caixa → próximo dia).
 // API: /api/hc/caixa (exige login) — services/hcCaixa.js
@@ -51,6 +55,8 @@ const btnSec = 'inline-flex h-9 items-center justify-center gap-1.5 rounded-lg p
 const FORMAS_PADRAO = ['credito', 'debito', 'pix'];
 const NOME_FORMA = { dinheiro: 'Dinheiro', pix: 'Pix', credito: 'Cartão de crédito', debito: 'Cartão de débito', boleto: 'Boleto', credito_loja: 'Credev', adiantamento: 'Adiantamento', vale_troca: 'Vale-troca', saldo_bonus: 'Saldo bônus' };
 const nomeForma = (f) => NOME_FORMA[f] || f;
+// owner, admin e financeiro (perfil "user") reabrem a contagem e voltam a data de caixa
+const PERFIS_GESTAO = ['owner', 'admin', 'user'];
 const MOV = {
   suprimento: { label: 'Suprimento', cls: 'text-emerald-700', sinal: '+' },
   retirada: { label: 'Retirada', cls: 'text-rose-700', sinal: '−' },
@@ -102,40 +108,131 @@ const Diferenca = ({ v }) => {
   return <span className={`font-bold ${d > 0 ? 'text-sky-700' : 'text-rose-700'}`}>{d > 0 ? `sobra ${fmtBRL(d)}` : `falta ${fmtBRL(-d)}`}</span>;
 };
 
-// pede senha / motivo antes de uma ação (retirada, estorno, fechamento, reabertura)
-function Confirmar({ titulo, texto, pedirMotivo, pedirSenha = true, onConfirmar, onCancelar, busy }) {
+// pede senha / motivo antes de uma ação (retirada, estorno, fechamento, reabertura).
+// pedirAutorizador: e-mail + senha de quem autoriza (pode ser outra pessoa).
+function Confirmar({ titulo, texto, pedirMotivo, motivoOpcional, pedirSenha = true, pedirAutorizador, emailPadrao = '', onConfirmar, onCancelar, busy }) {
   const [motivo, setMotivo] = useState('');
   const [senha, setSenha] = useState('');
+  const [email, setEmail] = useState(emailPadrao);
+  const motivoOk = !pedirMotivo || motivoOpcional || motivo.trim().length >= 3;
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4">
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          onConfirmar({ motivo, senha });
+          onConfirmar({ motivo, senha, email: email.trim() });
         }}
         className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl"
       >
         <h3 className="text-lg font-bold text-[#000638]">{titulo}</h3>
         {texto && <p className="mt-1 text-sm text-gray-600">{texto}</p>}
-        {pedirMotivo && (
-          <div className="mt-3">
-            <label className={labelCls}>Motivo</label>
-            <input autoFocus value={motivo} onChange={(e) => setMotivo(e.target.value)} className={inputCls} />
-          </div>
-        )}
-        {pedirSenha && (
-          <div className="mt-3">
-            <label className={labelCls}>Sua senha do HeadCoach</label>
-            <input autoFocus={!pedirMotivo} type="password" autoComplete="off" value={senha} onChange={(e) => setSenha(e.target.value)} className={inputCls} />
-          </div>
+        {pedirAutorizador ? (
+          <>
+            <div className="mt-3">
+              <label className={labelCls}>E-mail de quem autoriza</label>
+              <input autoFocus={!emailPadrao} value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" className={inputCls} />
+            </div>
+            <div className="mt-3">
+              <label className={labelCls}>Senha de quem autoriza</label>
+              <input autoFocus={!!emailPadrao} type="password" autoComplete="off" value={senha} onChange={(e) => setSenha(e.target.value)} className={inputCls} />
+            </div>
+            {pedirMotivo && (
+              <div className="mt-3">
+                <label className={labelCls}>Motivo{motivoOpcional ? ' (opcional)' : ''}</label>
+                <input value={motivo} onChange={(e) => setMotivo(e.target.value)} className={inputCls} />
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            {pedirMotivo && (
+              <div className="mt-3">
+                <label className={labelCls}>Motivo{motivoOpcional ? ' (opcional)' : ''}</label>
+                <input autoFocus value={motivo} onChange={(e) => setMotivo(e.target.value)} className={inputCls} />
+              </div>
+            )}
+            {pedirSenha && (
+              <div className="mt-3">
+                <label className={labelCls}>Sua senha do HeadCoach</label>
+                <input autoFocus={!pedirMotivo} type="password" autoComplete="off" value={senha} onChange={(e) => setSenha(e.target.value)} className={inputCls} />
+              </div>
+            )}
+          </>
         )}
         <div className="mt-4 flex gap-2">
           <button type="button" onClick={onCancelar} disabled={busy} className="h-10 flex-1 rounded-lg text-sm font-bold text-gray-600 ring-1 ring-gray-300">
             Voltar
           </button>
-          <button type="submit" disabled={busy || (pedirSenha && !senha) || (pedirMotivo && motivo.trim().length < 3)} className={`${btnPri} flex-1`}>
+          <button type="submit" disabled={busy || ((pedirSenha || pedirAutorizador) && !senha) || (pedirAutorizador && !email.trim()) || !motivoOk} className={`${btnPri} flex-1`}>
             {busy ? <Spinner size={15} className="animate-spin" /> : <CheckCircle size={15} weight="bold" />} Confirmar
           </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+// voltar a data de caixa (owner, admin ou financeiro) — encerrou para a data errada
+function VoltarData({ sit, busy, onConfirmar, onCancelar }) {
+  const minima = sit.voltarDataMinima || '';
+  const maxima = maisDias(sit.dataCaixa, -1);
+  const sugerida = (() => {
+    let d = sit.hoje < sit.dataCaixa ? sit.hoje : maxima;
+    if (minima && d < minima) d = minima;
+    return d;
+  })();
+  const [data, setData] = useState(sugerida);
+  const [motivo, setMotivo] = useState('');
+  const [senha, setSenha] = useState('');
+  const bloqueio = sit.caixa
+    ? `Feche o caixa #${sit.caixa.caixa.id} antes de voltar a data.`
+    : minima && minima >= sit.dataCaixa
+      ? `Já tem caixa em ${fmtData(minima)}: a data de caixa não pode voltar para antes dele.`
+      : null;
+  const dataOk = data && data < sit.dataCaixa && (!minima || data >= minima);
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          onConfirmar({ novaData: data, motivo: motivo.trim(), senha });
+        }}
+        className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl"
+      >
+        <h3 className="text-lg font-bold text-[#000638]">Voltar a data de caixa</h3>
+        <p className="mt-1 text-sm text-gray-600">
+          Empresa {sit.empresa.code} · data de caixa atual <b>{fmtData(sit.dataCaixa)}</b>. Use quando o dia foi encerrado para a data errada. Fica registrado quem voltou e o motivo.
+        </p>
+        {bloqueio ? (
+          <p className="mt-3 flex items-start gap-1.5 rounded-lg bg-amber-50 px-2.5 py-2 text-xs font-semibold text-amber-800 ring-1 ring-amber-300">
+            <Warning size={14} weight="fill" className="mt-0.5 shrink-0" /> {bloqueio}
+          </p>
+        ) : (
+          <>
+            <div className="mt-3">
+              <label className={labelCls}>Nova data de caixa</label>
+              <input type="date" value={data} min={minima || undefined} max={maxima} onChange={(e) => setData(e.target.value)} className={inputCls} />
+              {minima && <p className="mt-1 text-[10.5px] text-gray-400">Não dá para voltar antes de {fmtData(minima)} (último caixa da empresa).</p>}
+            </div>
+            <div className="mt-3">
+              <label className={labelCls}>Motivo</label>
+              <input autoFocus value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="ex.: encerrado para a data errada" className={inputCls} />
+            </div>
+            <div className="mt-3">
+              <label className={labelCls}>Sua senha do HeadCoach</label>
+              <input type="password" autoComplete="off" value={senha} onChange={(e) => setSenha(e.target.value)} className={inputCls} />
+            </div>
+          </>
+        )}
+        <div className="mt-4 flex gap-2">
+          <button type="button" onClick={onCancelar} disabled={busy} className="h-10 flex-1 rounded-lg text-sm font-bold text-gray-600 ring-1 ring-gray-300">
+            Voltar
+          </button>
+          {!bloqueio && (
+            <button type="submit" disabled={busy || !dataOk || motivo.trim().length < 3 || !senha} className={`${btnPri} flex-1`}>
+              {busy ? <Spinner size={15} className="animate-spin" /> : <ArrowCounterClockwise size={15} weight="bold" />} VOLTAR DATA
+            </button>
+          )}
         </div>
       </form>
     </div>
@@ -152,7 +249,7 @@ function imprimirComprovante(c) {
 <style>body{font-family:Arial,sans-serif;font-size:12px;margin:16px;max-width:320px}h1{font-size:15px;margin:0 0 4px}h2{font-size:12px;margin:12px 0 4px;border-bottom:1px solid #000}table{width:100%;border-collapse:collapse}td{padding:2px 0}.f{font-weight:bold;border-top:1px dashed #000}</style></head><body>
 <h1>FECHAMENTO DE CAIXA</h1>
 <div>Empresa ${c.empresa?.code} — ${c.empresa?.nome || ''}</div>
-<div>Terminal ${c.caixa.terminal} · Data de caixa ${fmtData(c.caixa.data_caixa)}</div>
+<div>Caixa #${c.caixa.id} · Data de caixa ${fmtData(c.caixa.data_caixa)}</div>
 <div>Aberto ${fmtDataHora(c.caixa.aberto_em)} por ${c.caixa.aberto_por || '—'}</div>
 <div>Fechado ${fmtDataHora(c.caixa.fechado_em)} por ${c.caixa.fechado_por || '—'}</div>
 <h2>Vendas (${r.vendas || 0})</h2><table>${linhas(formas.map(([f, v]) => [nomeForma(f), brl(v)]))}<tr class="f"><td>Total</td><td style="text-align:right">${brl(r.totalVendas)}</td></tr></table>
@@ -193,13 +290,13 @@ export default function HcCaixa({ etapa = 'abertura' }) {
   const navigate = useNavigate();
   const [empresas, setEmpresas] = useState(null);
   const [empresa, setEmpresa] = useState(() => lerLocal('hc_caixa_empresa', ''));
-  const [terminal, setTerminal] = useState(() => lerLocal('hc_caixa_terminal', '1'));
   const [sit, setSit] = useState(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState(null); // { tipo, msg }
   const [busy, setBusy] = useState(false);
-  const [confirmar, setConfirmar] = useState(null); // { titulo, texto, pedirMotivo, pedirSenha, acao }
+  const [confirmar, setConfirmar] = useState(null); // { titulo, texto, pedirMotivo, pedirSenha, pedirAutorizador, acao }
+  const [voltandoData, setVoltandoData] = useState(false);
 
   const avisar = useCallback((tipo, msg) => {
     setAviso({ tipo, msg });
@@ -219,14 +316,13 @@ export default function HcCaixa({ etapa = 'abertura' }) {
       });
   }, []);
   useEffect(() => gravarLocal('hc_caixa_empresa', empresa), [empresa]);
-  useEffect(() => gravarLocal('hc_caixa_terminal', terminal), [terminal]);
 
   const carregar = useCallback(async () => {
     if (!empresa) return;
     setCarregando(true);
     setErro('');
     try {
-      const j = await apiJson(`${API}/situacao?empresa=${encodeURIComponent(empresa)}&terminal=${encodeURIComponent(terminal || 1)}`);
+      const j = await apiJson(`${API}/situacao?empresa=${encodeURIComponent(empresa)}`);
       setSit(j.data);
     } catch (e) {
       setSit(null);
@@ -234,7 +330,7 @@ export default function HcCaixa({ etapa = 'abertura' }) {
     } finally {
       setCarregando(false);
     }
-  }, [empresa, terminal]);
+  }, [empresa]);
   useEffect(() => {
     carregar();
   }, [carregar]);
@@ -265,7 +361,7 @@ export default function HcCaixa({ etapa = 'abertura' }) {
     </span>
   ) : (
     <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-1 text-[11px] font-bold text-gray-600 ring-1 ring-gray-200">
-      <Lock size={12} weight="bold" /> SEM CAIXA ABERTO NESTE TERMINAL
+      <Lock size={12} weight="bold" /> SEM CAIXA ABERTO
     </span>
   );
 
@@ -274,9 +370,9 @@ export default function HcCaixa({ etapa = 'abertura' }) {
       <div className="mx-auto max-w-6xl">
         <PageTitle title="Caixa" subtitle="Abertura, suprimento e retirada, contagem, fechamento e encerramento do dia — tudo no HeadCoach" icon={CashRegister} />
 
-        {/* Empresa + terminal + data de caixa */}
+        {/* Empresa + data de caixa */}
         <div className="mb-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
-          <div className="grid items-end gap-2 sm:grid-cols-[1fr_110px_auto]">
+          <div className="grid items-end gap-2 sm:grid-cols-[1fr_auto]">
             <div>
               <label className={labelCls}>Empresa</label>
               <select value={empresa} onChange={(e) => setEmpresa(e.target.value)} className={inputCls}>
@@ -287,10 +383,6 @@ export default function HcCaixa({ etapa = 'abertura' }) {
                   </option>
                 ))}
               </select>
-            </div>
-            <div>
-              <label className={labelCls}>Terminal</label>
-              <input type="number" min="1" value={terminal} onChange={(e) => setTerminal(e.target.value)} className={inputCls} />
             </div>
             <button onClick={carregar} disabled={!empresa || carregando} className={btnSec}>
               <ArrowsClockwise size={14} className={carregando ? 'animate-spin' : ''} /> Atualizar
@@ -303,6 +395,16 @@ export default function HcCaixa({ etapa = 'abertura' }) {
                 {sit.dataAtrasada ? ` · hoje é ${fmtData(sit.hoje)}` : ''}
               </span>
               {statusChip}
+              {PERFIS_GESTAO.includes(user?.role) && (
+                <button
+                  onClick={() => setVoltandoData(true)}
+                  disabled={busy}
+                  title="Owner, admin ou financeiro: volta a data de caixa quando o dia foi encerrado para a data errada"
+                  className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-1 font-bold text-gray-600 ring-1 ring-gray-300 hover:bg-gray-50"
+                >
+                  <ArrowCounterClockwise size={12} weight="bold" /> Voltar data
+                </button>
+              )}
             </div>
           )}
           <div className="mt-3 flex flex-wrap gap-1.5 border-t border-gray-100 pt-3">
@@ -334,7 +436,7 @@ export default function HcCaixa({ etapa = 'abertura' }) {
         ) : etapa === 'abertura' ? (
           <Abertura sit={sit} r={r} caixa={caixa} busy={busy} acao={acao} post={post} setConfirmar={setConfirmar} navigate={navigate} />
         ) : etapa === 'contagem' ? (
-          <Contagem sit={sit} r={r} caixa={caixa} busy={busy} acao={acao} post={post} navigate={navigate} />
+          <Contagem sit={sit} r={r} caixa={caixa} busy={busy} acao={acao} post={post} navigate={navigate} setConfirmar={setConfirmar} user={user} />
         ) : (
           <Fechamento sit={sit} r={r} caixa={caixa} busy={busy} acao={acao} post={post} setConfirmar={setConfirmar} navigate={navigate} user={user} carregar={carregar} avisar={avisar} />
         )}
@@ -346,9 +448,24 @@ export default function HcCaixa({ etapa = 'abertura' }) {
           texto={confirmar.texto}
           pedirMotivo={confirmar.pedirMotivo}
           pedirSenha={confirmar.pedirSenha !== false}
+          pedirAutorizador={confirmar.pedirAutorizador}
+          emailPadrao={confirmar.emailPadrao}
+          motivoOpcional={confirmar.motivoOpcional}
           busy={busy}
           onCancelar={() => setConfirmar(null)}
           onConfirmar={confirmar.acao}
+        />
+      )}
+      {voltandoData && sit && (
+        <VoltarData
+          sit={sit}
+          busy={busy}
+          onCancelar={() => setVoltandoData(false)}
+          onConfirmar={(b) =>
+            acao(() => post('/voltar-data', { empresa: sit.empresa.code, ...b }), 'Data de caixa voltou').then((j) => {
+              if (j) setVoltandoData(false);
+            })
+          }
         />
       )}
     </div>
@@ -359,7 +476,7 @@ export default function HcCaixa({ etapa = 'abertura' }) {
 function ResumoCaixa({ r }) {
   const formas = Object.entries(r.formas || {});
   return (
-    <Bloco titulo={`Caixa #${r.caixa.id} · terminal ${r.caixa.terminal}`} icone={CashRegister}>
+    <Bloco titulo={`Caixa #${r.caixa.id} · data de caixa ${fmtData(r.caixa.data_caixa)}`} icone={CashRegister}>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1">
           <Linha rotulo="Vendas atendidas" valor={`${r.qtdVendas} · ${fmtBRL(r.totalVendas)}`} />
@@ -483,7 +600,7 @@ function Abertura({ sit, r, caixa, busy, acao, post, setConfirmar, navigate }) {
   const [encerrarAnterior, setEncerrarAnterior] = useState(true);
   useEffect(() => {
     setFundo(sit.fundoSugerido != null ? String(sit.fundoSugerido).replace('.', ',') : '');
-  }, [sit.fundoSugerido, sit.empresa.code, sit.terminal]);
+  }, [sit.fundoSugerido, sit.empresa.code]);
 
   if (caixa) {
     return (
@@ -501,7 +618,7 @@ function Abertura({ sit, r, caixa, busy, acao, post, setConfirmar, navigate }) {
   }
   const abrir = () =>
     acao(
-      () => post('/abrir', { empresa: sit.empresa.code, terminal: sit.terminal, fundoInicial: num(fundo), observacao: obs, encerrarAnterior: sit.dataAtrasada && encerrarAnterior }),
+      () => post('/abrir', { empresa: sit.empresa.code, fundoInicial: num(fundo), observacao: obs, encerrarAnterior: sit.dataAtrasada && encerrarAnterior }),
       'Caixa aberto',
     );
   return (
@@ -515,7 +632,7 @@ function Abertura({ sit, r, caixa, busy, acao, post, setConfirmar, navigate }) {
           <div>
             <label className={labelCls}>Fundo de troco (dinheiro no caixa)</label>
             <input inputMode="decimal" value={fundo} onChange={(e) => setFundo(e.target.value)} placeholder="0,00" className={inputCls} />
-            <p className="mt-0.5 text-[10.5px] text-gray-500">{sit.fundoSugerido != null ? `O último caixa deste terminal deixou ${fmtBRL(sit.fundoSugerido)}.` : 'Primeiro caixa deste terminal.'}</p>
+            <p className="mt-0.5 text-[10.5px] text-gray-500">{sit.fundoSugerido != null ? `O último caixa da empresa deixou ${fmtBRL(sit.fundoSugerido)}.` : 'Primeiro caixa da empresa.'}</p>
           </div>
           <div>
             <label className={labelCls}>Observação</label>
@@ -544,7 +661,7 @@ function Abertura({ sit, r, caixa, busy, acao, post, setConfirmar, navigate }) {
       </Bloco>
       {sit.ultimoFechado && (
         <p className="text-center text-[11px] text-gray-500">
-          Último caixa deste terminal: #{sit.ultimoFechado.id} de {fmtData(sit.ultimoFechado.dataCaixa)}, fechado em {fmtDataHora(sit.ultimoFechado.fechadoEm)} por {sit.ultimoFechado.fechadoPor}
+          Último caixa da empresa: #{sit.ultimoFechado.id} de {fmtData(sit.ultimoFechado.dataCaixa)}, fechado em {fmtDataHora(sit.ultimoFechado.fechadoEm)} por {sit.ultimoFechado.fechadoPor}
           {Math.abs(Number(sit.ultimoFechado.diferenca || 0)) > 0.005 ? ` · diferença ${fmtBRL(sit.ultimoFechado.diferenca)}` : ''}
         </p>
       )}
@@ -560,7 +677,7 @@ function CaixasDaData({ sit }) {
       <ul className="divide-y divide-gray-100 text-xs">
         {sit.caixasDaData.map((c) => (
           <li key={c.id} className="flex flex-wrap items-center gap-2 py-1.5">
-            <span className="w-20 font-bold text-[#000638]">Terminal {c.terminal}</span>
+            <span className="w-20 font-bold text-[#000638]">Caixa #{c.id}</span>
             <span className={`rounded-full px-2 py-0.5 text-[10.5px] font-bold ring-1 ${c.status === 'aberto' ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-gray-100 text-gray-600 ring-gray-200'}`}>{c.status.toUpperCase()}</span>
             <span className="min-w-0 flex-1 text-gray-600">
               aberto {fmtDataHora(c.aberto_em)} por {c.aberto_por}
@@ -575,18 +692,20 @@ function CaixasDaData({ sit }) {
 }
 
 // ─── CONTAGEM ────────────────────────────────────────────────────────────────
-const CEDULAS = [200, 100, 50, 20, 10, 5, 2, 1, 0.5, 0.25, 0.1, 0.05];
-function Contagem({ sit, r, caixa, busy, acao, post, navigate }) {
-  const [qtd, setQtd] = useState({});
+function Contagem({ sit, r, caixa, busy, acao, post, navigate, setConfirmar, user }) {
+  // dinheiro: só o valor total que tem no caixa (sem detalhar cédulas e moedas)
+  const [dinheiro, setDinheiro] = useState('');
   const [informado, setInformado] = useState({});
   const [obs, setObs] = useState('');
-  // começa da última contagem (se houver)
+  const u = r?.ultimaContagem || null;
+  // contagem salva fica travada (cadeado) até owner/admin/financeiro reabrir
+  const travada = !!r?.contagemTravada;
+  // começa da última contagem (se houver); travada mostra exatamente o que foi salvo
   useEffect(() => {
-    const u = r?.ultimaContagem;
-    setQtd(u ? Object.fromEntries(Object.entries(u.cedulas || {}).map(([k, v]) => [k, String(v)])) : {});
-    setInformado({});
-    setObs('');
-  }, [caixa?.id, r?.ultimaContagem?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    setDinheiro(u ? String(round2(u.dinheiro_contado)).replace('.', ',') : '');
+    setInformado(travada && u ? Object.fromEntries(Object.entries(u.formas || {}).map(([f, x]) => [f, String(round2(x.informado)).replace('.', ',')])) : {});
+    setObs(travada && u ? u.observacao || '' : '');
+  }, [caixa?.id, u?.id, travada]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const formas = useMemo(() => {
     const s = new Set([...FORMAS_PADRAO, ...Object.keys(r?.formas || {}).filter((f) => f !== 'dinheiro')]);
@@ -595,22 +714,33 @@ function Contagem({ sit, r, caixa, busy, acao, post, navigate }) {
   if (!caixa) {
     return (
       <p className="rounded-xl bg-white px-3 py-10 text-center text-sm text-gray-500 shadow-sm ring-1 ring-gray-200">
-        Este terminal não tem caixa aberto.{' '}
+        A empresa não tem caixa aberto.{' '}
         <button onClick={() => navigate('/headcoach/caixa/abertura')} className="font-bold text-[#000638] underline">
           Abrir caixa
         </button>
       </p>
     );
   }
-  const contado = round2(CEDULAS.reduce((s, c) => s + (parseInt(qtd[String(c)], 10) || 0) * c, 0));
+  const contado = round2(num(dinheiro));
+  const semValor = String(dinheiro).trim() === '';
   const difDinheiro = round2(contado - r.dinheiro.esperado);
   const valorInformado = (f) => (informado[f] === undefined || informado[f] === '' ? round2(r.formas[f] || 0) : num(informado[f]));
   const difOutras = round2(formas.reduce((s, f) => s + (valorInformado(f) - round2(r.formas[f] || 0)), 0));
+  const reabrir = () =>
+    setConfirmar({
+      titulo: 'Reabrir a contagem',
+      texto: 'Só owner, admin ou financeiro reabre a contagem. Fica registrado quem autorizou.',
+      pedirAutorizador: true,
+      emailPadrao: PERFIS_GESTAO.includes(user?.role) ? user?.email || '' : '',
+      pedirMotivo: true,
+      motivoOpcional: true,
+      acao: ({ email, senha, motivo }) => acao(() => post(`/${caixa.id}/contagem/reabrir`, { autorizador: { email, senha }, motivo }), 'Contagem reaberta'),
+    });
   const salvar = () =>
     acao(
       () =>
         post(`/${caixa.id}/contagem`, {
-          cedulas: Object.fromEntries(CEDULAS.map((c) => [String(c), parseInt(qtd[String(c)], 10) || 0])),
+          dinheiroContado: contado,
           formas: Object.fromEntries(formas.map((f) => [f, valorInformado(f)])),
           observacao: obs,
         }),
@@ -623,29 +753,37 @@ function Contagem({ sit, r, caixa, busy, acao, post, navigate }) {
           <Warning size={14} weight="fill" /> Houve venda ou movimento depois da última contagem: conte de novo.
         </p>
       )}
-      <div className="grid items-start gap-3 lg:grid-cols-2">
-        <Bloco titulo="Dinheiro na gaveta" icone={Coins} extra={<span className="text-sm font-bold tabular-nums text-[#000638]">{fmtBRL(contado)}</span>}>
-          <div className="grid grid-cols-1 gap-x-5 gap-y-1.5 sm:grid-cols-2">
-            {CEDULAS.map((c) => {
-              const n = parseInt(qtd[String(c)], 10) || 0;
-              return (
-                <label key={c} className="flex items-center gap-1.5 text-xs">
-                  <span className={`w-16 shrink-0 rounded px-1.5 py-1 text-center font-bold tabular-nums ${c >= 2 ? 'bg-emerald-50 text-emerald-800' : 'bg-amber-50 text-amber-800'}`}>{fmtBRL(c).replace(',00', '')}</span>
-                  <span className="text-gray-400">×</span>
-                  <input
-                    type="number"
-                    min="0"
-                    value={qtd[String(c)] ?? ''}
-                    onChange={(e) => setQtd((x) => ({ ...x, [String(c)]: e.target.value }))}
-                    onWheel={(e) => e.currentTarget.blur()}
-                    placeholder="0"
-                    className="mb-0 h-8 w-16 rounded-lg border border-gray-300 px-1.5 text-center text-sm"
-                  />
-                  <span className="flex-1 text-right tabular-nums text-gray-500">{n ? fmtBRL(n * c) : ''}</span>
-                </label>
-              );
-            })}
+      {travada && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl bg-indigo-50 px-3 py-2.5 ring-1 ring-indigo-200">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#000638] text-white">
+            <Lock size={18} weight="fill" />
+          </span>
+          <div className="min-w-0 flex-1 text-xs text-[#000638]">
+            <b className="block text-sm">CONTAGEM FINALIZADA</b>
+            por {u.por} em {fmtDataHora(u.em)} · para contar de novo, owner, admin ou financeiro reabre com a senha
           </div>
+          <button onClick={reabrir} disabled={busy} className={btnPri}>
+            <LockOpen size={15} weight="bold" /> REABRIR CONTAGEM
+          </button>
+        </div>
+      )}
+      {r.contagemReaberta && !r.contagemDesatualizada && (
+        <p className="flex items-center gap-1.5 rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 ring-1 ring-amber-300">
+          <LockOpen size={14} weight="fill" /> Contagem reaberta{u?.reabertura_autorizada_por ? ` (autorizou ${u.reabertura_autorizada_por})` : ''}: conte de novo e salve.
+        </p>
+      )}
+      <div className="grid items-start gap-3 lg:grid-cols-2">
+        <Bloco titulo="Dinheiro" icone={Coins}>
+          <label className={labelCls}>Quanto tem em dinheiro no caixa</label>
+          <input
+            autoFocus={!travada}
+            disabled={travada}
+            inputMode="decimal"
+            value={dinheiro}
+            onChange={(e) => setDinheiro(e.target.value)}
+            placeholder="0,00"
+            className="mb-0 h-12 w-full rounded-lg border border-gray-300 bg-white px-3 text-xl font-bold tabular-nums text-[#000638] focus:outline-none focus:ring-2 focus:ring-[#000638]/30 disabled:bg-gray-50 disabled:text-gray-600"
+          />
           <div className="mt-3 space-y-1 border-t border-gray-100 pt-2">
             <Linha rotulo="Fundo de troco" valor={fmtBRL(r.dinheiro.fundo)} />
             <Linha rotulo="+ Vendas em dinheiro" valor={fmtBRL(r.dinheiro.vendas)} />
@@ -679,9 +817,10 @@ function Contagem({ sit, r, caixa, busy, acao, post, navigate }) {
                   <td className="py-1.5 pl-2 text-right">
                     <input
                       inputMode="decimal"
+                      disabled={travada}
                       value={informado[f] ?? String(round2(r.formas[f] || 0)).replace('.', ',')}
                       onChange={(e) => setInformado((x) => ({ ...x, [f]: e.target.value }))}
-                      className="mb-0 h-8 w-28 rounded-lg border border-gray-300 px-1.5 text-right text-sm"
+                      className="mb-0 h-8 w-28 rounded-lg border border-gray-300 px-1.5 text-right text-sm disabled:bg-gray-50 disabled:text-gray-600"
                     />
                   </td>
                   <td className="py-1.5 pl-2 text-right text-[11px]">
@@ -699,13 +838,15 @@ function Contagem({ sit, r, caixa, busy, acao, post, navigate }) {
           </div>
           <div className="mt-3">
             <label className={labelCls}>Observação da contagem</label>
-            <input value={obs} onChange={(e) => setObs(e.target.value)} placeholder="explique qualquer diferença" className={inputCls} />
+            <input value={obs} onChange={(e) => setObs(e.target.value)} disabled={travada} placeholder={travada ? '' : 'explique qualquer diferença'} className={`${inputCls} disabled:bg-gray-50 disabled:text-gray-600`} />
           </div>
           <div className="mt-3 flex flex-wrap justify-end gap-2">
-            <button onClick={salvar} disabled={busy} className={btnPri}>
-              {busy ? <Spinner size={15} className="animate-spin" /> : <CheckCircle size={15} weight="bold" />} SALVAR CONTAGEM
-            </button>
-            {r.ultimaContagem && !r.contagemDesatualizada && (
+            {!travada && (
+              <button onClick={salvar} disabled={busy || semValor} className={btnPri}>
+                {busy ? <Spinner size={15} className="animate-spin" /> : <CheckCircle size={15} weight="bold" />} SALVAR CONTAGEM
+              </button>
+            )}
+            {travada && (
               <button onClick={() => navigate('/headcoach/caixa/fechamento')} className={`${btnSec} h-10`}>
                 <Lock size={14} /> Ir para o fechamento
               </button>
@@ -784,6 +925,13 @@ function Fechamento({ sit, r, caixa, busy, acao, post, setConfirmar, navigate, u
                   <Coins size={14} /> Contar de novo
                 </button>
               </p>
+            ) : r.contagemReaberta ? (
+              <p className="flex flex-wrap items-center gap-2 text-sm text-amber-800">
+                <LockOpen size={15} weight="fill" /> A contagem foi reaberta{u.reabertura_autorizada_por ? ` (autorizou ${u.reabertura_autorizada_por})` : ''}: conte de novo e salve antes de fechar.
+                <button onClick={() => navigate('/headcoach/caixa/contagem')} className={btnSec}>
+                  <Coins size={14} /> Ir para a contagem
+                </button>
+              </p>
             ) : (
               <>
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -852,7 +1000,7 @@ function Fechamento({ sit, r, caixa, busy, acao, post, setConfirmar, navigate, u
 
 function UltimoFechado({ sit, user, busy, acao, post, setConfirmar, avisar }) {
   const u = sit.ultimoFechado;
-  if (!u) return <p className="rounded-xl bg-white px-3 py-8 text-center text-sm text-gray-400 shadow-sm ring-1 ring-gray-200">Este terminal não tem caixa aberto nem fechado.</p>;
+  if (!u) return <p className="rounded-xl bg-white px-3 py-8 text-center text-sm text-gray-400 shadow-sm ring-1 ring-gray-200">A empresa ainda não teve caixa aberto.</p>;
   const podeReabrir = ['owner', 'admin'].includes(user?.role) && String(u.dataCaixa).slice(0, 10) >= sit.dataCaixa;
   const imprimir = async () => {
     try {
@@ -863,7 +1011,7 @@ function UltimoFechado({ sit, user, busy, acao, post, setConfirmar, avisar }) {
     }
   };
   return (
-    <Bloco titulo={`Último caixa fechado deste terminal · #${u.id}`} icone={Lock}>
+    <Bloco titulo={`Último caixa fechado · #${u.id}`} icone={Lock}>
       <div className="flex flex-wrap items-center gap-3 text-xs">
         <span>
           Data de caixa <b>{fmtData(u.dataCaixa)}</b> · fechado em {fmtDataHora(u.fechadoEm)} por {u.fechadoPor} · fundo deixado {fmtBRL(u.fundoFinal)}
@@ -932,7 +1080,7 @@ function Encerramento({ sit, busy, acao, post, carregar }) {
           <p>
             Data de caixa atual: <b className="text-[#000638]">{fmtData(v.dataCaixa)}</b> · hoje {fmtData(v.hoje)}
           </p>
-          <p>{v.caixas.length ? `${v.caixas.length} caixa(s) nesta data: ${v.caixas.map((c) => `terminal ${c.terminal} ${c.status}`).join(' · ')}` : 'Nenhum caixa aberto nesta data.'}</p>
+          <p>{v.caixas.length ? `${v.caixas.length} caixa(s) nesta data: ${v.caixas.map((c) => `#${c.id} ${c.status}`).join(' · ')}` : 'Nenhum caixa aberto nesta data.'}</p>
           {v.caixasAbertos.length > 0 && (
             <p className="flex items-center gap-1 font-semibold text-rose-700">
               <Warning size={13} weight="fill" /> {v.motivo}
@@ -943,7 +1091,7 @@ function Encerramento({ sit, busy, acao, post, carregar }) {
           {v.podeEncerrar && v.vendasPendentes.length === 0 && <p className="flex items-center gap-1 font-semibold text-emerald-700"><CheckCircle size={13} weight="fill" /> Tudo certo para encerrar.</p>}
           {sit.encerramentos.length > 0 && (
             <p className="pt-1 text-[10.5px] text-gray-400">
-              Últimos: {sit.encerramentos.map((e) => `${fmtData(e.data_caixa)} → ${fmtData(e.proxima_data)} (${e.por})`).join(' · ')}
+              Últimos: {sit.encerramentos.map((e) => `${fmtData(e.data_caixa)} → ${fmtData(e.proxima_data)}${String(e.proxima_data) < String(e.data_caixa) ? ' (voltou)' : ''} (${e.por})`).join(' · ')}
             </p>
           )}
         </div>

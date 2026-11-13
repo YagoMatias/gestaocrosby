@@ -156,6 +156,7 @@ const PDVPerifericos = lazy(() => import('./pages/PDVPerifericos'));
 const BalancoRfidApp = lazy(() => import('./pages/BalancoRfidApp'));
 const BalancoRfidArquivos = lazy(() => import('./pages/BalancoRfidArquivos'));
 const VendasPDV = lazy(() => import('./pages/VendasPDV'));
+const RecebimentoMercadoria = lazy(() => import('./pages/RecebimentoMercadoria'));
 const FiscalPDV = lazy(() => import('./pages/FiscalPDV'));
 const IntegracaoERP = lazy(() => import('./pages/IntegracaoERP'));
 const WhatsAppContasPagar = lazy(() => import('./pages/WhatsAppContasPagar'));
@@ -198,6 +199,8 @@ const PedidosVenda = lazy(() => import('./pages/PedidosVenda'));
 const FaturamentoPedido = lazy(() => import('./pages/FaturamentoPedido'));
 const HcTransacoes = lazy(() => import('./pages/HcTransacoes'));
 const HcCaixa = lazy(() => import('./pages/HcCaixa'));
+const HcContasReceber = lazy(() => import('./pages/HcContasReceber'));
+const HcSaldosClientes = lazy(() => import('./pages/HcSaldosClientes'));
 const HcCaixaAbertura = (props) => <HcCaixa {...props} etapa="abertura" />;
 const HcCaixaContagem = (props) => <HcCaixa {...props} etapa="contagem" />;
 const HcCaixaFechamento = (props) => <HcCaixa {...props} etapa="fechamento" />;
@@ -251,6 +254,7 @@ const protectedRoutes = [
   { path: '/tecnologia/pdv-perifericos', component: PDVPerifericos },
   { path: '/balanco-rfid/arquivos', component: BalancoRfidArquivos },
   { path: '/varejo/vendas-pdv', component: VendasPDV },
+  { path: '/varejo/recebimento-mercadoria', component: RecebimentoMercadoria },
   { path: '/admin/fiscal-pdv', component: FiscalPDV },
   { path: '/admin/integracao-erp', component: IntegracaoERP },
   { path: '/financeiro/whatsapp-contas-pagar', component: WhatsAppContasPagar },
@@ -389,6 +393,8 @@ const protectedRoutes = [
   { path: '/headcoach/caixa/abertura', component: HcCaixaAbertura },
   { path: '/headcoach/caixa/contagem', component: HcCaixaContagem },
   { path: '/headcoach/caixa/fechamento', component: HcCaixaFechamento },
+  { path: '/headcoach/contas-receber', component: HcContasReceber },
+  { path: '/headcoach/saldos-clientes', component: HcSaldosClientes },
   { path: '/expedicao/pedidos-venda', component: PedidosVenda },
   { path: '/expedicao/faturamento', component: FaturamentoPedido },
   { path: '/expedicao/brejinho/pedidos', component: BrejinhoPedidos },

@@ -16,6 +16,7 @@ import {
   CashRegister,
   LockOpen,
   LockKey,
+  HandCoins,
   FileText,
   Calendar,
   CalendarCheck,
@@ -598,6 +599,12 @@ const varejo = [
     href: '/varejo/vendas-pdv',
     icon: Receipt,
     color: 'text-teal-600',
+  },
+  {
+    name: 'Recebimento de Mercadoria',
+    href: '/varejo/recebimento-mercadoria',
+    icon: Package,
+    color: 'text-emerald-600',
   },
   {
     name: 'Forecast Varejo',
@@ -1186,6 +1193,18 @@ const headcoach = [
       { name: 'Contagem', href: '/headcoach/caixa/contagem', icon: Coins, color: 'text-indigo-600' },
       { name: 'Fechamento e encerramento', href: '/headcoach/caixa/fechamento', icon: LockKey, color: 'text-indigo-600' },
     ],
+  },
+  {
+    name: 'Contas a Receber',
+    href: '/headcoach/contas-receber',
+    icon: HandCoins,
+    color: 'text-indigo-600',
+  },
+  {
+    name: 'Saldos de Clientes',
+    href: '/headcoach/saldos-clientes',
+    icon: Wallet,
+    color: 'text-indigo-600',
   },
 ];
 

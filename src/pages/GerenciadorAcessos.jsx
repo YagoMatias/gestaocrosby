@@ -370,6 +370,7 @@ const AVAILABLE_PAGES = [
     category: 'Varejo',
   },
   { path: '/varejo/vendas-pdv', name: 'Vendas PDV (HeadCoach)', category: 'Varejo' },
+  { path: '/varejo/recebimento-mercadoria', name: 'Recebimento de Mercadoria (lojas)', category: 'Varejo' },
   { path: '/dashboard-varejo', name: 'Dashboard Varejo', category: 'Varejo' },
   { path: '/metas-varejo', name: 'Metas Varejo', category: 'Varejo' },
   {
@@ -527,6 +528,8 @@ const AVAILABLE_PAGES = [
   { path: '/headcoach/caixa/abertura', name: 'Caixa — Abertura', category: 'HeadCoach' },
   { path: '/headcoach/caixa/contagem', name: 'Caixa — Contagem', category: 'HeadCoach' },
   { path: '/headcoach/caixa/fechamento', name: 'Caixa — Fechamento e encerramento', category: 'HeadCoach' },
+  { path: '/headcoach/contas-receber', name: 'Contas a Receber (HeadCoach)', category: 'HeadCoach' },
+  { path: '/headcoach/saldos-clientes', name: 'Saldos de Clientes — CREDEV e adiantamento (HeadCoach)', category: 'HeadCoach' },
 
   // ─── Expedição ──────────────────────────────────────────────
   {

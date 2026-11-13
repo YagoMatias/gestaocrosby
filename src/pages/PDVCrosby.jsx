@@ -58,7 +58,10 @@ import {
   Database,
   LockKey,
   Coins,
+  Lock,
+  LockOpen,
 } from '@phosphor-icons/react';
+import { lerCaixa, CaixaCard, CaixaFechadoModal } from '../components/hc/CaixaHeadcoach';
 import { API_BASE_URL } from '../config/constants';
 import useRfidReader from '../hooks/useRfidReader';
 import { useAuth } from '../components/AuthContext';
@@ -539,6 +542,9 @@ const PDVCrosby = () => {
   const [manualCode, setManualCode] = useState('');
   const [manualBusy, setManualBusy] = useState(false);
   const [toast, setToast] = useState(null);
+  // HEADCOACH › CAIXA: só vende com o caixa da empresa aberto
+  const [caixaSit, setCaixaSit] = useState(null);
+  const [pedirCaixa, setPedirCaixa] = useState(false);
   const [posting, setPosting] = useState(false);
   // Transação gerada: { transactionCode, branchCode, transactionDate, total }
   const [trx, setTrx] = useState(null);
@@ -574,10 +580,32 @@ const PDVCrosby = () => {
     setTimeout(() => setToast(null), 4000);
   }, []);
 
+  const carregarCaixa = useCallback(async () => {
+    if (!branch) {
+      setCaixaSit(null);
+      return null;
+    }
+    const sit = await lerCaixa(branch);
+    setCaixaSit(sit);
+    return sit;
+  }, [branch]);
+  useEffect(() => {
+    setCaixaSit(null);
+    carregarCaixa();
+    const t = setInterval(carregarCaixa, 60000);
+    window.addEventListener('focus', carregarCaixa);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener('focus', carregarCaixa);
+    };
+  }, [carregarCaixa]);
+
   useEffect(() => {
     if (!user?.id || ['admin', 'owner'].includes(user.role)) return;
     getUserCompanies(user.id).then(({ data }) => {
       if (data && data.length > 0) setEmpresasUsuario(data.map(String));
+      // vendedor sem loja vinculada no Painel Admin não vê nenhuma empresa (Yago, 13/11/2026)
+      else if (['guest', 'vendedor'].includes(user.role)) setEmpresasUsuario([]);
     });
   }, [user?.id, user?.role]);
   const branchesVisiveis = useMemo(
@@ -1186,8 +1214,18 @@ const PDVCrosby = () => {
   const finalizarAgoraRef = useRef(finalizarAgora);
   finalizarAgoraRef.current = finalizarAgora;
 
-  const iniciarFinalizacao = () => {
+  const iniciarFinalizacao = async () => {
     if (!canGenerate) return;
+    // só vende com o caixa aberto (confere na hora: alguém pode ter fechado)
+    const cx = await carregarCaixa();
+    if (!cx || cx.erro) {
+      showToast('erro', `Não consegui conferir o caixa${cx?.erro ? `: ${cx.erro}` : ''}. Tente de novo.`);
+      return;
+    }
+    if (!cx.aberto) {
+      setPedirCaixa(true);
+      return;
+    }
     if (descontoForaDoLimite) {
       showToast('erro', `Desconto acima de ${PDV_VAREJO_CONFIG.maxDescontoPct}% precisa da senha do owner/admin`);
       return;
@@ -1591,7 +1629,9 @@ const PDVCrosby = () => {
         <div className="mb-2 bg-white rounded-xl border border-gray-200 shadow-sm p-3 grid grid-cols-1 lg:grid-cols-3 gap-3 items-stretch">
           {/* Vendedor / cliente / cadastrar */}
           <div className="space-y-2">
-            <div className="relative">
+            <div className="flex gap-2">
+            <CaixaCard branch={branch} sit={caixaSit} temItens={items.length > 0} />
+            <div className="relative flex-1 min-w-0">
               <Buildings size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
               <select
                 value={branch}
@@ -1606,6 +1646,7 @@ const PDVCrosby = () => {
                   </option>
                 ))}
               </select>
+            </div>
             </div>
             <SellerPicker sellers={sellers} value={seller} onChange={setSeller} disabled={!branch} />
             <ClientePicker value={customer} onSelect={setCustomer} />
@@ -2192,6 +2233,11 @@ const PDVCrosby = () => {
                 </>
               )}
             </button>
+            {branch && caixaSit && !caixaSit.erro && !caixaSit.aberto && (
+              <p className="text-[10.5px] font-semibold text-rose-600 text-center inline-flex w-full items-center justify-center gap-1">
+                <Lock size={11} weight="fill" /> Caixa fechado: abra o caixa para vender.
+              </p>
+            )}
             {!canGenerate && trocaItens.length > 0 && !operacaoTroca && branch && (
               <p className="text-[10px] text-rose-600 text-center">Empresa {branch} sem operação de TROCA configurada.</p>
             )}
@@ -2209,6 +2255,21 @@ const PDVCrosby = () => {
 
       </div>
       </div>
+
+        {/* Caixa fechado: abrir o caixa antes de vender */}
+        {pedirCaixa && (
+          <CaixaFechadoModal
+            branch={branch}
+            sit={caixaSit}
+            temItens={items.length > 0}
+            onCancelar={() => setPedirCaixa(false)}
+            onAberto={async (c) => {
+              setPedirCaixa(false);
+              await carregarCaixa();
+              showToast('ok', `Caixa #${c?.id || ''} aberto — pode finalizar a venda`);
+            }}
+          />
+        )}
 
         {/* Senha de owner/admin para desconto acima do limite */}
         {senhaDesconto && (
