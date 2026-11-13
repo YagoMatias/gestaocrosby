@@ -1175,14 +1175,10 @@ const minhaFranquiaItem = {
   ],
 };
 
-// HEADCOACH: dados do próprio HeadCoach, sem o TOTVS (etapa a etapa da saída do TOTVS)
+// HEADCOACH: dados do próprio HeadCoach, sem o TOTVS (etapa a etapa da saída do TOTVS).
+// Ordem pedida pelo Yago em 13/11/2026: Caixa, Transações, Financeiro, Expedição, Varejo.
+// Expedição e Varejo repetem aqui os links das seções de mesmo nome.
 const headcoach = [
-  {
-    name: 'Transações',
-    href: '/headcoach/transacoes',
-    icon: ListMagnifyingGlass,
-    color: 'text-indigo-600',
-  },
   {
     name: 'Caixa',
     href: '#',
@@ -1195,16 +1191,51 @@ const headcoach = [
     ],
   },
   {
-    name: 'Contas a Receber',
-    href: '/headcoach/contas-receber',
-    icon: HandCoins,
+    name: 'Transações',
+    href: '/headcoach/transacoes',
+    icon: ListMagnifyingGlass,
     color: 'text-indigo-600',
   },
   {
-    name: 'Saldos de Clientes',
-    href: '/headcoach/saldos-clientes',
-    icon: Wallet,
+    name: 'Financeiro',
+    href: '#',
+    icon: Money,
     color: 'text-indigo-600',
+    children: [
+      { name: 'Contas a Receber HeadCoach', href: '/headcoach/contas-receber', icon: HandCoins, color: 'text-indigo-600' },
+      { name: 'Saldo Cliente', href: '/headcoach/saldos-clientes', icon: Wallet, color: 'text-indigo-600' },
+    ],
+  },
+  {
+    name: 'Expedição',
+    href: '#',
+    icon: Truck,
+    color: 'text-indigo-600',
+    children: [
+      { name: 'Pedido de Venda', href: '/expedicao/pedidos-venda', icon: ShoppingBag, color: 'text-sky-600' },
+      { name: 'Faturamento', href: '/expedicao/faturamento', icon: Receipt, color: 'text-emerald-600' },
+      { name: 'Transferências', href: '/transferencias-mercadoria', icon: ArrowsLeftRight, color: 'text-sky-600' },
+      {
+        name: 'Expedição Brejinho',
+        href: '#',
+        icon: Storefront,
+        color: 'text-amber-600',
+        children: [
+          { name: 'Pedidos', href: '/expedicao/brejinho/pedidos', icon: ShoppingBag, color: 'text-amber-600' },
+          { name: 'Faturamento', href: '/expedicao/brejinho/faturamento', icon: Receipt, color: 'text-amber-600' },
+        ],
+      },
+    ],
+  },
+  {
+    name: 'Varejo',
+    href: '#',
+    icon: Storefront,
+    color: 'text-indigo-600',
+    children: [
+      { name: 'PDV Crosby', href: '/tecnologia/pdv-crosby', icon: Storefront, color: 'text-emerald-600' },
+      { name: 'Recebimento de Mercadoria', href: '/varejo/recebimento-mercadoria', icon: Package, color: 'text-emerald-600' },
+    ],
   },
 ];
 
