@@ -7,10 +7,11 @@
 // API: /api/hc/saldos-clientes (exige login) — services/hcSaldosClientes.js
 // ============================================================================
 import React, { useCallback, useEffect, useState } from 'react';
-import { Wallet, MagnifyingGlass, Spinner, X, ArrowsClockwise } from '@phosphor-icons/react';
+import { Wallet, MagnifyingGlass, Spinner, X, ArrowsClockwise, Plus, CheckCircle } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import { useAuth } from '../components/AuthContext';
 import { apiJson } from '../utils/apiAuth';
+import { ClientePicker } from './DevolucaoRFID';
 
 const API = '/api/hc/saldos-clientes';
 const fmtBRL = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -24,7 +25,7 @@ const MOVIMENTOS = {
   devolucao_cancelada: { label: 'Devolução cancelada', cls: 'text-rose-700' },
   uso: { label: 'Usado no faturamento', cls: 'text-rose-700' },
   estorno: { label: 'Estorno (voltou)', cls: 'text-emerald-700' },
-  ajuste: { label: 'Ajuste', cls: 'text-gray-700' },
+  ajuste: { label: 'Gerado manualmente', cls: 'text-indigo-700' },
 };
 
 function Card({ rotulo, valor, cls = 'text-[#000638]' }) {
@@ -44,6 +45,8 @@ export default function HcSaldosClientes() {
   const [aviso, setAviso] = useState('');
   const [carregando, setCarregando] = useState(false);
   const [aberto, setAberto] = useState(null); // { clienteCode, empresa, nome }
+  const [gerando, setGerando] = useState(false);
+  const podeGerar = ['owner', 'admin'].includes(user?.role);
 
   const buscar = useCallback(async (filtros) => {
     setCarregando(true);
@@ -81,6 +84,13 @@ export default function HcSaldosClientes() {
     <div className="flex-1 overflow-y-auto bg-gray-100 p-3 lg:p-4">
       <div className="mx-auto max-w-6xl">
         <PageTitle title="Saldos de Clientes" subtitle="CREDEV e adiantamento do HeadCoach — usados no Faturamento e no Brejinho; devolução atendida soma ao CREDEV" icon={Wallet} />
+        {podeGerar && (
+          <div className="mb-3 flex justify-end">
+            <button onClick={() => setGerando(true)} className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-emerald-600 px-4 text-sm font-bold text-white hover:bg-emerald-700">
+              <Plus size={15} weight="bold" /> GERAR CRÉDITO
+            </button>
+          </div>
+        )}
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -162,6 +172,123 @@ export default function HcSaldosClientes() {
           </>
         )}
         {aberto && <Extrato cliente={aberto} onFechar={() => setAberto(null)} />}
+        {gerando && (
+          <GerarCredito
+            empresaPadrao={f.empresa || '99'}
+            onFechar={() => setGerando(false)}
+            onGerado={(msg) => {
+              setGerando(false);
+              setAviso(msg);
+              buscar(f);
+            }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Gerar CREDEV ou adiantamento para um cliente numa empresa (só owner/admin, com senha e motivo)
+function GerarCredito({ empresaPadrao, onFechar, onGerado }) {
+  const [cliente, setCliente] = useState(null);
+  const [empresa, setEmpresa] = useState(String(empresaPadrao || '99'));
+  const [tipo, setTipo] = useState('credev');
+  const [valor, setValor] = useState('');
+  const [motivo, setMotivo] = useState('');
+  const [senha, setSenha] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState('');
+  const [atual, setAtual] = useState(null);
+  const num = (v) => {
+    const t = String(v || '').trim();
+    return Number(t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t) || 0;
+  };
+  // saldo atual do cliente na empresa escolhida
+  useEffect(() => {
+    setAtual(null);
+    if (!cliente?.code || !(Number(empresa) > 0)) return undefined;
+    let vivo = true;
+    apiJson(`${API}/cliente/${cliente.code}?empresa=${empresa}`)
+      .then((j) => vivo && setAtual(j.data.saldo))
+      .catch(() => vivo && setAtual(null));
+    return () => {
+      vivo = false;
+    };
+  }, [cliente?.code, empresa]);
+  const pronto = cliente?.code && Number(empresa) > 0 && num(valor) > 0 && motivo.trim().length >= 5 && senha;
+  const gerar = async () => {
+    setBusy(true);
+    setErro('');
+    try {
+      const j = await apiJson(`${API}/gerar`, {
+        method: 'POST',
+        body: { empresa: Number(empresa), clienteCode: cliente.code, clienteNome: cliente.name, tipo, valor: String(valor), motivo: motivo.trim(), senha },
+      });
+      onGerado(j.message);
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/40 p-4">
+      <div className="my-10 w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+        <div className="mb-3 flex items-start gap-2">
+          <div className="flex-1">
+            <h3 className="text-lg font-bold text-[#000638]">Gerar CREDEV ou adiantamento</h3>
+            <p className="text-xs text-gray-500">Só owner ou admin. Fica no extrato do cliente com quem gerou e o motivo.</p>
+          </div>
+          <button onClick={onFechar} disabled={busy} className="rounded-lg p-1 text-gray-500 hover:bg-gray-100">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <ClientePicker value={cliente} onSelect={setCliente} />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className={labelCls}>Empresa</label>
+              <input value={empresa} onChange={(e) => setEmpresa(e.target.value.replace(/\D/g, ''))} inputMode="numeric" className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Tipo</label>
+              <select value={tipo} onChange={(e) => setTipo(e.target.value)} className={inputCls}>
+                <option value="credev">Credev</option>
+                <option value="adiantamento">Adiantamento</option>
+              </select>
+            </div>
+          </div>
+          {cliente && atual && (
+            <p className="rounded-lg bg-gray-50 px-2.5 py-1.5 text-xs text-gray-600 ring-1 ring-gray-200">
+              Saldo atual na empresa {empresa}: Credev <b>{fmtBRL(atual.credev)}</b> · Adiantamento <b>{fmtBRL(atual.adiantamento)}</b>
+            </p>
+          )}
+          <div>
+            <label className={labelCls}>Valor</label>
+            <input
+              value={valor}
+              onChange={(e) => setValor(e.target.value)}
+              inputMode="decimal"
+              placeholder="0,00"
+              className="mb-0 h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-lg font-bold tabular-nums text-[#000638] focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
+            />
+          </div>
+          <div>
+            <label className={labelCls}>Motivo</label>
+            <input value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="ex.: acordo comercial, devolução fora do sistema" className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Sua senha do HeadCoach</label>
+            <input type="password" autoComplete="off" value={senha} onChange={(e) => setSenha(e.target.value)} className={inputCls} />
+          </div>
+          {erro && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 ring-1 ring-rose-200">{erro}</p>}
+          <button onClick={gerar} disabled={busy || !pronto} className="inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-lg bg-emerald-600 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-40">
+            {busy ? <Spinner size={16} className="animate-spin" /> : <CheckCircle size={16} weight="bold" />} GERAR {tipo === 'credev' ? 'CREDEV' : 'ADIANTAMENTO'}
+            {num(valor) > 0 ? ` DE ${fmtBRL(num(valor))}` : ''}
+          </button>
+        </div>
       </div>
     </div>
   );
