@@ -241,6 +241,16 @@ function parcelasIguais(total, n) {
   return Array.from({ length: q }, (_, i) => (i === q - 1 ? round2(total - p * (q - 1)) : p));
 }
 
+// mesmo dia, n meses depois (13/12 → 13/01, 13/02…); dia que não existe no mês
+// vira o último dia dele (31/01 + 1 mês = 28 ou 29/02)
+function vencimentoMaisMeses(iso, n) {
+  const [a, m, d] = String(iso).split('-').map(Number);
+  const alvo = new Date(Date.UTC(a, m - 1 + n, 1));
+  const ultimo = new Date(Date.UTC(alvo.getUTCFullYear(), alvo.getUTCMonth() + 1, 0)).getUTCDate();
+  alvo.setUTCDate(Math.min(d, ultimo));
+  return alvo.toISOString().slice(0, 10);
+}
+
 // Unidades (uma por peça) de uma lista de itens do Dryland
 function unidadesDe(lista) {
   const unidades = [];
@@ -2601,6 +2611,19 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   const somaPag = round2(pagamentos.reduce((s, p) => s + Number(p.valor || 0), 0));
   const pBoleto = pagamentos.find((p) => p.forma === 'boleto');
   const parcelasBoleto = pBoleto ? parcelasIguais(Number(pBoleto.valor || 0), pBoleto.parcelas) : [];
+  // mudou o número de parcelas com a 1ª data já posta: as novas (vazias) vão
+  // para o mesmo dia dos meses seguintes
+  const qtdParcelasBoleto = parcelasBoleto.length;
+  const primeiroVencimento = vencimentos[0] || '';
+  useEffect(() => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(primeiroVencimento) || qtdParcelasBoleto < 2) return;
+    setVencimentos((vs) => {
+      if (vs.slice(1, qtdParcelasBoleto).every(Boolean) && vs.length >= qtdParcelasBoleto) return vs;
+      const n = [...vs];
+      for (let i = 1; i < qtdParcelasBoleto; i += 1) if (!n[i]) n[i] = vencimentoMaisMeses(primeiroVencimento, i);
+      return n;
+    });
+  }, [qtdParcelasBoleto, primeiroVencimento]);
   const setPag = (i, patch) => setPagamentos((ps) => ps.map((p, k) => (k === i ? { ...p, ...patch } : p)));
   // Peça em falta com o cliente ficando com o crédito: a peça já fica fora da nota
   // (só o conferido entra); o valor dela vira crédito de adiantamento
@@ -3722,6 +3745,10 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                                     setVencimentos((vs) => {
                                       const n = [...vs];
                                       n[k] = e.target.value;
+                                      // 1ª parcela: as próximas vão sozinhas para o mesmo dia dos meses seguintes
+                                      if (k === 0 && /^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) {
+                                        for (let i = 1; i < parcelasBoleto.length; i += 1) n[i] = vencimentoMaisMeses(e.target.value, i);
+                                      }
                                       return n;
                                     })
                                   }

@@ -3,6 +3,7 @@ import { useAuth } from '../components/AuthContext';
 import { usePermissions } from '../hooks/usePermissions';
 import { getSetoresComMembros } from '../services/setoresService';
 import { USER_ROLE_LABELS } from '../config/constants';
+import { MODELOS_ACESSO, modelosDosSetores } from '../config/modelosAcesso';
 import {
   Card,
   CardContent,
@@ -530,6 +531,7 @@ const AVAILABLE_PAGES = [
   { path: '/headcoach/caixa/fechamento', name: 'Caixa — Fechamento e encerramento', category: 'HeadCoach' },
   { path: '/headcoach/contas-receber', name: 'Contas a Receber (HeadCoach)', category: 'HeadCoach' },
   { path: '/headcoach/saldos-clientes', name: 'Saldos de Clientes — CREDEV e adiantamento (HeadCoach)', category: 'HeadCoach' },
+  { path: '/headcoach/estoque', name: 'Estoque da loja (HeadCoach)', category: 'HeadCoach' },
 
   // ─── Expedição ──────────────────────────────────────────────
   {
@@ -928,6 +930,17 @@ const GerenciadorAcessos = () => {
   const handleDeselectAllPages = () => {
     setSelectedPages([]);
   };
+
+  // Modelo por perfil/setor: marca as páginas do modelo (soma ao que já está
+  // marcado, não tira nada). Só grava ao clicar em Salvar Permissões.
+  const aplicarModelo = (modelo) => {
+    const validas = new Set(AVAILABLE_PAGES.map((p) => p.path));
+    setSelectedPages((prev) => [...new Set([...prev, ...modelo.paginas.filter((x) => validas.has(x))])]);
+  };
+  const modelosSugeridos = useMemo(() => {
+    const nomes = selectedUsers.flatMap((id) => setoresPorUsuario[id] || []);
+    return new Set(modelosDosSetores(nomes).map((m) => m.id));
+  }, [selectedUsers, setoresPorUsuario]);
 
   // Bloco de uma categoria no seletor de páginas. Categoria-pai (Comercial)
   // mostra as próprias páginas e, dentro, as subcategorias.
@@ -1426,6 +1439,30 @@ const GerenciadorAcessos = () => {
                   >
                     ✗ Desmarcar Todas
                   </button>
+                </div>
+              )}
+
+              {/* Modelos por perfil/setor: páginas já configuradas */}
+              {selectedUsers.length > 0 && (
+                <div className="mb-3 rounded-lg border border-indigo-100 bg-indigo-50/60 p-2">
+                  <p className="mb-1.5 text-[11px] font-semibold text-indigo-900">
+                    Modelo por perfil <span className="font-normal text-indigo-700">— marca as páginas do perfil (soma ao que já está marcado); depois clique em Salvar</span>
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {MODELOS_ACESSO.map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => aplicarModelo(m)}
+                        title={m.paginas.map((x) => AVAILABLE_PAGES.find((pg) => pg.path === x)?.name || x).join(' · ')}
+                        className={`rounded-lg px-2.5 py-1 text-xs font-bold ring-1 transition-colors ${
+                          modelosSugeridos.has(m.id) ? 'bg-indigo-600 text-white ring-indigo-600 hover:bg-indigo-700' : 'bg-white text-indigo-700 ring-indigo-200 hover:bg-indigo-100'
+                        }`}
+                      >
+                        {m.nome} ({m.paginas.length}){modelosSugeridos.has(m.id) ? ' · setor do usuário' : ''}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
 

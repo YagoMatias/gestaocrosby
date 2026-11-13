@@ -18,6 +18,7 @@ import {
   Key,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
+import { apiFetch, apiJson } from '../utils/apiAuth';
 import { API_BASE_URL } from '../config/constants';
 import { useAuth } from '../components/AuthContext';
 
@@ -84,10 +85,14 @@ export default function BalancoRfidArquivos() {
   const [erroLiberar, setErroLiberar] = useState(null);
   const [baixando, setBaixando] = useState(null);
 
+  // só as lojas que a pessoa pode ver (vendedor: a própria; owner/admin: todas)
   useEffect(() => {
-    fetch(`${API_BASE_URL}/api/totvs/branches`)
-      .then((r) => r.json())
-      .then((j) => setLojas((j?.data?.data || []).filter((b) => b.cd_empresa)))
+    apiJson('/api/hc/caixa/empresas')
+      .then((j) => {
+        const lista = (j?.data?.empresas || []).map((e) => ({ cd_empresa: e.code, nm_grupoempresa: e.nome }));
+        setLojas(lista);
+        if (lista.length === 1) setEmpresa(String(lista[0].cd_empresa));
+      })
       .catch(() => {});
   }, []);
 
@@ -98,7 +103,7 @@ export default function BalancoRfidArquivos() {
       const qs = new URLSearchParams({ de, ate });
       if (empresa) qs.set('empresa', empresa);
       if (busca.trim()) qs.set('busca', busca.trim());
-      const r = await fetch(`${API_BASE_URL}/api/balanco-rfid?${qs}`);
+      const r = await apiFetch(`${API_BASE_URL}/api/balanco-rfid?${qs}`);
       const j = await r.json();
       if (!r.ok || !j.success) {
         if (j?.error === 'MIGRATION_PENDING') {
@@ -129,7 +134,7 @@ export default function BalancoRfidArquivos() {
     setAba('produtos');
     setFiltroEpc('');
     try {
-      const r = await fetch(`${API_BASE_URL}/api/balanco-rfid/${a.id}`);
+      const r = await apiFetch(`${API_BASE_URL}/api/balanco-rfid/${a.id}`);
       const j = await r.json();
       if (!r.ok || !j.success) throw new Error(j?.message || 'Falha ao abrir');
       setAberto(j.data);
@@ -146,7 +151,7 @@ export default function BalancoRfidArquivos() {
     if (!aberto) return;
     setGerando(true);
     try {
-      const r = await fetch(`${API_BASE_URL}/api/balanco-rfid/${aberto.id}/resumo${forcar ? '?forcar=1' : ''}`, { method: 'POST' });
+      const r = await apiFetch(`${API_BASE_URL}/api/balanco-rfid/${aberto.id}/resumo${forcar ? '?forcar=1' : ''}`, { method: 'POST' });
       const j = await r.json();
       if (!r.ok || !j.success) throw new Error(j?.message || 'Falha no resumo');
       setProdutos(j.data.itens || []);
@@ -177,8 +182,10 @@ export default function BalancoRfidArquivos() {
     setBaixando(`${a.id}-${tipo}`);
     try {
       const qs = new URLSearchParams({ tipo, por: user?.email || user?.name || '' });
-      const r = await fetch(`${API_BASE_URL}/api/balanco-rfid/${a.id}/csv?${qs}`);
+      const r = await apiFetch(`${API_BASE_URL}/api/balanco-rfid/${a.id}/csv?${qs}`);
       if (r.status === 403) {
+        const j403 = await r.clone().json().catch(() => ({}));
+        if (j403?.error && j403.error !== 'DOWNLOAD_EXPIRADO') throw new Error(j403.message || 'Sem acesso a este balanço');
         setLiberar({ arquivo: { ...a, download_liberado: false }, tipo });
         setErroLiberar(null);
         return;
@@ -201,10 +208,9 @@ export default function BalancoRfidArquivos() {
     setLiberando(true);
     setErroLiberar(null);
     try {
-      const r = await fetch(`${API_BASE_URL}/api/balanco-rfid/${liberar.arquivo.id}/csv-autorizado`, {
+      const r = await apiFetch(`${API_BASE_URL}/api/balanco-rfid/${liberar.arquivo.id}/csv-autorizado`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: credEmail, senha: credSenha, tipo: liberar.tipo, por: user?.email || user?.name || null }),
+        body: { email: credEmail, senha: credSenha, tipo: liberar.tipo, por: user?.email || user?.name || null },
       });
       if (!r.ok) {
         const j = await r.json().catch(() => ({}));
@@ -249,7 +255,7 @@ export default function BalancoRfidArquivos() {
           <div>
             <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Loja</label>
             <select value={empresa} onChange={(e) => setEmpresa(e.target.value)} className={`${inputCls} w-auto max-w-[260px]`}>
-              <option value="">Todas</option>
+              {lojas.length !== 1 && <option value="">Todas</option>}
               {lojas.map((l) => (
                 <option key={l.cd_empresa} value={l.cd_empresa}>
                   {l.cd_empresa} — {l.nm_grupoempresa}

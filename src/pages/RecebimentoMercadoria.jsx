@@ -550,7 +550,8 @@ function DetalheRecebido({ id, onFechar }) {
 }
 
 // ─── ESTOQUE ─────────────────────────────────────────────────────────────────
-function Estoque({ empresa }) {
+// também usado na página HeadCoach › Estoque (HcEstoque.jsx)
+export function Estoque({ empresa }) {
   const [busca, setBusca] = useState('');
   const [d, setD] = useState(null);
   const [erro, setErro] = useState('');

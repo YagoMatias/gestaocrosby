@@ -601,12 +601,6 @@ const varejo = [
     color: 'text-teal-600',
   },
   {
-    name: 'Recebimento de Mercadoria',
-    href: '/varejo/recebimento-mercadoria',
-    icon: Package,
-    color: 'text-emerald-600',
-  },
-  {
     name: 'Forecast Varejo',
     href: '/forecast-canal/varejo',
     icon: Trophy,
@@ -1008,13 +1002,6 @@ const tecnologiaItems = [
     color: 'text-slate-600',
   },
   {
-    // arquivos de contagem do app Android (coletor Urovo + pistola RFID)
-    name: 'Balanço RFID',
-    href: '/balanco-rfid/arquivos',
-    icon: Broadcast,
-    color: 'text-indigo-600',
-  },
-  {
     // APK do app Balanço RFID: sempre a última versão publicada por
     // `npm run release` no balanco-rfid-app (bucket pdv-updates/balanco-rfid)
     name: 'Baixar Balanço RFID (Android)',
@@ -1234,7 +1221,18 @@ const headcoach = [
     color: 'text-indigo-600',
     children: [
       { name: 'PDV Crosby', href: '/tecnologia/pdv-crosby', icon: Storefront, color: 'text-emerald-600' },
-      { name: 'Recebimento de Mercadoria', href: '/varejo/recebimento-mercadoria', icon: Package, color: 'text-emerald-600' },
+    ],
+  },
+  {
+    // cada pessoa só vê as lojas dela (vendedor: a própria; owner/admin: todas)
+    name: 'Estoque',
+    href: '#',
+    icon: Package,
+    color: 'text-indigo-600',
+    children: [
+      { name: 'Recebimento de Transferência', href: '/varejo/recebimento-mercadoria', icon: Truck, color: 'text-emerald-600' },
+      { name: 'Balanço RFID', href: '/balanco-rfid/arquivos', icon: Broadcast, color: 'text-indigo-600' },
+      { name: 'Estoque', href: '/headcoach/estoque', icon: Package, color: 'text-indigo-600' },
     ],
   },
 ];
