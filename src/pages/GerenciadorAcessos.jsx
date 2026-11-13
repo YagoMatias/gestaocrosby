@@ -532,6 +532,7 @@ const AVAILABLE_PAGES = [
   { path: '/headcoach/contas-receber', name: 'Contas a Receber (HeadCoach)', category: 'HeadCoach' },
   { path: '/headcoach/saldos-clientes', name: 'Saldos de Clientes — CREDEV e adiantamento (HeadCoach)', category: 'HeadCoach' },
   { path: '/headcoach/estoque', name: 'Estoque da loja (HeadCoach)', category: 'HeadCoach' },
+  { path: '/headcoach/estoque-dryland', name: 'Estoque Dryland (saldo oficial, só consulta)', category: 'HeadCoach' },
 
   // ─── Expedição ──────────────────────────────────────────────
   {

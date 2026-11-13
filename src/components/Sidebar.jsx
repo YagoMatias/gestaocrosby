@@ -1233,6 +1233,8 @@ const headcoach = [
       { name: 'Recebimento de Transferência', href: '/varejo/recebimento-mercadoria', icon: Truck, color: 'text-emerald-600' },
       { name: 'Balanço RFID', href: '/balanco-rfid/arquivos', icon: Broadcast, color: 'text-indigo-600' },
       { name: 'Estoque', href: '/headcoach/estoque', icon: Package, color: 'text-indigo-600' },
+      // estoque oficial do Dryland (porta estq_gw do Estoquista) — só consulta
+      { name: 'Estoque Dryland', href: '/headcoach/estoque-dryland', icon: Package, color: 'text-violet-600' },
     ],
   },
 ];
