@@ -860,7 +860,10 @@ const soHeadcoach = (venda) => !!venda?.pedido_info?.somenteHeadcoach;
 function situacaoFat(nota, venda, cr) {
   if (venda?.status === 'cancelada' || nota?.status === 'cancelada') return 'cancelado';
   if (nota?.status !== 'autorizada') return 'nf';
-  if (soHeadcoach(venda)) return cr?.qtd > 0 ? 'ok' : 'totvs';
+  // contas a receber gerado no HeadCoach = transação resolvida (inclusive as
+  // faturadas até 13/11 cuja transação antiga no TOTVS ficou em andamento)
+  if (cr?.qtd > 0) return 'ok';
+  if (soHeadcoach(venda)) return 'totvs';
   if (venda?.totvs_status !== 4) return 'totvs';
   return 'ok';
 }
@@ -974,7 +977,7 @@ function DetalheTransacao({ id, onReprocessar, reprocessando }) {
   const nota = v?.notas?.find((n) => n.status === 'autorizada') || v?.notas?.[0];
   const empTotvs = empresaTotvsDe(v);
   const sit = situacaoFat(nota, v, d.cr);
-  const hc = soHeadcoach(v);
+  const hc = soHeadcoach(v) || d.cr?.qtd > 0;
   // nota cancelada com a transação do TOTVS ainda de pé: o pedido continua travado
   const totvsAberta = sit === 'cancelado' && !!v?.totvs_transacao_code && v?.totvs_status !== 6;
   const podeTentar = nota?.status !== 'cancelada' && v?.status !== 'cancelada' && (nota?.status !== 'autorizada' || (hc ? !(d.cr?.qtd > 0) : v?.totvs_status !== 4));
@@ -1576,7 +1579,7 @@ function AbaTransacoes() {
                         )}
                       </span>
                       <span>
-                        {soHeadcoach(v) ? (
+                        {soHeadcoach(v) || f.cr?.qtd > 0 ? (
                           f.cr?.qtd > 0 ? (
                             <Chip cls="bg-emerald-50 text-emerald-700 ring-emerald-200">
                               <CheckCircle size={11} weight="fill" /> nº {v.id} · {f.cr.qtd} tít.
