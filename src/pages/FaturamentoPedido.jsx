@@ -104,10 +104,10 @@ const qtdDaInclusao = (txt) => {
 };
 const ROLES_LIBERAM_DESCONTO = ['owner', 'admin', 'user'];
 // Troca de peça na conferência (a que falta sai, a que sobra entra pelo MESMO
-// valor do pedido): liberada até 13/11/2026 (era 10/11, depois 11/11; em 12/11 o
-// Yago pediu mais 2 dias) — pedidos cuja separação se perdeu nas 72 h do Dryland
+// valor do pedido): liberada até 16/11/2026 (era 10/11, depois 11/11 e 13/11; em
+// 14/11 o Yago pediu até 16/11) — pedidos cuja separação se perdeu nas 72 h do Dryland
 // e tiveram peça trocada. O servidor também confere a data.
-const TROCA_LIBERADA_ATE = '2026-11-13';
+const TROCA_LIBERADA_ATE = '2026-11-16';
 // Formas que consomem saldo do cliente (CREDEV/adiantamento do HeadCoach) → campo do saldo.
 // Vale SÓ o saldo da empresa 99 (Yago, 10/11/2026): saldo de outra empresa não
 // aparece nem pode ser usado.
