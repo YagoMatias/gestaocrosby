@@ -104,6 +104,19 @@ const SolicitacaoBaixa = () => {
   // "Pagamento real" do TOTVS: data da baixa. Vazio = data de pagamento de cada solicitação.
   const [dataPagamentoReal, setDataPagamentoReal] = useState('');
 
+  // Localizar/escolher título manualmente (João, 16/11/2026): para as linhas que
+  // não casaram no match automático (fatura 0 / "a conferir") — escolher o título
+  // certo no TOTVS, ajustar o cliente (pessoa errada) e somar vários títulos quando
+  // o pagamento cobre mais de um.
+  const [modalLocalizar, setModalLocalizar] = useState(null);
+  const [locCod, setLocCod] = useState('');
+  const [locNome, setLocNome] = useState('');
+  const [locPessoas, setLocPessoas] = useState([]);
+  const [locTitulos, setLocTitulos] = useState([]);
+  const [locSel, setLocSel] = useState({});
+  const [locLoading, setLocLoading] = useState(false);
+  const [locBuscandoPessoa, setLocBuscandoPessoa] = useState(false);
+
   const FORMAS_PAGAMENTO = [
     {
       id: 'confianca',
@@ -412,6 +425,213 @@ const SolicitacaoBaixa = () => {
         message: 'Erro ao reprocessar solicitação.',
       });
       setTimeout(() => setNotification(null), 3000);
+    }
+  };
+
+  // ── Localizar/escolher título manualmente (João, 16/11/2026) ──
+  // Para solicitações que não casaram no match automático (fatura 0 / "a conferir"):
+  // escolher o título certo no TOTVS, ajustar o cliente e somar vários títulos.
+  const tituloKey = (t) => `${t.branchCode}-${t.receivableCode}-${t.installmentCode}`;
+
+  const abrirLocalizar = (sol) => {
+    setModalLocalizar(sol);
+    setLocCod(sol.cd_cliente ? String(sol.cd_cliente) : '');
+    setLocNome('');
+    setLocPessoas([]);
+    setLocTitulos([]);
+    setLocSel({});
+    if (sol.cd_cliente) carregarTitulosCliente(String(sol.cd_cliente));
+  };
+
+  const carregarTitulosCliente = async (cod) => {
+    const code = parseInt(String(cod).replace(/\D/g, ''), 10);
+    if (!code) {
+      setNotification({ type: 'error', message: 'Informe o código do cliente (TOTVS).' });
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
+    setLocLoading(true);
+    try {
+      const resp = await fetch(`${TotvsURL}accounts-receivable/search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filter: { customerCodeList: [code], statusList: [1] },
+          page: 1,
+          pageSize: 100,
+          expand: 'invoice,calculateValue',
+        }),
+      });
+      const j = await resp.json();
+      const items = j.data?.items || j.items || [];
+      // só títulos EM ABERTO (sem pagamento/liquidação)
+      const abertos = items
+        .filter((t) => !t.paymentDate && !t.settlementDate)
+        .map((t) => ({
+          branchCode: t.branchCode,
+          receivableCode: Number(t.receivableCode),
+          installmentCode: Number(t.installmentCode ?? 1),
+          customerCode: t.customerCode,
+          customerName: t.customerName,
+          installmentValue: Number(t.installmentValue || 0),
+          expiredDate: (t.expiredDate || '').slice(0, 10),
+          issueDate: (t.issueDate || '').slice(0, 10),
+          bearerCode: t.bearerCode ?? null,
+          bearerName: t.bearerName ?? null,
+        }))
+        .sort((a, b) => String(a.expiredDate).localeCompare(String(b.expiredDate)));
+      setLocTitulos(abertos);
+      setLocSel({});
+      if (!abertos.length) {
+        setNotification({ type: 'error', message: `Cliente ${code} não tem título em aberto no TOTVS.` });
+        setTimeout(() => setNotification(null), 3500);
+      }
+    } catch (e) {
+      console.error('Erro ao buscar títulos do cliente:', e);
+      setNotification({ type: 'error', message: 'Erro ao buscar títulos do cliente no TOTVS.' });
+      setTimeout(() => setNotification(null), 3000);
+    } finally {
+      setLocLoading(false);
+    }
+  };
+
+  const buscarPessoaPorNome = async () => {
+    const nome = locNome.trim();
+    if (nome.length < 2) return;
+    setLocBuscandoPessoa(true);
+    try {
+      const [rPf, rPj] = await Promise.all([
+        fetch(`${TotvsURL}individual/search-by-name`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: nome }),
+        })
+          .then((r) => r.json())
+          .catch(() => ({})),
+        fetch(`${TotvsURL}legal-entity/search-by-name`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fantasyName: nome }),
+        })
+          .then((r) => r.json())
+          .catch(() => ({})),
+      ]);
+      const pf = (rPf.data?.items || rPf.items || []).map((p) => ({
+        code: p.code ?? p.id,
+        name: p.name || p.fantasyName || '',
+        doc: p.cpf || p.cpfNumber || '',
+      }));
+      const pj = (rPj.data?.items || rPj.items || []).map((p) => ({
+        code: p.code ?? p.id,
+        name: p.fantasyName || p.name || p.companyName || '',
+        doc: p.cnpj || p.cnpjNumber || '',
+      }));
+      const todos = [...pf, ...pj].filter((p) => p.code);
+      setLocPessoas(todos.slice(0, 40));
+      if (!todos.length) {
+        setNotification({ type: 'error', message: 'Nenhum cliente com esse nome.' });
+        setTimeout(() => setNotification(null), 3000);
+      }
+    } catch (e) {
+      console.error('Erro ao buscar pessoa:', e);
+    } finally {
+      setLocBuscandoPessoa(false);
+    }
+  };
+
+  const escolherPessoa = (p) => {
+    setLocCod(String(p.code));
+    setLocPessoas([]);
+    setLocNome('');
+    carregarTitulosCliente(String(p.code));
+  };
+
+  const toggleTitulo = (t) => {
+    const k = tituloKey(t);
+    setLocSel((prev) => {
+      const n = { ...prev };
+      if (n[k]) delete n[k];
+      else n[k] = t;
+      return n;
+    });
+  };
+
+  const aplicarLocalizacao = async () => {
+    const sol = modalLocalizar;
+    if (!sol) return;
+    const titulos = Object.values(locSel);
+    if (!titulos.length) {
+      setNotification({ type: 'error', message: 'Selecione pelo menos um título.' });
+      setTimeout(() => setNotification(null), 3000);
+      return;
+    }
+    const quem = user?.email || user?.nome || 'usuário';
+    const hoje = new Date().toLocaleDateString('sv-SE');
+    const codCli = parseInt(String(locCod).replace(/\D/g, ''), 10) || null;
+    const obsBase = (sol.observacao || '').replace(/\s*\[titulo-manual[^\]]*\]/g, '');
+    const t0 = titulos[0];
+    try {
+      // 1º título fica na própria solicitação
+      const { error: e1 } = await supabaseAdmin
+        .from('solicitacoes_baixa')
+        .update({
+          cd_empresa: t0.branchCode,
+          cd_cliente: t0.customerCode ?? codCli,
+          nm_cliente: t0.customerName || sol.nm_cliente,
+          nr_fat: t0.receivableCode,
+          nr_parcela: t0.installmentCode,
+          vl_fatura: t0.installmentValue,
+          dt_vencimento: t0.expiredDate || null,
+          dt_emissao: t0.issueDate || null,
+          cd_portador: t0.bearerCode,
+          nm_portador: t0.bearerName,
+          observacao: `${obsBase} [titulo-manual por ${quem} em ${hoje}: ${tituloKey(t0)}]`.trim(),
+        })
+        .eq('id', sol.id);
+      if (e1) throw e1;
+
+      // demais títulos (somar) viram novas solicitações do mesmo pagamento
+      for (let i = 1; i < titulos.length; i++) {
+        const t = titulos[i];
+        const { error: e2 } = await supabaseAdmin.from('solicitacoes_baixa').insert({
+          cd_empresa: t.branchCode,
+          cd_cliente: t.customerCode ?? codCli,
+          nm_cliente: t.customerName || sol.nm_cliente,
+          nr_fat: t.receivableCode,
+          nr_parcela: t.installmentCode,
+          vl_fatura: t.installmentValue,
+          vl_juros: 0,
+          dt_vencimento: t.expiredDate || null,
+          dt_emissao: t.issueDate || null,
+          cd_portador: t.bearerCode,
+          nm_portador: t.bearerName,
+          comprovante_url: sol.comprovante_url || '',
+          comprovante_path: sol.comprovante_path || '',
+          status: 'pendente',
+          user_id: sol.user_id ?? null,
+          user_nome: sol.user_nome,
+          user_email: sol.user_email,
+          observacao: `${obsBase} [titulo-manual por ${quem} em ${hoje}: ${tituloKey(t)} · somado ao pagamento da solicitação ${sol.id}]`.trim(),
+          dt_pagamento: sol.dt_pagamento,
+          forma_pagamento: sol.forma_pagamento,
+          dados_cartao: sol.dados_cartao ?? null,
+          origem: sol.origem,
+          ref_externa: `manual:${sol.id}:${tituloKey(t)}`,
+        });
+        if (e2) throw e2;
+      }
+
+      setModalLocalizar(null);
+      await carregarSolicitacoes();
+      setNotification({
+        type: 'success',
+        message: `Título${titulos.length > 1 ? 's' : ''} vinculado${titulos.length > 1 ? 's' : ''} (${titulos.length}). Agora é só aprovar e processar a baixa.`,
+      });
+      setTimeout(() => setNotification(null), 4000);
+    } catch (e) {
+      console.error('Erro ao aplicar localização:', e);
+      setNotification({ type: 'error', message: `Erro ao vincular título: ${e.message}` });
+      setTimeout(() => setNotification(null), 4000);
     }
   };
 
@@ -1405,6 +1625,19 @@ const SolicitacaoBaixa = () => {
                             <ArrowClockwise size={16} weight="bold" />
                           </button>
                         )}
+                        {(sol.status === 'pendente' || sol.status === 'aprovada') && (
+                          <button
+                            onClick={() => abrirLocalizar(sol)}
+                            className={`p-1 rounded transition-colors ${
+                              Number(sol.nr_fat) === 0
+                                ? 'text-sky-700 bg-sky-50 hover:bg-sky-100'
+                                : 'text-sky-600 hover:bg-sky-50'
+                            }`}
+                            title="Localizar/escolher título no TOTVS (ajustar pessoa, somar títulos)"
+                          >
+                            <MagnifyingGlassPlus size={15} weight="bold" />
+                          </button>
+                        )}
                         <button
                           onClick={() => excluirSolicitacao(sol)}
                           className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
@@ -2136,6 +2369,173 @@ const SolicitacaoBaixa = () => {
                   className="px-4 py-2 text-sm font-bold text-white bg-red-600 rounded-lg hover:bg-red-700"
                 >
                   Confirmar Rejeição
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Localizar/escolher título (João, 16/11/2026) */}
+      {modalLocalizar && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-5 py-3 border-b">
+              <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                <MagnifyingGlassPlus size={18} className="text-sky-600" />
+                Localizar título no TOTVS
+              </h3>
+              <button
+                onClick={() => setModalLocalizar(null)}
+                className="text-gray-400 hover:text-gray-700"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="text-xs text-gray-600 bg-gray-50 rounded-lg p-3">
+                <div>
+                  Pagamento: <b>{formatarMoeda(modalLocalizar.vl_fatura)}</b>
+                  {modalLocalizar.dt_pagamento ? ` · pago em ${modalLocalizar.dt_pagamento}` : ''}
+                </div>
+                <div className="text-gray-500 mt-0.5">
+                  Cliente informado: {modalLocalizar.nm_cliente || '—'}
+                  {modalLocalizar.cd_cliente ? ` (cód. ${modalLocalizar.cd_cliente})` : ''}
+                </div>
+              </div>
+
+              {/* Ajustar pessoa / código do cliente */}
+              <div>
+                <label className="text-[11px] font-bold text-gray-500 uppercase">
+                  Cliente (TOTVS)
+                </label>
+                <div className="flex gap-2 mt-1">
+                  <input
+                    type="text"
+                    value={locCod}
+                    onChange={(e) => setLocCod(e.target.value)}
+                    placeholder="Código do cliente"
+                    className="w-40 border rounded-lg px-3 py-1.5 text-sm"
+                  />
+                  <button
+                    onClick={() => carregarTitulosCliente(locCod)}
+                    disabled={locLoading}
+                    className="px-3 py-1.5 bg-sky-600 text-white rounded-lg text-sm font-bold hover:bg-sky-700 disabled:opacity-50"
+                  >
+                    {locLoading ? 'Buscando…' : 'Buscar títulos'}
+                  </button>
+                </div>
+                <div className="flex gap-2 mt-2">
+                  <input
+                    type="text"
+                    value={locNome}
+                    onChange={(e) => setLocNome(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && buscarPessoaPorNome()}
+                    placeholder="…ou buscar cliente por nome"
+                    className="flex-1 border rounded-lg px-3 py-1.5 text-sm"
+                  />
+                  <button
+                    onClick={buscarPessoaPorNome}
+                    disabled={locBuscandoPessoa}
+                    className="px-3 py-1.5 bg-gray-100 text-gray-700 rounded-lg text-sm font-bold hover:bg-gray-200 disabled:opacity-50"
+                  >
+                    {locBuscandoPessoa ? 'Buscando…' : 'Buscar nome'}
+                  </button>
+                </div>
+                {locPessoas.length > 0 && (
+                  <div className="mt-2 border rounded-lg divide-y max-h-40 overflow-y-auto">
+                    {locPessoas.map((p) => (
+                      <button
+                        key={p.code}
+                        onClick={() => escolherPessoa(p)}
+                        className="w-full text-left px-3 py-1.5 text-sm hover:bg-sky-50 flex justify-between gap-2"
+                      >
+                        <span className="truncate">{p.name}</span>
+                        <span className="text-gray-400 text-xs flex-shrink-0">
+                          cód. {p.code}
+                          {p.doc ? ` · ${p.doc}` : ''}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Lista de títulos abertos */}
+              <div>
+                <label className="text-[11px] font-bold text-gray-500 uppercase">
+                  Títulos em aberto — marque o(s) que esse pagamento quita
+                </label>
+                {locLoading ? (
+                  <div className="text-sm text-gray-400 py-4 text-center">Carregando títulos…</div>
+                ) : locTitulos.length === 0 ? (
+                  <div className="text-sm text-gray-400 py-4 text-center">
+                    Nenhum título em aberto. Informe o código/nome e busque.
+                  </div>
+                ) : (
+                  <div className="mt-1 border rounded-lg divide-y max-h-64 overflow-y-auto">
+                    {locTitulos.map((t) => {
+                      const k = tituloKey(t);
+                      const sel = !!locSel[k];
+                      return (
+                        <label
+                          key={k}
+                          className={`flex items-center gap-2 px-3 py-2 text-sm cursor-pointer ${sel ? 'bg-sky-50' : 'hover:bg-gray-50'}`}
+                        >
+                          <input type="checkbox" checked={sel} onChange={() => toggleTitulo(t)} />
+                          <span className="font-mono text-xs text-gray-500 w-32 flex-shrink-0">
+                            {t.branchCode}-{t.receivableCode}-{t.installmentCode}
+                          </span>
+                          <span className="font-bold w-24 flex-shrink-0">
+                            {formatarMoeda(t.installmentValue)}
+                          </span>
+                          <span className="text-xs text-gray-500 flex-shrink-0">
+                            venc {t.expiredDate ? t.expiredDate.split('-').reverse().join('/') : '—'}
+                          </span>
+                          <span className="text-[10px] text-gray-400 truncate">
+                            {t.bearerName || ''}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Rodapé: soma e aplicar */}
+            <div className="px-5 py-3 border-t flex items-center justify-between">
+              {(() => {
+                const soma = Object.values(locSel).reduce((a, t) => a + (t.installmentValue || 0), 0);
+                const pago = Number(modalLocalizar.vl_fatura) || 0;
+                const bate = Math.abs(soma - pago) < 0.01;
+                const n = Object.keys(locSel).length;
+                return (
+                  <div className="text-xs">
+                    <span className="text-gray-500">Selecionado: </span>
+                    <b>{formatarMoeda(soma)}</b>
+                    <span className="text-gray-400"> ({n} título{n === 1 ? '' : 's'})</span>
+                    {n > 0 && (
+                      <span className={`ml-2 font-bold ${bate ? 'text-green-600' : 'text-amber-600'}`}>
+                        {bate ? '= pagamento ✓' : `pagamento ${formatarMoeda(pago)} (difere)`}
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setModalLocalizar(null)}
+                  className="px-4 py-1.5 text-sm font-bold text-gray-600 hover:bg-gray-100 rounded-lg"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={aplicarLocalizacao}
+                  disabled={Object.keys(locSel).length === 0}
+                  className="px-4 py-1.5 text-sm font-bold text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:opacity-50"
+                >
+                  Vincular título
                 </button>
               </div>
             </div>
