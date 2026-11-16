@@ -2194,7 +2194,20 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
     [lancamentos],
   );
 
-  const exportar = () => {
+  const exportar = async () => {
+    // empresa onde a despesa/receita foi registrada + nome da despesa (Titia, 16/11/2026)
+    let extra = {};
+    const ids = [...new Set(lancamentos.map((l) => l.conciliacao?.id).filter(Boolean))];
+    if (ids.length) {
+      try {
+        const resp = await fetch(`${API}/conciliacao/empresa-despesa`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headersUsuario() }, body: JSON.stringify({ ids }) });
+        const j = await resp.json();
+        if (j?.success) extra = j.data || {};
+      } catch {
+        /* sem empresa/despesa: exporta o resto */
+      }
+    }
+    const despesaTxt = (x) => (x?.despesa ? (/^\d+$/.test(String(x.despesa)) ? `${x.despesa} ${nomeDespesa(x.despesa) || ''}`.trim() : x.despesa) : '');
     const rows = lancamentos.map((l) => ({
       Data: l.data,
       Hora: l.hora || '',
@@ -2209,6 +2222,12 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
       Saída: l.valor < 0 ? -l.valor : '',
       'Saldo após': l.saldo_apos ?? '',
       Memo: l.memo || '',
+      Situação: l.pendente ? 'Pendente' : 'Conciliado',
+      Conciliação: l.conciliacao ? origemCfg(l.conciliacao.origem).label : '',
+      Justificativa: l.conciliacao?.justificativa || '',
+      'Duplicata(s)': l.conciliacao ? duplicatasDaConciliacao(l.conciliacao).join(', ') : '',
+      'Empresa (registro)': (l.conciliacao?.id && extra[l.conciliacao.id]?.empresa) || l.conciliacao?.referencia?.empresa || '',
+      Despesa: (l.conciliacao?.id && despesaTxt(extra[l.conciliacao.id])) || '',
     }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Extrato');
@@ -3653,6 +3672,7 @@ const DetalheConciliacao = ({ detalhe, onClose, onAnexar, onRemoverAnexo }) => {
                     <Th>Origem</Th>
                     <Th>Fornecedor</Th>
                     <Th>Duplicata</Th>
+                    <Th>Despesa</Th>
                     <Th>Vencimento</Th>
                     <Th>Pagamento</Th>
                     <Th right>Valor dup.</Th>
@@ -3665,6 +3685,10 @@ const DetalheConciliacao = ({ detalhe, onClose, onAnexar, onRemoverAnexo }) => {
                       <td className="px-3 py-1.5"><Badge cfg={origemCfg(it.origem)}>{origemCfg(it.origem).label}</Badge></td>
                       <td className="px-3 py-1.5">{it.nome || '—'}{it.doc ? <span className="block text-[10px] text-gray-400">{fmtDoc(it.doc)}</span> : null}</td>
                       <td className="px-3 py-1.5 font-mono">{it.duplicata ? String(it.duplicata).replace('|', '/') : '—'}{it.techfin?.nsu ? <span className="block text-[9px] text-gray-400 break-all font-mono">{it.techfin.nsu}</span> : null}</td>
+                      <td className="px-3 py-1.5">
+                        {it.despesa ? (/^\d+$/.test(String(it.despesa)) ? `${it.despesa} ${nomeDespesa(it.despesa) || ''}`.trim() : it.despesa) : '—'}
+                        {it.empresaRegistro ? <span className="block text-[10px] text-gray-400">{it.empresaRegistro}</span> : null}
+                      </td>
                       <td className="px-3 py-1.5">{fmtData(it.vencimento)}</td>
                       <td className="px-3 py-1.5">{it.techfin?.pagamento ? <span>{String(it.techfin.pagamento).slice(0, 16).replace('T', ' ')}<span className="block text-[10px] text-gray-400">bruto {fmt(it.techfin.bruto)} − {fmt(it.techfin.taxa)}</span></span> : fmtData(it.data)}</td>
                       <td className="px-3 py-1.5 text-right">{fmt(it.valorDuplicata)}</td>
