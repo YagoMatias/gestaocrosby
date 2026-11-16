@@ -483,6 +483,9 @@ const SolicitacaoBaixa = () => {
             paidValue: pago,
             saldoAberto: Math.max(0, Math.round((valor - pago) * 100) / 100),
             settlementDate: t.settlementDate || null,
+            // valor corrigido pelo TOTVS (com juros/multa por atraso) — o invoices-payment
+            // espera esse valor na baixa cheia de um título vencido, não o nominal.
+            calc: t.calculatedValues || null,
             expiredDate: (t.expiredDate || '').slice(0, 10),
             issueDate: (t.issueDate || '').slice(0, 10),
             bearerCode: t.bearerCode ?? null,
@@ -938,12 +941,25 @@ const SolicitacaoBaixa = () => {
           message: `${successCount} baixa(s) processada(s) com sucesso!`,
         });
       } else {
+        // Traduz o erro mais comum do TOTVS: valor mandado != valor esperado na baixa
+        // (título tem juros/multa por atraso, ou saldo de uma baixa parcial anterior).
+        const traduzTotvs = (m) => {
+          const mm = /does not match the expected value of ([\d.]+)/i.exec(m || '');
+          if (mm) {
+            const v = parseFloat(mm[1]);
+            const fmt = Number.isFinite(v)
+              ? v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+              : `R$ ${mm[1]}`;
+            return `o TOTVS espera ${fmt} neste título (juros/multa por atraso ou saldo de baixa parcial). Ajuste o "baixar R$" para esse valor — ou menos, para baixa parcial — pelo botão de lupa.`;
+          }
+          return m;
+        };
         // Montar mensagem detalhada com erros traduzidos por fatura
         const detalhesErros = (result.errors || [])
           .map((err) => {
             const msgs =
               err.errorMessages && err.errorMessages.length > 0
-                ? err.errorMessages.join('; ')
+                ? err.errorMessages.map(traduzTotvs).join('; ')
                 : 'Erro desconhecido';
             return `Fatura ${err.receivableCode}: ${msgs}`;
           })
@@ -2524,13 +2540,22 @@ const SolicitacaoBaixa = () => {
                           <span className="font-mono text-xs text-gray-500 w-28 flex-shrink-0">
                             {t.branchCode}-{t.receivableCode}-{t.installmentCode}
                           </span>
-                          <span className="text-xs text-gray-600 w-28 flex-shrink-0">
+                          <span className="text-xs text-gray-600 w-32 flex-shrink-0">
                             saldo <b>{formatarMoeda(t.saldoAberto)}</b>
                             {t.paidValue > 0.01 && (
                               <span className="text-[9px] text-amber-600 block">
                                 (parcial · pago {formatarMoeda(t.paidValue)})
                               </span>
                             )}
+                            {t.calc &&
+                              Math.abs(
+                                (t.calc.correctedValue || 0) - t.installmentValue,
+                              ) > 0.01 && (
+                                <span className="text-[9px] text-rose-600 block">
+                                  c/ juros TOTVS {formatarMoeda(t.calc.correctedValue)}
+                                  {t.calc.daysLate ? ` (${t.calc.daysLate}d atraso)` : ''}
+                                </span>
+                              )}
                           </span>
                           <span className="text-xs text-gray-500 flex-shrink-0">
                             venc {t.expiredDate ? t.expiredDate.split('-').reverse().join('/') : '—'}
