@@ -116,6 +116,8 @@ const SolicitacaoBaixa = () => {
   const [locSel, setLocSel] = useState({});
   const [locLoading, setLocLoading] = useState(false);
   const [locBuscandoPessoa, setLocBuscandoPessoa] = useState(false);
+  // valor a baixar por título (permite baixa PARCIAL — João, 16/11/2026): default = saldo em aberto
+  const [locValor, setLocValor] = useState({});
 
   const FORMAS_PAGAMENTO = [
     {
@@ -440,6 +442,7 @@ const SolicitacaoBaixa = () => {
     setLocPessoas([]);
     setLocTitulos([]);
     setLocSel({});
+    setLocValor({});
     if (sol.cd_cliente) carregarTitulosCliente(String(sol.cd_cliente));
   };
 
@@ -464,24 +467,33 @@ const SolicitacaoBaixa = () => {
       });
       const j = await resp.json();
       const items = j.data?.items || j.items || [];
-      // só títulos EM ABERTO (sem pagamento/liquidação)
+      // Títulos com SALDO EM ABERTO (installmentValue - paidValue > 0). Inclui os
+      // parcialmente pagos (TOTVS mantém o saldo aberto) — não só os intocados.
       const abertos = items
-        .filter((t) => !t.paymentDate && !t.settlementDate)
-        .map((t) => ({
-          branchCode: t.branchCode,
-          receivableCode: Number(t.receivableCode),
-          installmentCode: Number(t.installmentCode ?? 1),
-          customerCode: t.customerCode,
-          customerName: t.customerName,
-          installmentValue: Number(t.installmentValue || 0),
-          expiredDate: (t.expiredDate || '').slice(0, 10),
-          issueDate: (t.issueDate || '').slice(0, 10),
-          bearerCode: t.bearerCode ?? null,
-          bearerName: t.bearerName ?? null,
-        }))
+        .map((t) => {
+          const valor = Number(t.installmentValue || 0);
+          const pago = Number(t.paidValue || 0);
+          return {
+            branchCode: t.branchCode,
+            receivableCode: Number(t.receivableCode),
+            installmentCode: Number(t.installmentCode ?? 1),
+            customerCode: t.customerCode,
+            customerName: t.customerName,
+            installmentValue: valor,
+            paidValue: pago,
+            saldoAberto: Math.max(0, Math.round((valor - pago) * 100) / 100),
+            settlementDate: t.settlementDate || null,
+            expiredDate: (t.expiredDate || '').slice(0, 10),
+            issueDate: (t.issueDate || '').slice(0, 10),
+            bearerCode: t.bearerCode ?? null,
+            bearerName: t.bearerName ?? null,
+          };
+        })
+        .filter((t) => !t.settlementDate && t.saldoAberto > 0.01)
         .sort((a, b) => String(a.expiredDate).localeCompare(String(b.expiredDate)));
       setLocTitulos(abertos);
       setLocSel({});
+      setLocValor({});
       if (!abertos.length) {
         setNotification({ type: 'error', message: `Cliente ${code} não tem título em aberto no TOTVS.` });
         setTimeout(() => setNotification(null), 3500);
@@ -548,12 +560,28 @@ const SolicitacaoBaixa = () => {
 
   const toggleTitulo = (t) => {
     const k = tituloKey(t);
+    const estaSel = !!locSel[k];
     setLocSel((prev) => {
       const n = { ...prev };
       if (n[k]) delete n[k];
       else n[k] = t;
       return n;
     });
+    setLocValor((prev) => {
+      const n = { ...prev };
+      if (estaSel) delete n[k];
+      else n[k] = String((t.saldoAberto ?? t.installmentValue ?? 0).toFixed(2));
+      return n;
+    });
+  };
+
+  const setValorTitulo = (k, v) => setLocValor((prev) => ({ ...prev, [k]: v }));
+
+  // valor (número) a baixar de um título: o digitado, senão o saldo em aberto
+  const valorBaixar = (t) => {
+    const raw = locValor[tituloKey(t)];
+    const v = parseFloat(String(raw ?? t.saldoAberto ?? t.installmentValue).replace(',', '.'));
+    return Number.isFinite(v) && v > 0 ? Math.round(v * 100) / 100 : 0;
   };
 
   const aplicarLocalizacao = async () => {
@@ -569,9 +597,14 @@ const SolicitacaoBaixa = () => {
     const hoje = new Date().toLocaleDateString('sv-SE');
     const codCli = parseInt(String(locCod).replace(/\D/g, ''), 10) || null;
     const obsBase = (sol.observacao || '').replace(/\s*\[titulo-manual[^\]]*\]/g, '');
+    const notaParcial = (t) => {
+      const v = valorBaixar(t);
+      const saldo = t.saldoAberto || t.installmentValue || 0;
+      return v + 0.01 < saldo ? ` · baixa PARCIAL R$ ${v.toFixed(2)} de R$ ${saldo.toFixed(2)}` : '';
+    };
     const t0 = titulos[0];
     try {
-      // 1º título fica na própria solicitação
+      // 1º título fica na própria solicitação (vl_fatura = valor a baixar; parcial se menor que o saldo)
       const { error: e1 } = await supabaseAdmin
         .from('solicitacoes_baixa')
         .update({
@@ -580,12 +613,12 @@ const SolicitacaoBaixa = () => {
           nm_cliente: t0.customerName || sol.nm_cliente,
           nr_fat: t0.receivableCode,
           nr_parcela: t0.installmentCode,
-          vl_fatura: t0.installmentValue,
+          vl_fatura: valorBaixar(t0),
           dt_vencimento: t0.expiredDate || null,
           dt_emissao: t0.issueDate || null,
           cd_portador: t0.bearerCode,
           nm_portador: t0.bearerName,
-          observacao: `${obsBase} [titulo-manual por ${quem} em ${hoje}: ${tituloKey(t0)}]`.trim(),
+          observacao: `${obsBase} [titulo-manual por ${quem} em ${hoje}: ${tituloKey(t0)}${notaParcial(t0)}]`.trim(),
         })
         .eq('id', sol.id);
       if (e1) throw e1;
@@ -599,7 +632,7 @@ const SolicitacaoBaixa = () => {
           nm_cliente: t.customerName || sol.nm_cliente,
           nr_fat: t.receivableCode,
           nr_parcela: t.installmentCode,
-          vl_fatura: t.installmentValue,
+          vl_fatura: valorBaixar(t),
           vl_juros: 0,
           dt_vencimento: t.expiredDate || null,
           dt_emissao: t.issueDate || null,
@@ -611,7 +644,7 @@ const SolicitacaoBaixa = () => {
           user_id: sol.user_id ?? null,
           user_nome: sol.user_nome,
           user_email: sol.user_email,
-          observacao: `${obsBase} [titulo-manual por ${quem} em ${hoje}: ${tituloKey(t)} · somado ao pagamento da solicitação ${sol.id}]`.trim(),
+          observacao: `${obsBase} [titulo-manual por ${quem} em ${hoje}: ${tituloKey(t)}${notaParcial(t)} · somado ao pagamento da solicitação ${sol.id}]`.trim(),
           dt_pagamento: sol.dt_pagamento,
           forma_pagamento: sol.forma_pagamento,
           dados_cartao: sol.dados_cartao ?? null,
@@ -2478,24 +2511,50 @@ const SolicitacaoBaixa = () => {
                       const k = tituloKey(t);
                       const sel = !!locSel[k];
                       return (
-                        <label
+                        <div
                           key={k}
-                          className={`flex items-center gap-2 px-3 py-2 text-sm cursor-pointer ${sel ? 'bg-sky-50' : 'hover:bg-gray-50'}`}
+                          className={`flex items-center gap-2 px-3 py-2 text-sm ${sel ? 'bg-sky-50' : 'hover:bg-gray-50'}`}
                         >
-                          <input type="checkbox" checked={sel} onChange={() => toggleTitulo(t)} />
-                          <span className="font-mono text-xs text-gray-500 w-32 flex-shrink-0">
+                          <input
+                            type="checkbox"
+                            checked={sel}
+                            onChange={() => toggleTitulo(t)}
+                            className="cursor-pointer"
+                          />
+                          <span className="font-mono text-xs text-gray-500 w-28 flex-shrink-0">
                             {t.branchCode}-{t.receivableCode}-{t.installmentCode}
                           </span>
-                          <span className="font-bold w-24 flex-shrink-0">
-                            {formatarMoeda(t.installmentValue)}
+                          <span className="text-xs text-gray-600 w-28 flex-shrink-0">
+                            saldo <b>{formatarMoeda(t.saldoAberto)}</b>
+                            {t.paidValue > 0.01 && (
+                              <span className="text-[9px] text-amber-600 block">
+                                (parcial · pago {formatarMoeda(t.paidValue)})
+                              </span>
+                            )}
                           </span>
                           <span className="text-xs text-gray-500 flex-shrink-0">
                             venc {t.expiredDate ? t.expiredDate.split('-').reverse().join('/') : '—'}
                           </span>
-                          <span className="text-[10px] text-gray-400 truncate">
-                            {t.bearerName || ''}
-                          </span>
-                        </label>
+                          {sel ? (
+                            <span className="ml-auto flex items-center gap-1 flex-shrink-0">
+                              <span className="text-[10px] text-gray-500">baixar R$</span>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                max={t.saldoAberto}
+                                value={locValor[k] ?? ''}
+                                onChange={(e) => setValorTitulo(k, e.target.value)}
+                                className="w-24 border rounded px-2 py-0.5 text-sm text-right"
+                                title="Valor a baixar deste título (pode ser parcial)"
+                              />
+                            </span>
+                          ) : (
+                            <span className="ml-auto text-[10px] text-gray-400 truncate max-w-[120px]">
+                              {t.bearerName || ''}
+                            </span>
+                          )}
+                        </div>
                       );
                     })}
                   </div>
@@ -2506,7 +2565,7 @@ const SolicitacaoBaixa = () => {
             {/* Rodapé: soma e aplicar */}
             <div className="px-5 py-3 border-t flex items-center justify-between">
               {(() => {
-                const soma = Object.values(locSel).reduce((a, t) => a + (t.installmentValue || 0), 0);
+                const soma = Object.values(locSel).reduce((a, t) => a + valorBaixar(t), 0);
                 const pago = Number(modalLocalizar.vl_fatura) || 0;
                 const bate = Math.abs(soma - pago) < 0.01;
                 const n = Object.keys(locSel).length;
