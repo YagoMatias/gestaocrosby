@@ -34,6 +34,7 @@ import {
   Sun,
   ChartBar,
   Warning,
+  Prohibit,
   Tag,
   Percent,
   Barcode,
@@ -61,6 +62,7 @@ import { useAuth } from '../components/AuthContext';
 import { fetchSefaz } from '../utils/fetchSefaz';
 import PagamentoModal from '../components/pdv/PagamentoModal';
 import ResultadoFiscalModal from '../components/pdv/ResultadoFiscalModal';
+import CancelarTransacaoModal from '../components/pdv/CancelarTransacaoModal';
 import VendasDoDiaModal from '../components/pdv/VendasDoDiaModal';
 import FiscalConfigModal from '../components/pdv/FiscalConfigModal';
 import CadastroClienteModal from '../components/pdv/CadastroClienteModal';
@@ -82,6 +84,36 @@ const PDV_VAREJO_CONFIG = {
   cashbackGerarPct: 20,
   cashbackFatorMinimo: 3,
 };
+
+// ─── Tabela de preço por empresa (Yago, 17/11/2026) ──────────────────────────
+// O Midway (95) vende pela tabela VAREJO SHOPPING do TOTVS (tipo de preço 16):
+// o varejo + 10%, sempre em valor inteiro, arredondado para cima (134 → 148,
+// 209 → 230). Produto sem preço nessa tabela usa a mesma conta sobre o varejo.
+const TABELA_SHOPPING = { priceCode: 16, nome: 'VAREJO SHOPPING', empresas: [95], acrescimoPct: 10 };
+const usaTabelaShopping = (branch) => TABELA_SHOPPING.empresas.includes(Number(branch));
+const priceCodesDa = (branch) =>
+  usaTabelaShopping(branch) ? `${TABELA_SHOPPING.priceCode},${PDV_VAREJO_CONFIG.priceCodes}` : PDV_VAREJO_CONFIG.priceCodes;
+// sem valor quebrado: sobe para o inteiro (147,40 → 148; 148,00 fica 148)
+const semQuebrado = (v) => (Number(v) > 0 ? Math.ceil(Number(v) - 0.005) : 0);
+// { price, promotionalPrice, tabela } do produto para a empresa (null = sem preço)
+function precoDaEmpresa(prices, branch) {
+  const lista = prices || [];
+  const temValor = (p) => p && (p.promotionalPrice > 0 || p.price > 0);
+  if (!usaTabelaShopping(branch)) {
+    const p = lista.find(temValor);
+    return p ? { price: p.price || 0, promotionalPrice: p.promotionalPrice || 0, tabela: null } : null;
+  }
+  const sh = lista.find((p) => Number(p.priceCode) === TABELA_SHOPPING.priceCode && temValor(p));
+  if (sh) return { price: semQuebrado(sh.price), promotionalPrice: semQuebrado(sh.promotionalPrice), tabela: TABELA_SHOPPING.nome };
+  const varejo = lista.find((p) => Number(p.priceCode) !== TABELA_SHOPPING.priceCode && temValor(p));
+  if (!varejo) return null;
+  const f = 1 + TABELA_SHOPPING.acrescimoPct / 100;
+  return {
+    price: semQuebrado(varejo.price * f),
+    promotionalPrice: semQuebrado(varejo.promotionalPrice * f),
+    tabela: `${TABELA_SHOPPING.nome} (varejo + ${TABELA_SHOPPING.acrescimoPct}%)`,
+  };
+}
 
 // Tipo de venda → operação TOTVS, conforme a empresa.
 // Empresas 1 a 99 usam a operação padrão; 95 e 98 têm operações próprias.
@@ -446,6 +478,7 @@ const PDVCrosby = () => {
   const [hcBusy, setHcBusy] = useState(false);
   const [resultado, setResultado] = useState(null); // { venda, nota, emitente, erro }
   const [showVendas, setShowVendas] = useState(false);
+  const [showCancelar, setShowCancelar] = useState(false); // tela CANCELAMENTO DE TRANSAÇÃO
   const [showConfig, setShowConfig] = useState(false);
   const [showCadastro, setShowCadastro] = useState(false);
   const [showMovimento, setShowMovimento] = useState(false);
@@ -733,9 +766,8 @@ const PDVCrosby = () => {
   // ─── Produtos: merge por productCode (grade), preço varejo ───────────────
   const mergeProduto = useCallback((data, { epc = null, manual = 0 }) => {
     const { product, prices, promoPdv } = data;
-    const padrao = (prices || []).find(
-      (p) => p.promotionalPrice > 0 || p.price > 0,
-    );
+    // preço pela tabela da empresa (Midway: VAREJO SHOPPING)
+    const padrao = precoDaEmpresa(prices, branchRef.current);
     const emPromo = padrao?.promotionalPrice > 0;
     // Promoção do PDV Crosby (tela Preço Promocional → GERAR NO PDV CROSBY):
     // preço cheio + desconto até o valor promocional. Se a promoção do TOTVS
@@ -777,6 +809,7 @@ const PDVCrosby = () => {
           promoDesconto,
           promoNome: usarPromoPdv ? promoPdv.nome : null,
           fonte: usarPromoPdv ? 'promo-pdv' : emPromo ? 'promo' : unit > 0 ? 'varejo' : 'sem-preco',
+          tabela: padrao?.tabela || null,
           epcs: epc ? [epc] : [],
           manualQty: manual,
         },
@@ -795,7 +828,7 @@ const PDVCrosby = () => {
       }
       try {
         const r = await fetch(
-          `${API_BASE_URL}/api/totvs/pdv/product/${encodeURIComponent(code)}?branch=${br}&priceCodes=${PDV_VAREJO_CONFIG.priceCodes}`,
+          `${API_BASE_URL}/api/totvs/pdv/product/${encodeURIComponent(code)}?branch=${br}&priceCodes=${priceCodesDa(br)}`,
         );
         const j = await r.json();
         if (!r.ok || !j?.data?.product) {
@@ -1743,7 +1776,10 @@ const PDVCrosby = () => {
         {/* ── Operação da venda e atalhos ── */}
         <div className="mb-2 flex flex-wrap items-center gap-2 min-h-[1rem]">
           {operation ? (
-            <span className="text-[11px] text-gray-400">operação {operation}</span>
+            <span className="text-[11px] text-gray-400">
+              operação {operation}
+              {usaTabelaShopping(branch) && <b className="ml-2 text-[#000638]">tabela {TABELA_SHOPPING.nome}</b>}
+            </span>
           ) : (
             tipoVenda && branch && <span className="text-[11px] text-rose-600">Empresa {branch} sem operação configurada para este tipo.</span>
           )}
@@ -1775,6 +1811,14 @@ const PDVCrosby = () => {
             className="h-9 px-2.5 rounded-lg text-xs font-semibold text-[#000638] bg-white ring-1 ring-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-40 inline-flex items-center gap-1"
           >
             <ListBullets size={14} /> Vendas do dia
+          </button>
+          <button
+            onClick={() => setShowCancelar(true)}
+            disabled={!branch}
+            className="h-9 px-2.5 rounded-lg text-xs font-semibold text-rose-600 bg-white ring-1 ring-rose-200 shadow-sm hover:bg-rose-50 disabled:opacity-40 inline-flex items-center gap-1"
+            title="Cancela a nota fiscal, a transação e o contas a receber de uma vez"
+          >
+            <Prohibit size={14} weight="bold" /> Cancelar transação
           </button>
           {podeConfigurarFiscal && (
             <button
@@ -2269,6 +2313,19 @@ const PDVCrosby = () => {
             onAbrirResultado={(r) => {
               setShowVendas(false);
               setResultado(r);
+            }}
+            showToast={showToast}
+          />
+        )}
+        {showCancelar && branch && (
+          <CancelarTransacaoModal
+            empresa={parseInt(branch, 10)}
+            empresaNome={branches.find((b) => String(b.cd_empresa) === String(branch))?.nm_grupoempresa}
+            por={user?.email || user?.name || null}
+            onClose={() => setShowCancelar(false)}
+            onCancelada={() => {
+              carregarRanking();
+              carregarCaixa();
             }}
             showToast={showToast}
           />
