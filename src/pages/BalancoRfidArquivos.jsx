@@ -194,7 +194,7 @@ export default function BalancoRfidArquivos() {
         const j = await r.json().catch(() => ({}));
         throw new Error(j?.message || `HTTP ${r.status}`);
       }
-      await salvarResposta(r, `${a.nome}.csv`);
+      await salvarResposta(r, tipo === 'txt' ? `${a.nome} - EPCS.txt` : `${a.nome}.csv`);
       carregar();
     } catch (e) {
       setAviso(e.message);
@@ -216,7 +216,7 @@ export default function BalancoRfidArquivos() {
         const j = await r.json().catch(() => ({}));
         throw new Error(j?.message || `HTTP ${r.status}`);
       }
-      await salvarResposta(r, `${liberar.arquivo.nome}.csv`);
+      await salvarResposta(r, liberar.tipo === 'txt' ? `${liberar.arquivo.nome} - EPCS.txt` : `${liberar.arquivo.nome}.csv`);
       setLiberar(null);
       setCredSenha('');
       carregar();
@@ -364,6 +364,14 @@ export default function BalancoRfidArquivos() {
                       >
                         {baixando === `${a.id}-epcs` ? <Spinner size={14} className="animate-spin" /> : a.download_liberado ? <DownloadSimple size={14} /> : <Lock size={14} />}
                       </button>
+                      <button
+                        onClick={() => baixar(a, 'txt')}
+                        disabled={baixando === `${a.id}-txt`}
+                        className={`ml-0.5 px-1.5 py-0.5 inline-flex items-center rounded text-[10px] font-bold ring-1 hover:bg-gray-100 ${a.download_liberado ? 'text-[#000638] ring-gray-300' : 'text-rose-600 ring-rose-200'}`}
+                        title={a.download_liberado ? 'Baixar TXT só com os EPCs (um por linha)' : 'Passou de 48 h — precisa da senha de um gerente, admin ou owner'}
+                      >
+                        {baixando === `${a.id}-txt` ? <Spinner size={12} className="animate-spin" /> : 'TXT'}
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -426,6 +434,9 @@ export default function BalancoRfidArquivos() {
                   <input value={filtroEpc} onChange={(e) => setFiltroEpc(e.target.value)} placeholder="Filtrar EPC…" className={`${inputCls} h-8 w-56 font-mono text-xs`} />
                   <button onClick={() => baixar(aberto, 'epcs')} className={`h-8 px-2.5 rounded-lg text-[11px] font-semibold text-white inline-flex items-center gap-1 ${aberto.download_liberado ? 'bg-[#000638]' : 'bg-rose-600'}`}>
                     {aberto.download_liberado ? <DownloadSimple size={12} /> : <Lock size={12} />} CSV dos EPCs
+                  </button>
+                  <button onClick={() => baixar(aberto, 'txt')} className={`h-8 px-2.5 rounded-lg text-[11px] font-semibold text-white inline-flex items-center gap-1 ${aberto.download_liberado ? 'bg-[#000638]' : 'bg-rose-600'}`}>
+                    {aberto.download_liberado ? <DownloadSimple size={12} /> : <Lock size={12} />} TXT só EPCs
                   </button>
                 </>
               )}
