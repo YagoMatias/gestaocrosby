@@ -62,7 +62,7 @@ import { useAuth } from '../components/AuthContext';
 import { fetchSefaz } from '../utils/fetchSefaz';
 import PagamentoModal from '../components/pdv/PagamentoModal';
 import ResultadoFiscalModal from '../components/pdv/ResultadoFiscalModal';
-import CancelarTransacaoModal from '../components/pdv/CancelarTransacaoModal';
+import CancelarTransacao from '../components/pdv/CancelarTransacao';
 import VendasDoDiaModal from '../components/pdv/VendasDoDiaModal';
 import FiscalConfigModal from '../components/pdv/FiscalConfigModal';
 import CadastroClienteModal from '../components/pdv/CadastroClienteModal';
@@ -478,7 +478,7 @@ const PDVCrosby = () => {
   const [hcBusy, setHcBusy] = useState(false);
   const [resultado, setResultado] = useState(null); // { venda, nota, emitente, erro }
   const [showVendas, setShowVendas] = useState(false);
-  const [showCancelar, setShowCancelar] = useState(false); // tela CANCELAMENTO DE TRANSAÇÃO
+  const [showCancelar, setShowCancelar] = useState(false); // cancelar transação EM ANDAMENTO (a atendida é em Financeiro › Cancelamento de Transação)
   const [showConfig, setShowConfig] = useState(false);
   const [showCadastro, setShowCadastro] = useState(false);
   const [showMovimento, setShowMovimento] = useState(false);
@@ -524,6 +524,8 @@ const PDVCrosby = () => {
   // Cashback (no TOTVS: saldo bônus do cliente na empresa da venda)
   const [cashback, setCashback] = useState(null); // { balance, cpf }
   const [cashbackUsar, setCashbackUsar] = useState(false);
+  // quanto do cashback usar (R$): vazio = tudo o que a venda permite; dá para usar só parte
+  const [cashbackValor, setCashbackValor] = useState('');
   const cashbackGeradoRef = useRef(false); // evita gerar 2x na mesma venda
   // Painel do cliente: cadastro (documento, telefone) e saldos (credev, adiantamento)
   const [clienteInfo, setClienteInfo] = useState(null);
@@ -539,6 +541,8 @@ const PDVCrosby = () => {
   branchRef.current = branch;
 
   const [globalDiscount, setGlobalDiscount] = useState('');
+  // desconto geral digitado em % ou em R$ (como no Faturamento)
+  const [descModo, setDescModo] = useState('pct');
   // Desconto: até 15% para todos; acima disso só owner/admin, ou com a senha
   // de um deles (a liberação vale até o fim desta venda)
   const descontoSemLimite = ['admin', 'owner'].includes(user?.role);
@@ -684,6 +688,7 @@ const PDVCrosby = () => {
   useEffect(() => {
     setCashback(null);
     setCashbackUsar(false);
+    setCashbackValor('');
     setCashbackRecusado(false);
     setClienteInfo(null);
     if (!customer || !branch) return;
@@ -904,26 +909,41 @@ const PDVCrosby = () => {
       showToast('erro', 'Na troca vale o valor pago na nota de origem: não há desconto');
       return;
     }
-    const pct = parseFloat(String(globalDiscount).replace(',', '.'));
-    if (Number.isNaN(pct) || pct < 0 || pct > 100) {
-      showToast('erro', 'Desconto geral inválido (0 a 100%)');
+    const digitado = parseFloat(String(globalDiscount).replace(',', '.'));
+    // base do desconto: as peças da venda, já sem o desconto de promoção
+    const base = r2(items.filter((i) => !i.troca).reduce((t, i) => t + qtyOf(i) * (i.unit - (i.promoDesconto || 0)), 0));
+    const emValor = descModo === 'valor';
+    if (Number.isNaN(digitado) || digitado < 0 || (emValor ? digitado > base + 0.004 : digitado > 100)) {
+      showToast('erro', emValor ? `Desconto inválido: de R$ 0,00 a ${fmtBRL(base)}` : 'Desconto geral inválido (0 a 100%)');
       return;
     }
+    // em R$: vira o percentual equivalente sobre as peças da venda
+    const pct = emValor ? (base > 0 ? (digitado / base) * 100 : 0) : digitado;
     // só nas peças da venda: a peça de troca volta pelo valor pago
     const aplicar = () =>
-      setItems((prev) =>
-        prev.map((i) =>
+      setItems((prev) => {
+        const next = prev.map((i) =>
           i.troca
             ? i
             : {
                 ...i,
                 discount: limiteDescontoItem(i, pct),
               },
-        ),
-      );
-    if (pct > maxDescPct) setSenhaDesconto({ pct, aplicar });
+        );
+        if (emValor) {
+          // centavos que sobram do arredondamento por peça vão para uma peça em que caibam exatos
+          const dado = r2(next.filter((i) => !i.troca).reduce((t, i) => t + qtyOf(i) * (i.discount - (i.promoDesconto || 0)), 0));
+          const sobraCent = Math.round((digitado - dado) * 100);
+          if (sobraCent !== 0) {
+            const k = next.findIndex((i) => !i.troca && sobraCent % qtyOf(i) === 0 && i.discount + sobraCent / 100 / qtyOf(i) >= (i.promoDesconto || 0) && i.discount + sobraCent / 100 / qtyOf(i) <= i.unit);
+            if (k >= 0) next[k] = { ...next[k], discount: r2(next[k].discount + sobraCent / 100 / qtyOf(next[k])) };
+          }
+        }
+        return next;
+      });
+    if (pct > maxDescPct + 0.0001) setSenhaDesconto({ pct, aplicar });
     else aplicar();
-  }, [globalDiscount, maxDescPct, showToast, items]);
+  }, [globalDiscount, descModo, maxDescPct, showToast, items]);
 
   // Desconto por peça (R$ no unitário): acima do limite pede a senha
   const mudarDescontoItem = useCallback(
@@ -1057,8 +1077,10 @@ const PDVCrosby = () => {
     const saldo = cashback?.balance || 0;
     const maxPelaVenda = base / PDV_VAREJO_CONFIG.cashbackFatorMinimo;
     const cashbackDisponivel = Math.min(saldo, Math.floor(maxPelaVenda * 100) / 100);
+    // uso PARCIAL: o valor digitado, sempre dentro do que a venda permite
+    const pedido = String(cashbackValor).trim() === '' ? cashbackDisponivel : parseFloat(String(cashbackValor).replace(',', '.'));
     const cashbackAplicado =
-      cashbackUsar && cashbackDisponivel > 0 ? cashbackDisponivel : 0;
+      cashbackUsar && cashbackDisponivel > 0 && pedido > 0 ? r2(Math.min(pedido, cashbackDisponivel)) : 0;
     const total = base - cashbackAplicado;
     return {
       qty,
@@ -1071,7 +1093,7 @@ const PDVCrosby = () => {
       aPagar: r2(Math.max(0, total - troca)),
       sobra: r2(Math.max(0, troca - total)),
     };
-  }, [items, itensVenda, itensTroca, cashback, cashbackUsar, precoDe]);
+  }, [items, itensVenda, itensTroca, cashback, cashbackUsar, cashbackValor, precoDe]);
 
   const novaVenda = useCallback(() => {
     setItems([]);
@@ -1083,6 +1105,7 @@ const PDVCrosby = () => {
     setEtapa('');
     setCashback(null);
     setCashbackUsar(false);
+    setCashbackValor('');
     setCashbackRecusado(false);
     setDescontoLiberado(null);
     setGlobalDiscount('');
@@ -1182,6 +1205,12 @@ const PDVCrosby = () => {
     }
     finalizarAgora();
   };
+
+  // valor do cashback escolhido na pergunta (parcial ou tudo o que a venda permite)
+  const cashbackEscolhido = (() => {
+    const v = String(cashbackValor).trim() === '' ? totals.cashbackDisponivel : parseFloat(String(cashbackValor).replace(',', '.'));
+    return v > 0 ? r2(Math.min(v, totals.cashbackDisponivel)) : 0;
+  })();
 
   // "Sim, usar cashback": espera o total recalcular e segue a finalização
   useEffect(() => {
@@ -1652,6 +1681,29 @@ const PDVCrosby = () => {
                     </span>
                   </label>
                 )}
+                {cashback && cashback.balance > 0 && cashbackUsar && totals.cashbackDisponivel > 0 && (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-emerald-800">
+                    <span>Usar</span>
+                    <span className="font-semibold">R$</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      max={totals.cashbackDisponivel}
+                      value={cashbackValor}
+                      onChange={(e) => setCashbackValor(e.target.value)}
+                      placeholder={totals.cashbackDisponivel.toFixed(2)}
+                      title="Deixe em branco para usar tudo o que a venda permite"
+                      className="h-7 w-20 mb-0 rounded-md border border-emerald-300 px-1.5 text-right text-[12px] focus:outline-none focus:ring-2 focus:ring-emerald-300"
+                    />
+                    <span>
+                      de <b>{fmtBRL(totals.cashbackDisponivel)}</b> que esta venda permite
+                    </span>
+                    {parseFloat(String(cashbackValor).replace(',', '.')) > totals.cashbackDisponivel + 0.004 && (
+                      <span className="font-semibold text-amber-700">· acima do limite: usa {fmtBRL(totals.cashbackDisponivel)}</span>
+                    )}
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -1816,9 +1868,9 @@ const PDVCrosby = () => {
             onClick={() => setShowCancelar(true)}
             disabled={!branch}
             className="h-9 px-2.5 rounded-lg text-xs font-semibold text-rose-600 bg-white ring-1 ring-rose-200 shadow-sm hover:bg-rose-50 disabled:opacity-40 inline-flex items-center gap-1"
-            title="Cancela a nota fiscal, a transação e o contas a receber de uma vez"
+            title="Cancela uma transação que ainda não teve a nota autorizada (registrada ou rejeitada). Venda já atendida: Financeiro › Cancelamento de Transação"
           >
-            <Prohibit size={14} weight="bold" /> Cancelar transação
+            <Prohibit size={14} weight="bold" /> Cancelar em andamento
           </button>
           {podeConfigurarFiscal && (
             <button
@@ -2057,14 +2109,32 @@ const PDVCrosby = () => {
             <div className="rounded-lg ring-1 ring-gray-200 p-2">
               <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500 mb-1.5">Desconto</p>
               <div className="flex items-center gap-1.5">
-                <Percent size={14} className="text-gray-400 shrink-0" />
+                <div className="inline-flex shrink-0 rounded-lg ring-1 ring-gray-300 overflow-hidden" title="Desconto em percentual ou em reais">
+                  {[
+                    ['pct', '%'],
+                    ['valor', 'R$'],
+                  ].map(([m, rot]) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => {
+                        if (m !== descModo) setGlobalDiscount('');
+                        setDescModo(m);
+                      }}
+                      className={`h-9 min-w-[30px] px-1.5 text-xs font-bold ${descModo === m ? 'bg-[#000638] text-white' : 'bg-white text-[#000638] hover:bg-gray-50'}`}
+                    >
+                      {rot}
+                    </button>
+                  ))}
+                </div>
                 <input
                   value={globalDiscount}
                   onChange={(e) => setGlobalDiscount(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && items.length > 0 && aplicarDescontoGeral()}
-                  placeholder="%"
-                  title={maxDescPct < 100 ? `Até ${maxDescPct}%; acima disso pede a senha do owner/admin` : 'Desconto liberado'}
-                  className="h-9 w-14 px-1.5 mb-0 rounded-lg border border-gray-300 text-xs text-center focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
+                  placeholder={descModo === 'valor' ? '0,00' : '%'}
+                  inputMode="decimal"
+                  title={maxDescPct < 100 ? `Até ${maxDescPct}% da venda; acima disso pede a senha do owner/admin` : 'Desconto liberado'}
+                  className="h-9 w-16 px-1.5 mb-0 rounded-lg border border-gray-300 text-xs text-center focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
                 />
                 <button
                   onClick={aplicarDescontoGeral}
@@ -2238,9 +2308,23 @@ const PDVCrosby = () => {
                   {PDV_VAREJO_CONFIG.cashbackFatorMinimo}× o valor usado).
                 </p>
               )}
+              <label className="mt-3 flex items-center justify-center gap-2 text-sm text-gray-700">
+                Quanto usar? <span className="font-semibold">R$</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  max={totals.cashbackDisponivel}
+                  value={cashbackValor}
+                  onChange={(e) => setCashbackValor(e.target.value)}
+                  placeholder={totals.cashbackDisponivel.toFixed(2)}
+                  className="h-10 w-28 mb-0 rounded-lg border border-emerald-300 px-2 text-right text-base font-bold focus:outline-none focus:ring-2 focus:ring-emerald-300"
+                />
+              </label>
+              <p className="mt-0.5 text-[11px] text-gray-400">Em branco usa os {fmtBRL(totals.cashbackDisponivel)} que a venda permite.</p>
               <p className="mt-2 text-sm text-gray-600">
                 Total passa de <b>{fmtBRL(totals.total)}</b> para{' '}
-                <b className="text-emerald-700">{fmtBRL(totals.total - totals.cashbackDisponivel)}</b>.
+                <b className="text-emerald-700">{fmtBRL(totals.total - cashbackEscolhido)}</b>.
               </p>
               <div className="mt-4 grid grid-cols-2 gap-2">
                 <button
@@ -2256,13 +2340,15 @@ const PDVCrosby = () => {
                 <button
                   autoFocus
                   onClick={() => {
+                    if (!(cashbackEscolhido > 0)) return;
                     setPerguntaCashback(false);
                     setCashbackUsar(true);
                     setContinuarFinalizacao(true);
                   }}
-                  className="h-11 rounded-lg bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700"
+                  disabled={!(cashbackEscolhido > 0)}
+                  className="h-11 rounded-lg bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 disabled:opacity-40"
                 >
-                  Sim, usar {fmtBRL(totals.cashbackDisponivel)}
+                  Sim, usar {fmtBRL(cashbackEscolhido)}
                 </button>
               </div>
             </div>
@@ -2318,7 +2404,8 @@ const PDVCrosby = () => {
           />
         )}
         {showCancelar && branch && (
-          <CancelarTransacaoModal
+          <CancelarTransacao
+            somenteAndamento
             empresa={parseInt(branch, 10)}
             empresaNome={branches.find((b) => String(b.cd_empresa) === String(branch))?.nm_grupoempresa}
             por={user?.email || user?.name || null}

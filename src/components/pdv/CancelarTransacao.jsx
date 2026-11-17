@@ -1,13 +1,19 @@
-// CANCELAMENTO DE TRANSAÇÃO do PDV Crosby (Yago, 17/11/2026).
-// Uma tela só para cancelar tudo de uma vez: a nota fiscal na SEFAZ, a
-// transação e os títulos do contas a receber. Lista as transações do PDV da
-// empresa no período; ao escolher uma, mostra o que ela tem (nota, pagamentos,
-// títulos) e os avisos; com o motivo escrito, cancela.
+// CANCELAMENTO DE TRANSAÇÃO (Yago, 17/11/2026).
+// Cancela tudo de uma vez: a nota fiscal na SEFAZ, a transação e os títulos do
+// contas a receber. Lista as transações do PDV da empresa no período; ao
+// escolher uma, mostra o que ela tem (nota, pagamentos, títulos) e os avisos;
+// com o motivo escrito, cancela.
+// Usado em dois lugares:
+//  • PÁGINA Financeiro › Cancelamento de Transação (variante "pagina"): todas
+//    as transações; VENDA atendida acima de R$ 1.000 pede e-mail e senha de
+//    alguém do financeiro (o servidor confere).
+//  • PDV Crosby (modal, somenteAndamento): só as transações EM ANDAMENTO — sem
+//    nota autorizada — que o caixa cancela direto.
 // Regra do servidor: com nota autorizada a SEFAZ decide — se ela recusa, nada
 // é cancelado. Credev/adiantamento usados voltam para o cliente; o Credev que
 // uma troca gerou sai (e a troca só cancela com esse Credev inteiro).
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { X, Spinner, ArrowsClockwise, Prohibit, MagnifyingGlass, CheckCircle, XCircle, Warning } from '@phosphor-icons/react';
+import { X, Spinner, ArrowsClockwise, Prohibit, MagnifyingGlass, CheckCircle, XCircle, Warning, LockKey } from '@phosphor-icons/react';
 import { API_BASE_URL } from '../../config/constants';
 import { fetchSefaz } from '../../utils/fetchSefaz';
 
@@ -28,7 +34,9 @@ const STATUS = {
 const SIT_TITULO = { pago: 'text-emerald-700', aberto: 'text-amber-700', cancelado: 'text-gray-400 line-through' };
 const JUST_MIN = 15;
 
-export default function CancelarTransacaoModal({ empresa, empresaNome, por, onClose, onCancelada, showToast }) {
+const EM_ANDAMENTO = (v) => v.status !== 'autorizada' && v.status !== 'cancelada';
+
+export default function CancelarTransacao({ empresa, empresaNome, por, onClose, onCancelada, showToast, variante = 'modal', somenteAndamento = false, empresas = null, onEmpresa = null }) {
   const [de, setDe] = useState(hoje());
   const [ate, setAte] = useState(hoje());
   const [busca, setBusca] = useState('');
@@ -42,8 +50,13 @@ export default function CancelarTransacaoModal({ empresa, empresaNome, por, onCl
   const [confirmando, setConfirmando] = useState(false);
   const [busy, setBusy] = useState(false);
   const [resultado, setResultado] = useState(null); // { ok, mensagem, passos }
+  const [aut, setAut] = useState({ email: '', senha: '' }); // financeiro que autoriza (venda > R$ 1.000)
 
   const carregar = useCallback(async () => {
+    if (!empresa) {
+      setLista([]);
+      return;
+    }
     setLoading(true);
     try {
       const r = await fetch(`${API_BASE_URL}/api/pdv-crosby/vendas?empresa=${empresa}&de=${de}&ate=${ate}&origem=pdv`);
@@ -67,6 +80,7 @@ export default function CancelarTransacaoModal({ empresa, empresaNome, por, onCl
       setJust('');
       setConfirmando(false);
       setResultado(null);
+      setAut({ email: '', senha: '' });
       setPreviaLoading(true);
       try {
         const r = await fetch(`${API_BASE_URL}/api/pdv-crosby/vendas/${id}/cancelamento`);
@@ -86,20 +100,33 @@ export default function CancelarTransacaoModal({ empresa, empresaNome, por, onCl
   const filtradas = useMemo(() => {
     const q = busca.trim().toLowerCase();
     return lista.filter((v) => {
+      if (somenteAndamento && !EM_ANDAMENTO(v) && v.id !== selId) return false;
       if (!mostrarCanceladas && v.status === 'cancelada' && v.id !== selId) return false;
       if (!q) return true;
       return [v.id, v.nota?.numero, v.cliente_nome, v.cliente_code, v.vendedor_nome].some((x) => String(x ?? '').toLowerCase().includes(q));
     });
-  }, [lista, busca, mostrarCanceladas, selId]);
+  }, [lista, busca, mostrarCanceladas, selId, somenteAndamento]);
+
+  // trocou a empresa: começa do zero
+  useEffect(() => {
+    setSelId(null);
+    setPrevia(null);
+    setResultado(null);
+  }, [empresa]);
+
+  const precisaAut = !!previa?.precisaAutorizacao;
+  const autOk = !precisaAut || (aut.email.trim().length > 3 && aut.senha.length > 0);
+  // no PDV só se cancela o que está em andamento; o resto é na página do Financeiro
+  const foraDoPdv = somenteAndamento && previa && !EM_ANDAMENTO(previa.venda) && previa.venda.status !== 'cancelada';
 
   const cancelar = async () => {
-    if (!previa?.podeCancelar || just.trim().length < JUST_MIN) return;
+    if (!previa?.podeCancelar || foraDoPdv || just.trim().length < JUST_MIN || !autOk) return;
     setBusy(true);
     try {
       const { r, j } = await fetchSefaz(`${API_BASE_URL}/api/pdv-crosby/vendas/${previa.venda.id}/cancelar-transacao`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ justificativa: just.trim(), por: por || null }),
+        body: JSON.stringify({ justificativa: just.trim(), por: por || null, ...(precisaAut ? { autorizador: { email: aut.email.trim(), senha: aut.senha } } : {}) }),
       });
       if (!r.ok || !j?.success) {
         setResultado({ ok: false, mensagem: j?.message || 'Não foi possível cancelar', passos: j?.details?.passos || [] });
@@ -107,6 +134,7 @@ export default function CancelarTransacaoModal({ empresa, empresaNome, por, onCl
         return;
       }
       setResultado({ ok: true, mensagem: j.message || 'Transação cancelada', passos: j.data?.passos || [] });
+      setAut({ email: '', senha: '' });
       showToast?.('ok', `Transação nº ${previa.venda.id} cancelada`);
       onCancelada?.(previa.venda.id);
       carregar();
@@ -127,19 +155,36 @@ export default function CancelarTransacaoModal({ empresa, empresaNome, por, onCl
   const nota = previa?.nota;
   const titulosAtivos = (previa?.titulos || []).filter((t) => t.situacao !== 'cancelado');
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-6xl h-[92vh] flex flex-col">
+  const pagina = variante === 'pagina';
+  const painel = (
+      <div className={pagina ? 'bg-white rounded-xl border border-gray-200 shadow-sm w-full h-[calc(100vh-190px)] min-h-[560px] flex flex-col' : 'bg-white rounded-2xl shadow-xl w-full max-w-6xl h-[92vh] flex flex-col'}>
         {/* cabeçalho */}
         <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 px-4 py-3">
           <Prohibit size={20} weight="bold" className="text-rose-600" />
           <div className="mr-auto">
-            <h3 className="text-base font-bold text-[#000638] leading-tight">Cancelamento de transação</h3>
+            <h3 className="text-base font-bold text-[#000638] leading-tight">{somenteAndamento ? 'Cancelar transação em andamento' : 'Cancelamento de transação'}</h3>
             <p className="text-[11px] text-gray-500">
-              Empresa {empresa}
-              {empresaNome ? ` — ${empresaNome}` : ''} · cancela a nota fiscal, a transação e o contas a receber de uma vez
+              {empresa ? `Empresa ${empresa}${empresaNome ? ` — ${empresaNome}` : ''} · ` : ''}
+              {somenteAndamento
+                ? 'transações que ainda não têm nota autorizada (registrada ou rejeitada). Venda já atendida se cancela em Financeiro › Cancelamento de Transação'
+                : 'cancela a nota fiscal, a transação e o contas a receber de uma vez'}
             </p>
           </div>
+          {empresas && (
+            <select
+              value={empresa || ''}
+              onChange={(e) => onEmpresa?.(e.target.value)}
+              className="h-8 max-w-[16rem] rounded-lg border border-gray-300 bg-white px-2 text-xs font-semibold text-[#000638]"
+              title="Empresa"
+            >
+              <option value="">Empresa…</option>
+              {empresas.map((b) => (
+                <option key={b.cd_empresa} value={b.cd_empresa}>
+                  {b.cd_empresa} — {b.nm_grupoempresa}
+                </option>
+              ))}
+            </select>
+          )}
           <label className="text-[11px] text-gray-500">
             De{' '}
             <input type="date" value={de} max={ate} onChange={(e) => setDe(e.target.value)} className="ml-1 h-8 px-2 rounded-lg border border-gray-300 text-xs" />
@@ -151,9 +196,11 @@ export default function CancelarTransacaoModal({ empresa, empresaNome, por, onCl
           <button onClick={carregar} className="h-8 px-2 rounded-lg text-xs ring-1 ring-gray-300 hover:bg-gray-50 inline-flex items-center gap-1">
             <ArrowsClockwise size={13} className={loading ? 'animate-spin' : ''} /> Atualizar
           </button>
-          <button onClick={onClose} disabled={busy} className="text-gray-400 hover:text-gray-600 disabled:opacity-40" title="Fechar">
-            <X size={18} weight="bold" />
-          </button>
+          {!pagina && (
+            <button onClick={onClose} disabled={busy} className="text-gray-400 hover:text-gray-600 disabled:opacity-40" title="Fechar">
+              <X size={18} weight="bold" />
+            </button>
+          )}
         </div>
 
         <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
@@ -169,9 +216,11 @@ export default function CancelarTransacaoModal({ empresa, empresaNome, por, onCl
                   className="w-full h-9 pl-8 pr-2 mb-0 rounded-lg border border-gray-300 text-xs focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
                 />
               </div>
-              <label className="inline-flex items-center gap-1 text-[11px] text-gray-500 whitespace-nowrap">
-                <input type="checkbox" checked={mostrarCanceladas} onChange={(e) => setMostrarCanceladas(e.target.checked)} /> ver canceladas
-              </label>
+              {!somenteAndamento && (
+                <label className="inline-flex items-center gap-1 text-[11px] text-gray-500 whitespace-nowrap">
+                  <input type="checkbox" checked={mostrarCanceladas} onChange={(e) => setMostrarCanceladas(e.target.checked)} /> ver canceladas
+                </label>
+              )}
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto">
               {loading && lista.length === 0 ? (
@@ -179,7 +228,9 @@ export default function CancelarTransacaoModal({ empresa, empresaNome, por, onCl
                   <Spinner size={16} className="inline animate-spin" /> Carregando…
                 </p>
               ) : filtradas.length === 0 ? (
-                <p className="p-6 text-center text-xs text-gray-400">Nenhuma transação do PDV neste período.</p>
+                <p className="p-6 text-center text-xs text-gray-400">
+                  {!empresa ? 'Escolha a empresa.' : somenteAndamento ? 'Nenhuma transação em andamento neste período.' : 'Nenhuma transação do PDV neste período.'}
+                </p>
               ) : (
                 <ul className="divide-y divide-gray-100">
                   {filtradas.map((x) => {
@@ -221,7 +272,9 @@ export default function CancelarTransacaoModal({ empresa, empresaNome, por, onCl
                 <Prohibit size={36} className="mb-2" />
                 <p className="text-sm">Escolha a transação que vai cancelar.</p>
                 <p className="mt-1 max-w-sm text-[11px]">
-                  Com nota autorizada, a SEFAZ precisa aceitar o cancelamento (prazo normal: 30 minutos para NFC-e e 24 horas para NF-e). Se ela recusar, nada é cancelado.
+                  {somenteAndamento
+                    ? 'Aqui só entram as transações sem nota autorizada: nada vai à SEFAZ, a transação é cancelada na hora.'
+                    : 'Com nota autorizada, a SEFAZ precisa aceitar o cancelamento (prazo normal: 30 minutos para NFC-e e 24 horas para NF-e). Se ela recusar, nada é cancelado. Venda atendida acima de R$ 1.000,00 pede a senha do financeiro.'}
                 </p>
               </div>
             ) : previaLoading || !previa ? (
@@ -326,7 +379,12 @@ export default function CancelarTransacaoModal({ empresa, empresaNome, por, onCl
                 {previa.bloqueio && !resultado?.ok && (
                   <p className="rounded-xl bg-gray-100 p-3 text-xs font-semibold text-gray-700 ring-1 ring-gray-200">{previa.bloqueio}</p>
                 )}
-                {previa.podeCancelar && (
+                {foraDoPdv && (
+                  <p className="rounded-xl bg-gray-100 p-3 text-xs font-semibold text-gray-700 ring-1 ring-gray-200">
+                    Esta transação já foi atendida (tem nota autorizada). O cancelamento dela é feito em Financeiro › Cancelamento de Transação.
+                  </p>
+                )}
+                {previa.podeCancelar && !foraDoPdv && (
                   <>
                     <div className="rounded-xl bg-rose-50 p-3 ring-1 ring-rose-200">
                       <p className="text-xs font-bold text-rose-800">Ao cancelar, de uma vez:</p>
@@ -365,10 +423,39 @@ export default function CancelarTransacaoModal({ empresa, empresaNome, por, onCl
                       <p className="text-[10px] text-gray-400">{just.trim().length}/255</p>
                     </div>
 
+                    {precisaAut && (
+                      <div className="rounded-xl bg-indigo-50 p-3 ring-1 ring-indigo-200">
+                        <p className="text-xs font-bold text-indigo-900 inline-flex items-center gap-1">
+                          <LockKey size={14} weight="fill" /> Autorização do financeiro
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-indigo-900/80">
+                          Venda atendida acima de {fmtBRL(previa.limiteSemAutorizacao || 1000)}: alguém do financeiro (ou admin/owner) digita o e-mail e a senha do HeadCoach para liberar.
+                        </p>
+                        <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <input
+                            type="email"
+                            value={aut.email}
+                            onChange={(e) => setAut((a) => ({ ...a, email: e.target.value }))}
+                            placeholder="E-mail do financeiro"
+                            autoComplete="off"
+                            className="h-10 w-full mb-0 rounded-lg border border-gray-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                          />
+                          <input
+                            type="password"
+                            value={aut.senha}
+                            onChange={(e) => setAut((a) => ({ ...a, senha: e.target.value }))}
+                            placeholder="Senha"
+                            autoComplete="new-password"
+                            className="h-10 w-full mb-0 rounded-lg border border-gray-300 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                          />
+                        </div>
+                      </div>
+                    )}
+
                     {!confirmando ? (
                       <button
                         onClick={() => setConfirmando(true)}
-                        disabled={busy || just.trim().length < JUST_MIN}
+                        disabled={busy || just.trim().length < JUST_MIN || !autOk}
                         className="w-full h-12 rounded-xl bg-rose-600 text-white text-sm font-bold hover:bg-rose-700 disabled:opacity-40 inline-flex items-center justify-center gap-1.5"
                       >
                         <Prohibit size={16} weight="bold" /> CANCELAR TRANSAÇÃO
@@ -399,6 +486,6 @@ export default function CancelarTransacaoModal({ empresa, empresaNome, por, onCl
           </div>
         </div>
       </div>
-    </div>
   );
+  return pagina ? painel : <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3">{painel}</div>;
 }

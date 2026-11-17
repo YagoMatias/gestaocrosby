@@ -201,6 +201,7 @@ const HcTransacoes = lazy(() => import('./pages/HcTransacoes'));
 const HcCaixa = lazy(() => import('./pages/HcCaixa'));
 const HcContasReceber = lazy(() => import('./pages/HcContasReceber'));
 const HcSaldosClientes = lazy(() => import('./pages/HcSaldosClientes'));
+const CancelamentoTransacao = lazy(() => import('./pages/CancelamentoTransacao'));
 const HcEstoque = lazy(() => import('./pages/HcEstoque'));
 const EstoqueDryland = lazy(() => import('./pages/EstoqueDryland'));
 const HcCaixaAbertura = (props) => <HcCaixa {...props} etapa="abertura" />;
@@ -397,6 +398,7 @@ const protectedRoutes = [
   { path: '/headcoach/caixa/fechamento', component: HcCaixaFechamento },
   { path: '/headcoach/contas-receber', component: HcContasReceber },
   { path: '/headcoach/saldos-clientes', component: HcSaldosClientes },
+  { path: '/headcoach/cancelamento-transacao', component: CancelamentoTransacao },
   { path: '/headcoach/estoque', component: HcEstoque },
   { path: '/headcoach/estoque-dryland', component: EstoqueDryland },
   { path: '/expedicao/pedidos-venda', component: PedidosVenda },

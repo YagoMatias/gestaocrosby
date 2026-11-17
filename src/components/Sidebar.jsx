@@ -17,6 +17,7 @@ import {
   LockOpen,
   LockKey,
   HandCoins,
+  Prohibit,
   FileText,
   Calendar,
   CalendarCheck,
@@ -1191,6 +1192,7 @@ const headcoach = [
     children: [
       { name: 'Contas a Receber HeadCoach', href: '/headcoach/contas-receber', icon: HandCoins, color: 'text-indigo-600' },
       { name: 'Saldo Cliente', href: '/headcoach/saldos-clientes', icon: Wallet, color: 'text-indigo-600' },
+      { name: 'Cancelamento de Transação', href: '/headcoach/cancelamento-transacao', icon: Prohibit, color: 'text-rose-600' },
     ],
   },
   {

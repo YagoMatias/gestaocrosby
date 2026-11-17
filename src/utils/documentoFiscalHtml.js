@@ -27,8 +27,27 @@ const FORMAS = {
   pix: 'PIX',
   credito: 'Cartão de crédito',
   debito: 'Cartão de débito',
-  credito_loja: 'Crédito loja',
+  credito_loja: 'Credev',
+  adiantamento: 'Adiantamento',
   vale_troca: 'Vale troca',
+};
+
+// Símbolo da Crosby no topo do cupom (Yago, 17/11/2026). Em preto para a
+// impressora térmica; se a imagem não carregar, some sem atrapalhar.
+const logoCrosby = () => {
+  const origem = typeof window !== 'undefined' && window.location ? window.location.origin : '';
+  return `<img class="logo" src="${origem}/crosbyazul.png" alt="CROSBY" onerror="this.style.display='none'"/>`;
+};
+const CSS_LOGO = 'img.logo { display: block; width: 46mm; max-width: 90%; height: auto; margin: 0 auto 3px; filter: grayscale(1) contrast(3) brightness(0.6); }';
+
+// PROCON no rodapé do cupom (Yago, 17/11/2026): endereço e telefone do PROCON
+// do estado da loja. Por enquanto só o do RN foi informado.
+const PROCON_POR_UF = {
+  RN: { endereco: 'Rua Ulisses Caldas, 181, Cidade Alta, Natal - RN', telefone: '(84) 3232-9050' },
+};
+const proconDa = (uf) => {
+  const p = PROCON_POR_UF[String(uf || '').toUpperCase()];
+  return p ? `<hr/><div class="c small"><span class="b">PROCON</span> — ${esc(p.endereco)}<br/>Telefone: ${esc(p.telefone)}</div>` : '';
 };
 
 function homologacaoBanner(nota) {
@@ -84,8 +103,10 @@ export function gerarHtmlCupomNFCe({ nota, venda, emitente }) {
   img.qr { width: 42mm; height: 42mm; display: block; margin: 4px auto; }
   @media screen { body { padding: 10px; } }
   .cpl { font-size: 9px; word-break: break-word; }
+  ${CSS_LOGO}
 </style></head><body>
   <div class="c">
+    ${logoCrosby()}
     <h1>${esc(emitente?.xFant || venda.empresa_nome || 'CROSBY')}</h1>
     <div class="small">${esc(emitente?.xNome || '')}</div>
     <div class="small">CNPJ ${fmtCnpj(emitente?.cnpj || nota.cnpj_emitente)} · IE ${esc(emitente?.ie || '')}</div>
@@ -122,6 +143,7 @@ export function gerarHtmlCupomNFCe({ nota, venda, emitente }) {
   ${venda.vendedor_nome ? `<div class="c small">Vendedor: ${esc(venda.vendedor_nome)}</div>` : ''}
   ${nota.inf_cpl ? `<hr/><div class="cpl">${esc(nota.inf_cpl)}</div>` : ''}
   <div class="c small">${venda.rodape ? esc(venda.rodape) : `Venda HeadCoach #${venda.id}`}</div>
+  ${proconDa(end.UF || emitente?.uf)}
   <script>window.onload = function(){ setTimeout(function(){ window.print(); }, 300); };</script>
 </body></html>`;
 }
@@ -235,8 +257,10 @@ export function gerarHtmlCupomTroca({ cupom, empresaNome }) {
   .codigo { font-family: "Courier New", monospace; font-size: 24px; font-weight: bold; letter-spacing: 2px; border: 2px solid #000; padding: 4px; margin: 4px 0; }
   img.qr { width: 34mm; height: 34mm; display: block; margin: 4px auto; }
   @media screen { body { padding: 10px; } }
+  ${CSS_LOGO}
 </style></head><body>
   <div class="c">
+    ${logoCrosby()}
     <h1>${esc(empresaNome || 'CROSBY')}</h1>
     <div class="b" style="font-size:14px;margin-top:3px">CUPOM DE TROCA</div>
   </div>

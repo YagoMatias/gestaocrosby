@@ -1,10 +1,10 @@
 // Resultado da venda HEADCOACH: venda registrada + situação da nota fiscal.
 // Ações: imprimir cupom/DANFE, baixar XML, tentar emitir de novo (rejeitada),
 // consultar na SEFAZ, cancelar a nota (com justificativa) e nova venda.
-import React, { useState } from 'react';
-import { CheckCircle, XCircle, Warning, Printer, DownloadSimple, ArrowsClockwise, Prohibit, Spinner, Database } from '@phosphor-icons/react';
+import React, { useEffect, useState } from 'react';
+import { CheckCircle, XCircle, Warning, Printer, DownloadSimple, ArrowsClockwise, Prohibit, Spinner, Database, Ticket } from '@phosphor-icons/react';
 import { API_BASE_URL } from '../../config/constants';
-import { imprimirDocumento } from '../../utils/documentoFiscalHtml';
+import { imprimirDocumento, gerarHtmlCupomTroca, abrirImpressao } from '../../utils/documentoFiscalHtml';
 import { fetchSefaz } from '../../utils/fetchSefaz';
 
 const fmtBRL = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -30,6 +30,49 @@ export default function ResultadoFiscalModal({ resultado, onNovaVenda, onFechar,
 
   const autorizada = nota?.status === 'autorizada';
   const cancelada = nota?.status === 'cancelada';
+
+  // CUPOM DE TROCA: toda VENDA com a nota autorizada ganha o seu, na hora, para
+  // imprimir junto com a nota e entregar ao cliente (uma venda = um cupom; o
+  // servidor devolve o mesmo se já existir).
+  const [cupom, setCupom] = useState(null);
+  const [cupomErro, setCupomErro] = useState('');
+  const vendaId = venda?.id;
+  const ehVenda = venda && venda.tipo_venda !== 'troca';
+  useEffect(() => {
+    setCupom(null);
+    setCupomErro('');
+    if (!vendaId || !ehVenda || !autorizada) return undefined;
+    let vivo = true;
+    const dia = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Recife' }).format(new Date(venda.criado_em || Date.now()));
+    fetch(`${API_BASE_URL}/api/pdv-crosby/cupons-troca`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        empresa: venda.empresa,
+        transacaoCode: venda.id,
+        transacaoDate: dia,
+        total: venda.total,
+        clienteCode: venda.cliente_code || null,
+        clienteNome: venda.cliente_nome || null,
+        vendedorCode: venda.vendedor_code || null,
+        vendedorNome: venda.vendedor_nome || null,
+        itens: (venda.itens || []).map((i) => ({ productCode: i.product_code, name: i.nome, quantity: i.quantidade })),
+        por: venda.criado_por || null,
+      }),
+    })
+      .then((r) => r.json().then((j) => ({ r, j })))
+      .then(({ r, j }) => {
+        if (!vivo) return;
+        if (r.ok && j.success) setCupom(j.data);
+        else setCupomErro(j?.message || 'Cupom de troca não gerado');
+      })
+      .catch((e) => vivo && setCupomErro(e.message));
+    return () => {
+      vivo = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vendaId, ehVenda, autorizada]);
+  const imprimirCupomTroca = () => cupom && abrirImpressao(gerarHtmlCupomTroca({ cupom, empresaNome: emitente?.xFant || venda?.empresa_nome || null }));
   const modeloLabel = nota ? (Number(nota.modelo) === 65 ? 'NFC-e' : 'NF-e') : venda?.tipo_venda === 'nfce' ? 'NFC-e' : 'NF-e';
 
   const consultar = async () => {
@@ -206,6 +249,29 @@ export default function ResultadoFiscalModal({ resultado, onNovaVenda, onFechar,
         )}
 
         {autorizada && nota.qrDataUrl && Number(nota.modelo) === 65 && <img src={nota.qrDataUrl} alt="QR Code NFC-e" className="mx-auto mt-3 w-28 h-28" />}
+
+        {/* CUPOM DE TROCA da venda: sai junto com a nota */}
+        {ehVenda && autorizada && (
+          <button
+            onClick={imprimirCupomTroca}
+            disabled={!cupom}
+            className="mt-3 w-full h-11 rounded-xl bg-purple-700 text-white text-sm font-bold hover:bg-purple-800 disabled:opacity-50 inline-flex items-center justify-center gap-2"
+            title="Cupom para o cliente trocar o produto (sem valores, serve para presente)"
+          >
+            {cupom ? (
+              <>
+                <Ticket size={18} weight="bold" /> IMPRIMIR CUPOM DE TROCA <span className="font-mono text-xs font-semibold">{cupom.codigo}</span>
+              </>
+            ) : cupomErro ? (
+              <>Cupom de troca não gerado</>
+            ) : (
+              <>
+                <Spinner size={15} className="animate-spin" /> Gerando o cupom de troca…
+              </>
+            )}
+          </button>
+        )}
+        {cupomErro && ehVenda && autorizada && <p className="mt-1 text-[11px] text-rose-600">{cupomErro}</p>}
 
         <div className="mt-4 grid grid-cols-2 gap-1.5">
           {(autorizada || cancelada) && (
