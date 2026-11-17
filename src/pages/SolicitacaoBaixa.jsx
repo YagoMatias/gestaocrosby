@@ -455,18 +455,28 @@ const SolicitacaoBaixa = () => {
     }
     setLocLoading(true);
     try {
-      const resp = await fetch(`${TotvsURL}accounts-receivable/search`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          filter: { customerCodeList: [code], statusList: [1] },
-          page: 1,
-          pageSize: 100,
-          expand: 'invoice,calculateValue',
-        }),
-      });
-      const j = await resp.json();
-      const items = j.data?.items || j.items || [];
+      // Pagina TODAS as páginas: cliente grande (ex.: SANTOS E LEMOS 1178) tem
+      // centenas de títulos e os ABERTOS podem estar numa página posterior — pegar
+      // só a página 1 trazia os mais antigos (já baixados) e dava "nenhum título".
+      const items = [];
+      for (let page = 1; page <= 20; page++) {
+        const resp = await fetch(`${TotvsURL}accounts-receivable/search`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            filter: { customerCodeList: [code], statusList: [1] },
+            page,
+            pageSize: 100,
+            order: '-issueDate',
+            expand: 'invoice,calculateValue',
+          }),
+        });
+        const j = await resp.json();
+        const lote = j.data?.items || j.items || [];
+        items.push(...lote);
+        const totalPages = j.data?.totalPages || j.data?.pages || 1;
+        if (lote.length === 0 || page >= totalPages) break;
+      }
       // Títulos com SALDO EM ABERTO (installmentValue - paidValue > 0). Inclui os
       // parcialmente pagos (TOTVS mantém o saldo aberto) — não só os intocados.
       const abertos = items
