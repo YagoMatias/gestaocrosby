@@ -208,6 +208,10 @@ const SolicitacaoBaixa = () => {
     const p = ref.split(':');
     if (p[0] === 'pagarme' && p[1] === 'pix' && p.length >= 4) return p.slice(0, 3).join(':'); // pagarme:pix:<pedido>:<fat-parc>
     if (p[0] === 'pagarme' && p[1] !== 'boleto' && p[1] !== 'pix' && p.length === 3) return p.slice(0, 2).join(':'); // BlueCard: pagarme:<cobrança>:<parcela>
+    // Somatória manual (João, 17/11/2026): quando UM pagamento cobre vários títulos
+    // (botão "localizar título" → somar), todas as linhas levam manual:grp:<id>:<fat-parc>
+    // e baixam como UM pagamento só no TOTVS. Pagamentos separados têm grupos diferentes.
+    if (p[0] === 'manual' && p[1] === 'grp' && p.length >= 4) return p.slice(0, 3).join(':'); // manual:grp:<id>:<fat-parc>
     return '';
   };
 
@@ -616,6 +620,15 @@ const SolicitacaoBaixa = () => {
       return v + 0.01 < saldo ? ` · baixa PARCIAL R$ ${v.toFixed(2)} de R$ ${saldo.toFixed(2)}` : '';
     };
     const t0 = titulos[0];
+    // Somatória de UM pagamento (João, 17/11/2026): quando mais de um título é
+    // vinculado, todas as linhas levam uma ref de GRUPO comum pra baixar como UM
+    // pagamento só no TOTVS (grupoDoPix). Mantém a base pagarme:pix:<pedido> quando
+    // a solicitação já é de Pix (preserva a dedupe); senão usa manual:grp:<id>.
+    const somando = titulos.length > 1;
+    const refOrig = String(sol.ref_externa || '');
+    const grupoBase = /^pagarme:pix:/.test(refOrig)
+      ? refOrig.split(':').slice(0, 3).join(':')
+      : `manual:grp:${sol.id}`;
     try {
       // 1º título fica na própria solicitação (vl_fatura = valor a baixar; parcial se menor que o saldo)
       const { error: e1 } = await supabaseAdmin
@@ -632,6 +645,8 @@ const SolicitacaoBaixa = () => {
           cd_portador: t0.bearerCode,
           nm_portador: t0.bearerName,
           observacao: `${obsBase} [titulo-manual por ${quem} em ${hoje}: ${tituloKey(t0)}${notaParcial(t0)}]`.trim(),
+          // só agrupa quando há mais de um título (um pagamento, N faturas)
+          ...(somando ? { ref_externa: `${grupoBase}:${tituloKey(t0)}` } : {}),
         })
         .eq('id', sol.id);
       if (e1) throw e1;
@@ -662,9 +677,9 @@ const SolicitacaoBaixa = () => {
           forma_pagamento: sol.forma_pagamento,
           dados_cartao: sol.dados_cartao ?? null,
           origem: sol.origem,
-          ref_externa: `manual:${sol.id}:${tituloKey(t)}`,
+          ref_externa: `${grupoBase}:${tituloKey(t)}`,
         });
-        if (e2) throw e2;
+        if (e2 && e2.code !== '23505') throw e2; // 23505 = já vinculado antes
       }
 
       setModalLocalizar(null);
