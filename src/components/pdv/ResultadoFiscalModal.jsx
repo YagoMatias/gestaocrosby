@@ -4,7 +4,8 @@
 import React, { useEffect, useState } from 'react';
 import { CheckCircle, XCircle, Warning, Printer, DownloadSimple, ArrowsClockwise, Prohibit, Spinner, Database, Ticket } from '@phosphor-icons/react';
 import { API_BASE_URL } from '../../config/constants';
-import { imprimirDocumento, gerarHtmlCupomTroca, abrirImpressao } from '../../utils/documentoFiscalHtml';
+import { imprimirDocumento } from '../../utils/documentoFiscalHtml';
+import { criarCupomTroca, imprimirCupomTroca as abrirCupomTroca } from '../../utils/cupomTroca';
 import { fetchSefaz } from '../../utils/fetchSefaz';
 
 const fmtBRL = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -43,36 +44,15 @@ export default function ResultadoFiscalModal({ resultado, onNovaVenda, onFechar,
     setCupomErro('');
     if (!vendaId || !ehVenda || !autorizada) return undefined;
     let vivo = true;
-    const dia = new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Recife' }).format(new Date(venda.criado_em || Date.now()));
-    fetch(`${API_BASE_URL}/api/pdv-crosby/cupons-troca`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        empresa: venda.empresa,
-        transacaoCode: venda.id,
-        transacaoDate: dia,
-        total: venda.total,
-        clienteCode: venda.cliente_code || null,
-        clienteNome: venda.cliente_nome || null,
-        vendedorCode: venda.vendedor_code || null,
-        vendedorNome: venda.vendedor_nome || null,
-        itens: (venda.itens || []).map((i) => ({ productCode: i.product_code, name: i.nome, quantity: i.quantidade })),
-        por: venda.criado_por || null,
-      }),
-    })
-      .then((r) => r.json().then((j) => ({ r, j })))
-      .then(({ r, j }) => {
-        if (!vivo) return;
-        if (r.ok && j.success) setCupom(j.data);
-        else setCupomErro(j?.message || 'Cupom de troca não gerado');
-      })
+    criarCupomTroca(venda)
+      .then((c) => vivo && setCupom(c))
       .catch((e) => vivo && setCupomErro(e.message));
     return () => {
       vivo = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vendaId, ehVenda, autorizada]);
-  const imprimirCupomTroca = () => cupom && abrirImpressao(gerarHtmlCupomTroca({ cupom, empresaNome: emitente?.xFant || venda?.empresa_nome || null }));
+  const imprimirCupomTroca = () => cupom && abrirCupomTroca(cupom, emitente?.xFant || venda?.empresa_nome);
   const modeloLabel = nota ? (Number(nota.modelo) === 65 ? 'NFC-e' : 'NF-e') : venda?.tipo_venda === 'nfce' ? 'NFC-e' : 'NF-e';
 
   const consultar = async () => {

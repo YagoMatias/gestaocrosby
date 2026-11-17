@@ -32,11 +32,14 @@ import {
   ArrowUp,
   Info,
   ArrowSquareOut,
+  Receipt,
+  Ticket,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
 import { apiJson } from '../utils/apiAuth';
 import { imprimirDanfe, salvarDanfePdf, avisoDoPdf } from '../utils/danfeAcoes';
+import { imprimirCupomFiscalDaNota, imprimirCupomTrocaDaNota } from '../utils/cupomTroca';
 
 const fmtBRL = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const fmtNum = (v) => Number(v || 0).toLocaleString('pt-BR');
@@ -431,6 +434,16 @@ function DetalheTransacao({ id, onFechar }) {
                             >
                               <Printer size={13} /> Imprimir
                             </button>
+                            {/* NFC-e: a mesma impressão em cupom (bobina) da hora da venda */}
+                            {Number(n.modelo) === 65 && (
+                              <button
+                                onClick={() => imprimirCupomFiscalDaNota(n.id).catch((e) => setAviso(e.message))}
+                                className={`${btn} bg-[#000638] text-white hover:bg-[#000638]/90`}
+                                title="Imprime a nota em cupom (bobina de 80 mm), igual à hora da venda"
+                              >
+                                <Receipt size={13} /> Cupom
+                              </button>
+                            )}
                             <button
                               onClick={() =>
                                 salvarDanfePdf(n.id, { cancelada: n.status === 'cancelada' })
@@ -444,6 +457,20 @@ function DetalheTransacao({ id, onFechar }) {
                             <a href={`${API_BASE_URL}/api/pdv-crosby/notas/${n.id}/xml`} className={`${btn} text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50`}>
                               <DownloadSimple size={13} /> XML
                             </a>
+                            {/* venda do PDV com a nota autorizada: cupom de troca (gera se ainda não houver) */}
+                            {d.origem === 'pdv' && n.status === 'autorizada' && (
+                              <button
+                                onClick={() =>
+                                  imprimirCupomTrocaDaNota(n.id)
+                                    .then((c) => setAviso(`Cupom de troca ${c.codigo} enviado para impressão.`))
+                                    .catch((e) => setAviso(e.message))
+                                }
+                                className={`${btn} bg-purple-700 text-white hover:bg-purple-800`}
+                                title="Gera (se ainda não houver) e imprime o cupom de troca desta venda"
+                              >
+                                <Ticket size={13} /> Cupom de troca
+                              </button>
+                            )}
                           </div>
                         )}
                       </li>
