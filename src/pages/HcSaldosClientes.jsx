@@ -18,7 +18,7 @@ const fmtBRL = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency'
 const fmtDataHora = (d) => (d ? new Date(d).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
 const inputCls = 'mb-0 h-9 w-full rounded-lg border border-gray-300 bg-white px-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#000638]/30';
 const labelCls = 'mb-1 block text-[10.5px] font-semibold uppercase tracking-wide text-gray-500';
-const TIPOS = { credev: 'Credev', adiantamento: 'Adiantamento' };
+const TIPOS = { credev: 'Credev', adiantamento: 'Adiantamento', cashback: 'Cashback' };
 const MOVIMENTOS = {
   carga_inicial: { label: 'Carga inicial (TOTVS)', cls: 'text-indigo-700' },
   devolucao: { label: 'Devolução', cls: 'text-emerald-700' },
@@ -26,6 +26,8 @@ const MOVIMENTOS = {
   uso: { label: 'Usado no faturamento', cls: 'text-rose-700' },
   estorno: { label: 'Estorno (voltou)', cls: 'text-emerald-700' },
   ajuste: { label: 'Gerado manualmente', cls: 'text-indigo-700' },
+  // cashback: acerto diário pelo saldo bônus do TOTVS
+  sinc_totvs: { label: 'Acerto pelo TOTVS', cls: 'text-amber-700' },
 };
 
 function Card({ rotulo, valor, cls = 'text-[#000638]' }) {
@@ -39,7 +41,7 @@ function Card({ rotulo, valor, cls = 'text-[#000638]' }) {
 
 export default function HcSaldosClientes() {
   const { user } = useAuth();
-  const [f, setF] = useState({ empresa: '99', busca: '', todos: false });
+  const [f, setF] = useState({ empresa: '99', busca: '', todos: false, tipo: '' });
   const [dados, setDados] = useState(null);
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState('');
@@ -52,7 +54,7 @@ export default function HcSaldosClientes() {
     setCarregando(true);
     setErro('');
     try {
-      const qs = new URLSearchParams({ ...(filtros.empresa ? { empresa: filtros.empresa } : {}), ...(filtros.busca ? { busca: filtros.busca } : {}), ...(filtros.todos ? { todos: '1' } : {}) });
+      const qs = new URLSearchParams({ ...(filtros.empresa ? { empresa: filtros.empresa } : {}), ...(filtros.busca ? { busca: filtros.busca } : {}), ...(filtros.todos ? { todos: '1' } : {}), ...(filtros.tipo ? { tipo: filtros.tipo } : {}) });
       const j = await apiJson(`${API}?${qs}`);
       setDados(j.data);
     } catch (e) {
@@ -83,7 +85,7 @@ export default function HcSaldosClientes() {
   return (
     <div className="flex-1 overflow-y-auto bg-gray-100 p-3 lg:p-4">
       <div className="mx-auto max-w-6xl">
-        <PageTitle title="Saldos de Clientes" subtitle="CREDEV e adiantamento do HeadCoach — usados no Faturamento e no Brejinho; devolução atendida soma ao CREDEV" icon={Wallet} />
+        <PageTitle title="Saldos de Clientes" subtitle="CREDEV e adiantamento do HeadCoach (usados no Faturamento e no Brejinho; devolução atendida soma ao CREDEV) e CASHBACK das lojas, copiado todo dia do saldo bônus do TOTVS" icon={Wallet} />
         {podeGerar && (
           <div className="mb-3 flex justify-end">
             <button onClick={() => setGerando(true)} className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-emerald-600 px-4 text-sm font-bold text-white hover:bg-emerald-700">
@@ -96,11 +98,20 @@ export default function HcSaldosClientes() {
             e.preventDefault();
             buscar(f);
           }}
-          className="mb-3 grid grid-cols-2 items-end gap-2 rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:grid-cols-[120px_1fr_auto_auto]"
+          className="mb-3 grid grid-cols-2 items-end gap-2 rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:grid-cols-[120px_150px_1fr_auto_auto]"
         >
           <div>
             <label className={labelCls}>Empresa</label>
             <input value={f.empresa} onChange={(e) => setF((x) => ({ ...x, empresa: e.target.value.replace(/\D/g, '') }))} placeholder="todas" inputMode="numeric" className={inputCls} />
+          </div>
+          <div>
+            <label className={labelCls}>Saldo</label>
+            <select value={f.tipo} onChange={(e) => setF((x) => ({ ...x, tipo: e.target.value }))} className={inputCls}>
+              <option value="">Todos</option>
+              <option value="credev">Credev</option>
+              <option value="adiantamento">Adiantamento</option>
+              <option value="cashback">Cashback</option>
+            </select>
           </div>
           <div>
             <label className={labelCls}>Cliente (código ou nome)</label>
@@ -117,14 +128,15 @@ export default function HcSaldosClientes() {
         {erro && <p className="mb-3 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700 ring-1 ring-rose-200">{erro}</p>}
         {dados && (
           <>
-            <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
               <Card rotulo="Clientes" valor={tot.clientes} />
               <Card rotulo="Credev" valor={fmtBRL(tot.credev)} cls="text-emerald-700" />
               <Card rotulo="Adiantamento" valor={fmtBRL(tot.adiantamento)} cls="text-sky-700" />
-              <Card rotulo="Total" valor={fmtBRL((tot.credev || 0) + (tot.adiantamento || 0))} />
+              <Card rotulo="Cashback" valor={fmtBRL(tot.cashback)} cls="text-amber-700" />
+              <Card rotulo="Total" valor={fmtBRL((tot.credev || 0) + (tot.adiantamento || 0) + (tot.cashback || 0))} />
             </div>
             <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-              <table className="w-full min-w-[760px] text-xs">
+              <table className="w-full min-w-[860px] text-xs">
                 <thead className="bg-gray-50 text-left text-[10px] uppercase tracking-wide text-gray-500">
                   <tr>
                     <th className="px-2 py-2">Cliente</th>
@@ -133,6 +145,7 @@ export default function HcSaldosClientes() {
                     <th className="px-2 py-2 text-right">Credev (saldo)</th>
                     <th className="px-2 py-2 text-right">Adiant. (carga)</th>
                     <th className="px-2 py-2 text-right">Adiant. (saldo)</th>
+                    <th className="px-2 py-2 text-right">Cashback</th>
                     <th className="px-2 py-2 text-right">Total</th>
                     <th className="px-2 py-2">Atualizado</th>
                   </tr>
@@ -140,7 +153,7 @@ export default function HcSaldosClientes() {
                 <tbody className="divide-y divide-gray-100">
                   {dados.lista.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="px-2 py-10 text-center text-gray-400">
+                      <td colSpan={9} className="px-2 py-10 text-center text-gray-400">
                         Nenhum cliente com saldo.
                       </td>
                     </tr>
@@ -155,6 +168,7 @@ export default function HcSaldosClientes() {
                       <td className="px-2 py-1.5 text-right font-semibold tabular-nums text-emerald-700">{fmtBRL(c.credev)}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums text-gray-400">{c.adiantamentoInicial ? fmtBRL(c.adiantamentoInicial) : '—'}</td>
                       <td className="px-2 py-1.5 text-right font-semibold tabular-nums text-sky-700">{fmtBRL(c.adiantamento)}</td>
+                      <td className="px-2 py-1.5 text-right font-semibold tabular-nums text-amber-700">{c.cashback ? fmtBRL(c.cashback) : '—'}</td>
                       <td className="px-2 py-1.5 text-right font-bold tabular-nums">{fmtBRL(c.total)}</td>
                       <td className="px-2 py-1.5 tabular-nums text-gray-500">{fmtDataHora(c.atualizadoEm)}</td>
                     </tr>
@@ -325,10 +339,11 @@ function Extrato({ cliente, onFechar }) {
           )
         ) : (
           <>
-            <div className="mb-3 grid grid-cols-3 gap-2">
+            <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
               <Card rotulo="Credev" valor={fmtBRL(d.saldo.credev)} cls="text-emerald-700" />
               <Card rotulo="Adiantamento" valor={fmtBRL(d.saldo.adiantamento)} cls="text-sky-700" />
-              <Card rotulo="Total" valor={fmtBRL(d.saldo.total)} />
+              <Card rotulo="Cashback" valor={fmtBRL(d.saldo.cashback)} cls="text-amber-700" />
+              <Card rotulo="Credev + adiant." valor={fmtBRL(d.saldo.total)} />
             </div>
             <p className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-gray-500">Extrato</p>
             {d.extrato.length === 0 ? (
