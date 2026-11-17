@@ -4,10 +4,16 @@
 //   • preço pela MESMA REGRA DO ORÇAMENTO: tabela do cliente quando houver,
 //     senão VENDA ATACADO (código 4)
 //   • os EPCs ficam VISÍVEIS por item e podem ser exportados em CSV
-//   • operação de devolução digitada pelo operador (campo livre)
-//   • gera a transação "em andamento" no TOTVS e acompanha até ATENDIDA —
-//     o caixa finaliza no TRAFP005 (Continuar Transação → Encerrar → Receber)
+//   • operação de devolução escolhida pelo operador (7243 / 7244 / 7245)
 // Devoluções em andamento ficam salvas por usuário (localStorage).
+//
+// DEVOLUÇÃO 100% NO HEADCOACH (Yago, 17/11/2026): a tela NÃO gera mais transação
+// no TOTVS. O operador busca as NOTAS DE VENDA do cliente, escolhe as que vai
+// referenciar e encerra: o HeadCoach grava a transação (igual ao PDV Crosby e à
+// tela de Transações), emite a NF-e de devolução e gera o CREDEV do cliente. O
+// valor de cada peça é o que o cliente pagou na nota (não a tabela de preço) e
+// peça que não está nas notas escolhidas não entra. Servidor:
+// /api/devolucao-rfid (services/devolucaoRfidHc.js).
 //
 // MODO NOTA FISCAL DO CLIENTE: quando o cliente (franquia = empresa no TOTVS)
 // já emitiu a nota de devolução, a tela busca essa nota (mesma origem do
@@ -15,7 +21,8 @@
 // a transação de entrada SÓ COM AS PEÇAS CONFERIDAS, pelo valor da nota (não
 // da tabela de preço). O que falta ou sobra NÃO entra na transação — fica
 // registrado em Devoluções de Mercadoria → Transações (recebido / faltando /
-// sobrando). O recebimento/encerramento continua no TOTVS (TRAFM060/TRAFP005).
+// sobrando). Esse modo também não gera transação no TOTVS: a entrada da nota
+// do cliente é dada à mão no FISFP082.
 import React, {
   useState,
   useEffect,
@@ -54,9 +61,12 @@ import {
   XCircle,
   SpeakerHigh,
   SpeakerSlash,
+  Printer,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import PortalPotenciaModal from '../components/PortalPotenciaModal';
+import NotasVendaDevolucao from '../components/devolucao/NotasVendaDevolucao';
+import { imprimirDocumento } from '../utils/documentoFiscalHtml';
 import { API_BASE_URL } from '../config/constants';
 import { useAuth } from '../components/AuthContext';
 import {
@@ -79,20 +89,9 @@ const DEVOLUCAO_CONFIG = {
   // CFOP 1202 = devolução de venda de mercadoria adquirida ou recebida de
   // terceiros (entrada). É o mesmo que o TOTVS usa nas operações de troca.
   cfop: 1202,
-  // Condição provisória; o caixa define a real ao encerrar no TRAFP005
-  paymentConditionCode: 1,
   // Mesma regra de preço do Orçamento: sem tabela do cliente, usa ATACADO
   priceCodes: '4',
   maxDescontoPct: 15,
-};
-
-// Situações da transação no TOTVS
-const TRX_STATUS = {
-  1: { label: 'Em andamento', cls: 'bg-amber-50 text-amber-700 ring-amber-200' },
-  2: { label: 'Encerrada', cls: 'bg-blue-50 text-blue-700 ring-blue-200' },
-  3: { label: 'Em processo externo', cls: 'bg-gray-100 text-gray-600 ring-gray-200' },
-  4: { label: 'ATENDIDA', cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200' },
-  6: { label: 'CANCELADA', cls: 'bg-rose-50 text-rose-700 ring-rose-200' },
 };
 
 const fmtBRL = (v) =>
@@ -341,10 +340,16 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
   const [nfAte, setNfAte] = useState(hojeIso);
   const [forcarDivergencia, setForcarDivergencia] = useState(false);
 
+  // Notas de VENDA do cliente que a devolução referencia (fluxo 100% HeadCoach)
+  const [refNotas, setRefNotas] = useState([]);
+  const [confRef, setConfRef] = useState(null); // conferência do servidor: peça × notas
+  const [confBusy, setConfBusy] = useState(false);
+  const [confErro, setConfErro] = useState('');
+  const manterRefNotas = useRef(null); // rascunho retomado: não limpar as notas dele
+
   // Transação gerada
   const [trx, setTrx] = useState(null);
-  const [trxStatus, setTrxStatus] = useState(null);
-  const [trxChecking, setTrxChecking] = useState(false);
+  const [reemitindo, setReemitindo] = useState(false);
 
   useEffect(() => localStorage.setItem('dev_rfid_branch', branch), [branch]);
   useEffect(() => localStorage.setItem('dev_rfid_seller', seller), [seller]);
@@ -380,7 +385,6 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
     }
     setItems([]);
     setTrx(null);
-    setTrxStatus(null);
     setDraftId(null);
     processedEpcs.current = new Set();
   }, [solicitacao]);
@@ -488,12 +492,13 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
       customerInfo,
       items,
       nfs,
+      refNotas,
     };
     const lista = [registro, ...drafts.filter((d) => d.id !== id)].slice(0, 30);
     persistDrafts(lista);
     setDraftId(id);
     showToast('ok', 'Devolução salva para continuar depois');
-  }, [items, draftId, branch, seller, operacao, cfop, customer, customerInfo, nfs, drafts, persistDrafts, showToast]);
+  }, [items, draftId, branch, seller, operacao, cfop, customer, customerInfo, nfs, refNotas, drafts, persistDrafts, showToast]);
 
   const abrirRascunho = useCallback(
     (d) => {
@@ -505,6 +510,8 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
       setItems(d.items || []);
       clienteDaNota.current = d.customer?.code ?? null;
       setNfs(d.nfs || (d.nf ? [d.nf] : []));
+      manterRefNotas.current = `${d.customer?.code ?? ''}|${d.branch || ''}`;
+      setRefNotas(d.refNotas || []);
       setDraftId(d.id);
       processedEpcs.current = new Set(
         (d.items || []).flatMap((i) => i.epcs || []),
@@ -1035,6 +1042,71 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
     return { qty, subtotal, discounts, epcs, total: subtotal - discounts };
   }, [items]);
 
+  // ─── Notas de venda referenciadas: o servidor confere peça × nota ────────
+  // trocou de cliente ou de empresa: as notas escolhidas não valem mais
+  useEffect(() => {
+    const par = `${customer?.code ?? ''}|${branch || ''}`;
+    if (manterRefNotas.current === par) {
+      manterRefNotas.current = null;
+      return;
+    }
+    setRefNotas([]);
+    setConfRef(null);
+    setConfErro('');
+  }, [customer?.code, branch]);
+
+  const itensConf = useMemo(
+    () => items.map((i) => ({ productCode: i.productCode, quantidade: qtyOf(i) })).filter((i) => i.quantidade > 0),
+    [items],
+  );
+  const assinaturaConf = useMemo(
+    () => JSON.stringify([branch, customer?.code ?? null, refNotas.map((n) => n.chave), itensConf]),
+    [branch, customer?.code, refNotas, itensConf],
+  );
+  const semNotaDoCliente = nfs.length === 0;
+  useEffect(() => {
+    if (!semNotaDoCliente || !branch || !customer?.code || refNotas.length === 0 || itensConf.length === 0) {
+      setConfRef(null);
+      setConfErro('');
+      setConfBusy(false);
+      return undefined;
+    }
+    let vivo = true;
+    setConfBusy(true);
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch(`${API_BASE_URL}/api/devolucao-rfid/conferir`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ empresa: parseInt(branch, 10), clienteCode: customer.code, itens: itensConf, chaves: refNotas.map((n) => n.chave) }),
+        });
+        const j = await r.json();
+        if (!vivo) return;
+        if (!r.ok || !j.success) {
+          setConfRef(null);
+          setConfErro(j?.message || 'Não consegui conferir as peças nas notas');
+        } else {
+          setConfRef(j.data);
+          setConfErro('');
+        }
+      } catch (e) {
+        if (vivo) {
+          setConfRef(null);
+          setConfErro(e.message);
+        }
+      } finally {
+        if (vivo) setConfBusy(false);
+      }
+    }, 450);
+    return () => {
+      vivo = false;
+      clearTimeout(t);
+    };
+    // a assinatura resume empresa, cliente, notas e peças
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assinaturaConf, semNotaDoCliente]);
+  const confPorProduto = useMemo(() => new Map((confRef?.itens || []).map((i) => [Number(i.productCode), i])), [confRef]);
+
   // ─── Exportação da lista de EPC ──────────────────────────────────────────
   const linhasEpc = useMemo(
     () =>
@@ -1111,14 +1183,16 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
     }
   }, [linhasEpc, showToast]);
 
-  // ─── Gerar transação de devolução no TOTVS ───────────────────────────────
+  // ─── Encerrar a devolução (HeadCoach) ────────────────────────────────────
   const novaDevolucao = useCallback(() => {
     setItems([]);
     setCustomer(null);
     setCustomerInfo(null);
     setTrx(null);
-    setTrxStatus(null);
     setDraftId(null);
+    setRefNotas([]);
+    setConfRef(null);
+    setConfErro('');
     setNfs([]);
     setNfLista(null);
     setForcarDivergencia(false);
@@ -1131,11 +1205,12 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
   const cfopValido = /^\d{4}$/.test(String(cfop).trim());
 
   const baseOk = !posting && branch && customer && seller && operacaoValida && cfopValido;
-  // Com nota do cliente: entram SÓ as peças conferidas (pelo valor da nota);
-  // basta ter ao menos uma. Sem nota: vale o que foi lido, pela tabela.
+  // Com nota EMITIDA PELO CLIENTE: entram só as peças conferidas (valor da nota
+  // dele). Sem ela (o normal): precisa das NOTAS DE VENDA referenciadas e de
+  // todas as peças lidas dentro delas — o servidor confere.
   const canGenerate = nf
     ? baseOk && !nf.recebida && (conferencia?.conferidas || 0) > 0
-    : baseOk && items.length > 0 && items.every((i) => qtyOf(i) > 0 && i.unit > 0);
+    : baseOk && items.length > 0 && items.every((i) => qtyOf(i) > 0) && refNotas.length > 0 && !!confRef?.ok && !confBusy;
 
   const gerarTransacao = useCallback(async () => {
     if (!canGenerate) return;
@@ -1205,202 +1280,117 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
         return;
       }
 
-      const itensPayload = nf
-        ? // só as peças CONFERIDAS, pelo valor da nota do cliente
-          conferencia.linhasPayload.map((it) => {
-            const discountValue = Number(Number(it.unitDiscount || 0).toFixed(3));
-            return {
-              productCode: it.productCode,
-              quantity: Number(it.quantity),
-              value: Number(Number(it.unitGross).toFixed(3)),
-              ...(discountValue > 0 ? { discountValue } : {}),
-              cfop: parseInt(cfop, 10),
-            };
-          })
-        : items.map((i) => {
-            const q = qtyOf(i);
-            const discountValue = Number(Number(i.discount || 0).toFixed(3));
-            return {
-              productCode: i.productCode,
-              quantity: q,
-              value: Number(Number(i.unit).toFixed(3)),
-              ...(discountValue > 0 ? { discountValue } : {}),
-              cfop: parseInt(cfop, 10),
-            };
-          });
-      // 3 casas: o TOTVS soma as linhas com os valores de 3 decimais (value/
-      // discountValue). Arredondar o total para 2 casas gerava divergência
-      // "totalAmountCalculated != TotalAmountTransaction".
-      const totalExato = Number(
-        itensPayload
-          .reduce(
-            (s, it) => s + it.quantity * (it.value - (it.discountValue || 0)),
-            0,
-          )
-          .toFixed(3),
-      );
-
-      const payload = {
-        branchCode: parseInt(branch, 10),
-        customerCode: customer.code,
-        sellerCode: parseInt(seller, 10),
-        operationCode: parseInt(operacao, 10),
-        paymentConditionCode: DEVOLUCAO_CONFIG.paymentConditionCode,
-        isPreSale: false,
-        status: 1,
-        totalAmountTransaction: totalExato,
-        items: itensPayload,
-        // Observação da transação (máx. 80 caracteres por linha no TOTVS):
-        // deixa registrado de qual nota do cliente esta entrada veio
-        ...(nf
-          ? {
-              observations: [
-                ...nf.notas.flatMap((n) => [
-                  { observation: `REF NF ${n.invoiceCode}/${n.serialCode} DE ${n.invoiceDate.split('-').reverse().join('/')} EMP ${n.branchCode} - HEADCOACH`.slice(0, 80) },
-                  ...(n.accessKey ? [{ observation: `CHAVE ${n.accessKey}`.slice(0, 80) }] : []),
-                ]),
-                ...(conferencia && !conferencia.ok
-                  ? [{ observation: `PARCIAL: RECEBIDAS ${conferencia.conferidas} DE ${conferencia.esperado} - FALTAM ${conferencia.faltando} SOBRAM ${conferencia.sobrando}`.slice(0, 80) }]
-                  : []),
-              ],
-            }
-          : {}),
-      };
-      const r = await fetch(`${API_BASE_URL}/api/totvs/pdv/transactions`, {
+      // Devolução pelas NOTAS DE VENDA do cliente — 100% HeadCoach: grava a
+      // transação, emite a NF-e de devolução e gera o CREDEV. Nada vai ao TOTVS.
+      const vend = sellers.find((sl) => String(sl.code) === String(seller));
+      const emp = branches.find((b) => String(b.cd_empresa) === String(branch));
+      const r = await fetch(`${API_BASE_URL}/api/devolucao-rfid/encerrar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          empresa: parseInt(branch, 10),
+          empresaNome: emp?.nm_grupoempresa || null,
+          cliente: { code: customer.code, nome: customer.name },
+          vendedor: { code: parseInt(seller, 10), nome: vend?.name || null },
+          operacao: parseInt(operacao, 10),
+          itens: items.map((i) => ({ productCode: i.productCode, quantidade: qtyOf(i), epcs: i.epcs })),
+          chaves: refNotas.map((n) => n.chave),
+          solicitacaoId: solicitacao?.id || null,
+          criadoPor: user?.name || user?.email || null,
+        }),
       });
       const j = await r.json();
       if (!r.ok || !j.success) {
         beep(false);
-        showToast('erro', j?.message || 'TOTVS recusou a devolução');
+        showToast('erro', j?.message || 'Não consegui encerrar a devolução');
+        // o servidor refez a conferência: mostra o que ele recusou
+        if (j?.details?.itens) setConfRef((c) => (c ? { ...c, ok: false, itens: j.details.itens } : c));
         return;
       }
+      const d = j.data;
       const nova = {
-        ...j.data,
-        total: totalExato,
+        hc: true,
+        vendaId: d.venda.id,
+        venda: d.venda,
+        nota: d.nota,
+        emitente: d.emitente || null,
+        autorizada: !!d.autorizada,
+        erroEmissao: d.erroEmissao || null,
+        credev: d.credev || null,
+        branchCode: parseInt(branch, 10),
+        transactionCode: d.venda.id,
+        transactionDate: new Date().toISOString().slice(0, 10),
+        total: Number(d.venda.total),
         operacao: parseInt(operacao, 10),
-        cfop: parseInt(cfop, 10),
         qtdEpcs: totals.epcs,
+        qtdPecas: Number(d.venda.qtd_pecas) || totals.qty,
         customerCode: customer.code,
-        // com nota, só os EPCs das peças que entraram (sobras ficam de fora)
-        epcs: nf ? conferencia.recebidos.flatMap((r) => r.epcs) : items.flatMap((i) => i.epcs),
-        nf: nf ? { invoiceCode: nf.invoiceCode, serialCode: nf.serialCode, accessKey: nf.accessKey, branchCode: nf.branchCode, notas: nf.notas } : null,
+        customerName: customer.name,
+        epcs: items.flatMap((i) => i.epcs),
+        notasRef: refNotas.map((n) => ({ numero: n.numero, serie: n.serie })),
       };
       setTrx(nova);
-      setTrxStatus(1);
-      beep(true);
+      beep(nova.autorizada);
       onTransacaoGerada?.(nova);
-
-      // Registra a transação em Devoluções de Mercadoria → Transações, com o
-      // detalhe do que entrou e do que ficou de fora (faltando / sobrando)
-      try {
-        const vend = sellers.find((sl) => String(sl.code) === String(seller));
-        const semNota = items.map((i) => ({
-          productCode: i.productCode,
-          name: i.name,
-          quantidade: qtyOf(i),
-          unit: Number((i.unit - (i.discount || 0)).toFixed(2)),
-          total: Number((qtyOf(i) * (i.unit - (i.discount || 0))).toFixed(2)),
-          epcs: i.epcs,
-        }));
-        const rr = await fetch(`${API_BASE_URL}/api/devolucoes/transacoes`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            devolucaoId: solicitacao?.id || null,
-            empresa: nova.branchCode,
-            transactionCode: nova.transactionCode,
-            transactionDate: nova.transactionDate,
-            status: 1,
-            operacao: nova.operacao,
-            cfop: nova.cfop,
-            total: totalExato,
-            clienteCode: customer.code,
-            clienteNome: customer.name,
-            vendedorCode: parseInt(seller, 10),
-            vendedorNome: vend?.name || null,
-            nf: nf
-              ? {
-                  invoiceCode: nf.invoiceCode,
-                  serialCode: nf.notas.length > 1 ? `${nf.serialCode} +${nf.notas.length - 1}` : nf.serialCode,
-                  invoiceDate: nf.invoiceDate,
-                  branchCode: nf.branchCode,
-                  accessKey: nf.notas.map((n) => n.accessKey).filter(Boolean).join(','),
-                  totalValue: nf.totalValue,
-                  quantity: nf.quantity,
-                }
-              : null,
-            recebidos: nf ? conferencia.recebidos : semNota,
-            faltando: nf ? conferencia.faltantes : [],
-            sobrando: nf ? conferencia.sobras : [],
-            por: user?.name || user?.email || null,
-          }),
-        });
-        const jr = await rr.json();
-        if (rr.ok && jr.success) setTrx((t) => (t ? { ...t, registroId: jr.data.id } : t));
-        else showToast('erro', `Transação gerada, mas o registro do detalhe falhou: ${jr?.message || ''}`);
-      } catch (er) {
-        showToast('erro', `Transação gerada, mas o registro do detalhe falhou: ${er.message}`);
-      }
+      if (nova.autorizada) onStatusTransacao?.(nova, 4);
       // tira a devolução da lista de pendentes: virou transação
       if (draftId) apagarRascunho(draftId);
     } catch (e) {
-      showToast('erro', `Falha ao gerar a devolução: ${e.message}`);
+      showToast('erro', `Falha ao encerrar a devolução: ${e.message}`);
     } finally {
       setPosting(false);
     }
-  }, [canGenerate, branch, customer, seller, sellers, operacao, cfop, items, totals.epcs, draftId, apagarRascunho, showToast, onTransacaoGerada, nf, conferencia, solicitacao, user]);
+  }, [canGenerate, branch, branches, customer, seller, sellers, operacao, cfop, items, totals.epcs, totals.qty, draftId, apagarRascunho, showToast, onTransacaoGerada, onStatusTransacao, nf, conferencia, solicitacao, user, refNotas]);
 
-  // ─── Acompanha o status até ATENDIDA (caixa finaliza no TRAFP005) ────────
-  const verificarStatus = useCallback(async () => {
-    if (!trx || trx.fisfp082 || trxChecking) return;
-    setTrxChecking(true);
+  // ─── NF-e de devolução rejeitada: tentar de novo ou cancelar a transação ──
+  const reemitirDevolucao = useCallback(async () => {
+    if (!trx?.hc || trx.autorizada || reemitindo) return;
+    setReemitindo(true);
     try {
-      const qs = new URLSearchParams({
-        branch: trx.branchCode,
-        code: trx.transactionCode,
-        date: String(trx.transactionDate).slice(0, 10),
-      });
-      const r = await fetch(
-        `${API_BASE_URL}/api/totvs/pdv/transaction-status?${qs}`,
-      );
+      const r = await fetch(`${API_BASE_URL}/api/pdv-crosby/vendas/${trx.vendaId}/emitir`, { method: 'POST' });
       const j = await r.json();
-      if (j?.data?.status != null) setTrxStatus(j.data.status);
-    } catch {
-      /* tenta no próximo ciclo */
+      const d = j.data || {};
+      const autorizada = r.ok && d.nota?.status === 'autorizada';
+      const nova = {
+        ...trx,
+        venda: d.venda || trx.venda,
+        nota: d.nota || trx.nota,
+        emitente: d.emitente || trx.emitente,
+        autorizada,
+        erroEmissao: autorizada ? null : j?.message || 'A nota não foi autorizada',
+        credev: autorizada ? { gerado: trx.total, saldo: null } : null,
+      };
+      setTrx(nova);
+      beep(autorizada);
+      if (autorizada) onStatusTransacao?.(nova, 4);
+    } catch (e) {
+      showToast('erro', `Falha ao emitir: ${e.message}`);
     } finally {
-      setTrxChecking(false);
+      setReemitindo(false);
     }
-  }, [trx, trxChecking]);
+  }, [trx, reemitindo, onStatusTransacao, showToast]);
 
-  useEffect(() => {
-    if (!trx || trx.fisfp082 || trxStatus === 4 || trxStatus === 6) return undefined;
-    const t = setInterval(verificarStatus, 10000);
-    return () => clearInterval(t);
-  }, [trx, trxStatus, verificarStatus]);
-
-  const ultimoStatusAvisado = useRef(null);
-  useEffect(() => {
-    if (!trx || trx.fisfp082 || trxStatus == null) return;
-    const chave = `${trx.transactionCode}:${trxStatus}`;
-    if (ultimoStatusAvisado.current === chave) return;
-    ultimoStatusAvisado.current = chave;
-    onStatusTransacao?.(trx, trxStatus);
-    if (trx.registroId && trxStatus !== 1) {
-      fetch(`${API_BASE_URL}/api/devolucoes/transacoes/${trx.registroId}/status`, {
+  const cancelarDevolucao = useCallback(async () => {
+    if (!trx?.hc || trx.autorizada || reemitindo) return;
+    if (!window.confirm(`Cancelar a transação ${trx.vendaId}? A nota não foi emitida; as peças ficam livres para outra devolução.`)) return;
+    setReemitindo(true);
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/pdv-crosby/vendas/${trx.vendaId}/cancelar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: trxStatus }),
-      }).catch(() => {});
+        body: JSON.stringify({ motivo: 'Devolução RFID: NF-e não emitida', por: user?.name || user?.email || null }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.success) throw new Error(j?.message || 'Não consegui cancelar');
+      onStatusTransacao?.(trx, 6);
+      setTrx(null);
+      showToast('ok', `Transação ${trx.vendaId} cancelada`);
+    } catch (e) {
+      showToast('erro', e.message);
+    } finally {
+      setReemitindo(false);
     }
-  }, [trx, trxStatus, onStatusTransacao]);
-
-  const stInfo = TRX_STATUS[trxStatus] || {
-    label: `status ${trxStatus}`,
-    cls: 'bg-gray-100 text-gray-600 ring-gray-200',
-  };
+  }, [trx, reemitindo, user, onStatusTransacao, showToast]);
 
   return (
     <div className="flex-1 overflow-y-auto bg-gray-100 p-3 lg:p-4">
@@ -1408,7 +1398,7 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
         {!embutido && (
           <PageTitle
             title="Devolução RFID"
-            subtitle="Leia as peças pelo portal, confira os EPCs e gere a devolução no TOTVS (finalize no TRAFP005)"
+            subtitle="Leia as peças pelo portal, escolha as notas de venda do cliente e encerre: o HeadCoach emite a NF-e de devolução e gera o Credev"
             icon={ArrowUUpLeft}
           />
         )}
@@ -1546,7 +1536,7 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
                 <select
                   value={operacao}
                   onChange={(e) => setOperacao(e.target.value)}
-                  title="Operação de devolução no TOTVS — escolha a cada devolução"
+                  title="Operação da devolução — escolha a cada devolução"
                   className={`w-full h-9 pl-8 pr-2 mb-0 rounded-lg border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#000638]/30 ${
                     operacao ? 'border-gray-300' : 'border-amber-400'
                   }`}
@@ -1581,7 +1571,9 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
             )}
             {ufEmpresa && ufCliente && (
               <p className="mt-1 text-[10px] text-gray-400">
-                Empresa {ufEmpresa} · cliente {ufCliente} → CFOP {cfop}
+                {nf
+                  ? `Empresa ${ufEmpresa} · cliente ${ufCliente} → CFOP ${cfop}`
+                  : 'Na NF-e de devolução o CFOP de cada peça vem da nota de venda (5101 → 1201, 5102 → 1202, 6101/6107 → 2201, 6102/6108 → 2202).'}
               </p>
             )}
           </div>
@@ -1607,9 +1599,9 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
                   : '')
               }
             >
-              {nf ? (
+              {nf || refNotas.length > 0 ? (
                 <>
-                  <FileText size={13} /> Valores da nota fiscal
+                  <FileText size={13} /> {nf ? 'Valores da nota fiscal' : 'Valor pago na nota de venda'}
                 </>
               ) : !customer ? (
                 '—'
@@ -1633,6 +1625,20 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
             </div>
           </div>
         </div>
+
+        {/* Notas de VENDA do cliente: o que a NF-e de devolução referencia */}
+        {!nf && (
+          <NotasVendaDevolucao
+            empresa={branch}
+            cliente={customer}
+            itens={itensConf}
+            selecionadas={refNotas}
+            onChange={setRefNotas}
+            conferencia={confRef}
+            conferindo={confBusy}
+            erroConferencia={confErro}
+          />
+        )}
 
         {/* Nota fiscal emitida pelo cliente (conferência + entrada espelhando a nota) */}
         <div className={`mb-2 rounded-xl border shadow-sm p-3 ${nf ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-gray-200'}`}>
@@ -1681,9 +1687,9 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
             <div className="flex flex-wrap items-center gap-2">
               <FileText size={16} className="text-[#000638]" />
               <div className="flex-1 min-w-[220px]">
-                <p className="text-xs font-semibold text-[#000638]">O cliente já emitiu a nota de devolução?</p>
+                <p className="text-xs font-semibold text-[#000638]">O cliente já emitiu a nota de devolução dele?</p>
                 <p className="text-[11px] text-gray-500">
-                  Busque a nota dele para conferir as peças contra os itens e gerar a entrada com os valores da nota.
+                  Só nesse caso: busque a nota dele para conferir as peças. O HeadCoach registra o recebimento e a entrada da nota é dada no FISFP082 (não emite outra nota nem gera Credev aqui).
                 </p>
               </div>
               <button
@@ -1934,16 +1940,31 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
                           {g.nome}
                         </td>
                         <td className="px-2 py-1 text-right text-[10px] font-bold text-[#000638] whitespace-nowrap">
-                          {g.qty} pç · {fmtBRL(g.total)}
+                          {g.qty} pç ·{' '}
+                          {fmtBRL(refNotas.length > 0 ? g.items.reduce((sm, i) => sm + Number(confPorProduto.get(Number(i.productCode))?.total || 0), 0) : g.total)}
                         </td>
                         <td />
                       </tr>
-                      {g.items.map((i) => (
-                        <tr key={i.productCode} className="hover:bg-gray-50/60 align-top">
+                      {g.items.map((i) => {
+                        // conferência com as notas de venda escolhidas (quando há)
+                        const cf = refNotas.length > 0 ? confPorProduto.get(Number(i.productCode)) || null : null;
+                        const unitMostrado = cf?.ok ? cf.valorUnit : i.unit;
+                        return (
+                        <tr key={i.productCode} className={`align-top ${cf && !cf.ok ? 'bg-rose-50/60' : 'hover:bg-gray-50/60'}`}>
                           <td className="px-3 py-1.5">
                             <p className="font-medium text-[#000638] leading-tight text-[13px]">
                               {i.name}
                             </p>
+                            {cf &&
+                              (cf.ok ? (
+                                <p className="text-[11px] font-semibold text-violet-700">
+                                  NF {cf.notas.map((n) => `${n.numero}/${n.serie}`).join(', ')} · {fmtBRL(cf.valorUnit)} por peça (valor pago na nota)
+                                </p>
+                              ) : (
+                                <p className="text-[11px] font-semibold text-rose-600 inline-flex items-start gap-1">
+                                  <Warning size={12} weight="bold" className="mt-0.5 shrink-0" /> {cf.mensagem}
+                                </p>
+                              ))}
                             <p className="text-[11px] text-gray-400">
                               cód. {i.productCode}
                               {i.sku ? ` · EAN ${i.sku}` : ''}
@@ -2011,10 +2032,13 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
                               </button>
                             </span>
                           </td>
-                          <td className="px-2 py-1.5 text-right font-medium text-gray-700 tabular-nums text-[13px]">
-                            {fmtBRL(i.unit)}
+                          <td className={`px-2 py-1.5 text-right font-medium tabular-nums text-[13px] ${cf?.ok ? 'text-violet-700' : 'text-gray-700'}`}>
+                            {cf && !cf.ok ? '—' : fmtBRL(unitMostrado)}
                           </td>
                           <td className="px-2 py-1.5 text-right">
+                            {refNotas.length > 0 ? (
+                              <span className="text-[11px] text-gray-300" title="O valor vem da nota de venda">—</span>
+                            ) : (
                             <input
                               type="number"
                               min="0"
@@ -2033,9 +2057,10 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
                               }}
                               className="w-20 h-7 rounded-md border border-gray-200 text-right text-[13px] px-1.5 mb-0 focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
                             />
+                            )}
                           </td>
                           <td className="px-2 py-1.5 text-right font-semibold text-[#000638] text-[13px]">
-                            {fmtBRL(qtyOf(i) * (i.unit - (i.discount || 0)))}
+                            {cf ? (cf.ok ? fmtBRL(cf.total) : '—') : fmtBRL(qtyOf(i) * (i.unit - (i.discount || 0)))}
                           </td>
                           <td className="px-2 py-1.5 text-center">
                             <button
@@ -2047,7 +2072,8 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
                             </button>
                           </td>
                         </tr>
-                      ))}
+                        );
+                      })}
                     </React.Fragment>
                   ))}
                 </tbody>
@@ -2247,23 +2273,29 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
               ) : (
               <div className="space-y-1 text-[13px]">
                 <div className="flex justify-between text-gray-500">
-                  <span>Peças</span>
+                  <span>Peças lidas</span>
                   <span className="tabular-nums">{totals.qty}</span>
                 </div>
                 <div className="flex justify-between text-gray-500">
-                  <span>Subtotal</span>
-                  <span className="tabular-nums">{fmtBRL(totals.subtotal)}</span>
+                  <span>Notas de venda referenciadas</span>
+                  <span className={`tabular-nums ${refNotas.length ? '' : 'text-amber-600 font-semibold'}`}>{refNotas.length || 'nenhuma'}</span>
                 </div>
-                <div className="flex justify-between text-gray-500">
-                  <span>Descontos</span>
-                  <span className="tabular-nums">− {fmtBRL(totals.discounts)}</span>
-                </div>
+                {confRef && !confRef.ok && (
+                  <div className="flex justify-between text-rose-700">
+                    <span>Peças fora das notas</span>
+                    <span className="tabular-nums">{confRef.itens.filter((i) => !i.ok).reduce((sm, i) => sm + Number(i.quantidade || 0), 0)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between items-baseline pt-1.5 border-t border-gray-100">
-                  <span className="font-semibold text-gray-700">Total devolvido</span>
+                  <span className="font-semibold text-gray-700">Total da devolução</span>
                   <span className="text-xl font-bold text-[#000638] tabular-nums">
-                    {fmtBRL(totals.total)}
+                    {confBusy ? <Spinner size={16} className="animate-spin inline" /> : confRef ? fmtBRL(confRef.totais.valor) : '—'}
                   </span>
                 </div>
+                <p className="text-[10px] text-gray-400">
+                  Valor que o cliente pagou em cada peça, pelas notas de venda. Ao encerrar, o HeadCoach emite a NF-e de devolução e esse total vira{' '}
+                  <b>Credev do cliente</b> na empresa {branch || '—'}. Nada vai para o TOTVS.
+                </p>
               </div>
               )}
 
@@ -2274,32 +2306,44 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
               >
                 {posting ? (
                   <>
-                    <Spinner size={16} className="animate-spin" /> Gerando…
+                    <Spinner size={16} className="animate-spin" /> {nf ? 'Gravando…' : 'Emitindo a NF-e de devolução…'}
                   </>
                 ) : (
                   <>
-                    <Receipt size={16} weight="bold" /> {nf ? `RECEBER ${conferencia?.conferidas || 0} PEÇA(S) CONFERIDA(S)` : 'GERAR DEVOLUÇÃO'}
+                    <Receipt size={16} weight="bold" /> {nf ? `RECEBER ${conferencia?.conferidas || 0} PEÇA(S) CONFERIDA(S)` : 'ENCERRAR TRANSAÇÃO'}
                   </>
                 )}
               </button>
-              {!canGenerate && (items.length > 0 || nf) && (
+              {!canGenerate && !posting && (
                 <p className="mt-1.5 text-[10px] text-gray-400 text-center">
                   {nf?.recebida
                     ? `Esta nota já foi recebida na transação ${nf.recebida.transactionCode}.`
-                    : !operacaoValida
-                      ? 'Digite o código da operação de devolução.'
-                      : !cfopValido
-                        ? 'CFOP inválido (4 dígitos, ex.: 1202).'
+                    : !branch || !seller || !customer
+                      ? 'Preencha empresa, vendedor e cliente.'
+                      : !operacaoValida
+                        ? 'Escolha a operação da devolução.'
                         : nf && conferencia && conferencia.conferidas === 0
                           ? 'Confira ao menos uma peça da nota.'
-                          : 'Preencha empresa, vendedor e cliente.'}
+                          : nf
+                            ? 'Confira os dados da devolução.'
+                            : items.length === 0
+                              ? 'Leia as peças que estão voltando.'
+                              : refNotas.length === 0
+                                ? 'Busque e escolha a(s) nota(s) de venda do cliente.'
+                                : confBusy
+                                  ? 'Conferindo as peças nas notas…'
+                                  : confErro
+                                    ? confErro
+                                    : confRef && !confRef.ok
+                                      ? 'Há peça fora das notas escolhidas: escolha a nota dela ou tire a peça.'
+                                      : 'Confira os dados da devolução.'}
                 </p>
               )}
             </div>
           </div>
         </div>
 
-        {/* Modal: resultado — FISFP082 (nota do cliente) ou transação TOTVS */}
+        {/* Modal: resultado — FISFP082 (nota emitida pelo cliente) */}
         {trx && trx.fisfp082 && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
             <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 text-center">
@@ -2342,73 +2386,76 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
             </div>
           </div>
         )}
-        {/* Modal: devolução gerada no TOTVS + acompanhamento até ATENDIDA */}
-        {trx && !trx.fisfp082 && (
-
+        {/* Modal: devolução encerrada no HeadCoach — NF-e de devolução + Credev */}
+        {trx && trx.hc && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 text-center">
-              <CheckCircle
-                size={44}
-                weight="fill"
-                className={`mx-auto mb-2 ${
-                  trxStatus === 4 ? 'text-emerald-500' : trxStatus === 6 ? 'text-rose-500' : 'text-blue-500'
-                }`}
-              />
-              <h3 className="text-lg font-bold text-[#000638]">
-                {trxStatus === 4
-                  ? 'Devolução atendida!'
-                  : trxStatus === 6
-                    ? 'Transação cancelada'
-                    : 'Devolução gerada!'}
-              </h3>
+            <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 text-center">
+              {trx.autorizada ? (
+                <CheckCircle size={44} weight="fill" className="mx-auto mb-2 text-emerald-500" />
+              ) : (
+                <XCircle size={44} weight="fill" className="mx-auto mb-2 text-rose-500" />
+              )}
+              <h3 className="text-lg font-bold text-[#000638]">{trx.autorizada ? 'Devolução encerrada!' : 'A NF-e de devolução não saiu'}</h3>
               <p className="mt-2 text-sm text-gray-600">
-                Nº da transação{' '}
-                <span className="font-mono font-bold text-[#000638] text-xl">
-                  {trx.transactionCode}
-                </span>
+                Transação do HeadCoach nº <span className="font-mono font-bold text-[#000638] text-xl">{trx.vendaId}</span>
                 <br />
-                Empresa {trx.branchCode} · operação {trx.operacao} · CFOP {trx.cfop}
-                {trx.nf && (
-                  <>
-                    <br />
-                    Ref. {(trx.nf.notas || [trx.nf]).length > 1 ? 'NFs do cliente' : 'NF do cliente'}{' '}
-                    {(trx.nf.notas || [trx.nf]).map((n) => `${n.invoiceCode}/${n.serialCode}`).join(', ')} (empresa {trx.nf.branchCode})
-                  </>
-                )}
+                Empresa {trx.branchCode} · operação {trx.operacao}
                 <br />
-                {fmtBRL(trx.total)} · {trx.qtdEpcs} etiqueta(s)
+                {trx.customerName}
+                <br />
+                Ref. {trx.notasRef.length > 1 ? 'notas de venda' : 'nota de venda'} {trx.notasRef.map((n) => `${n.numero}/${n.serie}`).join(', ')}
+                <br />
+                <b>{fmtBRL(trx.total)}</b> · {trx.qtdPecas} peça(s) · {trx.qtdEpcs} etiqueta(s)
               </p>
 
-              <div className="mt-3 flex items-center justify-center gap-2">
-                <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ring-1 ${stInfo.cls}`}>
-                  {trxStatus !== 4 && trxStatus !== 6 && <Spinner size={12} className="animate-spin" />}
-                  {stInfo.label}
-                </span>
-                <button
-                  onClick={verificarStatus}
-                  disabled={trxChecking}
-                  className="h-8 px-2.5 rounded-lg text-[11px] font-semibold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50 disabled:opacity-40 inline-flex items-center gap-1"
-                  title="Verificar agora"
-                >
-                  <ArrowsClockwise size={12} className={trxChecking ? 'animate-spin' : ''} />
-                  Atualizar
-                </button>
-              </div>
-
-              {trxStatus !== 4 && trxStatus !== 6 && (
-                <p className="mt-3 text-xs text-gray-500 bg-gray-50 rounded-xl p-2.5 ring-1 ring-gray-200">
-                  Finalize no caixa TOTVS: <b>TRAFP005</b> → Continuar Transação nº{' '}
-                  <b>{trx.transactionCode}</b> → Encerrar → Receber. Esta tela atualiza sozinha a cada
-                  10s.
-                </p>
-              )}
-              {trxStatus === 4 && (
-                <p className="mt-3 text-sm text-emerald-700 bg-emerald-50 rounded-xl p-2.5 ring-1 ring-emerald-200">
-                  Devolução processada no caixa — encerrada aqui também. ✅
-                </p>
+              {trx.autorizada ? (
+                <div className="mt-3 text-sm text-emerald-800 bg-emerald-50 rounded-xl p-3 ring-1 ring-emerald-200 text-left space-y-1">
+                  <p>
+                    <b>
+                      NF-e de devolução {trx.nota?.numero}/{trx.nota?.serie}
+                    </b>{' '}
+                    autorizada pela SEFAZ.
+                  </p>
+                  <p>
+                    <b>Credev de {fmtBRL(trx.credev?.gerado ?? trx.total)}</b> gerado para o cliente na empresa {trx.branchCode}
+                    {trx.credev?.saldo != null ? ` — saldo de Credev agora: ${fmtBRL(trx.credev.saldo)}` : ''}.
+                  </p>
+                  <p className="text-[11px] text-emerald-700">A transação está em HeadCoach › Transações. Nada foi lançado no TOTVS.</p>
+                </div>
+              ) : (
+                <div className="mt-3 text-xs text-rose-800 bg-rose-50 rounded-xl p-3 ring-1 ring-rose-200 text-left space-y-1">
+                  <p className="font-semibold">{trx.erroEmissao || 'A SEFAZ não autorizou a nota.'}</p>
+                  <p>A transação ficou gravada <b>em andamento</b> e o Credev só é gerado quando a nota for autorizada. Corrija o que a mensagem pede e tente de novo, ou cancele a transação.</p>
+                </div>
               )}
 
               <div className="mt-4 space-y-1.5">
+                {trx.autorizada && trx.nota && (
+                  <button
+                    onClick={() => imprimirDocumento({ nota: trx.nota, venda: trx.venda, emitente: trx.emitente })}
+                    className="w-full h-9 rounded-xl text-xs font-semibold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50 inline-flex items-center justify-center gap-1.5"
+                  >
+                    <Printer size={13} /> Imprimir o DANFE da devolução
+                  </button>
+                )}
+                {!trx.autorizada && (
+                  <>
+                    <button
+                      onClick={reemitirDevolucao}
+                      disabled={reemitindo}
+                      className="w-full h-10 rounded-xl bg-[#000638] text-white text-sm font-bold hover:bg-[#000638]/90 disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
+                    >
+                      {reemitindo ? <Spinner size={15} className="animate-spin" /> : <ArrowsClockwise size={15} weight="bold" />} Tentar emitir de novo
+                    </button>
+                    <button
+                      onClick={cancelarDevolucao}
+                      disabled={reemitindo}
+                      className="w-full h-9 rounded-xl text-xs font-semibold text-rose-600 ring-1 ring-rose-200 hover:bg-rose-50 disabled:opacity-50"
+                    >
+                      Cancelar esta transação
+                    </button>
+                  </>
+                )}
                 <button
                   onClick={exportarEpcsCsv}
                   disabled={totals.epcs === 0}
@@ -2416,28 +2463,14 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
                 >
                   <DownloadSimple size={13} /> Exportar a lista de EPC
                 </button>
-                {trxStatus === 4 || trxStatus === 6 ? (
-                  <button
-                    onClick={novaDevolucao}
-                    className="w-full h-10 rounded-xl bg-[#000638] text-white text-sm font-bold hover:bg-[#000638]/90"
-                  >
+                {trx.autorizada ? (
+                  <button onClick={novaDevolucao} className="w-full h-10 rounded-xl bg-[#000638] text-white text-sm font-bold hover:bg-[#000638]/90">
                     Nova devolução
                   </button>
                 ) : (
-                  <>
-                    <button
-                      onClick={() => setTrx(null)}
-                      className="w-full h-9 rounded-xl text-xs font-semibold text-gray-500 ring-1 ring-gray-300 hover:bg-gray-50"
-                    >
-                      Fechar e continuar (transação segue no caixa)
-                    </button>
-                    <button
-                      onClick={novaDevolucao}
-                      className="w-full h-9 rounded-xl text-xs font-semibold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50"
-                    >
-                      Nova devolução agora
-                    </button>
-                  </>
+                  <button onClick={() => setTrx(null)} disabled={reemitindo} className="w-full h-9 rounded-xl text-xs font-semibold text-gray-500 ring-1 ring-gray-300 hover:bg-gray-50 disabled:opacity-50">
+                    Fechar (a transação continua em andamento em HeadCoach › Transações)
+                  </button>
                 )}
               </div>
             </div>
