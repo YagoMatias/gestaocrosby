@@ -135,7 +135,7 @@ export default function RecebimentoMercadoria() {
   return (
     <div className="flex-1 overflow-y-auto bg-gray-100 p-3 lg:p-4">
       <div className="mx-auto max-w-6xl">
-        <PageTitle title="Recebimento de Mercadoria" subtitle="Transferências da matriz para a loja: confira as peças e elas entram no estoque da loja" icon={Package} />
+        <PageTitle title="Recebimento de Mercadoria" subtitle="Transferências e vendas da matriz para a loja: confira as peças e elas entram no estoque da loja" icon={Package} />
         <div className="mb-3 flex flex-wrap items-end gap-2 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
           <div className="w-full sm:w-80">
             <label className={labelCls}>Loja</label>
@@ -179,7 +179,7 @@ export default function RecebimentoMercadoria() {
           )
         ) : mostrar.length === 0 ? (
           <p className="rounded-xl bg-white px-3 py-12 text-center text-sm text-gray-400 shadow-sm ring-1 ring-gray-200">
-            {aba === 'a_receber' ? 'Nenhuma transferência esperando recebimento.' : 'Nenhuma transferência recebida ainda.'}
+            {aba === 'a_receber' ? 'Nenhuma transferência ou venda da matriz esperando recebimento.' : 'Nenhuma mercadoria recebida ainda.'}
           </p>
         ) : (
           <div className="space-y-2">
@@ -194,6 +194,11 @@ export default function RecebimentoMercadoria() {
                   <div className="min-w-[220px] flex-1">
                     <p className="text-sm font-bold text-[#000638]">
                       {t.nf_numero ? `NF-e ${t.nf_numero}` : `Transação ${t.transacao_code || t.id}`} · {t.empresa} → {t.empresa_destino} {t.empresa_destino_nome || ''}
+                      <span
+                        className={`ml-2 rounded-full px-2 py-0.5 align-middle text-[10px] font-bold ring-1 ${t.natureza === 'venda' ? 'bg-amber-50 text-amber-800 ring-amber-200' : 'bg-indigo-50 text-indigo-700 ring-indigo-200'}`}
+                      >
+                        {t.natureza === 'venda' ? 'VENDA DA MATRIZ' : 'TRANSFERÊNCIA'}
+                      </span>
                     </p>
                     <p className="text-[11px] text-gray-500">
                       Enviada em {fmtDataHora(t.criado_em)}
