@@ -1,7 +1,11 @@
-// Modal de pagamento do PDV Crosby (modo HEADCOACH).
+// Modal de pagamento do PDV Crosby.
 // Permite múltiplas formas; cartão de crédito/débito exige NSU e/ou
 // autorização (vão para o <card> da NF-e e ficam gravados na venda).
-// Na TROCA não há pagamento: só o campo opcional da chave da NF de origem.
+// Na TROCA não há pagamento: mostra a(s) nota(s) de origem que o sistema achou
+// nas compras do cliente e que a NF-e de devolução vai referenciar. O valor
+// devolvido vira CREDEV do cliente nesta loja.
+// Credev e Adiantamento: formas distintas, limitadas ao saldo do cliente na loja
+// (prop `saldos` = { credev, adiantamento }); o servidor confere de novo.
 import React, { useMemo, useState } from 'react';
 import { X, Plus, Trash, Spinner, CreditCard, Money, QrCode, Receipt } from '@phosphor-icons/react';
 
@@ -14,8 +18,13 @@ export const FORMAS = [
   { id: 'pix', label: 'PIX', icon: QrCode },
   { id: 'debito', label: 'Cartão débito', icon: CreditCard },
   { id: 'credito', label: 'Cartão crédito', icon: CreditCard },
-  { id: 'credito_loja', label: 'Crédito loja', icon: Receipt },
+  // saldos do cliente NESTA loja (HeadCoach › Saldos de Clientes): cada um o seu
+  { id: 'credito_loja', label: 'Credev', icon: Receipt },
+  { id: 'adiantamento', label: 'Adiantamento', icon: Receipt },
 ];
+// forma → saldo do cliente que ela consome
+const SALDO_DA_FORMA = { credito_loja: 'credev', adiantamento: 'adiantamento' };
+const NOME_SALDO = { credev: 'Credev', adiantamento: 'Adiantamento' };
 
 export const BANDEIRAS = [
   ['', 'Bandeira…'],
@@ -31,10 +40,19 @@ export const BANDEIRAS = [
 const inputCls =
   'h-9 px-2 rounded-lg border border-gray-300 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#000638]/30';
 
-export default function PagamentoModal({ total, tipoVenda, busy, onConfirm, onClose }) {
+const fmtData = (d) => (d ? String(d).slice(0, 10).split('-').reverse().join('/') : '—');
+
+// VENDA | TROCA: `inicial` traz os pagamentos já preenchidos (Credev gerado pela
+// troca + a diferença) e `trocaFeita` a troca registrada neste atendimento.
+export default function PagamentoModal({ total, tipoVenda, notasTroca = [], saldos = null, temCliente = false, inicial = null, trocaFeita = null, busy, onConfirm, onClose }) {
   const troca = tipoVenda === 'troca';
-  const [pags, setPags] = useState(() => (troca ? [] : [{ forma: 'pix', valor: round2(total), parcelas: 1, bandeira: '', nsu: '', autorizacao: '' }]));
-  const [nfRef, setNfRef] = useState('');
+  const [pags, setPags] = useState(() =>
+    troca
+      ? []
+      : inicial?.length
+        ? inicial.map((p) => ({ parcelas: 1, bandeira: '', nsu: '', autorizacao: '', ...p }))
+        : [{ forma: 'pix', valor: round2(total), parcelas: 1, bandeira: '', nsu: '', autorizacao: '' }],
+  );
   const [erro, setErro] = useState('');
 
   const soma = useMemo(() => round2(pags.reduce((s, p) => s + (Number(p.valor) || 0), 0)), [pags]);
@@ -48,13 +66,35 @@ export default function PagamentoModal({ total, tipoVenda, busy, onConfirm, onCl
   const add = () =>
     setPags((prev) => [...prev, { forma: 'dinheiro', valor: restante > 0 ? restante : 0, parcelas: 1, bandeira: '', nsu: '', autorizacao: '' }]);
   const del = (i) => setPags((prev) => prev.filter((_, j) => j !== i));
+  // quanto de cada saldo (credev / adiantamento) os pagamentos estão usando
+  const usoSaldo = (tipo) => round2(pags.filter((p) => SALDO_DA_FORMA[p.forma] === tipo).reduce((s, p) => s + (Number(p.valor) || 0), 0));
+  const saldoDe = (tipo) => round2(saldos?.[tipo] || 0);
+  // põe o saldo como forma de pagamento: até o saldo e até o total; o resto fica na 1ª forma "normal"
+  const usarSaldo = (tipo) => {
+    const forma = Object.keys(SALDO_DA_FORMA).find((f) => SALDO_DA_FORMA[f] === tipo);
+    setPags((prev) => {
+      const outros = prev.filter((p) => p.forma !== forma);
+      const jaOutrosSaldos = round2(outros.filter((p) => SALDO_DA_FORMA[p.forma]).reduce((s, p) => s + (Number(p.valor) || 0), 0));
+      const valor = round2(Math.min(saldoDe(tipo), Math.max(0, total - jaOutrosSaldos)));
+      if (!(valor > 0)) return prev;
+      const normais = outros.filter((p) => !SALDO_DA_FORMA[p.forma]);
+      const saldosUsados = outros.filter((p) => SALDO_DA_FORMA[p.forma]);
+      const resto = round2(total - jaOutrosSaldos - valor);
+      const lista = [...saldosUsados, { forma, valor, parcelas: 1, bandeira: '', nsu: '', autorizacao: '' }];
+      if (resto > 0.004) lista.push({ ...(normais[0] || { forma: 'pix', parcelas: 1, bandeira: '', nsu: '', autorizacao: '' }), valor: resto }, ...normais.slice(1));
+      return lista;
+    });
+  };
 
   const confirmar = () => {
     setErro('');
-    if (troca) {
-      const chave = nfRef.replace(/\D/g, '');
-      if (chave && chave.length !== 44) return setErro('A chave da NF de origem tem 44 dígitos');
-      return onConfirm({ pagamentos: [], nfReferenciada: chave || null });
+    // troca: a nota de origem é definida pelo servidor, que confere as compras de novo
+    if (troca) return onConfirm({ pagamentos: [], nfReferenciada: null });
+    for (const tipo of ['credev', 'adiantamento']) {
+      const usado = usoSaldo(tipo);
+      if (!(usado > 0)) continue;
+      if (!temCliente) return setErro(`${NOME_SALDO[tipo]} exige o cliente identificado na venda`);
+      if (usado > saldoDe(tipo) + 0.005) return setErro(`${NOME_SALDO[tipo]}: o cliente tem ${fmtBRL(saldoDe(tipo))} nesta loja e você lançou ${fmtBRL(usado)}`);
     }
     for (const p of pags) {
       if (!(Number(p.valor) > 0)) return setErro('Informe o valor de cada pagamento');
@@ -88,23 +128,51 @@ export default function PagamentoModal({ total, tipoVenda, busy, onConfirm, onCl
 
         {troca ? (
           <div className="space-y-2">
-            <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-              Chave da NF-e/NFC-e de origem (opcional, 44 dígitos)
-            </label>
-            <input
-              value={nfRef}
-              onChange={(e) => setNfRef(e.target.value)}
-              placeholder="Chave de acesso da venda original"
-              className={`${inputCls} w-full font-mono text-xs`}
-            />
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+              {notasTroca.length > 1 ? 'Notas de origem (referenciadas automaticamente)' : 'Nota de origem (referenciada automaticamente)'}
+            </p>
+            {notasTroca.map((n) => (
+              <div key={n.chave} className="rounded-lg bg-purple-50 ring-1 ring-purple-200 px-2.5 py-1.5 text-xs text-purple-900">
+                <p>
+                  {n.modelo === 65 ? 'NFC-e' : 'NF'} <b>{n.numero}/{n.serie}</b> · {fmtData(n.data)} · empresa <b>{n.empresa}</b>
+                </p>
+                <p className="font-mono text-[10px] text-purple-700 break-all">{n.chave}</p>
+              </div>
+            ))}
             <p className="text-[11px] text-gray-500">
-              Será emitida uma NF-e de entrada (devolução, CFOP 1202) para o cliente selecionado. O vale-troca fica registrado na venda.
+              Será emitida uma NF-e de entrada (devolução, CFOP 1202) para o cliente selecionado, pelo valor pago na compra.
+            </p>
+            <p className="rounded-lg bg-emerald-50 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-800 ring-1 ring-emerald-200">
+              Com a nota autorizada, o cliente recebe {fmtBRL(total)} de CREDEV para usar nesta loja na próxima compra.
             </p>
           </div>
         ) : (
           <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
+            {trocaFeita && (
+              <p className="rounded-xl bg-purple-50 px-2.5 py-2 text-[11px] font-semibold text-purple-900 ring-1 ring-purple-200">
+                Troca #{trocaFeita.venda?.id} registrada{trocaFeita.nota?.numero ? ` (NF-e ${trocaFeita.nota.numero}/${trocaFeita.nota.serie})` : ''}: Credev de {fmtBRL(trocaFeita.total)} gerado e já
+                lançado abaixo. Informe como o cliente paga a diferença.
+              </p>
+            )}
+            {['credev', 'adiantamento'].some((t) => saldoDe(t) > 0) && (
+              <div className="flex flex-wrap items-center gap-1.5 rounded-xl bg-blue-50 px-2.5 py-2 text-[11px] text-blue-900 ring-1 ring-blue-200">
+                <span className="font-semibold">Saldo do cliente nesta loja:</span>
+                {['credev', 'adiantamento'].filter((t) => saldoDe(t) > 0).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => usarSaldo(t)}
+                    className="inline-flex h-7 items-center rounded-lg bg-white px-2 font-bold text-blue-800 ring-1 ring-blue-300 hover:bg-blue-100"
+                    title={`Usar o ${NOME_SALDO[t]} como forma de pagamento`}
+                  >
+                    Usar {NOME_SALDO[t]} · {fmtBRL(saldoDe(t))}
+                  </button>
+                ))}
+              </div>
+            )}
             {pags.map((p, i) => {
               const cartao = p.forma === 'credito' || p.forma === 'debito';
+              const tipoSaldo = SALDO_DA_FORMA[p.forma];
               return (
                 <div key={i} className="rounded-xl ring-1 ring-gray-200 p-2.5 space-y-2">
                   <div className="flex gap-2">
@@ -127,6 +195,12 @@ export default function PagamentoModal({ total, tipoVenda, busy, onConfirm, onCl
                       <Trash size={16} />
                     </button>
                   </div>
+                  {tipoSaldo && (
+                    <p className={`text-[11px] font-semibold ${usoSaldo(tipoSaldo) > saldoDe(tipoSaldo) + 0.005 ? 'text-rose-600' : 'text-blue-800'}`}>
+                      {NOME_SALDO[tipoSaldo]} do cliente nesta loja: {fmtBRL(saldoDe(tipoSaldo))}
+                      {usoSaldo(tipoSaldo) > saldoDe(tipoSaldo) + 0.005 ? ' — valor maior que o saldo' : ''}
+                    </p>
+                  )}
                   {cartao && (
                     <div className="grid grid-cols-2 gap-2">
                       {p.forma === 'credito' && (

@@ -93,7 +93,13 @@ export default function VendasDoDiaModal({ empresa, onClose, onAbrirResultado, s
             </span>
             <span>
               Trocas: <b className="text-[#000638]">{totais.trocas}</b>
+              {totais.valorTrocas > 0 && <b className="text-purple-700"> · − {fmtBRL(totais.valorTrocas)}</b>}
             </span>
+            {totais.faturamento !== undefined && (
+              <span title="Vendas menos as devoluções (trocas) do dia">
+                Faturamento: <b className="text-emerald-700">{fmtBRL(totais.faturamento)}</b>
+              </span>
+            )}
           </div>
         )}
 

@@ -252,7 +252,7 @@ function imprimirComprovante(c) {
 <div>Caixa #${c.caixa.id} · Data de caixa ${fmtData(c.caixa.data_caixa)}</div>
 <div>Aberto ${fmtDataHora(c.caixa.aberto_em)} por ${c.caixa.aberto_por || '—'}</div>
 <div>Fechado ${fmtDataHora(c.caixa.fechado_em)} por ${c.caixa.fechado_por || '—'}</div>
-<h2>Vendas (${r.vendas || 0})</h2><table>${linhas(formas.map(([f, v]) => [nomeForma(f), brl(v)]))}<tr class="f"><td>Total</td><td style="text-align:right">${brl(r.totalVendas)}</td></tr></table>
+<h2>Vendas (${r.vendas || 0})</h2><table>${linhas(formas.map(([f, v]) => [nomeForma(f), brl(v)]))}<tr class="f"><td>Total</td><td style="text-align:right">${brl(r.totalVendas)}</td></tr>${r.totalDevolucoes > 0 ? `<tr><td>− Devoluções (trocas)</td><td style="text-align:right">− ${brl(r.totalDevolucoes)}</td></tr><tr class="f"><td>Faturamento</td><td style="text-align:right">${brl(r.faturamento)}</td></tr>` : ''}</table>
 <h2>Dinheiro</h2><table>${linhas([
     ['Fundo inicial', brl(r.dinheiro?.fundo)],
     ['Vendas em dinheiro', brl(r.dinheiro?.vendas)],
@@ -480,6 +480,12 @@ function ResumoCaixa({ r }) {
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1">
           <Linha rotulo="Vendas atendidas" valor={`${r.qtdVendas} · ${fmtBRL(r.totalVendas)}`} />
+          {r.qtdDevolucoes > 0 && (
+            <>
+              <Linha rotulo="− Devoluções (trocas)" valor={`${r.qtdDevolucoes} · − ${fmtBRL(r.totalDevolucoes)}`} />
+              <Linha rotulo="Faturamento do caixa" valor={fmtBRL(r.faturamento)} />
+            </>
+          )}
           {formas.length === 0 ? (
             <p className="text-xs text-gray-400">Nenhuma venda neste caixa ainda.</p>
           ) : (

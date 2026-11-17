@@ -1,17 +1,14 @@
 // Página: Tecnologia → PDV Crosby
-// Dois destinos para a venda:
-//  • TOTVS     — gera a transação "em andamento" no ERP e o caixa finaliza
-//                no TRAFP005 (fluxo original do PDV Varejo).
-//  • HEADCOACH — a venda inteira é registrada no HeadCoach (cliente, itens,
-//                desconto, pagamentos com NSU/autorização, vendedor, empresa)
-//                e a NFC-e / NF-e / NF-e de devolução é emitida direto na
-//                SEFAZ com o certificado da matriz (backend /api/pdv-crosby).
-// PDV de loja: bipa as peças no LEITOR RFID DE MESA (USB, .bat R9816 via Web
-// Serial) ou por SKU manual, com o layout/organização por grade do Orçamento.
-// Preço = VENDA VAREJO (código 1, com promoção quando houver). O botão GERAR
-// TRANSAÇÃO cria a transação "em andamento" no TOTVS — o caixa finaliza no
-// componente TRAFP005 (Continuar Transação → Encerrar → Receber) — e a tela
-// acompanha o status: quando vira ATENDIDA, encerra a venda aqui.
+// A venda é 100% no HeadCoach (Yago, 16/11/2026): cliente, itens, desconto,
+// pagamentos com NSU/autorização, vendedor e empresa ficam aqui, e a NFC-e /
+// NF-e / NF-e de devolução é emitida direto na SEFAZ (backend /api/pdv-crosby).
+// O modo "TOTVS" (gerar a transação para o caixa finalizar no TRAFP005) saiu.
+// PDV de loja: bipa as peças no LEITOR RFID DE MESA (USB) ou por SKU manual, com
+// o layout por grade do Orçamento. Preço = VENDA VAREJO (código 1, com promoção).
+// TROCA: é o único momento em que as vendas do TOTVS são consultadas — o
+// sistema procura as compras do cliente (TOTVS + HeadCoach), confere se ele
+// comprou a peça que está devolvendo e referencia a nota de origem sozinho
+// (POST /api/pdv-crosby/troca/conferir · services/pdvTroca.js).
 import React, {
   useState,
   useEffect,
@@ -31,9 +28,6 @@ import {
   X,
   MagnifyingGlass,
   CheckCircle,
-  Copy,
-  Printer,
-  Ticket,
   CornersOut,
   CornersIn,
   Moon,
@@ -55,7 +49,6 @@ import {
   ListBullets,
   Gear,
   Cloud,
-  Database,
   LockKey,
   Coins,
   Lock,
@@ -66,13 +59,11 @@ import { API_BASE_URL } from '../config/constants';
 import useRfidReader from '../hooks/useRfidReader';
 import { useAuth } from '../components/AuthContext';
 import { fetchSefaz } from '../utils/fetchSefaz';
-import { gerarHtmlCupomNFCe, gerarHtmlCupomTroca, abrirImpressao } from '../utils/documentoFiscalHtml';
 import PagamentoModal from '../components/pdv/PagamentoModal';
 import ResultadoFiscalModal from '../components/pdv/ResultadoFiscalModal';
 import VendasDoDiaModal from '../components/pdv/VendasDoDiaModal';
 import FiscalConfigModal from '../components/pdv/FiscalConfigModal';
 import CadastroClienteModal from '../components/pdv/CadastroClienteModal';
-import TrocaComprasModal from '../components/pdv/TrocaComprasModal';
 import MovimentoDiaModal from '../components/pdv/MovimentoDiaModal';
 import { getUserCompanies } from '../services/userCompaniesService';
 
@@ -113,18 +104,6 @@ function operacaoPara(tipoId, branch, cfg = null) {
   return String(EMPRESAS_ESPECIAIS.includes(emp) ? tipo.especial : tipo.padrao);
 }
 
-// Situações da transação no TOTVS
-const TRX_STATUS = {
-  1: { label: 'Em andamento', cls: 'bg-amber-50 text-amber-700 ring-amber-200' },
-  2: { label: 'Encerrada', cls: 'bg-blue-50 text-blue-700 ring-blue-200' },
-  3: { label: 'Em processo externo', cls: 'bg-gray-100 text-gray-600 ring-gray-200' },
-  4: { label: 'ATENDIDA', cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200' },
-  6: { label: 'CANCELADA', cls: 'bg-rose-50 text-rose-700 ring-rose-200' },
-};
-
-// CFOP de entrada (devolução) espelhando o CFOP da venda original
-const CFOP_DEVOLUCAO = { 5101: 1201, 5102: 1202, 5405: 1411, 6101: 2201, 6102: 2202, 6404: 2411 };
-const cfopTroca = (cfopVenda) => CFOP_DEVOLUCAO[Number(cfopVenda)] || 1202;
 const fmtData = (d) => (d ? String(d).slice(0, 10).split('-').reverse().join('/') : '—');
 
 const fmtBRL = (v) =>
@@ -134,6 +113,9 @@ const fmtBRL = (v) =>
   });
 
 const qtyOf = (i) => i.epcs.length + (i.manualQty || 0);
+// A mesma peça pode estar no carrinho duas vezes: voltando (TROCA) e saindo (VENDA)
+const keyDe = (productCode, troca) => `${troca ? 'T' : 'V'}:${productCode}`;
+const r2 = (v) => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
 
 function beep(ok = true) {
   try {
@@ -456,13 +438,8 @@ function SenhaDescontoModal({ pct, empresa, por, onLiberado, onCancelar }) {
 // ─── Página ──────────────────────────────────────────────────────────────────
 const PDVCrosby = () => {
   const { user } = useAuth();
-  // Destino da venda: 'totvs' (transação no ERP) | 'headcoach' (venda + NF aqui)
-  // Só administrador/owner escolhe; os demais operam sempre em TOTVS.
-  const podeEscolherDestino = ['admin', 'owner'].includes(user?.role);
-  const [destinoEscolhido, setDestino] = useState(
-    () => localStorage.getItem('pdv_crosby_destino') || 'totvs',
-  );
-  const destino = podeEscolherDestino ? destinoEscolhido : 'totvs';
+  // Só administrador/owner mexe na configuração fiscal da empresa
+  const podeConfigurarFiscal = ['admin', 'owner'].includes(user?.role);
   // Modo HEADCOACH
   const [fiscalCfg, setFiscalCfg] = useState(null); // config fiscal da empresa
   const [pagamentoOpen, setPagamentoOpen] = useState(false);
@@ -545,35 +522,34 @@ const PDVCrosby = () => {
   // HEADCOACH › CAIXA: só vende com o caixa da empresa aberto
   const [caixaSit, setCaixaSit] = useState(null);
   const [pedirCaixa, setPedirCaixa] = useState(false);
-  const [posting, setPosting] = useState(false);
-  // Transação gerada: { transactionCode, branchCode, transactionDate, total }
-  const [trx, setTrx] = useState(null);
-  const [trxStatus, setTrxStatus] = useState(null); // status numérico do TOTVS
-  const [trxChecking, setTrxChecking] = useState(false);
-  // TROCA (destino TOTVS): peças de compras anteriores que estão voltando, pelo
-  // valor pago na nota. Vira uma transação própria, separada da venda.
-  const [trocaItens, setTrocaItens] = useState([]);
-  const [showTroca, setShowTroca] = useState(false);
-  const [trxTroca, setTrxTroca] = useState(null); // { transactionCode, branchCode, transactionDate, total, notas }
-  const [trxTrocaStatus, setTrxTrocaStatus] = useState(null);
-  const operacaoTroca = operacaoPara('troca', branch, fiscalCfg);
-  const trocaTotal = useMemo(() => trocaItens.reduce((sm, i) => sm + i.quantity * i.unit, 0), [trocaItens]);
-  const trocaQtd = trocaItens.reduce((sm, i) => sm + i.quantity, 0);
-
-  // No destino TOTVS a troca não é um "tipo de venda": é uma transação à parte
+  // TROCA: conferência das peças nas compras do cliente (TOTVS + HeadCoach).
+  // porProduto[código] = { ok, mensagem, valorUnit, notas:[{ numero, serie, data, empresa, chave… }] }
+  const TROCA_VAZIA = useMemo(() => ({ status: 'parada', porProduto: {}, avisos: [], erro: null }), []);
+  const [trocaConf, setTrocaConf] = useState(TROCA_VAZIA);
+  // TROCA aqui é o MODO de bipar: a peça entra marcada como troca (devolução).
+  // O carrinho pode ter as duas coisas — peças de troca e peças de venda — e
+  // fecha tudo num atendimento só (VENDA | TROCA).
+  const emTroca = tipoVenda === 'troca';
+  const emTrocaRef = useRef(emTroca);
+  emTrocaRef.current = emTroca;
+  // tipo da nota das peças de VENDA: o último NFC-e/NF-e escolhido
+  const [ultimoTipoSaida, setUltimoTipoSaida] = useState(() => {
+    const t = localStorage.getItem('pdv_crosby_tipo');
+    return t && t !== 'troca' ? t : '';
+  });
   useEffect(() => {
-    if (destino === 'totvs' && tipoVenda === 'troca') setTipoVenda('');
-  }, [destino, tipoVenda]);
-  // Trocou de cliente: as compras marcadas eram do cliente anterior
-  // (as que vieram de CUPOM DE TROCA ficam: não dependem de quem está no caixa)
-  useEffect(() => {
-    setTrocaItens((l) => l.filter((i) => i.cupom));
-  }, [customer?.code]);
+    if (tipoVenda && tipoVenda !== 'troca') setUltimoTipoSaida(tipoVenda);
+  }, [tipoVenda]);
+  const tipoSaida = tipoVenda && tipoVenda !== 'troca' ? tipoVenda : ultimoTipoSaida;
+  // VENDA | TROCA: troca já autorizada neste atendimento, esperando a venda
+  // { venda, nota, emitente, total }
+  const [trocaFeita, setTrocaFeita] = useState(null);
+  const [pagInicial, setPagInicial] = useState(null); // pagamentos já preenchidos (Credev da troca + diferença)
+  const [etapa, setEtapa] = useState(''); // o que está acontecendo no VENDA | TROCA
 
   useEffect(() => localStorage.setItem('pdv_crosby_branch', branch), [branch]);
   useEffect(() => localStorage.setItem('pdv_crosby_seller', seller), [seller]);
   useEffect(() => localStorage.setItem('pdv_crosby_tipo', tipoVenda), [tipoVenda]);
-  useEffect(() => localStorage.setItem('pdv_crosby_destino', destinoEscolhido), [destinoEscolhido]);
 
   const showToast = useCallback((type, msg) => {
     setToast({ type, msg });
@@ -701,21 +677,24 @@ const PDVCrosby = () => {
     })();
   }, [customer, branch]);
 
-  // Saldos do cliente na empresa da venda (credev e adiantamento)
+  // Saldos do cliente NESTA loja: CREDEV e adiantamento do HeadCoach (a troca gera
+  // CREDEV; os dois são formas de pagamento). Relê depois de cada venda ou troca.
   useEffect(() => {
     setSaldos(null);
     if (!customer || !branch) return undefined;
     let vivo = true;
-    fetch(`${API_BASE_URL}/api/totvs/pdv/customer-balance?code=${customer.code}&branch=${branch}`)
+    fetch(`${API_BASE_URL}/api/pdv-crosby/saldos-cliente/${customer.code}?empresa=${branch}`)
       .then((r) => r.json())
       .then((j) => {
-        if (vivo && j?.success) setSaldos(j.data);
+        if (vivo) setSaldos(j?.success ? j.data : { credev: 0, adiantamento: 0, erro: j?.message || true });
       })
-      .catch(() => {});
+      .catch(() => {
+        if (vivo) setSaldos({ credev: 0, adiantamento: 0, erro: true });
+      });
     return () => {
       vivo = false;
     };
-  }, [customer, branch]);
+  }, [customer, branch, resultado?.venda?.id, resultado?.nota?.status]);
 
   // Ranking de vendedores da empresa hoje
   const carregarRanking = useCallback(async () => {
@@ -769,8 +748,11 @@ const PDVCrosby = () => {
     const unit = usarPromoPdv ? precoCheio : emPromo ? padrao.promotionalPrice : padrao?.price || 0;
     const promoDesconto = usarPromoPdv ? Number((precoCheio - promoPdv.precoPromocional).toFixed(2)) : 0;
 
+    // bipada no modo TROCA → peça que o cliente está devolvendo
+    const troca = emTrocaRef.current;
+    const key = keyDe(product.productCode, troca);
     setItems((prev) => {
-      const idx = prev.findIndex((i) => i.productCode === product.productCode);
+      const idx = prev.findIndex((i) => i.key === key);
       if (idx >= 0) {
         const next = [...prev];
         const cur = next[idx];
@@ -784,6 +766,8 @@ const PDVCrosby = () => {
       return [
         ...prev,
         {
+          key,
+          troca,
           productCode: product.productCode,
           name: product.productName,
           sku: product.productSku,
@@ -859,17 +843,18 @@ const PDVCrosby = () => {
   }, [manualCode, manualBusy, resolverCodigo]);
 
   // ─── Itens: edição ───────────────────────────────────────────────────────
-  const updateItem = useCallback((productCode, patch) => {
+  // (a peça é identificada pela `key`: troca e venda da mesma peça são linhas separadas)
+  const updateItem = useCallback((key, patch) => {
     setItems((prev) =>
-      prev.map((i) => (i.productCode === productCode ? { ...i, ...patch } : i)),
+      prev.map((i) => (i.key === key ? { ...i, ...patch } : i)),
     );
   }, []);
 
-  const ajustarManualQty = useCallback((productCode, delta) => {
+  const ajustarManualQty = useCallback((key, delta) => {
     setItems((prev) =>
       prev
         .map((i) =>
-          i.productCode === productCode
+          i.key === key
             ? { ...i, manualQty: Math.max(0, (i.manualQty || 0) + delta) }
             : i,
         )
@@ -877,26 +862,35 @@ const PDVCrosby = () => {
     );
   }, []);
 
-  const removeItem = useCallback((productCode) => {
-    setItems((prev) => prev.filter((i) => i.productCode !== productCode));
+  const removeItem = useCallback((key) => {
+    setItems((prev) => prev.filter((i) => i.key !== key));
   }, []);
 
   const aplicarDescontoGeral = useCallback(() => {
+    if (!items.some((i) => !i.troca)) {
+      showToast('erro', 'Na troca vale o valor pago na nota de origem: não há desconto');
+      return;
+    }
     const pct = parseFloat(String(globalDiscount).replace(',', '.'));
     if (Number.isNaN(pct) || pct < 0 || pct > 100) {
       showToast('erro', 'Desconto geral inválido (0 a 100%)');
       return;
     }
+    // só nas peças da venda: a peça de troca volta pelo valor pago
     const aplicar = () =>
       setItems((prev) =>
-        prev.map((i) => ({
-          ...i,
-          discount: limiteDescontoItem(i, pct),
-        })),
+        prev.map((i) =>
+          i.troca
+            ? i
+            : {
+                ...i,
+                discount: limiteDescontoItem(i, pct),
+              },
+        ),
       );
     if (pct > maxDescPct) setSenhaDesconto({ pct, aplicar });
     else aplicar();
-  }, [globalDiscount, maxDescPct, showToast]);
+  }, [globalDiscount, maxDescPct, showToast, items]);
 
   // Desconto por peça (R$ no unitário): acima do limite pede a senha
   const mudarDescontoItem = useCallback(
@@ -904,77 +898,156 @@ const PDVCrosby = () => {
       const v = Math.min(Math.max(parseFloat(valor) || 0, 0), item.unit);
       const limite = limiteDescontoItem(item, maxDescPct);
       if (v <= limite) {
-        updateItem(item.productCode, { discount: v });
+        updateItem(item.key, { discount: v });
         return;
       }
-      updateItem(item.productCode, { discount: limite });
+      updateItem(item.key, { discount: limite });
       const promo = item.promoDesconto || 0;
       setSenhaDesconto({
         pct: ((v - promo) / (item.unit - promo)) * 100,
-        aplicar: () => updateItem(item.productCode, { discount: v }),
+        aplicar: () => updateItem(item.key, { discount: v }),
       });
     },
     [maxDescPct, updateItem],
   );
 
-  // Alguma peça com desconto acima do limite sem liberação (segurança extra)
-  const descontoForaDoLimite =
-    maxDescPct < 100 && items.some((i) => (i.discount || 0) > limiteDescontoItem(i, maxDescPct) + 0.005);
-
-  const grupos = useMemo(() => {
-    const map = new Map();
-    for (const i of items) {
-      const key = i.referenceName || 'OUTROS';
-      if (!map.has(key)) map.set(key, []);
-      map.get(key).push(i);
+  // TROCA: confere as peças nas compras do cliente sempre que muda o cliente,
+  // a empresa ou a lista (código + quantidade). O servidor confere de novo ao gravar.
+  const itensTroca = useMemo(() => items.filter((i) => i.troca), [items]);
+  const itensVenda = useMemo(() => items.filter((i) => !i.troca), [items]);
+  const temTroca = itensTroca.length > 0;
+  const temVenda = itensVenda.length > 0;
+  const combinado = temTroca && temVenda; // VENDA | TROCA no mesmo atendimento
+  const trocaChave = useMemo(
+    () =>
+      branch && customer?.code && itensTroca.length > 0
+        ? JSON.stringify([branch, customer.code, itensTroca.map((i) => [i.productCode, qtyOf(i)])])
+        : null,
+    [branch, customer?.code, itensTroca],
+  );
+  useEffect(() => {
+    if (!trocaChave) {
+      setTrocaConf(TROCA_VAZIA);
+      return undefined;
     }
-    return [...map.entries()]
-      .map(([nome, its]) => ({
-        nome,
-        items: its,
-        qty: its.reduce((s, i) => s + qtyOf(i), 0),
-        total: its.reduce(
-          (s, i) => s + qtyOf(i) * (i.unit - (i.discount || 0)),
-          0,
-        ),
-      }))
-      .sort((a, b) => a.nome.localeCompare(b.nome));
-  }, [items]);
+    let vivo = true;
+    setTrocaConf((c) => ({ ...c, status: 'carregando', erro: null }));
+    const t = setTimeout(async () => {
+      try {
+        const [emp, cli, lista] = JSON.parse(trocaChave);
+        const r = await fetch(`${API_BASE_URL}/api/pdv-crosby/troca/conferir`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            empresa: parseInt(emp, 10),
+            clienteCode: cli,
+            itens: lista.map(([productCode, quantidade]) => ({ productCode, quantidade })),
+          }),
+        });
+        const j = await r.json();
+        if (!vivo) return;
+        if (!r.ok || !j.success) throw new Error(j?.message || 'Falha ao conferir as compras do cliente');
+        setTrocaConf({
+          status: 'ok',
+          porProduto: Object.fromEntries((j.data.itens || []).map((i) => [i.productCode, i])),
+          avisos: j.data.avisos || [],
+          erro: null,
+        });
+      } catch (e) {
+        if (vivo) setTrocaConf({ status: 'erro', porProduto: {}, avisos: [], erro: e.message });
+      }
+    }, 350);
+    return () => {
+      vivo = false;
+      clearTimeout(t);
+    };
+  }, [trocaChave, TROCA_VAZIA]);
 
+  // Preço da peça na tela e na venda: na TROCA é o valor PAGO na nota de origem
+  // (sem desconto); nas vendas, o preço de varejo com o desconto dado.
+  const precoDe = useCallback(
+    (i) =>
+      i.troca
+        ? { unit: Number(trocaConf.porProduto[i.productCode]?.valorUnit) || 0, discount: 0 }
+        : { unit: i.unit, discount: i.discount || 0 },
+    [trocaConf],
+  );
+  const trocaOk = temTroca && trocaConf.status === 'ok' && itensTroca.every((i) => trocaConf.porProduto[i.productCode]?.ok);
+  // notas de origem (sem repetir) que a NF-e de devolução vai referenciar
+  const notasDaTroca = useMemo(() => {
+    const m = new Map();
+    for (const i of itensTroca) for (const nt of trocaConf.porProduto[i.productCode]?.notas || []) if (nt.chave) m.set(nt.chave, nt);
+    return [...m.values()];
+  }, [itensTroca, trocaConf]);
+
+  // Alguma peça da venda com desconto acima do limite sem liberação (segurança extra)
+  const descontoForaDoLimite =
+    maxDescPct < 100 && itensVenda.some((i) => (i.discount || 0) > limiteDescontoItem(i, maxDescPct) + 0.005);
+
+  // Carrinho na tela: primeiro as peças da TROCA, depois as da VENDA, cada parte
+  // agrupada pela referência
+  const grupos = useMemo(() => {
+    const agrupar = (lista, troca) => {
+      const map = new Map();
+      for (const i of lista) {
+        const key = i.referenceName || 'OUTROS';
+        if (!map.has(key)) map.set(key, []);
+        map.get(key).push(i);
+      }
+      return [...map.entries()]
+        .map(([nome, its]) => ({
+          nome,
+          troca,
+          items: its,
+          qty: its.reduce((s, i) => s + qtyOf(i), 0),
+          total: its.reduce((s, i) => {
+            const pr = precoDe(i);
+            return s + qtyOf(i) * (pr.unit - pr.discount);
+          }, 0),
+        }))
+        .sort((a, b) => a.nome.localeCompare(b.nome))
+        .map((g, idx) => ({ ...g, primeiro: idx === 0 }));
+    };
+    return [...agrupar(itensTroca, true), ...agrupar(itensVenda, false)];
+  }, [itensTroca, itensVenda, precoDe]);
+
+  // Subtotal, descontos, cashback e total são da VENDA; `troca` é o valor das
+  // peças devolvidas (vira Credev e paga a venda). aPagar = o que falta em
+  // dinheiro/cartão/Pix; sobra = Credev que fica para o cliente.
   const totals = useMemo(() => {
     const qty = items.reduce((s, i) => s + qtyOf(i), 0);
-    const subtotal = items.reduce((s, i) => s + qtyOf(i) * i.unit, 0);
-    const discounts = items.reduce(
-      (s, i) => s + qtyOf(i) * (i.discount || 0),
-      0,
-    );
+    const subtotal = itensVenda.reduce((s, i) => s + qtyOf(i) * precoDe(i).unit, 0);
+    const discounts = itensVenda.reduce((s, i) => s + qtyOf(i) * precoDe(i).discount, 0);
     const base = subtotal - discounts;
+    const troca = r2(itensTroca.reduce((s, i) => s + qtyOf(i) * precoDe(i).unit, 0));
     // Cashback consumível: limitado pelo saldo E pela regra venda >= 3x o uso
     const saldo = cashback?.balance || 0;
     const maxPelaVenda = base / PDV_VAREJO_CONFIG.cashbackFatorMinimo;
     const cashbackDisponivel = Math.min(saldo, Math.floor(maxPelaVenda * 100) / 100);
     const cashbackAplicado =
       cashbackUsar && cashbackDisponivel > 0 ? cashbackDisponivel : 0;
+    const total = base - cashbackAplicado;
     return {
       qty,
       subtotal,
       discounts,
       cashbackDisponivel,
       cashbackAplicado,
-      total: base - cashbackAplicado,
+      total,
+      troca,
+      aPagar: r2(Math.max(0, total - troca)),
+      sobra: r2(Math.max(0, troca - total)),
     };
-  }, [items, cashback, cashbackUsar]);
+  }, [items, itensVenda, itensTroca, cashback, cashbackUsar, precoDe]);
 
   const novaVenda = useCallback(() => {
     setItems([]);
     setCustomer(null);
     setResultado(null);
     setPagamentoOpen(false);
-    setTrx(null);
-    setTrxStatus(null);
-    setTrocaItens([]);
-    setTrxTroca(null);
-    setTrxTrocaStatus(null);
+    setTrocaFeita(null);
+    setPagInicial(null);
+    setEtapa('');
     setCashback(null);
     setCashbackUsar(false);
     setCashbackRecusado(false);
@@ -986,233 +1059,73 @@ const PDVCrosby = () => {
 
   const limpar = useCallback(() => {
     setItems([]);
-    setTrocaItens([]);
     processedEpcs.current = new Set();
   }, []);
 
-  // ─── Gerar transação (em andamento, p/ o caixa finalizar no TRAFP005) ────
+  // ─── Pode finalizar? ─────────────────────────────────────────────────────
+  // NFC-e pode ser sem cliente; NF-e e TROCA exigem cliente identificado. Na
+  // TROCA todas as peças têm que ter sido achadas nas compras do cliente.
+  // Com peças de troca E de venda no carrinho, fecha os dois de uma vez (VENDA | TROCA).
   const prontoBase =
-    !posting &&
     !hcBusy &&
     items.length > 0 &&
     branch &&
     seller &&
-    tipoVenda &&
-    items.every((i) => qtyOf(i) > 0 && i.unit > 0);
-  // TOTVS: exige cliente e operação. HEADCOACH: NFC-e pode ser sem cliente;
-  // NF-e e TROCA exigem cliente identificado.
-  // TOTVS com troca: gera a transação da troca (só as peças que voltam) e, se
-  // houver produtos de venda, a transação da venda. Dá para gerar só a troca.
-  const trocaPronta =
-    !posting && branch && seller && customer && trocaItens.length > 0 && !!operacaoTroca;
-  const canGenerate =
-    destino === 'totvs'
-      ? trocaItens.length > 0
-        ? trocaPronta && (items.length === 0 || (prontoBase && operation))
-        : prontoBase && customer && operation
-      : prontoBase && (tipoVenda === 'nfce' || customer);
+    (!temVenda || tipoSaida) &&
+    items.every((i) => qtyOf(i) > 0 && (i.troca || i.unit > 0));
+  const canGenerate = prontoBase && (!temVenda || tipoSaida === 'nfce' || customer) && (!temTroca || (customer && trocaOk));
+  // por que o botão está travado (aparece embaixo dele)
+  const motivoBloqueio = !branch || !seller
+    ? 'Preencha empresa e vendedor.'
+    : temVenda && !tipoSaida
+      ? 'Escolha NFC-e ou NF-e para as peças da venda.'
+      : temTroca && !customer
+        ? 'Selecione o cliente: a troca confere as compras dele.'
+        : temTroca && trocaConf.status === 'carregando'
+          ? 'Conferindo as compras do cliente…'
+          : temTroca && trocaConf.status === 'erro'
+            ? 'Não consegui conferir as compras do cliente. Mexa na lista para tentar de novo.'
+            : temTroca && !trocaOk
+              ? 'Há peça que o cliente não comprou ou já devolveu: tire-a da troca.'
+              : temVenda && tipoSaida === 'nfe' && !customer
+                ? 'NF-e exige cliente identificado.'
+                : itensVenda.some((i) => !(i.unit > 0))
+                  ? 'Há peça sem preço de varejo na venda.'
+                  : '';
+  const trocaTravando = temTroca && customer && trocaConf.status === 'ok' && !trocaOk;
 
-  const gerarTransacao = useCallback(async () => {
-    if (!canGenerate) return;
-    setPosting(true);
-    try {
-      // 1) Transação da TROCA: só as peças que voltam, pelo valor pago na nota.
-      //    Se já foi gerada (a venda falhou e o operador tentou de novo), não repete.
-      if (trocaItens.length > 0 && !trxTroca) {
-        const itensTroca = trocaItens.map((i) => ({
-          productCode: i.productCode,
-          quantity: i.quantity,
-          value: Number(Number(i.unit).toFixed(3)),
-          cfop: cfopTroca(i.cfop),
-        }));
-        const totalTroca = Number(itensTroca.reduce((sm, it) => sm + it.quantity * it.value, 0).toFixed(3));
-        const notas = [...new Map(trocaItens.map((i) => [`${i.nota.branchCode}-${i.nota.invoiceSequence}`, i.nota])).values()];
-        const rt = await fetch(`${API_BASE_URL}/api/totvs/pdv/transactions`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            branchCode: parseInt(branch, 10),
-            customerCode: customer.code,
-            sellerCode: parseInt(seller, 10),
-            operationCode: parseInt(operacaoTroca, 10),
-            paymentConditionCode: PDV_VAREJO_CONFIG.paymentConditionCode,
-            isPreSale: false,
-            status: 1,
-            totalAmountTransaction: totalTroca,
-            items: itensTroca,
-            // nota(s) de origem, para quem for referenciar no TOTVS (máx. 80 por linha)
-            observations: notas.flatMap((n) => [
-              { observation: `TROCA REF NF ${n.invoiceCode}/${n.serialCode} FAT ${n.invoiceSequence} DE ${fmtData(n.invoiceDate)} EMP ${n.branchCode}`.slice(0, 80) },
-              ...(n.accessKey ? [{ observation: `CHAVE ${n.accessKey}`.slice(0, 80) }] : []),
-            ]),
-          }),
-        });
-        const jt = await rt.json();
-        if (!rt.ok || !jt.success) {
-          showToast('erro', `TOTVS recusou a transação da troca: ${jt?.message || ''}`);
-          return;
-        }
-        setTrxTroca({ ...jt.data, total: totalTroca, notas, itens: trocaItens });
-        setTrxTrocaStatus(1);
-        beep(true);
-        // Peças que vieram de cupom de troca: marca como já trocadas no cupom
-        const porCupom = new Map();
-        for (const i of trocaItens) {
-          if (!i.cupom) continue;
-          porCupom.set(i.cupom, [...(porCupom.get(i.cupom) || []), { productCode: i.productCode, quantity: i.quantity }]);
-        }
-        for (const [codigo, itensCupom] of porCupom) {
-          fetch(`${API_BASE_URL}/api/pdv-crosby/cupons-troca/${codigo}/uso`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              itens: itensCupom,
-              transacaoCode: jt.data.transactionCode,
-              empresa: parseInt(branch, 10),
-              por: user?.name || user?.email || null,
-            }),
-          }).catch(() => {});
-        }
-      }
-      // Só troca, sem produtos de venda: termina aqui
-      if (items.length === 0) return;
+  // mudou o cliente ou a empresa: a troca feita não vale para este atendimento
+  useEffect(() => {
+    setTrocaFeita(null);
+    setPagInicial(null);
+  }, [customer?.code, branch]);
 
-      // 2) Transação da VENDA
-      // Distribui o cashback consumido como desconto proporcional nos itens
-      // (o TOTVS confere totalAmountTransaction contra a soma dos itens)
-      const cb = totals.cashbackAplicado;
-      const baseVenda = totals.subtotal - totals.discounts;
-      const itensPayload = items.map((i) => {
-        const q = qtyOf(i);
-        const itemTotal = q * (i.unit - (i.discount || 0));
-        const extraUnit =
-          cb > 0 && baseVenda > 0
-            ? Number(((itemTotal / baseVenda) * cb) / q).toFixed(3) * 1
-            : 0;
-        const discountValue = Number(
-          ((i.discount || 0) + extraUnit).toFixed(3),
-        );
-        return {
-          productCode: i.productCode,
-          quantity: q,
-          value: Number(Number(i.unit).toFixed(3)),
-          ...(discountValue > 0 ? { discountValue } : {}),
-          cfop: PDV_VAREJO_CONFIG.cfop,
-        };
-      });
-      // 3 casas: o TOTVS soma as linhas com os valores de 3 decimais; arredondar
-      // para 2 gerava "totalAmountCalculated != TotalAmountTransaction".
-      const totalExato = Number(
-        itensPayload
-          .reduce(
-            (s, it) => s + it.quantity * (it.value - (it.discountValue || 0)),
-            0,
-          )
-          .toFixed(3),
-      );
-
-      const payload = {
-        branchCode: parseInt(branch, 10),
-        customerCode: customer.code,
-        sellerCode: parseInt(seller, 10),
-        operationCode: parseInt(operation, 10),
-        paymentConditionCode: PDV_VAREJO_CONFIG.paymentConditionCode,
-        isPreSale: false,
-        status: 1,
-        totalAmountTransaction: totalExato,
-        items: itensPayload,
-        ...(descontoLiberado &&
-        items.some((i) => (i.discount || 0) > limiteDescontoItem(i, PDV_VAREJO_CONFIG.maxDescontoPct) + 0.005)
-          ? { observations: [{ observation: `DESCONTO LIBERADO POR ${descontoLiberado.nome}`.toUpperCase().slice(0, 80) }] }
-          : {}),
-      };
-      const r = await fetch(`${API_BASE_URL}/api/totvs/pdv/transactions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      const j = await r.json();
-      if (!r.ok || !j.success) {
-        showToast(
-          'erro',
-          `${trocaItens.length > 0 ? 'Troca gerada, mas a VENDA foi recusada: ' : ''}${j?.message || 'TOTVS recusou a transação'}`,
-        );
-        return;
-      }
-      setTrx({
-        ...j.data,
-        total: totalExato,
-        cashbackUsado: cb,
-        customerCode: customer.code,
-        tipo: tipoVenda,
-      });
-      setTrxStatus(1);
-      cashbackGeradoRef.current = false;
-      beep(true);
-
-      // Toda venda emite um CUPOM DE TROCA (controlado no HeadCoach)
-      try {
-        const vend = sellers.find((sl) => String(sl.code) === String(seller));
-        const rcp = await fetch(`${API_BASE_URL}/api/pdv-crosby/cupons-troca`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            empresa: j.data.branchCode,
-            transacaoCode: j.data.transactionCode,
-            transacaoDate: String(j.data.transactionDate).slice(0, 10),
-            total: totalExato,
-            clienteCode: customer.code,
-            clienteNome: customer.name,
-            vendedorCode: parseInt(seller, 10),
-            vendedorNome: vend?.name || null,
-            itens: items.map((i) => ({ productCode: i.productCode, name: i.name, quantity: qtyOf(i) })),
-            por: user?.name || user?.email || null,
-          }),
-        });
-        const jcp = await rcp.json();
-        if (rcp.ok && jcp.success) setTrx((t) => (t ? { ...t, cupom: jcp.data } : t));
-        else showToast('erro', `Venda gerada, mas o cupom de troca não: ${jcp?.message || ''}`);
-      } catch {
-        showToast('erro', 'Venda gerada, mas o cupom de troca não foi criado');
-      }
-
-      // Consome o saldo bônus usado (registro no TOTVS/PESFC054)
-      if (cb > 0) {
-        try {
-          const rc = await fetch(`${API_BASE_URL}/api/totvs/pdv/bonus/consume`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              personCode: customer.code,
-              branchCode: parseInt(branch, 10),
-              usedValue: cb,
-            }),
-          });
-          const jc = await rc.json();
-          if (!rc.ok || !jc.success) {
-            showToast(
-              'erro',
-              `Transação ok, mas o consumo do cashback falhou: ${jc?.message || ''} — baixe manualmente no PESFC054`,
-            );
-          }
-        } catch {
-          showToast(
-            'erro',
-            'Transação ok, mas o consumo do cashback falhou — baixe manualmente no PESFC054',
-          );
-        }
-      }
-    } catch (e) {
-      showToast('erro', `Falha ao gerar transação: ${e.message}`);
-    } finally {
-      setPosting(false);
-    }
-  }, [canGenerate, branch, customer, seller, operation, totals, items, showToast, trocaItens, trxTroca, operacaoTroca, sellers, user, tipoVenda]);
+  // pagamentos já preenchidos: Credev (da troca) + a diferença numa forma comum
+  const pagamentosComCredev = (totalVenda, credev) => {
+    const usar = r2(Math.min(credev, totalVenda));
+    const resto = r2(totalVenda - usar);
+    const vazio = { parcelas: 1, bandeira: '', nsu: '', autorizacao: '' };
+    const lista = [];
+    if (usar > 0) lista.push({ ...vazio, forma: 'credito_loja', valor: usar });
+    if (resto > 0.004) lista.push({ ...vazio, forma: 'pix', valor: resto });
+    return lista;
+  };
 
   // ─── Antes de finalizar: desconto dentro do limite e cashback não usado ────
-  const finalizarAgora = () => (destino === 'totvs' ? gerarTransacao() : setPagamentoOpen(true));
+  // VENDA | TROCA vai direto (registra a troca, gera o Credev e fecha a venda);
+  // venda com a troca já feita abre o pagamento com o Credev preenchido.
+  const finalizarAgora = () => {
+    if (combinado) {
+      finalizarCombinadoRef.current();
+      return;
+    }
+    if (temVenda && trocaFeita) setPagInicial(pagamentosComCredev(r2(totals.total), Math.min(trocaFeita.total, Number(saldos?.credev) || 0)));
+    else setPagInicial(null);
+    setPagamentoOpen(true);
+  };
   const finalizarAgoraRef = useRef(finalizarAgora);
   finalizarAgoraRef.current = finalizarAgora;
+  const finalizarCombinadoRef = useRef(() => {});
 
   const iniciarFinalizacao = async () => {
     if (!canGenerate) return;
@@ -1230,7 +1143,7 @@ const PDVCrosby = () => {
       showToast('erro', `Desconto acima de ${PDV_VAREJO_CONFIG.maxDescontoPct}% precisa da senha do owner/admin`);
       return;
     }
-    if (items.length > 0 && !cashbackUsar && !cashbackRecusado && totals.cashbackDisponivel > 0) {
+    if (temVenda && !cashbackUsar && !cashbackRecusado && totals.cashbackDisponivel > 0) {
       setPerguntaCashback(true);
       return;
     }
@@ -1316,140 +1229,256 @@ const PDVCrosby = () => {
     [showToast],
   );
 
+  // Registra UMA transação no HeadCoach (troca ou venda). Devolve a venda gravada
+  // ou null (o aviso já foi mostrado).
+  const registrar = useCallback(
+    async ({ tipo, lista, pagamentos = [], cb = 0, baseVenda = 0, trocaVendaId = null }) => {
+      const empresaSel = branches.find((b) => String(b.cd_empresa) === String(branch));
+      const vendedorSel = sellers.find((s) => String(s.code) === String(seller));
+      // Cashback usado entra como desconto proporcional nos itens (igual ao TOTVS)
+      const itens = lista.map((i) => {
+        const q = qtyOf(i);
+        const pr = precoDe(i);
+        const itemTotal = q * (pr.unit - pr.discount);
+        const extraUnit =
+          cb > 0 && baseVenda > 0 ? Number((((itemTotal / baseVenda) * cb) / q).toFixed(2)) : 0;
+        return {
+          productCode: i.productCode,
+          sku: i.sku,
+          nome: i.name,
+          referencia: i.referenceName,
+          quantidade: q,
+          valorUnit: Number(Number(pr.unit).toFixed(2)),
+          descontoUnit: Number((pr.discount + extraUnit).toFixed(2)),
+          epcs: i.epcs,
+        };
+      });
+      const payload = {
+        empresa: parseInt(branch, 10),
+        empresaCnpj: empresaSel?.cnpj || null,
+        empresaNome: empresaSel?.nm_grupoempresa || null,
+        tipoVenda: tipo,
+        operacao: operacaoPara(tipo, branch, fiscalCfg) || null,
+        cliente: customer
+          ? { code: customer.code, nome: customer.name, cpfCnpj: cashback?.cpf || null }
+          : null,
+        vendedor: { code: parseInt(seller, 10), nome: vendedorSel?.name || null },
+        itens,
+        pagamentos,
+        cashbackUsado: cb,
+        // venda feita junto com uma troca (VENDA | TROCA): amarra uma na outra
+        trocaVendaId,
+        criadoPor: user?.email || user?.name || null,
+      };
+      const r = await fetch(`${API_BASE_URL}/api/pdv-crosby/vendas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.success) {
+        showToast('erro', j?.message || (tipo === 'troca' ? 'Falha ao registrar a troca' : 'Falha ao registrar a venda'));
+        // troca recusada no servidor (a compra mudou): mostra o motivo em cada peça
+        if (j?.error === 'TROCA_SEM_COMPRA' && j?.details?.itens) {
+          setPagamentoOpen(false);
+          setTrocaConf({
+            status: 'ok',
+            porProduto: Object.fromEntries(j.details.itens.map((i) => [i.productCode, i])),
+            avisos: j.details.avisos || [],
+            erro: null,
+          });
+        }
+        return null;
+      }
+      return j.data;
+    },
+    [branches, branch, sellers, seller, fiscalCfg, customer, cashback, user, showToast, precoDe],
+  );
+
+  // Emite a nota da transação e devolve o "resultado" que o modal mostra
+  const emitirResultado = useCallback(
+    async (venda) => {
+      const em = await emitirNota(venda.id);
+      return em.data
+        ? {
+            venda: em.data.venda || venda,
+            nota: em.data.nota || null,
+            emitente: em.data.emitente || null,
+            erro: em.ok ? null : em.message,
+          }
+        : { venda, nota: null, emitente: null, erro: em.message };
+    },
+    [emitirNota],
+  );
+
+  // Credev e adiantamento do cliente nesta loja, lidos na hora (depois da troca
+  // autorizada o Credev dela já está no saldo)
+  const lerSaldos = useCallback(async () => {
+    if (!customer?.code || !branch) return null;
+    try {
+      const j = await fetch(`${API_BASE_URL}/api/pdv-crosby/saldos-cliente/${customer.code}?empresa=${branch}`).then((r) => r.json());
+      if (!j?.success) return null;
+      setSaldos(j.data);
+      return j.data;
+    } catch {
+      return null;
+    }
+  }, [customer?.code, branch]);
+
+  // VENDA: registra, consome o cashback usado, emite a nota, espelha e gera o
+  // cashback novo. `troca` = a troca feita neste mesmo atendimento (VENDA | TROCA).
+  const concluirVenda = useCallback(
+    async ({ pagamentos, troca = null }) => {
+      const cb = totals.cashbackAplicado;
+      const venda = await registrar({
+        tipo: tipoSaida,
+        lista: itensVenda,
+        pagamentos,
+        cb,
+        baseVenda: totals.subtotal - totals.discounts,
+        trocaVendaId: troca?.venda?.id || null,
+      });
+      if (!venda) return false;
+      setPagamentoOpen(false);
+      setPagInicial(null);
+      setTrocaFeita(null);
+      cashbackGeradoRef.current = false;
+      beep(true);
+
+      // Consome o cashback usado (PESFC054)
+      if (cb > 0 && customer) {
+        try {
+          const rc = await fetch(`${API_BASE_URL}/api/totvs/pdv/bonus/consume`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              personCode: customer.code,
+              branchCode: parseInt(branch, 10),
+              usedValue: cb,
+            }),
+          });
+          const jc = await rc.json();
+          if (!rc.ok || !jc.success)
+            showToast(
+              'erro',
+              `Venda ok, mas o consumo do cashback falhou: ${jc?.message || ''} — baixe no PESFC054`,
+            );
+        } catch {
+          showToast('erro', 'Venda ok, mas o consumo do cashback falhou — baixe no PESFC054');
+        }
+      }
+
+      // Emite a nota
+      const res = await emitirResultado(venda);
+      const credevUsado = r2(
+        pagamentos.filter((p) => p.forma === 'credito_loja').reduce((s, p) => s + (Number(p.valor) || 0), 0),
+      );
+      setResultado(troca ? { ...res, troca: { ...troca, credevUsado } } : res);
+      // Espelho no TOTVS (documento interno): independe da nota ter saído —
+      // a venda aconteceu; a nota pode ser reemitida depois.
+      espelharNoTotvs(venda.id);
+      if (res.nota?.status === 'autorizada') {
+        beep(true);
+        const gerado = await gerarCashback({
+          total: Number(venda.total),
+          customerCode: customer?.code,
+          origem: `venda HeadCoach ${venda.id} (PDV Crosby)`,
+        });
+        if (gerado)
+          setResultado((prev) =>
+            prev ? { ...prev, venda: { ...prev.venda, cashback_gerado: gerado } } : prev,
+          );
+      } else {
+        beep(false);
+      }
+      return true;
+    },
+    [totals, registrar, tipoSaida, itensVenda, customer, branch, showToast, emitirResultado, espelharNoTotvs, gerarCashback],
+  );
+
+  // VENDA | TROCA, 2º passo — a troca foi autorizada e o Credev existe: fecha a
+  // venda com ele. Cobriu a venda inteira → fecha sozinho (o que sobrar fica de
+  // Credev para o cliente). Faltou → abre o pagamento com o Credev já lançado e
+  // a diferença para pagar.
+  const seguirParaVenda = useCallback(
+    async (troca) => {
+      setEtapa('Troca registrada. Conferindo o Credev do cliente…');
+      const s = await lerSaldos();
+      const credev = r2(Math.min(troca.total, Number(s?.credev) || 0));
+      const totalVenda = r2(totals.total);
+      setTrocaFeita(troca);
+      if (credev >= totalVenda - 0.004) {
+        setEtapa('Fechando a venda com o Credev da troca…');
+        return concluirVenda({
+          pagamentos: [{ forma: 'credito_loja', valor: totalVenda, parcelas: 1, troco: 0 }],
+          troca,
+        });
+      }
+      setPagInicial(pagamentosComCredev(totalVenda, credev));
+      setPagamentoOpen(true);
+      if (credev < troca.total - 0.005)
+        showToast('erro', `O Credev da troca (${fmtBRL(troca.total)}) ainda não está no saldo do cliente: confira o pagamento.`);
+      else showToast('ok', `Troca registrada: Credev de ${fmtBRL(troca.total)} gerado. Falta pagar ${fmtBRL(r2(totalVenda - credev))}.`);
+      return true;
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [lerSaldos, totals, concluirVenda, showToast],
+  );
+
+  // VENDA | TROCA, 1º passo — registra a troca, emite a NF-e de devolução (o
+  // servidor gera o Credev na autorização) e segue para a venda.
+  const finalizarCombinado = useCallback(async () => {
+    if (!canGenerate || !combinado) return;
+    setHcBusy(true);
+    try {
+      setEtapa('Registrando a troca e emitindo a NF-e de devolução…');
+      const vTroca = await registrar({ tipo: 'troca', lista: itensTroca });
+      if (!vTroca) return;
+      beep(true);
+      // a troca está gravada: as peças dela saem do carrinho (ficam as da venda)
+      setItems((prev) => prev.filter((i) => !i.troca));
+      const res = await emitirResultado(vTroca);
+      if (res.nota?.status !== 'autorizada') {
+        // sem nota autorizada não há Credev: a venda espera no carrinho
+        beep(false);
+        setResultado({ ...res, vendaPendente: true });
+        return;
+      }
+      await seguirParaVenda({ venda: res.venda, nota: res.nota, emitente: res.emitente, total: Number(res.venda.total) });
+    } catch (e) {
+      showToast('erro', `Falha ao finalizar: ${e.message}`);
+    } finally {
+      setHcBusy(false);
+      setEtapa('');
+    }
+  }, [canGenerate, combinado, registrar, itensTroca, emitirResultado, seguirParaVenda, showToast]);
+  finalizarCombinadoRef.current = finalizarCombinado;
+
+  // Confirmação do modal: só TROCA (registra e emite a devolução) ou VENDA
+  // (com a troca do atendimento, se houver)
   const finalizarHeadcoach = useCallback(
-    async ({ pagamentos, nfReferenciada }) => {
+    async ({ pagamentos }) => {
       if (!canGenerate) return;
       setHcBusy(true);
       try {
-        const cb = totals.cashbackAplicado;
-        const baseVenda = totals.subtotal - totals.discounts;
-        const empresaSel = branches.find((b) => String(b.cd_empresa) === String(branch));
-        const vendedorSel = sellers.find((s) => String(s.code) === String(seller));
-        // Cashback usado entra como desconto proporcional nos itens (igual ao TOTVS)
-        const itens = items.map((i) => {
-          const q = qtyOf(i);
-          const itemTotal = q * (i.unit - (i.discount || 0));
-          const extraUnit =
-            cb > 0 && baseVenda > 0 ? Number((((itemTotal / baseVenda) * cb) / q).toFixed(2)) : 0;
-          return {
-            productCode: i.productCode,
-            sku: i.sku,
-            nome: i.name,
-            referencia: i.referenceName,
-            quantidade: q,
-            valorUnit: Number(Number(i.unit).toFixed(2)),
-            descontoUnit: Number(((i.discount || 0) + extraUnit).toFixed(2)),
-            epcs: i.epcs,
-          };
-        });
-        const payload = {
-          empresa: parseInt(branch, 10),
-          empresaCnpj: empresaSel?.cnpj || null,
-          empresaNome: empresaSel?.nm_grupoempresa || null,
-          tipoVenda,
-          operacao: operation || null,
-          cliente: customer
-            ? { code: customer.code, nome: customer.name, cpfCnpj: cashback?.cpf || null }
-            : null,
-          vendedor: { code: parseInt(seller, 10), nome: vendedorSel?.name || null },
-          itens,
-          pagamentos,
-          cashbackUsado: cb,
-          nfReferenciada,
-          criadoPor: user?.email || user?.name || null,
-        };
-        const r = await fetch(`${API_BASE_URL}/api/pdv-crosby/vendas`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        const j = await r.json();
-        if (!r.ok || !j.success) {
-          showToast('erro', j?.message || 'Falha ao registrar a venda');
+        if (!temVenda) {
+          const vTroca = await registrar({ tipo: 'troca', lista: itensTroca });
+          if (!vTroca) return;
+          setPagamentoOpen(false);
+          beep(true);
+          const res = await emitirResultado(vTroca);
+          setResultado(res);
+          beep(res.nota?.status === 'autorizada');
           return;
         }
-        const venda = j.data;
-        setPagamentoOpen(false);
-        cashbackGeradoRef.current = false;
-        beep(true);
-
-        // Consome o cashback usado (PESFC054)
-        if (cb > 0 && customer) {
-          try {
-            const rc = await fetch(`${API_BASE_URL}/api/totvs/pdv/bonus/consume`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                personCode: customer.code,
-                branchCode: parseInt(branch, 10),
-                usedValue: cb,
-              }),
-            });
-            const jc = await rc.json();
-            if (!rc.ok || !jc.success)
-              showToast(
-                'erro',
-                `Venda ok, mas o consumo do cashback falhou: ${jc?.message || ''} — baixe no PESFC054`,
-              );
-          } catch {
-            showToast('erro', 'Venda ok, mas o consumo do cashback falhou — baixe no PESFC054');
-          }
-        }
-
-        // Emite a nota
-        const em = await emitirNota(venda.id);
-        const res = em.data
-          ? {
-              venda: em.data.venda || venda,
-              nota: em.data.nota || null,
-              emitente: em.data.emitente || null,
-              erro: em.ok ? null : em.message,
-            }
-          : { venda, nota: null, emitente: null, erro: em.message };
-        setResultado(res);
-        // Espelho no TOTVS (documento interno): independe da nota ter saído —
-        // a venda aconteceu; a nota pode ser reemitida depois.
-        if (tipoVenda !== 'troca') espelharNoTotvs(venda.id);
-        if (res.nota?.status === 'autorizada') {
-          beep(true);
-          if (tipoVenda !== 'troca') {
-            const gerado = await gerarCashback({
-              total: Number(venda.total),
-              customerCode: customer?.code,
-              origem: `venda HeadCoach ${venda.id} (PDV Crosby)`,
-            });
-            if (gerado)
-              setResultado((prev) =>
-                prev ? { ...prev, venda: { ...prev.venda, cashback_gerado: gerado } } : prev,
-              );
-          }
-        } else {
-          beep(false);
-        }
+        await concluirVenda({ pagamentos, troca: trocaFeita });
       } catch (e) {
         showToast('erro', `Falha ao finalizar: ${e.message}`);
       } finally {
         setHcBusy(false);
       }
     },
-    [
-      canGenerate,
-      totals,
-      branches,
-      branch,
-      sellers,
-      seller,
-      items,
-      tipoVenda,
-      operation,
-      customer,
-      cashback,
-      user,
-      showToast,
-      emitirNota,
-      gerarCashback,
-      espelharNoTotvs,
-    ],
+    [canGenerate, temVenda, registrar, itensTroca, emitirResultado, concluirVenda, trocaFeita, showToast],
   );
 
   // Reemite (após rejeição) e recarrega o resultado
@@ -1466,8 +1495,15 @@ const PDVCrosby = () => {
             erro: em.ok ? null : em.message,
           }
         : { ...resultado, nota: null, erro: em.message };
-      setResultado(res);
-      if (res.nota?.status === 'autorizada' && resultado.venda.tipo_venda !== 'troca') {
+      const autorizou = res.nota?.status === 'autorizada';
+      // troca do VENDA | TROCA que tinha sido rejeitada: agora o Credev existe, segue a venda
+      if (autorizou && resultado.vendaPendente && res.venda.tipo_venda === 'troca' && temVenda) {
+        setResultado(null);
+        await seguirParaVenda({ venda: res.venda, nota: res.nota, emitente: res.emitente, total: Number(res.venda.total) });
+        return;
+      }
+      setResultado({ ...res, troca: resultado.troca, vendaPendente: resultado.vendaPendente && !autorizou });
+      if (autorizou && resultado.venda.tipo_venda !== 'troca') {
         await gerarCashback({
           total: Number(res.venda.total),
           customerCode: res.venda.cliente_code,
@@ -1476,150 +1512,21 @@ const PDVCrosby = () => {
       }
     } finally {
       setHcBusy(false);
+      setEtapa('');
     }
-  }, [resultado, emitirNota, gerarCashback]);
+  }, [resultado, emitirNota, gerarCashback, temVenda, seguirParaVenda]);
 
   const recarregarResultado = useCallback(async () => {
     if (!resultado?.nota?.id) return;
     const r = await fetch(`${API_BASE_URL}/api/pdv-crosby/notas/${resultado.nota.id}`);
     const j = await r.json();
     if (r.ok && j.success)
-      setResultado({ venda: j.data.venda, nota: j.data.nota, emitente: j.data.emitente });
+      setResultado({ venda: j.data.venda, nota: j.data.nota, emitente: j.data.emitente, troca: resultado.troca, vendaPendente: resultado.vendaPendente });
   }, [resultado]);
-
-  // ─── Acompanha o status até ATENDIDA (caixa finaliza no TRAFP005) ────────
-  const verificarStatus = useCallback(async () => {
-    if ((!trx && !trxTroca) || trxChecking) return;
-    setTrxChecking(true);
-    const consultar = async (t) => {
-      const qs = new URLSearchParams({
-        branch: t.branchCode,
-        code: t.transactionCode,
-        date: String(t.transactionDate).slice(0, 10),
-      });
-      const r = await fetch(`${API_BASE_URL}/api/totvs/pdv/transaction-status?${qs}`);
-      const j = await r.json();
-      return j?.data?.status;
-    };
-    try {
-      if (trxTroca) {
-        const st = await consultar(trxTroca);
-        if (st != null) setTrxTrocaStatus(st);
-      }
-      if (trx) {
-        const st = await consultar(trx);
-        if (st != null) setTrxStatus(st);
-      }
-    } catch {
-      /* tenta no próximo ciclo */
-    } finally {
-      setTrxChecking(false);
-    }
-  }, [trx, trxTroca, trxChecking]);
-
-  // Imprime a nota fiscal gerada pela venda atendida: NFC-e em cupom 80mm
-  // (impressora térmica) ou o DANFE em PDF quando a venda foi NF-e.
-  const [imprimindo, setImprimindo] = useState(false);
-  const imprimirNota = useCallback(async () => {
-    if (!trx || imprimindo) return;
-    // a janela precisa abrir no clique, antes da busca, senão o navegador bloqueia
-    const w = window.open('', '_blank', 'width=420,height=720');
-    if (!w) {
-      showToast('erro', 'O navegador bloqueou a janela de impressão. Libere pop-ups para este site.');
-      return;
-    }
-    w.document.write('<p style="font-family:Arial;padding:16px">Buscando a nota fiscal…</p>');
-    setImprimindo(true);
-    try {
-      const qs = new URLSearchParams({
-        branch: trx.branchCode,
-        code: trx.transactionCode,
-        date: String(trx.transactionDate).slice(0, 10),
-      });
-      const r = await fetch(`${API_BASE_URL}/api/totvs/pdv/transaction-invoice?${qs}`);
-      const j = await r.json();
-      if (!r.ok || !j.success) throw new Error(j?.message || 'Nota fiscal não encontrada');
-      if (j.data.danfePdfBase64) {
-        const bin = atob(j.data.danfePdfBase64);
-        const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
-        w.location.href = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
-      } else {
-        const vend = sellers.find((sl) => String(sl.code) === String(seller));
-        const html = gerarHtmlCupomNFCe({
-          nota: j.data.nota,
-          venda: { ...j.data.venda, vendedor_nome: vend?.name || null },
-          emitente: j.data.emitente,
-        });
-        w.document.open();
-        w.document.write(html);
-        w.document.close();
-      }
-    } catch (e) {
-      w.close();
-      showToast('erro', e.message);
-    } finally {
-      setImprimindo(false);
-    }
-  }, [trx, imprimindo, sellers, seller, showToast]);
-
-  // Polling automático a cada 10s enquanto a transação não for atendida
-  useEffect(() => {
-    const fim = (st) => st === 4 || st === 6;
-    const vendaAberta = trx && !fim(trxStatus);
-    const trocaAberta = trxTroca && !fim(trxTrocaStatus);
-    if (!vendaAberta && !trocaAberta) return undefined;
-    const t = setInterval(verificarStatus, 10000);
-    return () => clearInterval(t);
-  }, [trx, trxStatus, trxTroca, trxTrocaStatus, verificarStatus]);
-
-  // Venda ATENDIDA → gera o cashback novo (20% do valor pago), uma vez só
-  useEffect(() => {
-    if (trxStatus !== 4 || !trx || cashbackGeradoRef.current) return;
-    cashbackGeradoRef.current = true;
-    (async () => {
-      const valor = Number(
-        ((trx.total * PDV_VAREJO_CONFIG.cashbackGerarPct) / 100).toFixed(2),
-      );
-      if (!(valor > 0)) return;
-      try {
-        const r = await fetch(`${API_BASE_URL}/api/totvs/pdv/bonus/add`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            personCode: trx.customerCode,
-            branchCode: trx.branchCode,
-            value: valor,
-            transactionCode: trx.transactionCode,
-            transactionDate: trx.transactionDate,
-            historic: `Cashback ${PDV_VAREJO_CONFIG.cashbackGerarPct}% - venda ${trx.transactionCode} (PDV Crosby)`,
-          }),
-        });
-        const j = await r.json();
-        if (r.ok && j.success) {
-          setTrx((prev) => (prev ? { ...prev, cashbackGerado: valor } : prev));
-          showToast('ok', `Cashback de ${fmtBRL(valor)} gerado para o cliente! 💰`);
-        } else {
-          cashbackGeradoRef.current = false; // permite re-tentar no próximo ciclo
-          showToast(
-            'erro',
-            `Venda atendida, mas o cashback não foi gerado: ${j?.message || ''}`,
-          );
-        }
-      } catch {
-        cashbackGeradoRef.current = false;
-        showToast('erro', 'Venda atendida, mas o cashback não foi gerado');
-      }
-    })();
-  }, [trxStatus, trx, showToast]);
 
   useEffect(() => {
     carregarRanking();
-  }, [carregarRanking, trxStatus, resultado]);
-
-  const stInfo = TRX_STATUS[trxStatus] || {
-    label: `status ${trxStatus}`,
-    cls: 'bg-gray-100 text-gray-600 ring-gray-200',
-  };
+  }, [carregarRanking, resultado]);
 
   return (
     <div ref={rootRef} className={`flex-1 min-h-0 relative flex flex-col bg-gray-100 ${escuro && telaCheia ? 'pdv-dark-fs' : ''}`}>
@@ -1756,26 +1663,6 @@ const PDVCrosby = () => {
             const t = TIPOS_VENDA.find((x) => x.id === id);
             const ativo = tipoVenda === t.id;
             const Icon = t.icon;
-            // TOTVS: TROCA abre as compras do cliente e não muda o tipo da venda
-            if (t.id === 'troca' && destino === 'totvs') {
-              return (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => {
-                    if (!branch) return showToast('erro', 'Escolha a empresa antes da troca');
-                    return setShowTroca(true);
-                  }}
-                  title={`Compras do cliente ou cupom de troca · operação ${operacaoTroca || '—'}`}
-                  className={`h-9 px-3 min-w-[5.5rem] rounded-lg text-xs font-bold inline-flex items-center justify-center gap-1 shadow-sm transition-colors ${
-                    trocaItens.length > 0 ? 'bg-purple-700 text-white' : 'bg-white text-purple-700 ring-1 ring-purple-300 hover:bg-purple-50'
-                  }`}
-                >
-                  <Icon size={14} weight="bold" /> {t.label}
-                  {trocaQtd > 0 && <span className="ml-0.5 px-1.5 rounded-full bg-white/25 tabular-nums">{trocaQtd}</span>}
-                </button>
-              );
-            }
             return (
               <button
                 key={t.id}
@@ -1853,7 +1740,7 @@ const PDVCrosby = () => {
           </div>
         </div>
 
-        {/* ── Operação da venda · destino (só admin/owner) e atalhos ── */}
+        {/* ── Operação da venda e atalhos ── */}
         <div className="mb-2 flex flex-wrap items-center gap-2 min-h-[1rem]">
           {operation ? (
             <span className="text-[11px] text-gray-400">operação {operation}</span>
@@ -1864,7 +1751,7 @@ const PDVCrosby = () => {
           <button
             onClick={() => (branch ? setShowMovimento(true) : showToast('erro', 'Escolha a empresa'))}
             className="h-9 px-2.5 rounded-lg text-xs font-semibold text-[#000638] bg-white ring-1 ring-gray-200 shadow-sm hover:bg-gray-50 inline-flex items-center gap-1"
-            title="Vendas e devoluções do dia da empresa (inclui o TOTVS)"
+            title="Vendas e devoluções do dia da empresa"
           >
             <ChartBar size={14} weight="bold" /> Movimento do dia
           </button>
@@ -1882,48 +1769,22 @@ const PDVCrosby = () => {
           >
             {telaCheia ? <CornersIn size={16} weight="bold" /> : <CornersOut size={16} weight="bold" />}
           </button>
-          {podeEscolherDestino && (
-          <div className="inline-flex rounded-lg bg-white ring-1 ring-gray-200 shadow-sm p-0.5">
-            {[
-              { id: 'totvs', label: 'TOTVS', icon: Database, hint: 'Gera a transação no ERP; o caixa finaliza no TRAFP005' },
-              { id: 'headcoach', label: 'HEADCOACH', icon: Cloud, hint: 'Venda e nota fiscal emitidas pelo HeadCoach' },
-            ].map((d) => {
-              const Icon = d.icon;
-              const ativo = destino === d.id;
-              return (
-                <button
-                  key={d.id}
-                  type="button"
-                  onClick={() => setDestino(d.id)}
-                  title={d.hint}
-                  className={`h-8 px-2.5 rounded-md text-[11px] font-bold inline-flex items-center gap-1 transition-colors ${
-                    ativo ? 'bg-[#000638] text-white' : 'text-[#000638] hover:bg-gray-50'
-                  }`}
-                >
-                  <Icon size={13} weight="bold" /> {d.label}
-                </button>
-              );
-            })}
-          </div>
-          )}
-          {destino === 'headcoach' && (
-            <>
-              <button
-                onClick={() => setShowVendas(true)}
-                disabled={!branch}
-                className="h-9 px-2.5 rounded-lg text-xs font-semibold text-[#000638] bg-white ring-1 ring-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-40 inline-flex items-center gap-1"
-              >
-                <ListBullets size={14} /> Vendas do dia
-              </button>
-              <button
-                onClick={() => setShowConfig(true)}
-                disabled={!branch}
-                className="h-9 px-2.5 rounded-lg text-xs font-semibold text-[#000638] bg-white ring-1 ring-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-40 inline-flex items-center gap-1"
-                title="Ambiente, série, CSC, alíquota"
-              >
-                <Gear size={14} /> Fiscal
-              </button>
-            </>
+          <button
+            onClick={() => setShowVendas(true)}
+            disabled={!branch}
+            className="h-9 px-2.5 rounded-lg text-xs font-semibold text-[#000638] bg-white ring-1 ring-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-40 inline-flex items-center gap-1"
+          >
+            <ListBullets size={14} /> Vendas do dia
+          </button>
+          {podeConfigurarFiscal && (
+            <button
+              onClick={() => setShowConfig(true)}
+              disabled={!branch}
+              className="h-9 px-2.5 rounded-lg text-xs font-semibold text-[#000638] bg-white ring-1 ring-gray-200 shadow-sm hover:bg-gray-50 disabled:opacity-40 inline-flex items-center gap-1"
+              title="Ambiente, série, CSC, alíquota"
+            >
+              <Gear size={14} /> Fiscal
+            </button>
           )}
         </div>
 
@@ -1949,7 +1810,7 @@ const PDVCrosby = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {items.length === 0 && trocaItens.length === 0 && (
+                  {items.length === 0 && (
                     <tr>
                       <td colSpan={6} className="px-4 py-10 text-center">
                         <Broadcast
@@ -1964,47 +1825,36 @@ const PDVCrosby = () => {
                       </td>
                     </tr>
                   )}
-                  {trocaItens.length > 0 && (
-                    <tr className="bg-purple-100">
-                      <td colSpan={4} className="px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-purple-800">
-                        Troca — peças que o cliente está devolvendo
-                      </td>
-                      <td className="px-2 py-1 text-right text-[10px] font-bold text-purple-800 whitespace-nowrap">
-                        {trocaQtd} pç · − {fmtBRL(trocaTotal)}
-                      </td>
-                      <td />
-                    </tr>
-                  )}
-                  {trocaItens.map((i) => (
-                    <tr key={i.key} className="bg-purple-50 border-l-4 border-purple-500">
-                      <td className="px-3 py-1.5">
-                        <p className="font-medium text-purple-900 leading-tight text-[13px]">
-                          <span className="mr-1.5 inline-flex px-1.5 rounded-full bg-purple-600 text-white text-[10px] font-bold align-middle">TROCA</span>
-                          {i.name}
-                        </p>
-                        <p className="text-[11px] text-purple-700/80">
-                          cód. {i.productCode} · {i.nota.documentType === 65 ? 'NFC-e' : 'NF'} {i.nota.invoiceCode}/{i.nota.serialCode} · fatura{' '}
-                          {i.nota.invoiceSequence} · {fmtData(i.nota.invoiceDate)} · empresa {i.nota.branchCode}
-                          {i.cupom && <span className="ml-1.5 inline-flex px-1.5 rounded-full bg-white text-purple-700 ring-1 ring-purple-300">cupom {i.cupom}</span>}
-                        </p>
-                      </td>
-                      <td className="px-2 py-1.5 text-center font-bold text-purple-900 tabular-nums text-[13px]">{i.quantity}</td>
-                      <td className="px-2 py-1.5 text-right font-medium text-purple-900 tabular-nums text-[13px]">{fmtBRL(i.unit)}</td>
-                      <td className="px-2 py-1.5 text-right text-[11px] text-purple-700/80">valor pago</td>
-                      <td className="px-2 py-1.5 text-right font-semibold text-purple-900 text-[13px]">− {fmtBRL(i.quantity * i.unit)}</td>
-                      <td className="px-2 py-1.5 text-center">
-                        <button
-                          onClick={() => setTrocaItens((l) => l.filter((x) => x.key !== i.key))}
-                          className="text-purple-300 hover:text-rose-500 transition-colors"
-                          title="Tirar da troca"
-                        >
-                          <Trash size={14} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
                   {grupos.map((g) => (
-                    <React.Fragment key={g.nome}>
+                    <React.Fragment key={`${g.troca ? 'T' : 'V'}:${g.nome}`}>
+                      {g.troca && g.primeiro && (
+                        <>
+                          <tr className="bg-purple-100">
+                            <td colSpan={6} className="px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-purple-800">
+                              Troca — peças que o cliente está devolvendo
+                              {!customer
+                                ? ' · selecione o cliente para conferir as compras dele'
+                                : trocaConf.status === 'carregando'
+                                  ? ' · conferindo as compras do cliente…'
+                                  : trocaConf.status === 'erro'
+                                    ? ` · ${trocaConf.erro}`
+                                    : ` · valor pago na nota de origem · vira Credev de ${fmtBRL(totals.troca)}`}
+                            </td>
+                          </tr>
+                          {trocaConf.avisos.map((a) => (
+                            <tr key={a} className="bg-amber-50">
+                              <td colSpan={6} className="px-3 py-1 text-[11px] text-amber-800">{a}</td>
+                            </tr>
+                          ))}
+                        </>
+                      )}
+                      {!g.troca && g.primeiro && temTroca && (
+                        <tr className="bg-emerald-100">
+                          <td colSpan={6} className="px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-800">
+                            Venda — peças que o cliente está levando · {tipoSaida === 'nfe' ? 'NF-e' : tipoSaida === 'nfce' ? 'NFC-e' : 'escolha NFC-e ou NF-e'}
+                          </td>
+                        </tr>
+                      )}
                       <tr className="bg-gray-100/80">
                         <td
                           colSpan={4}
@@ -2019,12 +1869,25 @@ const PDVCrosby = () => {
                       </tr>
                       {g.items.map((i) => (
                         <tr
-                          key={i.productCode}
-                          className={i.fonte === 'promo-pdv' ? 'bg-emerald-50 border-l-4 border-emerald-500 hover:bg-emerald-100/60' : 'hover:bg-gray-50/60'}
+                          key={i.key}
+                          className={
+                            i.troca
+                              ? trocaConf.porProduto[i.productCode]?.ok
+                                ? 'bg-purple-50 border-l-4 border-purple-500'
+                                : trocaConf.porProduto[i.productCode]
+                                  ? 'bg-rose-50 border-l-4 border-rose-500'
+                                  : 'hover:bg-gray-50/60'
+                              : i.fonte === 'promo-pdv'
+                                ? 'bg-emerald-50 border-l-4 border-emerald-500 hover:bg-emerald-100/60'
+                                : 'hover:bg-gray-50/60'
+                          }
                         >
                           <td className="px-3 py-1.5">
                             <p className="font-medium text-[#000638] leading-tight text-[13px]">
-                              {i.fonte === 'promo-pdv' && (
+                              {i.troca && (
+                                <span className="mr-1.5 inline-flex px-1.5 rounded-full bg-purple-600 text-white text-[10px] font-bold align-middle">TROCA</span>
+                              )}
+                              {!i.troca && i.fonte === 'promo-pdv' && (
                                 <span
                                   className="mr-1.5 inline-flex px-1.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold align-middle"
                                   title={`${i.promoNome} — de ${fmtBRL(i.unit)} por ${fmtBRL(i.unit - i.promoDesconto)}`}
@@ -2037,7 +1900,7 @@ const PDVCrosby = () => {
                             <p className="text-[11px] text-gray-400">
                               cód. {i.productCode}
                               {i.sku ? ` · EAN ${i.sku}` : ''}
-                              {i.fonte === 'promo-pdv' ? (
+                              {i.troca ? null : i.fonte === 'promo-pdv' ? (
                                 <span className="ml-1.5 text-emerald-700 font-semibold">
                                   {i.promoNome} · de {fmtBRL(i.unit)} por {fmtBRL(i.unit - i.promoDesconto)}
                                 </span>
@@ -2056,13 +1919,30 @@ const PDVCrosby = () => {
                                 </span>
                               )}
                             </p>
+                            {i.troca &&
+                              (() => {
+                                const ref = trocaConf.porProduto[i.productCode];
+                                if (!ref) return null;
+                                if (!ref.ok) return <p className="text-[11px] font-semibold text-rose-700">{ref.mensagem}</p>;
+                                return (
+                                  <p className="text-[11px] text-purple-800">
+                                    {ref.notas.map((nt, k) => (
+                                      <span key={nt.chave} title={`Chave ${nt.chave}`}>
+                                        {k > 0 && ' · '}
+                                        {nt.modelo === 65 ? 'NFC-e' : 'NF'} <b>{nt.numero}/{nt.serie}</b> de {fmtData(nt.data)} · empresa {nt.empresa}
+                                        {ref.notas.length > 1 ? ` · ${nt.quantidade} pç` : ''}
+                                      </span>
+                                    ))}
+                                  </p>
+                                );
+                              })()}
                           </td>
                           <td className="px-2 py-1.5 text-center">
                             <span className="inline-flex items-center gap-1">
                               {i.manualQty > 0 && (
                                 <button
                                   onClick={() =>
-                                    ajustarManualQty(i.productCode, -1)
+                                    ajustarManualQty(i.key, -1)
                                   }
                                   className="w-5 h-5 rounded ring-1 ring-gray-300 text-gray-500 hover:bg-gray-100 inline-flex items-center justify-center"
                                   title="Diminuir (manual)"
@@ -2075,7 +1955,7 @@ const PDVCrosby = () => {
                               </span>
                               <button
                                 onClick={() =>
-                                  ajustarManualQty(i.productCode, 1)
+                                  ajustarManualQty(i.key, 1)
                                 }
                                 className="w-5 h-5 rounded ring-1 ring-gray-300 text-gray-500 hover:bg-gray-100 inline-flex items-center justify-center"
                                 title="Adicionar 1 (manual)"
@@ -2085,9 +1965,12 @@ const PDVCrosby = () => {
                             </span>
                           </td>
                           <td className="px-2 py-1.5 text-right font-medium text-gray-700 tabular-nums text-[13px]">
-                            {fmtBRL(i.unit)}
+                            {i.troca && !trocaConf.porProduto[i.productCode]?.ok ? '—' : fmtBRL(precoDe(i).unit)}
                           </td>
                           <td className="px-2 py-1.5 text-right">
+                            {i.troca ? (
+                              <span className="text-[11px] text-purple-700/80">valor pago</span>
+                            ) : (
                             <input
                               type="number"
                               min="0"
@@ -2101,13 +1984,14 @@ const PDVCrosby = () => {
                               onChange={(e) => mudarDescontoItem(i, e.target.value)}
                               className="w-20 h-7 rounded-md border border-gray-200 text-right text-[13px] px-1.5 focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
                             />
+                            )}
                           </td>
                           <td className="px-2 py-1.5 text-right font-semibold text-[#000638] text-[13px]">
-                            {fmtBRL(qtyOf(i) * (i.unit - (i.discount || 0)))}
+                            {fmtBRL(qtyOf(i) * (precoDe(i).unit - precoDe(i).discount))}
                           </td>
                           <td className="px-2 py-1.5 text-center">
                             <button
-                              onClick={() => removeItem(i.productCode)}
+                              onClick={() => removeItem(i.key)}
                               className="text-gray-300 hover:text-rose-500 transition-colors"
                               title="Remover"
                             >
@@ -2173,81 +2057,90 @@ const PDVCrosby = () => {
                   <span>Peças</span>
                   <span className="tabular-nums">{totals.qty}</span>
                 </div>
-                <div className="flex justify-between text-gray-500">
-                  <span>Subtotal</span>
-                  <span className="tabular-nums">{fmtBRL(totals.subtotal)}</span>
-                </div>
-                <div className="flex justify-between text-gray-500">
-                  <span>Descontos</span>
-                  <span className="tabular-nums">− {fmtBRL(totals.discounts)}</span>
-                </div>
+                {(temVenda || !temTroca) && (
+                  <>
+                    <div className="flex justify-between text-gray-500">
+                      <span>Subtotal{temTroca ? ' da venda' : ''}</span>
+                      <span className="tabular-nums">{fmtBRL(totals.subtotal)}</span>
+                    </div>
+                    <div className="flex justify-between text-gray-500">
+                      <span>Descontos</span>
+                      <span className="tabular-nums">− {fmtBRL(totals.discounts)}</span>
+                    </div>
+                  </>
+                )}
                 {totals.cashbackAplicado > 0 && (
                   <div className="flex justify-between text-emerald-600 font-medium">
                     <span>Cashback</span>
                     <span className="tabular-nums">− {fmtBRL(totals.cashbackAplicado)}</span>
                   </div>
                 )}
-                {trocaItens.length > 0 && (
+                {combinado ? (
                   <>
-                    <div className="flex justify-between text-gray-700 font-medium pt-1 border-t border-gray-100">
+                    <div className="flex justify-between font-semibold text-[#000638]">
                       <span>Venda</span>
                       <span className="tabular-nums">{fmtBRL(totals.total)}</span>
                     </div>
-                    <div className="flex justify-between text-purple-700 font-medium">
-                      <span>Troca ({trocaQtd} pç)</span>
-                      <span className="tabular-nums">− {fmtBRL(trocaTotal)}</span>
+                    <div className="flex justify-between font-semibold text-purple-700">
+                      <span>Troca (vira Credev)</span>
+                      <span className="tabular-nums">− {fmtBRL(totals.troca)}</span>
                     </div>
+                    <div className="flex justify-between items-baseline pt-1.5 border-t border-gray-100">
+                      <span className="font-semibold text-gray-700">A pagar</span>
+                      <span className="text-2xl font-bold tabular-nums text-[#000638]">{fmtBRL(totals.aPagar)}</span>
+                    </div>
+                    {totals.sobra > 0 && (
+                      <p className="text-[11px] font-semibold text-purple-700">Sobra {fmtBRL(totals.sobra)} de Credev para o cliente usar nesta loja.</p>
+                    )}
                   </>
+                ) : (
+                  <div className="flex justify-between items-baseline pt-1.5 border-t border-gray-100">
+                    <span className="font-semibold text-gray-700">{temTroca ? 'Valor da troca' : 'Total'}</span>
+                    <span className={`text-2xl font-bold tabular-nums ${temTroca ? 'text-purple-700' : 'text-[#000638]'}`}>
+                      {fmtBRL(temTroca ? totals.troca : totals.total)}
+                    </span>
+                  </div>
                 )}
-                <div className="flex justify-between items-baseline pt-1.5 border-t border-gray-100">
-                  <span className="font-semibold text-gray-700">
-                    {trocaItens.length === 0 ? 'Total' : totals.total - trocaTotal >= 0 ? 'A pagar' : 'Crédito do cliente'}
-                  </span>
-                  <span className={`text-2xl font-bold tabular-nums ${totals.total - trocaTotal < 0 ? 'text-purple-700' : 'text-[#000638]'}`}>
-                    {fmtBRL(Math.abs(totals.total - trocaTotal))}
-                  </span>
-                </div>
+                {trocaFeita && temVenda && !temTroca && (
+                  <p className="rounded-lg bg-purple-50 px-2 py-1 text-[11px] font-semibold text-purple-800 ring-1 ring-purple-200">
+                    Troca #{trocaFeita.venda?.id} já registrada: Credev de {fmtBRL(trocaFeita.total)} para usar nesta venda.
+                  </p>
+                )}
               </div>
             </div>
 
-            {/* Gerar transação */}
+            {/* Finalizar */}
             <button
               onClick={iniciarFinalizacao}
               disabled={!canGenerate}
               className={`w-full h-14 rounded-lg text-white font-bold text-sm inline-flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed ${
-                destino === 'totvs' ? 'bg-[#000638] hover:bg-[#000638]/90' : 'bg-emerald-600 hover:bg-emerald-700'
+                temTroca && !temVenda ? 'bg-purple-700 hover:bg-purple-800' : 'bg-emerald-600 hover:bg-emerald-700'
               }`}
             >
-              {posting || hcBusy ? (
+              {hcBusy ? (
                 <>
-                  <Spinner size={16} className="animate-spin" /> {destino === 'totvs' ? 'Gerando…' : 'Emitindo…'}
-                </>
-              ) : destino === 'totvs' ? (
-                <>
-                  <Receipt size={18} weight="bold" />{' '}
-                  {trocaItens.length > 0 ? (items.length > 0 ? 'GERAR TROCA + VENDA' : 'GERAR TROCA') : 'GERAR TRANSAÇÃO'}
+                  <Spinner size={16} className="animate-spin" /> Emitindo…
                 </>
               ) : (
                 <>
-                  <Cloud size={18} weight="bold" /> {tipoVenda === 'troca' ? 'REGISTRAR TROCA' : 'FINALIZAR VENDA'}
+                  <Cloud size={18} weight="bold" /> {combinado ? 'FINALIZAR VENDA | TROCA' : temTroca ? 'REGISTRAR TROCA' : 'FINALIZAR VENDA'}
                 </>
               )}
             </button>
+            {combinado && canGenerate && (
+              <p className="text-[10px] text-center text-gray-500">
+                Registra a troca, gera o Credev e fecha a venda com ele
+                {totals.aPagar > 0 ? ` — depois abre o pagamento de ${fmtBRL(totals.aPagar)}.` : ' — sem diferença, fecha sozinho.'}
+              </p>
+            )}
             {branch && caixaSit && !caixaSit.erro && !caixaSit.aberto && (
               <p className="text-[10.5px] font-semibold text-rose-600 text-center inline-flex w-full items-center justify-center gap-1">
                 <Lock size={11} weight="fill" /> Caixa fechado: abra o caixa para vender.
               </p>
             )}
-            {!canGenerate && trocaItens.length > 0 && !operacaoTroca && branch && (
-              <p className="text-[10px] text-rose-600 text-center">Empresa {branch} sem operação de TROCA configurada.</p>
-            )}
             {!canGenerate && items.length > 0 && (
-              <p className="text-[10px] text-gray-400 text-center">
-                {destino === 'totvs'
-                  ? 'Preencha empresa, vendedor, tipo de venda e cliente.'
-                  : tipoVenda === 'nfce'
-                    ? 'Preencha empresa, vendedor e tipo de venda.'
-                    : 'NF-e e TROCA exigem cliente identificado.'}
+              <p className={`text-[10px] text-center ${trocaTravando ? 'text-rose-600 font-semibold' : 'text-gray-400'}`}>
+                {motivoBloqueio || 'Preencha empresa, vendedor e tipo de venda.'}
               </p>
             )}
           </div>
@@ -2332,224 +2225,31 @@ const PDVCrosby = () => {
           </div>
         )}
 
-        {/* Modal: transações geradas (troca e/ou venda) + acompanhamento até ATENDIDA */}
-        {(trx || trxTroca) && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-            <div className={`bg-white rounded-2xl shadow-xl w-full p-6 text-center max-h-[92vh] overflow-y-auto ${trxTroca ? 'max-w-lg' : 'max-w-sm'}`}>
-              <CheckCircle
-                size={44}
-                weight="fill"
-                className={`mx-auto mb-2 ${
-                  trx && trxStatus === 4 ? 'text-emerald-500' : trx && trxStatus === 6 ? 'text-rose-500' : 'text-blue-500'
-                }`}
-              />
-              <h3 className="text-lg font-bold text-[#000638]">
-                {trxTroca
-                  ? trx
-                    ? 'Troca e venda geradas!'
-                    : 'Transação da troca gerada!'
-                  : trxStatus === 4
-                    ? 'Venda atendida!'
-                    : trxStatus === 6
-                      ? 'Transação cancelada'
-                      : 'Transação gerada!'}
-              </h3>
-
-              {/* 1 — Troca */}
-              {trxTroca && (
-                <div className="mt-3 text-left rounded-xl bg-purple-50 ring-1 ring-purple-200 p-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-purple-800">1 · Transação da troca</p>
-                    <span
-                      className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ring-1 ${
-                        (TRX_STATUS[trxTrocaStatus] || {}).cls || 'bg-gray-100 text-gray-600 ring-gray-200'
-                      }`}
-                    >
-                      {(TRX_STATUS[trxTrocaStatus] || {}).label || `status ${trxTrocaStatus}`}
-                    </span>
-                  </div>
-                  <p className="text-sm text-purple-900">
-                    Nº <span className="font-mono font-bold text-xl">{trxTroca.transactionCode}</span> · empresa {trxTroca.branchCode} ·{' '}
-                    <b>{fmtBRL(trxTroca.total)}</b>
-                  </p>
-                  <ul className="mt-1 text-[11px] text-purple-900/80 list-disc list-inside">
-                    {trxTroca.itens.map((i) => (
-                      <li key={i.key}>
-                        {i.quantity}× {i.name} — {fmtBRL(i.unit)}
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="mt-2 text-[10px] font-bold uppercase tracking-wide text-purple-800">Nota para referenciar no TOTVS</p>
-                  {trxTroca.notas.map((n) => (
-                    <div key={`${n.branchCode}-${n.invoiceSequence}`} className="mt-1 rounded-lg bg-white ring-1 ring-purple-200 px-2 py-1.5 text-xs text-[#000638]">
-                      <p>
-                        <b>
-                          {n.documentType === 65 ? 'NFC-e' : 'NF'} {n.invoiceCode}
-                        </b>{' '}
-                        · série <b>{n.serialCode}</b> · fatura <b>{n.invoiceSequence}</b> · {fmtData(n.invoiceDate)} · empresa <b>{n.branchCode}</b>
-                      </p>
-                      {n.accessKey && (
-                        <button
-                          onClick={() => {
-                            navigator.clipboard?.writeText(n.accessKey);
-                            showToast('ok', 'Chave copiada');
-                          }}
-                          className="mt-0.5 inline-flex items-center gap-1 font-mono text-[10px] text-purple-700 hover:underline break-all text-left"
-                          title="Copiar a chave de acesso"
-                        >
-                          <Copy size={11} className="shrink-0" /> {n.accessKey}
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* 2 — Venda */}
-              {trx && (
-                <div className={trxTroca ? 'mt-2 text-left rounded-xl bg-gray-50 ring-1 ring-gray-200 p-3' : 'mt-2'}>
-                  {trxTroca && <p className="text-[10px] font-bold uppercase tracking-wide text-gray-600">2 · Transação da venda</p>}
-                  <p className="text-sm text-gray-600">
-                    {!trxTroca && <>Nº da transação </>}
-                    {trxTroca && 'Nº '}
-                    <span className="font-mono font-bold text-[#000638] text-xl">{trx.transactionCode}</span>
-                    {trxTroca ? ' · ' : <br />}
-                    {trxTroca ? 'empresa' : 'Empresa'} {trx.branchCode} · {trxTroca ? <b>{fmtBRL(trx.total)}</b> : fmtBRL(trx.total)}
-                    {trx.cashbackUsado > 0 && (
-                      <>
-                        <br />
-                        <span className="text-emerald-600 text-xs">💰 {fmtBRL(trx.cashbackUsado)} de cashback consumido</span>
-                      </>
-                    )}
-                    {trx.cashbackGerado > 0 && (
-                      <>
-                        <br />
-                        <span className="text-emerald-600 text-xs font-semibold">💰 Novo cashback gerado: {fmtBRL(trx.cashbackGerado)}</span>
-                      </>
-                    )}
-                  </p>
-                  {trxTroca && (
-                    <p className="mt-1 text-xs text-[#000638]">
-                      {trx.total - trxTroca.total >= 0 ? 'Cliente paga' : 'Crédito do cliente'}:{' '}
-                      <b>{fmtBRL(Math.abs(trx.total - trxTroca.total))}</b> ({fmtBRL(trx.total)} da venda − {fmtBRL(trxTroca.total)} da troca)
-                    </p>
-                  )}
-                </div>
-              )}
-
-              <div className="mt-3 flex items-center justify-center gap-2">
-                {trx && (
-                  <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ring-1 ${stInfo.cls}`}>
-                    {trxStatus !== 4 && trxStatus !== 6 && <Spinner size={12} className="animate-spin" />}
-                    {trxTroca ? `Venda: ${stInfo.label}` : stInfo.label}
-                  </span>
-                )}
-                <button
-                  onClick={verificarStatus}
-                  disabled={trxChecking}
-                  className="h-8 px-2.5 rounded-lg text-[11px] font-semibold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50 disabled:opacity-40 inline-flex items-center gap-1"
-                  title="Verificar agora"
-                >
-                  <ArrowsClockwise size={12} className={trxChecking ? 'animate-spin' : ''} />
-                  Atualizar
-                </button>
-              </div>
-
-              {trxTroca && trxTrocaStatus !== 4 && trxTrocaStatus !== 6 && (
-                <p className="mt-3 text-xs text-gray-600 bg-gray-50 rounded-xl p-2.5 ring-1 ring-gray-200 text-left">
-                  No caixa TOTVS (<b>TRAFP005</b>): primeiro continue a transação da <b>troca nº {trxTroca.transactionCode}</b>, referenciando a nota acima, e
-                  encerre.{trx && <> Depois continue a <b>venda nº {trx.transactionCode}</b> → Encerrar → Receber.</>} Esta tela atualiza sozinha a cada 10s.
-                </p>
-              )}
-              {!trxTroca && trxStatus !== 4 && trxStatus !== 6 && (
-                <p className="mt-3 text-xs text-gray-500 bg-gray-50 rounded-xl p-2.5 ring-1 ring-gray-200">
-                  Finalize no caixa TOTVS: <b>TRAFP005</b> → Continuar Transação nº <b>{trx.transactionCode}</b> → Encerrar → Receber. Esta tela atualiza
-                  sozinha a cada 10s.
-                </p>
-              )}
-              {trx && trxStatus === 4 && (
-                <p className="mt-3 text-sm text-emerald-700 bg-emerald-50 rounded-xl p-2.5 ring-1 ring-emerald-200">
-                  Recebida e faturada no caixa — venda encerrada aqui também. ✅
-                </p>
-              )}
-              {trx?.cupom && trxStatus !== 6 && (
-                <button
-                  onClick={() =>
-                    abrirImpressao(
-                      gerarHtmlCupomTroca({
-                        cupom: trx.cupom,
-                        empresaNome: branches.find((b) => String(b.cd_empresa) === String(trx.branchCode))?.nm_grupoempresa,
-                      }),
-                    )
-                  }
-                  className="mt-3 w-full h-10 rounded-xl text-sm font-bold text-purple-700 ring-1 ring-purple-300 bg-purple-50 hover:bg-purple-100 inline-flex items-center justify-center gap-2"
-                >
-                  <Ticket size={18} weight="bold" /> IMPRIMIR CUPOM DE TROCA
-                  <span className="font-mono text-xs font-semibold">{trx.cupom.codigo}</span>
-                </button>
-              )}
-              {trx && trxStatus === 4 && (
-                <button
-                  onClick={imprimirNota}
-                  disabled={imprimindo}
-                  className="mt-3 w-full h-11 rounded-xl bg-emerald-600 text-white text-sm font-bold hover:bg-emerald-700 disabled:opacity-50 inline-flex items-center justify-center gap-2"
-                >
-                  {imprimindo ? <Spinner size={16} className="animate-spin" /> : <Printer size={18} weight="bold" />}
-                  {trx.tipo === 'nfe' ? 'IMPRIMIR NF-E' : 'IMPRIMIR NFCE'}
-                </button>
-              )}
-
-              {(trx ? trxStatus === 4 || trxStatus === 6 : trxTrocaStatus === 4 || trxTrocaStatus === 6) ? (
-                <button onClick={novaVenda} className="mt-4 w-full h-10 rounded-xl bg-[#000638] text-white text-sm font-bold hover:bg-[#000638]/90">
-                  Nova venda
-                </button>
-              ) : (
-                <div className="mt-4 space-y-1.5">
-                  {trxTroca && !trx && items.length > 0 && (
-                    <button
-                      onClick={gerarTransacao}
-                      disabled={posting}
-                      className="w-full h-9 rounded-xl text-xs font-bold text-white bg-[#000638] hover:bg-[#000638]/90 disabled:opacity-40"
-                    >
-                      Tentar gerar a venda de novo
-                    </button>
-                  )}
-                  <button onClick={novaVenda} className="w-full h-9 rounded-xl text-xs font-semibold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50">
-                    Nova venda agora (as transações seguem no caixa)
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {showTroca && (
-          <TrocaComprasModal
-            customer={customer}
-            branch={branch}
-            selecionados={trocaItens}
-            onClose={() => setShowTroca(false)}
-            onConfirm={(lista, comprador) => {
-              // troca por cupom sem cliente no caixa: usa o comprador original
-              if (!customer && comprador?.code) {
-                setCustomer(comprador);
-                showToast('ok', `Cliente da troca: ${comprador.name} (comprador original)`);
-              }
-              setTrocaItens(lista);
-              setShowTroca(false);
-            }}
-          />
-        )}
-
-        {/* HEADCOACH: pagamento, resultado fiscal, vendas do dia, config */}
+        {/* Pagamento, resultado fiscal, vendas do dia, config */}
         {pagamentoOpen && (
           <PagamentoModal
-            total={totals.total}
-            tipoVenda={tipoVenda}
+            total={temVenda ? r2(totals.total) : totals.troca}
+            tipoVenda={temVenda ? tipoSaida : 'troca'}
+            notasTroca={notasDaTroca}
+            saldos={saldos}
+            temCliente={!!customer}
+            inicial={temVenda ? pagInicial : null}
+            trocaFeita={temVenda ? trocaFeita : null}
             busy={hcBusy}
             onConfirm={finalizarHeadcoach}
             onClose={() => !hcBusy && setPagamentoOpen(false)}
           />
+        )}
+        {/* VENDA | TROCA em andamento: trava a tela e diz em que passo está */}
+        {etapa && !pagamentoOpen && !resultado && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4">
+            <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-xl">
+              <Spinner size={36} className="mx-auto mb-3 animate-spin text-[#000638]" />
+              <h3 className="text-base font-bold text-[#000638]">VENDA | TROCA</h3>
+              <p className="mt-1 text-sm text-gray-600">{etapa}</p>
+              <p className="mt-2 text-[11px] text-gray-400">Não feche a tela: são duas notas na SEFAZ, uma depois da outra.</p>
+            </div>
+          </div>
         )}
         {resultado && (
           <ResultadoFiscalModal
@@ -2584,7 +2284,7 @@ const PDVCrosby = () => {
             }}
           />
         )}
-        {showConfig && branch && (
+        {showConfig && branch && podeConfigurarFiscal && (
           <FiscalConfigModal
             empresa={parseInt(branch, 10)}
             empresaNome={

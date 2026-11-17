@@ -11,7 +11,9 @@ const fmtBRL = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency'
 const fmtChave = (k) => String(k || '').replace(/(\d{4})(?=\d)/g, '$1 ');
 
 export default function ResultadoFiscalModal({ resultado, onNovaVenda, onFechar, onReemitir, onAtualizar, onEspelhar, showToast }) {
-  const { venda, nota, emitente, erro } = resultado;
+  // `troca` = troca feita no mesmo atendimento (VENDA | TROCA); `vendaPendente` =
+  // a nota da troca não saiu e a venda está esperando no carrinho
+  const { venda, nota, emitente, erro, troca, vendaPendente } = resultado;
   const [busy, setBusy] = useState(false);
   const [cancelando, setCancelando] = useState(false);
   const [just, setJust] = useState('');
@@ -124,6 +126,53 @@ export default function ResultadoFiscalModal({ resultado, onNovaVenda, onFechar,
           </div>
         )}
         {!nota && erro && <p className="mt-3 text-xs text-rose-700 bg-rose-50 rounded-xl p-2.5 ring-1 ring-rose-200 text-left">{erro}</p>}
+
+        {/* VENDA | TROCA: a troca que foi fechada junto com esta venda */}
+        {troca && (
+          <div className="mt-3 rounded-xl bg-purple-50 p-3 text-left text-xs text-purple-900 ring-1 ring-purple-200">
+            <p className="font-bold">
+              Troca #{troca.venda?.id} no mesmo atendimento
+              {troca.nota?.numero ? ` · NF-e de devolução ${troca.nota.numero}/${troca.nota.serie}` : ''}
+            </p>
+            <p className="mt-0.5">
+              Credev gerado <b>{fmtBRL(troca.total)}</b> · usado nesta venda <b>{fmtBRL(troca.credevUsado)}</b>
+              {troca.total - troca.credevUsado > 0.004 ? (
+                <>
+                  {' '}
+                  · sobra <b>{fmtBRL(troca.total - troca.credevUsado)}</b> de Credev para o cliente nesta loja
+                </>
+              ) : null}
+              {Number(venda?.total) - troca.credevUsado > 0.004 ? (
+                <>
+                  {' '}
+                  · diferença paga <b>{fmtBRL(Number(venda.total) - troca.credevUsado)}</b>
+                </>
+              ) : null}
+            </p>
+            {troca.nota && (
+              <button
+                onClick={() => imprimirDocumento({ nota: troca.nota, venda: troca.venda, emitente: troca.emitente || emitente })}
+                className="mt-2 h-8 px-2.5 rounded-lg text-[11px] font-semibold text-purple-800 bg-white ring-1 ring-purple-300 hover:bg-purple-100 inline-flex items-center gap-1"
+              >
+                <Printer size={12} /> Imprimir a nota da troca
+              </button>
+            )}
+          </div>
+        )}
+        {vendaPendente && !autorizada && (
+          <p className="mt-3 rounded-xl bg-amber-50 p-3 text-left text-xs font-semibold text-amber-800 ring-1 ring-amber-200">
+            A troca está registrada, mas a nota de devolução não foi autorizada — sem ela o Credev não é gerado. As peças da venda continuam no carrinho: emita a nota de novo e a
+            venda segue sozinha.
+          </p>
+        )}
+
+        {/* TROCA autorizada: o valor devolvido virou CREDEV do cliente nesta loja */}
+        {venda && venda.tipo_venda === 'troca' && autorizada && (
+          <p className="mt-3 rounded-xl bg-emerald-50 p-3 text-left text-xs font-semibold text-emerald-800 ring-1 ring-emerald-200">
+            CREDEV de {fmtBRL(venda.total)} gerado para {venda.cliente_nome || 'o cliente'}, para usar na empresa {venda.empresa}. Na próxima compra, escolha a forma de pagamento
+            “Credev”.
+          </p>
+        )}
 
         {/* Espelho no TOTVS: documento interno + recebimento (contas a receber) */}
         {venda && venda.tipo_venda !== 'troca' && (
