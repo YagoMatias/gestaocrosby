@@ -65,7 +65,7 @@ import {
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import PortalPotenciaModal from '../components/PortalPotenciaModal';
-import NotasVendaDevolucao from '../components/devolucao/NotasVendaDevolucao';
+import NotasVendaDevolucao, { OutraNotaModal } from '../components/devolucao/NotasVendaDevolucao';
 import { imprimirDocumento } from '../utils/documentoFiscalHtml';
 import { API_BASE_URL } from '../config/constants';
 import { useAuth } from '../components/AuthContext';
@@ -346,6 +346,9 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
   const [confBusy, setConfBusy] = useState(false);
   const [confErro, setConfErro] = useState('');
   const manterRefNotas = useRef(null); // rascunho retomado: não limpar as notas dele
+  // Peça que não achou nas notas: outra nota só para ela { [productCode]: { chave, numero, serie } }
+  const [avulsas, setAvulsas] = useState({});
+  const [pecaOutraNota, setPecaOutraNota] = useState(null);
 
   // Transação gerada
   const [trx, setTrx] = useState(null);
@@ -493,12 +496,13 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
       items,
       nfs,
       refNotas,
+      avulsas,
     };
     const lista = [registro, ...drafts.filter((d) => d.id !== id)].slice(0, 30);
     persistDrafts(lista);
     setDraftId(id);
     showToast('ok', 'Devolução salva para continuar depois');
-  }, [items, draftId, branch, seller, operacao, cfop, customer, customerInfo, nfs, refNotas, drafts, persistDrafts, showToast]);
+  }, [items, draftId, branch, seller, operacao, cfop, customer, customerInfo, nfs, refNotas, avulsas, drafts, persistDrafts, showToast]);
 
   const abrirRascunho = useCallback(
     (d) => {
@@ -512,6 +516,7 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
       setNfs(d.nfs || (d.nf ? [d.nf] : []));
       manterRefNotas.current = `${d.customer?.code ?? ''}|${d.branch || ''}`;
       setRefNotas(d.refNotas || []);
+      setAvulsas(d.avulsas || {});
       setDraftId(d.id);
       processedEpcs.current = new Set(
         (d.items || []).flatMap((i) => i.epcs || []),
@@ -1051,6 +1056,7 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
       return;
     }
     setRefNotas([]);
+    setAvulsas({});
     setConfRef(null);
     setConfErro('');
   }, [customer?.code, branch]);
@@ -1059,13 +1065,25 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
     () => items.map((i) => ({ productCode: i.productCode, quantidade: qtyOf(i) })).filter((i) => i.quantidade > 0),
     [items],
   );
+  // outra nota por peça: só das peças que ainda estão na lista; valor = tabela do cliente
+  const avulsasPayload = useMemo(
+    () =>
+      Object.entries(avulsas)
+        .map(([cod, a]) => {
+          const it = items.find((i) => String(i.productCode) === String(cod));
+          return it ? { productCode: Number(cod), chave: a.chave, valorUnit: Number(it.unit) || 0 } : null;
+        })
+        .filter(Boolean),
+    [avulsas, items],
+  );
+  const temRef = refNotas.length > 0 || avulsasPayload.length > 0;
   const assinaturaConf = useMemo(
-    () => JSON.stringify([branch, customer?.code ?? null, refNotas.map((n) => n.chave), itensConf]),
-    [branch, customer?.code, refNotas, itensConf],
+    () => JSON.stringify([branch, customer?.code ?? null, refNotas.map((n) => n.chave), itensConf, avulsasPayload]),
+    [branch, customer?.code, refNotas, itensConf, avulsasPayload],
   );
   const semNotaDoCliente = nfs.length === 0;
   useEffect(() => {
-    if (!semNotaDoCliente || !branch || !customer?.code || refNotas.length === 0 || itensConf.length === 0) {
+    if (!semNotaDoCliente || !branch || !customer?.code || !temRef || itensConf.length === 0) {
       setConfRef(null);
       setConfErro('');
       setConfBusy(false);
@@ -1078,7 +1096,7 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
         const r = await fetch(`${API_BASE_URL}/api/devolucao-rfid/conferir`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ empresa: parseInt(branch, 10), clienteCode: customer.code, itens: itensConf, chaves: refNotas.map((n) => n.chave) }),
+          body: JSON.stringify({ empresa: parseInt(branch, 10), clienteCode: customer.code, itens: itensConf, chaves: refNotas.map((n) => n.chave), avulsas: avulsasPayload }),
         });
         const j = await r.json();
         if (!vivo) return;
@@ -1191,6 +1209,7 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
     setTrx(null);
     setDraftId(null);
     setRefNotas([]);
+    setAvulsas({});
     setConfRef(null);
     setConfErro('');
     setNfs([]);
@@ -1210,7 +1229,7 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
   // todas as peças lidas dentro delas — o servidor confere.
   const canGenerate = nf
     ? baseOk && !nf.recebida && (conferencia?.conferidas || 0) > 0
-    : baseOk && items.length > 0 && items.every((i) => qtyOf(i) > 0) && refNotas.length > 0 && !!confRef?.ok && !confBusy;
+    : baseOk && items.length > 0 && items.every((i) => qtyOf(i) > 0) && temRef && !!confRef?.ok && !confBusy;
 
   const gerarTransacao = useCallback(async () => {
     if (!canGenerate) return;
@@ -1295,6 +1314,7 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
           operacao: parseInt(operacao, 10),
           itens: items.map((i) => ({ productCode: i.productCode, quantidade: qtyOf(i), epcs: i.epcs })),
           chaves: refNotas.map((n) => n.chave),
+          avulsas: avulsasPayload,
           solicitacaoId: solicitacao?.id || null,
           criadoPor: user?.name || user?.email || null,
         }),
@@ -1340,7 +1360,7 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
     } finally {
       setPosting(false);
     }
-  }, [canGenerate, branch, branches, customer, seller, sellers, operacao, cfop, items, totals.epcs, totals.qty, draftId, apagarRascunho, showToast, onTransacaoGerada, onStatusTransacao, nf, conferencia, solicitacao, user, refNotas]);
+  }, [canGenerate, branch, branches, customer, seller, sellers, operacao, cfop, items, totals.epcs, totals.qty, draftId, apagarRascunho, showToast, onTransacaoGerada, onStatusTransacao, nf, conferencia, solicitacao, user, refNotas, avulsasPayload]);
 
   // ─── NF-e de devolução rejeitada: tentar de novo ou cancelar a transação ──
   const reemitirDevolucao = useCallback(async () => {
@@ -1599,7 +1619,7 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
                   : '')
               }
             >
-              {nf || refNotas.length > 0 ? (
+              {nf || temRef ? (
                 <>
                   <FileText size={13} /> {nf ? 'Valores da nota fiscal' : 'Valor pago na nota de venda'}
                 </>
@@ -1941,13 +1961,14 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
                         </td>
                         <td className="px-2 py-1 text-right text-[10px] font-bold text-[#000638] whitespace-nowrap">
                           {g.qty} pç ·{' '}
-                          {fmtBRL(refNotas.length > 0 ? g.items.reduce((sm, i) => sm + Number(confPorProduto.get(Number(i.productCode))?.total || 0), 0) : g.total)}
+                          {fmtBRL(temRef ? g.items.reduce((sm, i) => sm + Number(confPorProduto.get(Number(i.productCode))?.total || 0), 0) : g.total)}
                         </td>
                         <td />
                       </tr>
                       {g.items.map((i) => {
                         // conferência com as notas de venda escolhidas (quando há)
-                        const cf = refNotas.length > 0 ? confPorProduto.get(Number(i.productCode)) || null : null;
+                        const cf = temRef ? confPorProduto.get(Number(i.productCode)) || null : null;
+                        const av = avulsas[i.productCode] || null;
                         const unitMostrado = cf?.ok ? cf.valorUnit : i.unit;
                         return (
                         <tr key={i.productCode} className={`align-top ${cf && !cf.ok ? 'bg-rose-50/60' : 'hover:bg-gray-50/60'}`}>
@@ -1958,13 +1979,43 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
                             {cf &&
                               (cf.ok ? (
                                 <p className="text-[11px] font-semibold text-violet-700">
-                                  NF {cf.notas.map((n) => `${n.numero}/${n.serie}`).join(', ')} · {fmtBRL(cf.valorUnit)} por peça (valor pago na nota)
+                                  NF {cf.notas.map((n) => `${n.numero}/${n.serie}${n.avulsa ? ' (avulsa)' : ''}`).join(', ')} · {fmtBRL(cf.valorUnit)} por peça (
+                                  {cf.notas.some((n) => n.avulsa) ? 'valor da tabela do cliente' : 'valor pago na nota'})
                                 </p>
                               ) : (
                                 <p className="text-[11px] font-semibold text-rose-600 inline-flex items-start gap-1">
                                   <Warning size={12} weight="bold" className="mt-0.5 shrink-0" /> {cf.mensagem}
                                 </p>
                               ))}
+                            {/* não achou nas notas escolhidas: outra nota só para esta peça */}
+                            {cf && (!cf.ok || av) && (
+                              <p className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                                {av && (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-800 ring-1 ring-amber-200 text-[10px] font-semibold">
+                                    <FileText size={10} weight="bold" /> outra nota: NF {av.numero}/{av.serie}
+                                    <button
+                                      onClick={() =>
+                                        setAvulsas((m) => {
+                                          const n = { ...m };
+                                          delete n[i.productCode];
+                                          return n;
+                                        })
+                                      }
+                                      className="text-amber-500 hover:text-rose-600"
+                                      title="Tirar esta referência"
+                                    >
+                                      <X size={9} weight="bold" />
+                                    </button>
+                                  </span>
+                                )}
+                                <button
+                                  onClick={() => setPecaOutraNota(i)}
+                                  className="inline-flex items-center gap-1 h-6 px-2 rounded-md text-[10px] font-bold text-violet-700 ring-1 ring-violet-300 bg-white hover:bg-violet-50"
+                                >
+                                  <FileText size={11} weight="bold" /> {av ? 'Trocar a nota' : 'Referenciar outra nota'}
+                                </button>
+                              </p>
+                            )}
                             <p className="text-[11px] text-gray-400">
                               cód. {i.productCode}
                               {i.sku ? ` · EAN ${i.sku}` : ''}
@@ -2036,7 +2087,7 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
                             {cf && !cf.ok ? '—' : fmtBRL(unitMostrado)}
                           </td>
                           <td className="px-2 py-1.5 text-right">
-                            {refNotas.length > 0 ? (
+                            {temRef ? (
                               <span className="text-[11px] text-gray-300" title="O valor vem da nota de venda">—</span>
                             ) : (
                             <input
@@ -2278,8 +2329,14 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
                 </div>
                 <div className="flex justify-between text-gray-500">
                   <span>Notas de venda referenciadas</span>
-                  <span className={`tabular-nums ${refNotas.length ? '' : 'text-amber-600 font-semibold'}`}>{refNotas.length || 'nenhuma'}</span>
+                  <span className={`tabular-nums ${temRef ? '' : 'text-amber-600 font-semibold'}`}>{refNotas.length || (temRef ? '—' : 'nenhuma')}</span>
                 </div>
+                {avulsasPayload.length > 0 && (
+                  <div className="flex justify-between text-amber-700">
+                    <span>Peças com outra nota</span>
+                    <span className="tabular-nums">{avulsasPayload.length}</span>
+                  </div>
+                )}
                 {confRef && !confRef.ok && (
                   <div className="flex justify-between text-rose-700">
                     <span>Peças fora das notas</span>
@@ -2328,14 +2385,14 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
                             ? 'Confira os dados da devolução.'
                             : items.length === 0
                               ? 'Leia as peças que estão voltando.'
-                              : refNotas.length === 0
+                              : !temRef
                                 ? 'Busque e escolha a(s) nota(s) de venda do cliente.'
                                 : confBusy
                                   ? 'Conferindo as peças nas notas…'
                                   : confErro
                                     ? confErro
                                     : confRef && !confRef.ok
-                                      ? 'Há peça fora das notas escolhidas: escolha a nota dela ou tire a peça.'
+                                      ? 'Há peça fora das notas escolhidas: escolha a nota dela, use “Referenciar outra nota” na peça ou tire-a.'
                                       : 'Confira os dados da devolução.'}
                 </p>
               )}
@@ -2475,6 +2532,20 @@ const DevolucaoRFID = ({ embutido = false, solicitacao = null, onTransacaoGerada
               </div>
             </div>
           </div>
+        )}
+
+        {pecaOutraNota && (
+          <OutraNotaModal
+            empresa={branch}
+            cliente={customer}
+            peca={pecaOutraNota}
+            atual={avulsas[pecaOutraNota.productCode] || null}
+            onFechar={() => setPecaOutraNota(null)}
+            onEscolher={(nota) => {
+              setAvulsas((m) => ({ ...m, [pecaOutraNota.productCode]: nota }));
+              setPecaOutraNota(null);
+            }}
+          />
         )}
 
         {potenciaOpen && (

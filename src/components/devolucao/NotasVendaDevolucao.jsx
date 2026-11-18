@@ -18,6 +18,201 @@ const PERIODOS = [
 ];
 
 /**
+ * Peça que NÃO ACHOU nas notas escolhidas: o operador referencia OUTRA nota só
+ * para ela (Yago, 18/11/2026). Lista as notas do cliente (até 2 anos) e aceita a
+ * chave de acesso de qualquer nota de venda da empresa. Se a peça estiver na
+ * nota, entra pelo valor pago; se não, pelo valor da tabela do cliente.
+ *
+ * @param peca      { productCode, name, unit }
+ * @param onEscolher ({ chave, numero, serie }) => void
+ */
+export function OutraNotaModal({ empresa, cliente, peca, atual = null, onEscolher, onFechar }) {
+  const [lista, setLista] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState('');
+  const [dias, setDias] = useState(365);
+  const [filtro, setFiltro] = useState('');
+  const [chave, setChave] = useState('');
+  const cod = Number(peca?.productCode);
+
+  const buscar = useCallback(
+    async (diasBusca) => {
+      if (!empresa || !cliente?.code) return;
+      setLoading(true);
+      setErro('');
+      try {
+        const qs = new URLSearchParams({ empresa, cliente: cliente.code, de: isoHaDias(diasBusca), ate: new Date().toISOString().slice(0, 10) });
+        const r = await fetch(`${API_BASE_URL}/api/devolucao-rfid/notas-venda?${qs}`);
+        const j = await r.json();
+        if (!r.ok || !j.success) throw new Error(j?.message || 'Falha ao buscar as notas de venda');
+        setLista(j.data.notas || []);
+      } catch (e) {
+        setErro(e.message);
+        setLista([]);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [empresa, cliente?.code],
+  );
+
+  useEffect(() => {
+    buscar(dias);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [empresa, cliente?.code]);
+
+  const qtdDaPeca = (n) => (n.itens || []).filter((i) => Number(i.productCode) === cod).reduce((s, i) => s + Number(i.quantidade || 0), 0);
+  const visiveis = useMemo(() => {
+    const q = filtro.trim().toLowerCase();
+    const base = (lista || []).filter(
+      (n) =>
+        !q ||
+        String(n.numero).includes(q) ||
+        String(n.ref || '').toLowerCase().includes(q) ||
+        (n.itens || []).some((i) => String(i.productCode).includes(q) || String(i.nome || '').toLowerCase().includes(q)),
+    );
+    // as que têm a peça primeiro
+    return [...base].sort((a, b) => Number(qtdDaPeca(b) > 0) - Number(qtdDaPeca(a) > 0));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lista, filtro, cod]);
+
+  const chaveLimpa = chave.replace(/\D/g, '');
+  const usarChave = () => {
+    if (chaveLimpa.length !== 44) return;
+    onEscolher({ chave: chaveLimpa, numero: Number(chaveLimpa.slice(25, 34)), serie: String(Number(chaveLimpa.slice(22, 25))) });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-3" onClick={onFechar}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start gap-2 p-4 border-b border-gray-100">
+          <FileText size={18} weight="bold" className="text-[#000638] mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-[#000638]">Referenciar outra nota — só para esta peça</p>
+            <p className="text-xs text-gray-600 truncate">
+              <b>{peca?.name}</b> · cód. {cod}
+            </p>
+            <p className="text-[11px] text-gray-500 mt-1">
+              Se a peça estiver na nota escolhida, entra pelo valor que o cliente pagou nela. Se não estiver, entra com o valor da tabela do cliente
+              {Number(peca?.unit) > 0 ? ` (${fmtBRL(peca.unit)})` : ''} e a tributação das notas do cliente. A nota escolhida vai referenciada na NF-e de devolução.
+            </p>
+          </div>
+          <button onClick={onFechar} className="text-gray-400 hover:text-gray-600">
+            <X size={16} weight="bold" />
+          </button>
+        </div>
+
+        <div className="p-4 overflow-y-auto">
+          <div className="flex flex-wrap items-end gap-2 mb-2">
+            <div>
+              <label className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Vendas dos últimos</label>
+              <div className="inline-flex rounded-lg ring-1 ring-gray-300 bg-white p-0.5">
+                {PERIODOS.map((p) => (
+                  <button
+                    key={p.dias}
+                    type="button"
+                    onClick={() => {
+                      setDias(p.dias);
+                      buscar(p.dias);
+                    }}
+                    className={`h-7 px-2 rounded-md text-[11px] font-semibold ${dias === p.dias ? 'bg-[#000638] text-white' : 'text-[#000638] hover:bg-gray-50'}`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <input
+              value={filtro}
+              onChange={(e) => setFiltro(e.target.value)}
+              placeholder="Filtrar por nº da nota, peça ou código…"
+              className="h-8 px-2 rounded-lg border border-gray-300 text-xs mb-0 w-64 max-w-full"
+            />
+          </div>
+
+          {erro && <p className="text-xs text-rose-700 bg-rose-50 rounded-lg px-2 py-1.5 ring-1 ring-rose-200">{erro}</p>}
+          {loading && (
+            <p className="text-xs text-gray-400 py-2 inline-flex items-center gap-1.5">
+              <Spinner size={13} className="animate-spin" /> Buscando as notas de venda do cliente…
+            </p>
+          )}
+          {!loading && lista && lista.length === 0 && !erro && <p className="text-xs text-gray-500 py-1">Nenhuma nota de venda deste cliente no período. Tente um período maior ou cole a chave abaixo.</p>}
+          {!loading && visiveis.length > 0 && (
+            <div className="overflow-x-auto rounded-lg ring-1 ring-gray-200 bg-white max-h-[46vh] overflow-y-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-gray-50 text-[10px] uppercase tracking-wide text-gray-500 sticky top-0">
+                  <tr>
+                    <th className="px-2 py-1.5 text-left">NF</th>
+                    <th className="px-2 py-1.5 text-left">Emissão</th>
+                    <th className="px-2 py-1.5 text-left">Operação / pedido</th>
+                    <th className="px-2 py-1.5 text-right">Peças</th>
+                    <th className="px-2 py-1.5 text-right">Total</th>
+                    <th className="px-2 py-1.5 text-center">Tem esta peça</th>
+                    <th className="px-2 py-1.5" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {visiveis.map((n) => {
+                    const tem = qtdDaPeca(n);
+                    const sel = atual?.chave === n.chave;
+                    return (
+                      <tr key={n.chave} className={sel ? 'bg-violet-50/70' : 'hover:bg-gray-50/60'}>
+                        <td className="px-2 py-1.5 font-mono font-bold text-[#000638] whitespace-nowrap">
+                          {n.numero}/{n.serie}
+                          {Number(n.modelo) === 65 && <span className="ml-1 font-sans font-normal text-gray-400">NFC-e</span>}
+                        </td>
+                        <td className="px-2 py-1.5 whitespace-nowrap">{fmtDia(n.data)}</td>
+                        <td className="px-2 py-1.5 truncate max-w-[220px]" title={n.ref || ''}>
+                          {n.ref || '—'}
+                        </td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{n.quantidade}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtBRL(n.total)}</td>
+                        <td className="px-2 py-1.5 text-center">
+                          {tem > 0 ? <span className="font-bold text-emerald-700">{tem} pç</span> : <span className="text-gray-300">não</span>}
+                        </td>
+                        <td className="px-2 py-1.5 text-right">
+                          <button
+                            onClick={() => onEscolher({ chave: n.chave, numero: n.numero, serie: n.serie })}
+                            className="h-7 px-2.5 rounded-lg text-[11px] font-bold text-white bg-[#000638] hover:bg-[#000638]/90"
+                          >
+                            {sel ? 'Escolhida' : 'Usar esta'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div className="mt-3 pt-3 border-t border-gray-100">
+            <label className="block text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-1">Ou cole a chave de acesso de qualquer nota de venda desta empresa</label>
+            <div className="flex flex-wrap gap-2">
+              <input
+                value={chave}
+                onChange={(e) => setChave(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && usarChave()}
+                placeholder="44 dígitos"
+                className="h-8 px-2 rounded-lg border border-gray-300 text-xs font-mono mb-0 flex-1 min-w-[260px]"
+              />
+              <button
+                onClick={usarChave}
+                disabled={chaveLimpa.length !== 44}
+                className="h-8 px-3 rounded-lg text-xs font-bold text-white bg-[#000638] hover:bg-[#000638]/90 disabled:opacity-40"
+              >
+                Usar a chave
+              </button>
+            </div>
+            {chaveLimpa.length > 0 && chaveLimpa.length !== 44 && <p className="mt-1 text-[11px] text-amber-700">A chave tem {chaveLimpa.length} dígitos — precisa de 44.</p>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * @param empresa       código da empresa da devolução
  * @param cliente       { code, name }
  * @param itens         peças lidas: [{ productCode, quantidade }]
