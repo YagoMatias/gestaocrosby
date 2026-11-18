@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import { useTabContext } from './AppTabs/TabContext';
 import {
+  BracketsCurly,
   Knife,
   UserGear,
   Plugs,
@@ -1238,6 +1239,13 @@ const headcoach = [
       // estoque oficial do Dryland (porta estq_gw do Estoquista) — só consulta
       { name: 'Estoque Dryland', href: '/headcoach/estoque-dryland', icon: Package, color: 'text-violet-600' },
     ],
+  },
+  {
+    // documentação da API de consulta (/api/headcoach) que o Dryland usa — lida do openapi.json da própria API
+    name: 'API HeadCoach',
+    href: '/headcoach/api',
+    icon: BracketsCurly,
+    color: 'text-indigo-600',
   },
 ];
 
