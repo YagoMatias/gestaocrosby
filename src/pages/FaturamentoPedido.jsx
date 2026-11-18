@@ -68,10 +68,12 @@ import {
   Wallet,
   Signature,
   PaperPlaneTilt,
+  ArrowsLeftRight,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
 import { useAuth } from '../components/AuthContext';
+import { apiJson } from '../utils/apiAuth';
 import { ClientePicker } from './DevolucaoRFID';
 import { portalConnect, portalDisconnect, portalTags, portalClear } from '../utils/portalApi';
 import PortalPotenciaModal from '../components/PortalPotenciaModal';
@@ -104,10 +106,11 @@ const qtdDaInclusao = (txt) => {
 };
 const ROLES_LIBERAM_DESCONTO = ['owner', 'admin', 'user'];
 // Troca de peça na conferência (a que falta sai, a que sobra entra pelo MESMO
-// valor do pedido): liberada até 16/11/2026 (era 10/11, depois 11/11 e 13/11; em
-// 14/11 o Yago pediu até 16/11) — pedidos cuja separação se perdeu nas 72 h do Dryland
-// e tiveram peça trocada. O servidor também confere a data.
-const TROCA_LIBERADA_ATE = '2026-11-16';
+// valor do pedido) — pedidos cuja separação se perdeu nas 72 h do Dryland e
+// tiveram peça trocada. Quem libera é o admin ou o owner, aqui na tela, com a
+// data final (TrocaProdutosControle · /api/faturamento-expedicao/config/troca-produtos);
+// o servidor confere de novo ao faturar.
+const API_TROCA_PRODUTOS = '/api/faturamento-expedicao/config/troca-produtos';
 // Formas que consomem saldo do cliente (CREDEV/adiantamento do HeadCoach) → campo do saldo.
 // Vale SÓ o saldo da empresa 99 (Yago, 10/11/2026): saldo de outra empresa não
 // aparece nem pode ser usado.
@@ -1798,6 +1801,99 @@ function SenhaDescontoModal({ pct, pedido, por, onLiberado, onCancelar, titulo, 
 }
 
 // ─── Página ──────────────────────────────────────────────────────────────────
+// Troca de produtos no faturamento: situação (para todos) e, para admin/owner,
+// o controle que marca "LIBERADA" e a data final. Sem isso o Yago tinha que
+// pedir a mudança da data no código a cada vez (18/11/2026).
+function TrocaProdutosControle({ cfg, podeEditar, onSalvo }) {
+  const [aberto, setAberto] = useState(false);
+  const [liberada, setLiberada] = useState(false);
+  const [ate, setAte] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState('');
+  const hoje = cfg?.hoje || hojeIso();
+  const fmtDia = (iso) => String(iso || '').slice(0, 10).split('-').reverse().join('/');
+
+  const abrir = () => {
+    // bloqueada → abre já marcada para liberar, com a data de hoje; liberada → mostra como está
+    setLiberada(true);
+    setAte(cfg?.vigente && cfg.ate ? cfg.ate : hoje);
+    setErro('');
+    setAberto(true);
+  };
+  const salvar = async (valorLiberada) => {
+    setBusy(true);
+    setErro('');
+    try {
+      const j = await apiJson(API_TROCA_PRODUTOS, { method: 'PUT', body: { liberada: valorLiberada, ate: valorLiberada ? ate : cfg?.ate || null } });
+      onSalvo?.(j.data);
+      setAberto(false);
+    } catch (e) {
+      setErro(e.message || 'Não consegui salvar');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!cfg) return null;
+  const rotulo = cfg.vigente ? `Troca de produtos LIBERADA até ${fmtDia(cfg.ate)}` : cfg.vencida ? `Troca de produtos bloqueada (venceu em ${fmtDia(cfg.ate)})` : 'Troca de produtos bloqueada';
+  const cls = cfg.vigente ? 'bg-emerald-50 text-emerald-800 ring-emerald-300' : 'bg-white text-gray-600 ring-gray-200';
+  // quem não é admin/owner só vê o aviso quando está liberada
+  if (!podeEditar) return cfg.vigente ? <span className={`inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-xs font-bold shadow-sm ring-1 ${cls}`}>{rotulo}</span> : null;
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => (aberto ? setAberto(false) : abrir())}
+        className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-xs font-bold shadow-sm ring-1 hover:brightness-95 ${cls}`}
+        title="Admin ou owner: liberar ou bloquear a troca de produtos na conferência do faturamento"
+      >
+        <ArrowsLeftRight size={14} weight="bold" /> {rotulo}
+      </button>
+      {aberto && (
+        <div className="absolute right-0 top-9 z-30 w-80 rounded-xl border border-gray-200 bg-white p-3 text-left shadow-xl">
+          <p className="text-xs font-bold text-[#000638]">Troca de produtos no faturamento</p>
+          <p className="mt-0.5 text-[11px] text-gray-500">Na conferência, a peça que falta pode ser substituída por outra lida, pelo mesmo valor do pedido. Vale para o Faturamento e o Faturamento Brejinho.</p>
+          <label className="mt-2 flex cursor-pointer select-none items-center gap-2 text-xs font-bold text-[#000638]">
+            <input type="checkbox" checked={liberada} onChange={(e) => setLiberada(e.target.checked)} className="mb-0 h-4 w-4 p-0 accent-emerald-600" />
+            LIBERADA TROCA DE PRODUTOS
+          </label>
+          <label className="mt-2 block text-[11px] font-semibold text-gray-600">
+            Liberada até (inclusive)
+            <input
+              type="date"
+              value={ate}
+              min={hoje}
+              disabled={!liberada}
+              onChange={(e) => setAte(e.target.value)}
+              className="mb-0 mt-1 h-9 w-full rounded-lg border border-gray-300 px-2 text-sm disabled:bg-gray-100 disabled:text-gray-400"
+            />
+          </label>
+          {cfg.atualizadoPor && (
+            <p className="mt-1.5 text-[10.5px] text-gray-400">
+              Última mudança: {cfg.atualizadoPor}
+              {cfg.atualizadoEm ? ` em ${fmtDataHora(cfg.atualizadoEm)}` : ''}
+            </p>
+          )}
+          {erro && <p className="mt-1.5 rounded-lg bg-rose-50 px-2 py-1 text-[11px] text-rose-700 ring-1 ring-rose-200">{erro}</p>}
+          <div className="mt-2.5 flex gap-1.5">
+            <button onClick={() => setAberto(false)} disabled={busy} className="h-9 flex-1 rounded-lg text-xs font-semibold text-gray-600 ring-1 ring-gray-300 hover:bg-gray-50 disabled:opacity-40">
+              Fechar
+            </button>
+            <button
+              onClick={() => salvar(liberada)}
+              disabled={busy || (liberada && !ate)}
+              className={`inline-flex h-9 flex-[2] items-center justify-center gap-1.5 rounded-lg text-xs font-bold text-white disabled:opacity-40 ${liberada ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'}`}
+            >
+              {busy ? <Spinner size={13} className="animate-spin" /> : null}
+              {liberada ? `Liberar até ${fmtDia(ate) || '—'}` : 'Bloquear a troca'}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   const brejinho = origem === 'brejinho';
   const { user } = useAuth();
@@ -1927,7 +2023,18 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   const [trocas, setTrocas] = useState({});
   // linha do pedido com o "Substituir por" aberto
   const [trocandoSku, setTrocandoSku] = useState(null);
-  const trocaLiberada = hojeIso() <= TROCA_LIBERADA_ATE;
+  // { liberada, ate, vigente, vencida, hoje, atualizadoPor, atualizadoEm } — lido do servidor
+  const [trocaCfg, setTrocaCfg] = useState(null);
+  const lerTrocaCfg = useCallback(() => {
+    apiJson(`${API_TROCA_PRODUTOS}?agora=1`)
+      .then((j) => setTrocaCfg(j.data || null))
+      .catch(() => setTrocaCfg((c) => c || { liberada: false, ate: null, vigente: false }));
+  }, []);
+  useEffect(() => {
+    lerTrocaCfg();
+  }, [lerTrocaCfg]);
+  const trocaLiberada = !!trocaCfg?.vigente;
+  const podeLiberarTroca = ['admin', 'owner'].includes(user?.role);
   // Saldos do cliente no HeadCoach (CREDEV e adiantamento) da empresa 99
   const [saldos, setSaldos] = useState(null);
   // Faturamentos em andamento: salvos neste computador, por usuário (como na Devolução)
@@ -2907,6 +3014,9 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
               Escolher outro pedido
             </button>
           )}
+          <div className="ml-auto">
+            <TrocaProdutosControle cfg={trocaCfg} podeEditar={podeLiberarTroca} onSalvo={setTrocaCfg} />
+          </div>
         </div>
 
         {aba === 'faturar' && (
