@@ -1192,6 +1192,7 @@ const headcoach = [
     color: 'text-indigo-600',
     children: [
       { name: 'Contas a Receber HeadCoach', href: '/headcoach/contas-receber', icon: HandCoins, color: 'text-indigo-600' },
+      { name: 'Contas a Pagar HeadCoach', href: '/headcoach/contas-pagar', icon: Receipt, color: 'text-indigo-600' },
       { name: 'Saldo Cliente', href: '/headcoach/saldos-clientes', icon: Wallet, color: 'text-indigo-600' },
       { name: 'Cancelamento de Transação', href: '/headcoach/cancelamento-transacao', icon: Prohibit, color: 'text-rose-600' },
     ],

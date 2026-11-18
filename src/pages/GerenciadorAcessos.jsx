@@ -530,6 +530,7 @@ const AVAILABLE_PAGES = [
   { path: '/headcoach/caixa/contagem', name: 'Caixa — Contagem', category: 'HeadCoach' },
   { path: '/headcoach/caixa/fechamento', name: 'Caixa — Fechamento e encerramento', category: 'HeadCoach' },
   { path: '/headcoach/contas-receber', name: 'Contas a Receber (HeadCoach)', category: 'HeadCoach' },
+  { path: '/headcoach/contas-pagar', name: 'Contas a Pagar (HeadCoach)', category: 'HeadCoach' },
   { path: '/headcoach/saldos-clientes', name: 'Saldos de Clientes — CREDEV e adiantamento (HeadCoach)', category: 'HeadCoach' },
   { path: '/headcoach/cancelamento-transacao', name: 'Cancelamento de Transação — nota, transação e contas a receber (HeadCoach)', category: 'HeadCoach' },
   { path: '/headcoach/estoque', name: 'Estoque da loja (HeadCoach)', category: 'HeadCoach' },
