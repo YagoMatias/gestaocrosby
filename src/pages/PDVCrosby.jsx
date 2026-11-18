@@ -80,7 +80,9 @@ const PDV_VAREJO_CONFIG = {
   // Desconto acima disso só para owner/admin ou com a senha de um deles
   maxDescontoPct: 15,
   // Cashback (no TOTVS é o "saldo bônus"): a venda gera 20%; para consumir, a venda deve
-  // ser >= 3x o valor usado (ex.: R$ 200 de saldo exigem compra de R$ 600)
+  // ser >= 3x o valor usado (ex.: R$ 200 de saldo exigem compra de R$ 600).
+  // O cashback vale em QUALQUER loja (Yago, 18/11/2026): o saldo é a soma das lojas e
+  // o consumo sai primeiro da loja da venda, depois das outras.
   cashbackGerarPct: 20,
   cashbackFatorMinimo: 3,
 };
@@ -521,8 +523,8 @@ const PDVCrosby = () => {
   const operation = operacaoPara(tipoVenda, branch, fiscalCfg);
   const [customer, setCustomer] = useState(null);
 
-  // Cashback (no TOTVS: saldo bônus do cliente na empresa da venda)
-  const [cashback, setCashback] = useState(null); // { balance, cpf }
+  // Cashback (no TOTVS: saldo bônus do cliente) — soma de todas as lojas
+  const [cashback, setCashback] = useState(null); // { balance, cpf, porEmpresa: [{ branchCode, balance }] }
   const [cashbackUsar, setCashbackUsar] = useState(false);
   // quanto do cashback usar (R$): vazio = tudo o que a venda permite; dá para usar só parte
   const [cashbackValor, setCashbackValor] = useState('');
@@ -708,7 +710,7 @@ const PDVCrosby = () => {
           `${API_BASE_URL}/api/totvs/pdv/bonus?cpf=${cpf}&branch=${branch}`,
         );
         const jb = await rb.json();
-        setCashback({ balance: jb?.data?.balance || 0, cpf });
+        setCashback({ balance: jb?.data?.balance || 0, cpf, porEmpresa: jb?.data?.porEmpresa || [] });
       } catch {
         setCashback({ balance: 0, cpf: null });
       }
@@ -1417,6 +1419,8 @@ const PDVCrosby = () => {
               personCode: customer.code,
               branchCode: parseInt(branch, 10),
               usedValue: cb,
+              // com o CPF o servidor baixa o cashback de qualquer loja em que o cliente tenha saldo
+              cpf: cashback?.cpf || null,
             }),
           });
           const jc = await rc.json();
@@ -1680,6 +1684,11 @@ const PDVCrosby = () => {
                       {fmtBRL(cashback.balance * PDV_VAREJO_CONFIG.cashbackFatorMinimo)}
                     </span>
                   </label>
+                )}
+                {cashback && cashback.balance > 0 && (cashback.porEmpresa || []).some((b) => Number(b.branchCode) !== Number(branch)) && (
+                  <p className="mt-1 text-[10px] text-emerald-700">
+                    O cashback vale em qualquer loja. Saldo por loja: {cashback.porEmpresa.map((b) => `${b.branchCode} ${fmtBRL(b.balance)}`).join(' · ')}
+                  </p>
                 )}
                 {cashback && cashback.balance > 0 && cashbackUsar && totals.cashbackDisponivel > 0 && (
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-emerald-800">
