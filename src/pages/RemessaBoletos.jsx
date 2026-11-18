@@ -351,6 +351,9 @@ export default function RemessaBoletos() {
     });
   // todos | enviado (boleto Pagar.me vivo) | pendente (última tentativa falhou) | nao_enviado
   const [filtroEnvio, setFiltroEnvio] = useState('todos');
+  // Origem do título: todos | totvs | hc_cr (banco próprio do HeadCoach). João (18/11/2026):
+  // a empresa 99 no TOTVS tem faturas antigas que poluem — permite ver só o HeadCoach.
+  const [filtroOrigem, setFiltroOrigem] = useState('todos');
   const [selecionadas, setSelecionadas] = useState(() => new Set());
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState('');
@@ -414,7 +417,7 @@ export default function RemessaBoletos() {
     }
     const lista = [...m.entries()]
       .sort((a, b) => Number(a[0]) - Number(b[0]))
-      .map(([cd, nm]) => ({ valor: cd, label: `${cd} - ${nm}` }));
+      .map(([cd, nm]) => ({ valor: cd, label: nm ? `${cd} - ${nm}` : `Portador ${cd}` }));
     if (temPagarme) lista.unshift({ valor: 'PAGARME', label: 'PAGARME (boleto emitido)' });
     return lista;
   }, [faturas]);
@@ -422,6 +425,9 @@ export default function RemessaBoletos() {
   const visiveis = useMemo(() => {
     const q = busca.trim().toLowerCase();
     return (faturas || []).filter((f) => {
+      const ehHc = f.origem === 'hc_cr';
+      if (filtroOrigem === 'hc_cr' && !ehHc) return false;
+      if (filtroOrigem === 'totvs' && ehHc) return false;
       if (filtroEnvio === 'enviado' && !f.pagarme) return false;
       if (filtroEnvio === 'pendente' && !(f.ultimo_erro && !f.pagarme)) return false;
       if (filtroEnvio === 'nao_enviado' && (f.pagarme || f.ultimo_erro)) return false;
@@ -434,7 +440,7 @@ export default function RemessaBoletos() {
         .filter(Boolean)
         .some((v) => String(v).toLowerCase().includes(q));
     });
-  }, [faturas, busca, portadoresFiltro, filtroEnvio]);
+  }, [faturas, busca, portadoresFiltro, filtroEnvio, filtroOrigem]);
 
   // Entram na remessa: portador "em carteira" (TOTVS) OU título próprio do HeadCoach
   // (origem hc_cr, sem portador de remessa), cadastro completo e sem boleto Pagar.me.
@@ -595,7 +601,7 @@ export default function RemessaBoletos() {
       />
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 mb-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 items-center">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 items-end">
           <div className="lg:col-span-2">
             <FiltroEmpresa
               empresasSelecionadas={empresasSelecionadas}
@@ -634,7 +640,7 @@ export default function RemessaBoletos() {
           <button
             onClick={buscar}
             disabled={loading}
-            className="flex items-center justify-center gap-1.5 bg-[#000638] text-white text-xs font-semibold rounded-lg px-3 py-2 hover:bg-[#fe0000] transition-colors disabled:opacity-60 lg:mt-4"
+            className="flex items-center justify-center gap-1.5 bg-[#000638] text-white text-xs font-semibold rounded-lg px-3 py-2 hover:bg-[#fe0000] transition-colors disabled:opacity-60"
           >
             {loading ? (
               <Spinner size={14} className="animate-spin" />
@@ -894,6 +900,16 @@ export default function RemessaBoletos() {
                 )}
               </div>
               <select
+                value={filtroOrigem}
+                onChange={(e) => setFiltroOrigem(e.target.value)}
+                title="Origem do título: TOTVS ou banco próprio do HeadCoach"
+                className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs sm:w-44"
+              >
+                <option value="todos">Origem: todas</option>
+                <option value="totvs">Só TOTVS</option>
+                <option value="hc_cr">Só HeadCoach</option>
+              </select>
+              <select
                 value={filtroEnvio}
                 onChange={(e) => setFiltroEnvio(e.target.value)}
                 title="Filtrar pela situação do envio à Pagar.me"
@@ -902,7 +918,7 @@ export default function RemessaBoletos() {
                 <option value="todos">Envio: todos</option>
                 <option value="enviado">Enviado</option>
                 <option value="pendente">Pendente (erro)</option>
-                <option value="nao_enviado">Não enviado</option>
+                <option value="nao_enviado">A emitir (sem boleto)</option>
               </select>
               <span className="text-[11px] text-gray-500 flex-1">
                 {paraEnviar.length} selecionada(s) · {fmtBRL(valorEnviar)}
