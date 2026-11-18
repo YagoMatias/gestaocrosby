@@ -9,6 +9,10 @@
 // sistema procura as compras do cliente (TOTVS + HeadCoach), confere se ele
 // comprou a peça que está devolvendo e referencia a nota de origem sozinho
 // (POST /api/pdv-crosby/troca/conferir · services/pdvTroca.js).
+// TROCA DE PRESENTE (18/11/2026): quem ganhou se cadastra (é o cliente), o
+// caixa lê o CUPOM DE TROCA (código ou QR) no modo TROCA, escolhe as peças da
+// venda do cupom e a troca confere contra ESSA venda — a NF-e de devolução
+// referencia a nota original e o cupom anota o que foi trocado.
 import React, {
   useState,
   useEffect,
@@ -54,6 +58,7 @@ import {
   Coins,
   Lock,
   LockOpen,
+  Ticket,
 } from '@phosphor-icons/react';
 import { lerCaixa, CaixaCard, CaixaFechadoModal } from '../components/hc/CaixaHeadcoach';
 import { API_BASE_URL } from '../config/constants';
@@ -565,6 +570,11 @@ const PDVCrosby = () => {
   // porProduto[código] = { ok, mensagem, valorUnit, notas:[{ numero, serie, data, empresa, chave… }] }
   const TROCA_VAZIA = useMemo(() => ({ status: 'parada', porProduto: {}, avisos: [], erro: null }), []);
   const [trocaConf, setTrocaConf] = useState(TROCA_VAZIA);
+  // troca de presente pelo CUPOM DE TROCA: { codigo, comprador, origem }
+  const [cupomTroca, setCupomTroca] = useState(null);
+  const [cupomCodigo, setCupomCodigo] = useState('');
+  const [cupomBusy, setCupomBusy] = useState(false);
+  const [cupomModal, setCupomModal] = useState(null); // dados do cupom + escolha { productCode: qtd }
   // TROCA aqui é o MODO de bipar: a peça entra marcada como troca (devolução).
   // O carrinho pode ter as duas coisas — peças de troca e peças de venda — e
   // fecha tudo num atendimento só (VENDA | TROCA).
@@ -795,10 +805,11 @@ const PDVCrosby = () => {
       if (idx >= 0) {
         const next = [...prev];
         const cur = next[idx];
+        const trocaDaEtiqueta = cur.doCupom && epc && !cur.epcs.includes(epc) && !manual && (cur.manualQty || 0) > 0;
         next[idx] = {
           ...cur,
           epcs: epc && !cur.epcs.includes(epc) ? [...cur.epcs, epc] : cur.epcs,
-          manualQty: (cur.manualQty || 0) + manual,
+          manualQty: trocaDaEtiqueta ? cur.manualQty - 1 : (cur.manualQty || 0) + manual,
         };
         return next;
       }
@@ -975,11 +986,15 @@ const PDVCrosby = () => {
   const combinado = temTroca && temVenda; // VENDA | TROCA no mesmo atendimento
   const trocaChave = useMemo(
     () =>
-      branch && customer?.code && itensTroca.length > 0
-        ? JSON.stringify([branch, customer.code, itensTroca.map((i) => [i.productCode, qtyOf(i)])])
+      branch && (cupomTroca || customer?.code) && itensTroca.length > 0
+        ? JSON.stringify([branch, customer?.code || null, itensTroca.map((i) => [i.productCode, qtyOf(i)]), cupomTroca?.codigo || null])
         : null,
-    [branch, customer?.code, itensTroca],
+    [branch, customer?.code, itensTroca, cupomTroca],
   );
+  // sem peça de troca, o cupom sai do atendimento
+  useEffect(() => {
+    if (itensTroca.length === 0) setCupomTroca(null);
+  }, [itensTroca.length]);
   useEffect(() => {
     if (!trocaChave) {
       setTrocaConf(TROCA_VAZIA);
@@ -989,13 +1004,14 @@ const PDVCrosby = () => {
     setTrocaConf((c) => ({ ...c, status: 'carregando', erro: null }));
     const t = setTimeout(async () => {
       try {
-        const [emp, cli, lista] = JSON.parse(trocaChave);
+        const [emp, cli, lista, cupom] = JSON.parse(trocaChave);
         const r = await fetch(`${API_BASE_URL}/api/pdv-crosby/troca/conferir`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             empresa: parseInt(emp, 10),
             clienteCode: cli,
+            ...(cupom ? { cupom } : {}),
             itens: lista.map(([productCode, quantidade]) => ({ productCode, quantidade })),
           }),
         });
@@ -1138,7 +1154,9 @@ const PDVCrosby = () => {
     : temVenda && !tipoSaida
       ? 'Escolha NFC-e ou NF-e para as peças da venda.'
       : temTroca && !customer
-        ? 'Selecione o cliente: a troca confere as compras dele.'
+        ? cupomTroca
+          ? 'Cadastre ou selecione quem está trocando: é o cliente da troca.'
+          : 'Selecione o cliente: a troca confere as compras dele.'
         : temTroca && trocaConf.status === 'carregando'
           ? 'Conferindo as compras do cliente…'
           : temTroca && trocaConf.status === 'erro'
@@ -1332,6 +1350,8 @@ const PDVCrosby = () => {
         cashbackUsado: cb,
         // venda feita junto com uma troca (VENDA | TROCA): amarra uma na outra
         trocaVendaId,
+        // troca de presente: confere contra a venda do cupom e anota o uso
+        ...(tipo === 'troca' && cupomTroca ? { cupomTroca: cupomTroca.codigo } : {}),
         criadoPor: user?.email || user?.name || null,
       };
       const r = await fetch(`${API_BASE_URL}/api/pdv-crosby/vendas`, {
@@ -1356,8 +1376,58 @@ const PDVCrosby = () => {
       }
       return j.data;
     },
-    [branches, branch, sellers, seller, fiscalCfg, customer, cashback, user, showToast, precoDe],
+    [branches, branch, sellers, seller, fiscalCfg, customer, cashback, user, showToast, precoDe, cupomTroca],
   );
+
+  // ─── CUPOM DE TROCA (presente): lê o código/QR e abre as peças da venda ────
+  const lerCupom = useCallback(
+    async (e) => {
+      e?.preventDefault();
+      const cod = cupomCodigo.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (!cod || cupomBusy) return;
+      setCupomBusy(true);
+      try {
+        const r = await fetch(`${API_BASE_URL}/api/pdv-crosby/troca/cupom/${cod}`);
+        const j = await r.json();
+        if (!r.ok || !j.success) throw new Error(j?.message || 'Cupom não encontrado');
+        if (!j.data.itens.some((i) => i.disponivel > 0)) throw new Error(`Todas as peças do cupom ${cod} já foram trocadas`);
+        setCupomModal({ ...j.data, escolha: {} });
+        setCupomCodigo('');
+      } catch (er) {
+        beep(false);
+        showToast('erro', er.message);
+      } finally {
+        setCupomBusy(false);
+      }
+    },
+    [cupomCodigo, cupomBusy, showToast],
+  );
+  const usarCupom = useCallback(() => {
+    if (!cupomModal) return;
+    const escolhidas = cupomModal.itens.filter((i) => Number(cupomModal.escolha[i.productCode]) > 0);
+    if (!escolhidas.length) return;
+    // um cupom por troca: outro cupom substitui as peças que vieram do anterior
+    const trocaDeCupom = cupomTroca && cupomTroca.codigo !== cupomModal.cupom.codigo;
+    setItems((prev) => {
+      let next = trocaDeCupom ? prev.filter((i) => !(i.troca && i.doCupom)) : [...prev];
+      for (const it of escolhidas) {
+        const qtd = Number(cupomModal.escolha[it.productCode]);
+        const key = keyDe(it.productCode, true);
+        const idx = next.findIndex((x) => x.key === key);
+        if (idx >= 0) next[idx] = { ...next[idx], doCupom: true, manualQty: Math.max(0, qtd - (next[idx].epcs || []).length) };
+        else
+          next = [
+            ...next,
+            { key, troca: true, doCupom: true, productCode: it.productCode, name: it.nome, sku: null, referenceName: null, unit: Number(it.valorUnit) || 0, discount: 0, promoDesconto: 0, fonte: 'cupom', epcs: [], manualQty: qtd },
+          ];
+      }
+      return next;
+    });
+    setCupomTroca({ codigo: cupomModal.cupom.codigo, comprador: cupomModal.comprador, origem: cupomModal.origem });
+    setTipoVenda('troca');
+    setCupomModal(null);
+    beep(true);
+  }, [cupomModal, cupomTroca]);
 
   // Emite a nota da transação e devolve o "resultado" que o modal mostra
   const emitirResultado = useCallback(
@@ -1788,6 +1858,18 @@ const PDVCrosby = () => {
             />
             {manualBusy && <Spinner size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 animate-spin" />}
           </form>
+          {emTroca && (
+            <form onSubmit={lerCupom} className="relative w-full sm:w-56" title="Troca de presente: digite o código ou leia o QR Code do cupom de troca">
+              <Ticket size={15} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-purple-500" />
+              <input
+                value={cupomCodigo}
+                onChange={(e) => setCupomCodigo(e.target.value.toUpperCase())}
+                placeholder="Cupom de troca (código ou QR)"
+                className="w-full h-9 pl-8 pr-8 mb-0 rounded-lg border border-purple-300 bg-purple-50/40 text-xs font-mono tracking-wider uppercase focus:outline-none focus:ring-2 focus:ring-purple-300"
+              />
+              {cupomBusy && <Spinner size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-purple-400 animate-spin" />}
+            </form>
+          )}
           <span className="hidden sm:block w-px h-6 bg-gray-200" />
           <div className="w-full sm:w-60">
               {rfidSupported ? (
@@ -1937,8 +2019,16 @@ const PDVCrosby = () => {
                           <tr className="bg-purple-100">
                             <td colSpan={6} className="px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-purple-800">
                               Troca — peças que o cliente está devolvendo
-                              {!customer
+                              {cupomTroca && (
+                                <span className="ml-1 normal-case font-semibold">
+                                  · pelo cupom <b className="font-mono">{cupomTroca.codigo}</b>
+                                  {cupomTroca.comprador?.nome ? ` (comprado por ${cupomTroca.comprador.nome})` : ''}
+                                </span>
+                              )}
+                              {!customer && !cupomTroca
                                 ? ' · selecione o cliente para conferir as compras dele'
+                                : !customer
+                                  ? ' · cadastre ou selecione quem está trocando'
                                 : trocaConf.status === 'carregando'
                                   ? ' · conferindo as compras do cliente…'
                                   : trocaConf.status === 'erro'
@@ -2426,6 +2516,93 @@ const PDVCrosby = () => {
             showToast={showToast}
           />
         )}
+        {/* Troca de presente: peças da venda do cupom */}
+        {cupomModal && (
+          <div className="fixed inset-0 z-[75] flex items-center justify-center bg-black/50 p-4" onClick={() => setCupomModal(null)}>
+            <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-start gap-2">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-100 text-purple-700">
+                  <Ticket size={20} weight="bold" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-lg font-bold leading-tight text-[#000638]">
+                    Cupom de troca <span className="font-mono">{cupomModal.cupom.codigo}</span>
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    Venda de {String(cupomModal.cupom.data || '').slice(0, 10).split('-').reverse().join('/')} na empresa {cupomModal.cupom.empresa}
+                    {cupomModal.comprador?.nome ? ` · comprado por ${cupomModal.comprador.nome}` : ''}
+                    {cupomModal.origem?.nota ? ` · nota ${cupomModal.origem.nota.numero}/${cupomModal.origem.nota.serie}` : ''}
+                  </p>
+                </div>
+                <button onClick={() => setCupomModal(null)} className="text-gray-400 hover:text-gray-600">
+                  <X size={18} weight="bold" />
+                </button>
+              </div>
+              <p className="mt-3 text-xs text-gray-600">Escolha as peças que vão ser trocadas:</p>
+              <ul className="mt-1 max-h-[50vh] divide-y divide-gray-100 overflow-y-auto rounded-xl ring-1 ring-gray-200">
+                {cupomModal.itens.map((it) => {
+                  const q = Number(cupomModal.escolha[it.productCode]) || 0;
+                  const setQ = (v) => setCupomModal((m) => ({ ...m, escolha: { ...m.escolha, [it.productCode]: Math.max(0, Math.min(it.disponivel, v)) } }));
+                  return (
+                    <li key={it.productCode} className={`flex items-center gap-2 px-3 py-2 ${it.disponivel === 0 ? 'opacity-50' : ''}`}>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[13px] font-semibold text-gray-800">{it.nome || it.productCode}</p>
+                        <p className="text-[11px] text-gray-500">
+                          cód. {it.productCode}
+                          {it.valorUnit ? ` · pago ${fmtBRL(it.valorUnit)}` : ''} · comprou {it.comprado}
+                          {it.trocado ? ` · já trocou ${it.trocado}` : ''}
+                        </p>
+                      </div>
+                      {it.disponivel === 0 ? (
+                        <span className="text-[11px] font-semibold text-gray-400">já trocada</span>
+                      ) : it.disponivel === 1 ? (
+                        <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-purple-800">
+                          <input type="checkbox" checked={q === 1} onChange={(e) => setQ(e.target.checked ? 1 : 0)} className="h-4 w-4" /> trocar
+                        </label>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <button type="button" onClick={() => setQ(q - 1)} disabled={q === 0} className="rounded p-1 ring-1 ring-gray-200 disabled:opacity-30">
+                            <Minus size={11} weight="bold" />
+                          </button>
+                          <span className="w-8 text-center text-sm font-bold tabular-nums">{q}</span>
+                          <button type="button" onClick={() => setQ(q + 1)} disabled={q >= it.disponivel} className="rounded p-1 ring-1 ring-gray-200 disabled:opacity-30">
+                            <Plus size={11} weight="bold" />
+                          </button>
+                          <span className="ml-1 text-[10px] text-gray-400">de {it.disponivel}</span>
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCupomModal((m) => ({ ...m, escolha: Object.fromEntries(m.itens.map((i) => [i.productCode, i.disponivel])) }))}
+                  className="h-8 rounded-lg px-2.5 text-[11px] font-semibold text-purple-800 ring-1 ring-purple-200 hover:bg-purple-50"
+                >
+                  Marcar todas
+                </button>
+              </div>
+              <p className="mt-3 text-[11px] text-gray-500">
+                Quem está trocando precisa estar cadastrado e selecionado como cliente. A nota de devolução referencia a nota da venda original sozinha.
+              </p>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button onClick={() => setCupomModal(null)} className="h-11 rounded-lg text-sm font-semibold text-gray-600 ring-1 ring-gray-300 hover:bg-gray-50">
+                  Voltar
+                </button>
+                <button
+                  onClick={usarCupom}
+                  disabled={!Object.values(cupomModal.escolha).some((v) => Number(v) > 0)}
+                  className="h-11 rounded-lg bg-purple-700 text-sm font-bold text-white hover:bg-purple-800 disabled:opacity-40"
+                >
+                  COLOCAR NA TROCA
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {showCadastro && (
           <CadastroClienteModal
             empresa={branch}
