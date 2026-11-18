@@ -328,7 +328,7 @@ function Titulos({ empresas, podeFinanceiro, avisar }) {
                       <td className="px-2 py-1.5 tabular-nums">{fmtData(t.vencimento)}</td>
                       <td className="px-2 py-1.5 text-right font-semibold tabular-nums">{fmtBRL(t.valor)}</td>
                       <td className={`px-2 py-1.5 text-right tabular-nums ${jm > 0 ? 'text-rose-700' : 'text-gray-400'}`}>{jm > 0 ? fmtBRL(jm) : '—'}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums text-gray-500">{Number(t.taxa_valor) > 0 ? fmtBRL(t.taxa_valor) : '—'}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums text-gray-500">{t.boleto_emitido ? (<span className="text-green-600 font-semibold" title="Boleto emitido na Pagar.me — tarifa de emissão (2,99)">{fmtBRL(t.taxa_boleto)}</span>) : Number(t.taxa_valor) > 0 ? fmtBRL(t.taxa_valor) : '—'}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{t.situacao === 'pago' ? fmtBRL(t.valor_pago) : '—'}</td>
                       <td className="px-2 py-1.5 tabular-nums">{fmtData(t.data_pagamento)}</td>
                       <td className="px-2 py-1.5 tabular-nums">{fmtData(t.data_liquidacao)}</td>

@@ -599,7 +599,11 @@ export default function RemessaBoletos() {
             <FiltroEmpresa
               empresasSelecionadas={empresasSelecionadas}
               onSelectEmpresas={setEmpresasSelecionadas}
-              presets={[{ nome: 'Crosby', codigos: [1, 99, 100, 101] }]}
+              presets={[
+                { nome: 'Crosby', codigos: [1, 99, 100, 101] },
+                // Banco próprio do HeadCoach (contas a receber do HeadCoach = empresa 99)
+                { nome: 'HeadCoach', codigos: [99] },
+              ]}
             />
           </div>
           <div>
