@@ -436,12 +436,13 @@ export default function RemessaBoletos() {
     });
   }, [faturas, busca, portadoresFiltro, filtroEnvio]);
 
-  // Entram na remessa: portador "em carteira", cadastro completo e sem boleto Pagar.me
+  // Entram na remessa: portador "em carteira" (TOTVS) OU título próprio do HeadCoach
+  // (origem hc_cr, sem portador de remessa), cadastro completo e sem boleto Pagar.me.
   const elegiveis = useMemo(
     () =>
       visiveis.filter(
         (f) =>
-          portadoresRemessa.includes(Number(f.cd_portador)) &&
+          (f.origem === 'hc_cr' || portadoresRemessa.includes(Number(f.cd_portador))) &&
           !f.pagarme &&
           !(f.cliente?.pendencias?.length),
       ),
