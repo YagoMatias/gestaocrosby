@@ -590,6 +590,8 @@ export default function RemessaBoletos() {
   const enviadas = (faturas || []).filter((f) => f.pagarme).length;
   const pendentesErro = (faturas || []).filter((f) => f.ultimo_erro && !f.pagarme).length;
   const comPendencia = visiveis.filter((f) => f.cliente?.pendencias?.length).length;
+  // "A emitir": títulos que ainda não tiveram boleto emitido na Pagar.me (João, 18/11/2026)
+  const aEmitir = (faturas || []).filter((f) => !f.pagarme && !f.ultimo_erro).length;
 
   return (
     <div className="w-full max-w-[1600px] mx-auto px-4 py-4">
@@ -819,14 +821,18 @@ export default function RemessaBoletos() {
                 {pendentesErro}
               </div>
             </button>
-            <div className="bg-white rounded-lg border border-gray-200 p-3">
-              <div className="text-[11px] text-gray-500">Cadastro incompleto p/ boleto</div>
-              <div
-                className={`text-lg font-bold ${comPendencia ? 'text-amber-600' : 'text-gray-400'}`}
-              >
-                {comPendencia}
+            <button
+              onClick={() => setFiltroEnvio(filtroEnvio === 'nao_enviado' ? 'todos' : 'nao_enviado')}
+              title="Títulos que ainda não tiveram boleto emitido na Pagar.me"
+              className={`text-left bg-white rounded-lg border p-3 ${
+                filtroEnvio === 'nao_enviado' ? 'border-[#000638] ring-1 ring-[#000638]' : 'border-gray-200'
+              }`}
+            >
+              <div className="text-[11px] text-gray-500">A emitir (sem boleto)</div>
+              <div className={`text-lg font-bold ${aEmitir ? 'text-sky-600' : 'text-gray-400'}`}>
+                {aEmitir}
               </div>
-            </div>
+            </button>
           </div>
 
           <div className="bg-white rounded-lg shadow-sm border border-gray-200">
