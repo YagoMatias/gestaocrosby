@@ -362,12 +362,30 @@ function itensDoPedido(dados, pctSuframa = 0) {
   const dp = descontoDoPedido(dd, round2(somaCard), pctSuframa);
   if (dp.total > 0 && soma > 0 && dp.base > 0) {
     unidades.forEach((u) => (u.desc = round2((dp.total * u.preco) / dp.base)));
-    // centavos que sobram: só quando as peças são as mesmas do card
+    // centavos que sobram: só quando as peças são as mesmas do card. Vão de 1 em 1
+    // centavo, começando pelas peças mais caras, sem deixar nenhuma com desconto
+    // negativo nem maior que o preço. (Antes a sobra inteira ia numa peça só: no
+    // PE1236 — R$ 0,26 de desconto em 31 peças — o rateio dava 0,33 e a peça mais
+    // cara ficava com −0,05, que o servidor recusa como "desconto inválido".)
     if (Math.abs(soma - dp.base) < 0.01) {
-      const sobra = round2(dp.total - unidades.reduce((s, u) => s + u.desc, 0));
-      if (sobra !== 0) {
-        const k = unidades.reduce((m, u, idx) => (u.preco > unidades[m].preco ? idx : m), 0);
-        unidades[k].desc = round2(unidades[k].desc + sobra);
+      let centavos = Math.round((dp.total - unidades.reduce((s, u) => s + u.desc, 0)) * 100);
+      const ordem = unidades.map((_, idx) => idx).sort((x, y) => unidades[y].preco - unidades[x].preco);
+      for (let volta = 0; centavos !== 0 && volta < 500; volta += 1) {
+        let mexeu = false;
+        for (const idx of ordem) {
+          if (centavos === 0) break;
+          const u = unidades[idx];
+          if (centavos > 0 && round2(u.desc + 0.01) < u.preco) {
+            u.desc = round2(u.desc + 0.01);
+            centavos -= 1;
+            mexeu = true;
+          } else if (centavos < 0 && u.desc >= 0.01) {
+            u.desc = round2(u.desc - 0.01);
+            centavos += 1;
+            mexeu = true;
+          }
+        }
+        if (!mexeu) break;
       }
     }
   }
@@ -2608,9 +2626,17 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
       if (centavos !== 0 && conferidasU.length) {
         conferidasU.sort((a, b) => b.preco - a.preco);
         const passo = centavos > 0 ? 0.01 : -0.01;
-        for (let n = 0; centavos !== 0; n += 1) {
+        // tirando centavos, pula a peça que já está sem desconto (nunca fica negativo)
+        let semMexer = 0;
+        for (let n = 0; centavos !== 0 && semMexer < conferidasU.length; n += 1) {
           const { chave } = conferidasU[n % conferidasU.length];
-          extras.set(chave, round2(extras.get(chave) + passo));
+          const novo = round2(extras.get(chave) + passo);
+          if (novo < 0) {
+            semMexer += 1;
+            continue;
+          }
+          semMexer = 0;
+          extras.set(chave, novo);
           centavos -= centavos > 0 ? 1 : -1;
         }
       }
