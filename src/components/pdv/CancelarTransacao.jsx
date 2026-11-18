@@ -23,7 +23,7 @@ const fmtHora = (iso) => (iso ? new Date(iso).toLocaleString('pt-BR', { timeZone
 const fmtDia = (d) => (d ? String(d).slice(0, 10).split('-').reverse().join('/') : '—');
 
 const TIPO = { nfce: 'NFC-e', nfe: 'NF-e', troca: 'TROCA' };
-const FORMA = { dinheiro: 'Dinheiro', pix: 'PIX', credito: 'Cartão crédito', debito: 'Cartão débito', credito_loja: 'Credev', adiantamento: 'Adiantamento', vale_troca: 'Vale-troca', boleto: 'Boleto', saldo_bonus: 'Saldo bônus' };
+const FORMA = { dinheiro: 'Dinheiro', pix: 'PIX', credito: 'Cartão crédito', debito: 'Cartão débito', credito_loja: 'Credev', adiantamento: 'Adiantamento', bluecard: 'BlueCard', vale_troca: 'Vale-troca', boleto: 'Boleto', saldo_bonus: 'Saldo bônus' };
 const STATUS = {
   registrada: 'bg-gray-100 text-gray-600 ring-gray-200',
   emitindo: 'bg-amber-50 text-amber-700 ring-amber-200',

@@ -21,7 +21,26 @@ export const FORMAS = [
   // saldos do cliente NESTA loja (HeadCoach › Saldos de Clientes): cada um o seu
   { id: 'credito_loja', label: 'Credev', icon: Receipt },
   { id: 'adiantamento', label: 'Adiantamento', icon: Receipt },
+  // crediário BlueCard: a prazo, em parcelas mensais; no contas a receber vira boleto / fatura
+  { id: 'bluecard', label: 'BlueCard', icon: Receipt },
 ];
+const BLUECARD_MAX_PARCELAS = 4;
+// valores das parcelas como saem no contas a receber (igual ao TOTVS): reais inteiros,
+// a diferença na 1ª — 148,00 em 3x = 50,00 + 49,00 + 49,00
+const parcelasBluecard = (valor, n) => {
+  if (n <= 1) return `1x de ${fmtBRL(valor)}`;
+  const vn = Math.floor(valor / n) >= 1 ? Math.floor(valor / n) : Math.floor((valor / n) * 100) / 100;
+  const primeira = round2(valor - vn * (n - 1));
+  return Math.abs(primeira - vn) < 0.005 ? `${n}x de ${fmtBRL(vn)}` : `${n}x: 1ª de ${fmtBRL(primeira)} + ${n - 1} de ${fmtBRL(vn)}`;
+};
+// vencimentos das parcelas do BlueCard: mesmo dia do mês, a 1ª um mês depois da compra
+const vencimentoBluecard = (n) => {
+  const h = new Date();
+  const alvo = new Date(h.getFullYear(), h.getMonth() + n, 1);
+  const ultimo = new Date(alvo.getFullYear(), alvo.getMonth() + 1, 0).getDate();
+  alvo.setDate(Math.min(h.getDate(), ultimo));
+  return alvo.toLocaleDateString('pt-BR');
+};
 // forma → saldo do cliente que ela consome
 const SALDO_DA_FORMA = { credito_loja: 'credev', adiantamento: 'adiantamento' };
 const NOME_SALDO = { credev: 'Credev', adiantamento: 'Adiantamento' };
@@ -96,6 +115,7 @@ export default function PagamentoModal({ total, tipoVenda, notasTroca = [], sald
       if (!temCliente) return setErro(`${NOME_SALDO[tipo]} exige o cliente identificado na venda`);
       if (usado > saldoDe(tipo) + 0.005) return setErro(`${NOME_SALDO[tipo]}: o cliente tem ${fmtBRL(saldoDe(tipo))} nesta loja e você lançou ${fmtBRL(usado)}`);
     }
+    if (pags.some((p) => p.forma === 'bluecard' && Number(p.valor) > 0) && !temCliente) return setErro('BlueCard exige o cliente identificado na venda');
     for (const p of pags) {
       if (!(Number(p.valor) > 0)) return setErro('Informe o valor de cada pagamento');
       if ((p.forma === 'credito' || p.forma === 'debito') && !p.nsu.trim() && !p.autorizacao.trim())
@@ -200,6 +220,20 @@ export default function PagamentoModal({ total, tipoVenda, notasTroca = [], sald
                       {NOME_SALDO[tipoSaldo]} do cliente nesta loja: {fmtBRL(saldoDe(tipoSaldo))}
                       {usoSaldo(tipoSaldo) > saldoDe(tipoSaldo) + 0.005 ? ' — valor maior que o saldo' : ''}
                     </p>
+                  )}
+                  {p.forma === 'bluecard' && (
+                    <div className="space-y-1">
+                      <select value={p.parcelas} onChange={(e) => upd(i, { parcelas: parseInt(e.target.value, 10) })} className={`${inputCls} w-full`}>
+                        {Array.from({ length: BLUECARD_MAX_PARCELAS }, (_, n) => n + 1).map((n) => (
+                          <option key={n} value={n}>
+                            {parcelasBluecard(Number(p.valor || 0), n)} · {n > 1 ? `1ª em ${vencimentoBluecard(1)}, última em ${vencimentoBluecard(n)}` : `vence em ${vencimentoBluecard(1)}`}
+                          </option>
+                        ))}
+                      </select>
+                      <p className={`text-[11px] font-semibold ${temCliente ? 'text-blue-800' : 'text-rose-600'}`}>
+                        {temCliente ? 'Crediário BlueCard: entra no contas a receber como boleto / fatura em aberto.' : 'BlueCard exige o cliente identificado na venda.'}
+                      </p>
+                    </div>
                   )}
                   {cartao && (
                     <div className="grid grid-cols-2 gap-2">

@@ -29,6 +29,7 @@ const FORMAS = {
   debito: 'Cartão de débito',
   credito_loja: 'Credev',
   adiantamento: 'Adiantamento',
+  bluecard: 'BlueCard',
   vale_troca: 'Vale troca',
 };
 

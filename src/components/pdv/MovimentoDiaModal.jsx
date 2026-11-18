@@ -8,7 +8,7 @@ import { API_BASE_URL } from '../../config/constants';
 
 const fmtBRL = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 const hojeBR = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Recife' });
-const FORMAS_HC = { dinheiro: 'Dinheiro', pix: 'PIX', credito: 'Cartão de crédito', debito: 'Cartão de débito', credito_loja: 'Crédito loja', vale_troca: 'Vale troca' };
+const FORMAS_HC = { dinheiro: 'Dinheiro', pix: 'PIX', credito: 'Cartão de crédito', debito: 'Cartão de débito', credito_loja: 'Credev', adiantamento: 'Adiantamento', bluecard: 'BlueCard', vale_troca: 'Vale troca' };
 
 export default function MovimentoDiaModal({ empresa, empresaNome, sellers = [], onClose }) {
   const [data, setData] = useState(hojeBR());

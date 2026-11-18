@@ -53,7 +53,7 @@ const labelCls = 'mb-1 block text-[10.5px] font-semibold uppercase tracking-wide
 const btnPri = 'inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-[#000638] px-4 text-sm font-bold text-white hover:bg-[#000638]/90 disabled:opacity-40';
 const btnSec = 'inline-flex h-9 items-center justify-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50 disabled:opacity-40';
 const FORMAS_PADRAO = ['credito', 'debito', 'pix'];
-const NOME_FORMA = { dinheiro: 'Dinheiro', pix: 'Pix', credito: 'Cartão de crédito', debito: 'Cartão de débito', boleto: 'Boleto', credito_loja: 'Credev', adiantamento: 'Adiantamento', vale_troca: 'Vale-troca', saldo_bonus: 'Saldo bônus' };
+const NOME_FORMA = { dinheiro: 'Dinheiro', pix: 'Pix', credito: 'Cartão de crédito', debito: 'Cartão de débito', boleto: 'Boleto', bluecard: 'BlueCard', credito_loja: 'Credev', adiantamento: 'Adiantamento', vale_troca: 'Vale-troca', saldo_bonus: 'Saldo bônus' };
 const nomeForma = (f) => NOME_FORMA[f] || f;
 // owner, admin e financeiro (perfil "user") reabrem a contagem e voltam a data de caixa
 const PERFIS_GESTAO = ['owner', 'admin', 'user'];
