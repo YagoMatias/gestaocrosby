@@ -63,6 +63,7 @@ import {
 import { lerCaixa, CaixaCard, CaixaFechadoModal } from '../components/hc/CaixaHeadcoach';
 import { API_BASE_URL } from '../config/constants';
 import useRfidReader from '../hooks/useRfidReader';
+import LeitorRfidPotencia from '../components/LeitorRfidPotencia';
 import { useAuth } from '../components/AuthContext';
 import { fetchSefaz } from '../utils/fetchSefaz';
 import PagamentoModal from '../components/pdv/PagamentoModal';
@@ -882,6 +883,9 @@ const PDVCrosby = () => {
     supported: rfidSupported,
     connect: rfidConnect,
     disconnect: rfidDisconnect,
+    potencia: rfidPotencia,
+    lerPotencia: rfidLerPotencia,
+    definirPotencia: rfidDefinirPotencia,
   } = useRfidReader(onEpcLido);
 
   const adicionarManual = useCallback(async () => {
@@ -1911,6 +1915,10 @@ const PDVCrosby = () => {
               )}
               {rfidError && (
                 <p className="text-[10px] text-amber-600">{rfidError}</p>
+              )}
+              {/* potência do leitor: abaixo do botão, como no portal (Yago, 19/11/2026) */}
+              {rfidSupported && (
+                <LeitorRfidPotencia status={rfidStatus} potencia={rfidPotencia} lerPotencia={rfidLerPotencia} definirPotencia={rfidDefinirPotencia} className="mt-1.5" />
               )}
 
           </div>

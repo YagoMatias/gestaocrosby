@@ -32,6 +32,7 @@ import {
 import PageTitle from '../components/ui/PageTitle';
 import { apiJson } from '../utils/apiAuth';
 import useRfidReader from '../hooks/useRfidReader';
+import LeitorRfidPotencia from '../components/LeitorRfidPotencia';
 
 const API = '/api/recebimento-mercadoria';
 const fmtBRL = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -271,7 +272,7 @@ function Conferencia({ id, onVoltar, onRecebido }) {
     });
     setUltimo({ epc: e, productCode: mapaRef.current.get(e) ?? null, em: Date.now() });
   }, []);
-  const { status: rfid, error: rfidErro, supported, connect, disconnect } = useRfidReader(onEpc);
+  const { status: rfid, error: rfidErro, supported, connect, disconnect, potencia, lerPotencia, definirPotencia } = useRfidReader(onEpc);
 
   const t = d?.transferencia;
   const linhas = useMemo(() => {
@@ -361,6 +362,8 @@ function Conferencia({ id, onVoltar, onRecebido }) {
                 )}
               </div>
               {rfidErro && <p className="mt-2 text-[11px] text-rose-600">{rfidErro}</p>}
+              {/* potência do leitor: abaixo do botão, como no portal (Yago, 19/11/2026) */}
+              {supported && <LeitorRfidPotencia status={rfid} potencia={potencia} lerPotencia={lerPotencia} definirPotencia={definirPotencia} className="mt-2 sm:ml-auto sm:max-w-xs" />}
               <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <Numero rotulo="Enviadas" valor={tot.esperado} />
                 <Numero rotulo="Conferidas" valor={tot.recebido} cls="text-emerald-700" />

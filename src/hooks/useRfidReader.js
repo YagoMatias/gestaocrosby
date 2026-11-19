@@ -14,6 +14,19 @@
 //
 // Entrega os EPCs lidos via callback onRead e reconecta sozinho se o aparelho
 // cair da USB (a permissão persiste no navegador / é dada pelo app PDV).
+//
+// POTÊNCIA DO LEITOR (Yago, 19/11/2026): de fábrica os leitores vêm na potência
+// máxima e leem as peças em volta do balcão. O hook lê a potência ao ligar e
+// deixa regular (`potencia`, `definirPotencia`), nos dois modelos:
+//  • .bat: 0x21 (informações do leitor: o 7º byte dos dados é a potência) e
+//    0x2F [dBm] (0 a 30) — manual do protocolo RRU98xx, seções 8.3.1 e 8.3.6.
+//    O leitor ignora comando que chega no meio de um inventário, então a
+//    consulta de etiquetas é suspensa enquanto o comando vai e volta.
+//  • Chainway: 0x12 → 0x13 (ler) e 0x10 [02, antena, leitura×100, escrita×100]
+//    → 0x11 [01] (gravar), os mesmos comandos do portal UR4; só aceita com o
+//    inventário parado (0x8C), que é religado em seguida.
+// A potência escolhida fica guardada neste computador (localStorage) e é
+// reaplicada ao ligar o leitor, caso o aparelho volte com outro valor.
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 
 const SERIAL_BAUD = 57600;
@@ -38,6 +51,43 @@ const INVENTORY_CMD = (() => {
   const body = [0x06, 0xff, 0x01, 0x04, 0x00];
   return new Uint8Array([...body, ...crc16(body)]);
 })();
+
+// Frame de comando do leitor .bat: Len (bytes depois dele) + Adr (FF = qualquer) + Cmd + dados + CRC
+export function frameBat(cmd, data = []) {
+  const corpo = [4 + data.length, 0xff, cmd, ...data];
+  return new Uint8Array([...corpo, ...crc16(corpo)]);
+}
+
+// Potência do leitor: faixa de cada modelo (dBm) e onde a preferência fica guardada
+export const POTENCIA_LEITOR = { bat: { min: 0, max: 30 }, chainway: { min: 1, max: 30 } };
+const PREF_POTENCIA = 'rfid_leitor_potencia';
+const lerPreferencia = () => {
+  try {
+    const v = window.localStorage.getItem(PREF_POTENCIA);
+    return v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v);
+  } catch {
+    return null;
+  }
+};
+const guardarPreferencia = (v) => {
+  try {
+    window.localStorage.setItem(PREF_POTENCIA, String(v));
+  } catch {
+    /* sem localStorage: vale só até fechar */
+  }
+};
+// resposta do 0x21 do leitor .bat: Version(2) Type Tr_Type dmaxfre dminfre Power …
+export function potenciaDoInfoBat(data) {
+  return data && data.length >= 7 ? data[6] : null;
+}
+// resposta do 0x13 do Chainway: 1 byte + registros [antena, leitura u16, escrita u16] (dBm × 100)
+export function potenciaDoChainway(data) {
+  return data && data.length >= 4 ? ((data[2] << 8) | data[3]) / 100 : null;
+}
+export function framePotenciaChainway(dbm) {
+  const v = Math.round(dbm * 100);
+  return frameChainway(0x10, [0x02, 0x01, (v >> 8) & 0xff, v & 0xff, (v >> 8) & 0xff, v & 0xff]);
+}
 
 const toHex = (bytes) =>
   Array.from(bytes)
@@ -127,8 +177,9 @@ const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Extrai EPCs dos frames de resposta acumulados no buffer.
 // Frame: Len Adr reCmd Status [Ant Num (EPClen EPC... RSSI)*] CRC16
-function parseFrames(buf) {
+export function parseFrames(buf) {
   const epcs = [];
+  const outros = []; // respostas de comando: { reCmd, status, data }
   let i = 0;
   while (i < buf.length) {
     const len = buf[i];
@@ -155,16 +206,20 @@ function parseFrames(buf) {
         epcs.push(toHex(frame.slice(p + 1, p + 1 + epcLen)));
         p += 1 + epcLen + 1; // +1 do RSSI após o EPC
       }
+    } else if (reCmd !== 0x01) {
+      outros.push({ reCmd, status, data: frame.slice(4, total - 2) });
     }
     i += total;
   }
-  return { epcs, rest: buf.slice(i) };
+  return { epcs, outros, rest: buf.slice(i) };
 }
 
 /**
  * @param {(epc: string) => void} onRead — chamado a cada EPC novo lido
- * @returns {{ status, error, supported, connect, disconnect }}
+ * @returns {{ status, error, supported, connect, disconnect, potencia, lerPotencia, definirPotencia }}
  * status: 'desconectado' | 'conectado' | 'reconectando'
+ * potencia: null (leitor desligado ou ainda não lida) ou
+ *           { valor (dBm), min, max, modelo: 'bat' | 'chainway' }
  */
 export default function useRfidReader(onRead) {
   const supported = useMemo(() => 'serial' in navigator || 'hid' in navigator, []);
@@ -182,6 +237,45 @@ export default function useRfidReader(onRead) {
   const hidPrimeiroRef = useRef(false); // navegador: próximo clique abre o seletor de HID antes do de porta
   const onReadRef = useRef(onRead);
   onReadRef.current = onRead;
+  // potência: o que a sessão em curso sabe fazer ({ modelo, min, max, ler, definir })
+  const [potencia, setPotencia] = useState(null);
+  const leitorRef = useRef(null);
+
+  // ao ligar: lê a potência do aparelho e, se este computador tem uma preferência
+  // diferente guardada, regrava (o aparelho pode ter voltado ao valor de fábrica)
+  const iniciarPotencia = useCallback(async () => {
+    const l = leitorRef.current;
+    if (!l) return;
+    try {
+      let valor = await l.ler();
+      const pref = lerPreferencia();
+      if (leitorRef.current !== l) return;
+      if (pref != null && valor != null && pref !== valor && pref >= l.min && pref <= l.max) valor = await l.definir(pref);
+      if (leitorRef.current === l && valor != null) setPotencia({ valor, min: l.min, max: l.max, modelo: l.modelo });
+    } catch {
+      /* leitor que não responde ao comando de potência: a tela só não mostra o regulador */
+    }
+  }, []);
+
+  const lerPotencia = useCallback(async () => {
+    const l = leitorRef.current;
+    if (!l) throw new Error('Ligue o leitor para ver a potência');
+    const valor = await l.ler();
+    if (valor == null) throw new Error('O leitor não informou a potência');
+    if (leitorRef.current === l) setPotencia({ valor, min: l.min, max: l.max, modelo: l.modelo });
+    return valor;
+  }, []);
+
+  const definirPotencia = useCallback(async (dbm) => {
+    const l = leitorRef.current;
+    if (!l) throw new Error('Ligue o leitor para ajustar a potência');
+    const n = Math.round(Number(dbm));
+    if (!Number.isFinite(n) || n < l.min || n > l.max) throw new Error(`Potência fora da faixa deste leitor (${l.min} a ${l.max} dBm)`);
+    const valor = await l.definir(n);
+    guardarPreferencia(n);
+    if (leitorRef.current === l && valor != null) setPotencia({ valor, min: l.min, max: l.max, modelo: l.modelo });
+    return valor;
+  }, []);
 
   const disconnect = useCallback(async () => {
     keepReadingRef.current = false;
@@ -262,6 +356,8 @@ export default function useRfidReader(onRead) {
       let ultimaResposta = Date.now();
       let ligadoEm = 0;
       let religando = false;
+      let emComando = false; // conversa de potência em curso: o inventário está parado de propósito
+      const esperas = []; // { cmd, resolve } — respostas de comando aguardadas
       let encerrar = null;
       const fim = new Promise((resolve) => {
         encerrar = resolve;
@@ -286,9 +382,14 @@ export default function useRfidReader(onRead) {
         const u8 = new Uint8Array(e.data.buffer, e.data.byteOffset, e.data.byteLength);
         for (const f of framesChainway(u8, estado)) {
           if (f.cmd === 0xec) ultimaResposta = Date.now();
+          const k = esperas.findIndex((e) => e.cmd === f.cmd);
+          if (k >= 0) {
+            esperas.splice(k, 1)[0].resolve(f.data);
+            continue;
+          }
           // 0x8D fora de hora = o inventário parou sozinho → liga de novo
           if (f.cmd === 0x8d) {
-            if (ligadoEm && Date.now() - ligadoEm > 600 && !religando) ligar().catch((err) => encerrar(err));
+            if (!emComando && ligadoEm && Date.now() - ligadoEm > 600 && !religando) ligar().catch((err) => encerrar(err));
             continue;
           }
           epcsDoFrameChainway(f).forEach(emitEpc);
@@ -300,10 +401,56 @@ export default function useRfidReader(onRead) {
       device.addEventListener('inputreport', onReport);
       navigator.hid.addEventListener('disconnect', onDisconnect);
 
+      // Potência: o leitor só aceita com o inventário parado. Uma conversa por vez:
+      // para (0x8C), manda os comandos, religa o inventário.
+      const pedir = (cmd, data, respCmd) =>
+        new Promise((resolve, reject) => {
+          const e = { cmd: respCmd, resolve };
+          esperas.push(e);
+          setTimeout(() => {
+            const k = esperas.indexOf(e);
+            if (k >= 0) {
+              esperas.splice(k, 1);
+              reject(new Error('o leitor não respondeu ao comando de potência'));
+            }
+          }, 1500);
+          enviar(frameChainway(cmd, data)).catch(reject);
+        });
+      let fila = Promise.resolve();
+      const conversar = (fn) => {
+        const vez = fila.then(async () => {
+          emComando = true;
+          try {
+            await enviar(PARAR);
+            await dormir(250);
+            return await fn();
+          } finally {
+            emComando = false;
+            await ligar().catch(() => {});
+          }
+        });
+        fila = vez.catch(() => {});
+        return vez;
+      };
+      const lerHid = async () => potenciaDoChainway(await pedir(0x12, [], 0x13));
+      leitorRef.current = {
+        modelo: 'chainway',
+        ...POTENCIA_LEITOR.chainway,
+        ler: () => conversar(lerHid),
+        definir: (dbm) =>
+          conversar(async () => {
+            const v = Math.round(dbm * 100);
+            const resp = await pedir(0x10, [0x02, 0x01, (v >> 8) & 0xff, v & 0xff, (v >> 8) & 0xff, v & 0xff], 0x11);
+            if (resp[0] !== 0x01) throw new Error(`o leitor recusou a potência (código ${resp[0]})`);
+            return lerHid();
+          }),
+      };
+
       try {
         await ligar();
+        iniciarPotencia();
         pollTimerRef.current = setInterval(() => {
-          if (religando) return;
+          if (religando || emComando) return;
           if (Date.now() - ultimaResposta > HID_SILENCIO_MS) {
             ligar().catch((err) => encerrar(err));
             return;
@@ -320,6 +467,8 @@ export default function useRfidReader(onRead) {
         device.removeEventListener('inputreport', onReport);
         navigator.hid.removeEventListener('disconnect', onDisconnect);
         hidEncerrarRef.current = null;
+        leitorRef.current = null;
+        setPotencia(null);
         try {
           await enviar(PARAR);
           await dormir(120);
@@ -334,7 +483,7 @@ export default function useRfidReader(onRead) {
         hidRef.current = null;
       }
     },
-    [emitEpc],
+    [emitEpc, iniciarPotencia],
   );
 
   // Procura o leitor Chainway: primeiro entre os já autorizados; se `pedir`,
@@ -367,11 +516,65 @@ export default function useRfidReader(onRead) {
       try {
         const writer = port.writable.getWriter();
         writerRef.current = writer;
+        let pausado = false; // comando de potência em curso: suspende a consulta de etiquetas
+        const esperas = []; // { reCmd, resolve }
         pollTimerRef.current = setInterval(() => {
+          if (pausado) return;
           writer.write(INVENTORY_CMD).catch(() => {
             /* porta caiu — o loop de leitura encerra a sessão */
           });
         }, POLL_INTERVAL_MS);
+
+        // Comando de configuração: o leitor ignora o que chega durante um inventário,
+        // então espera o que estava no ar terminar e tenta de novo se não vier resposta.
+        let fila = Promise.resolve();
+        const comando = (cmd, data = []) => {
+          const vez = fila.then(async () => {
+            pausado = true;
+            try {
+              await dormir(POLL_INTERVAL_MS + 150);
+              const frame = frameBat(cmd, data);
+              for (let t = 0; t < 4; t += 1) {
+                const resp = await new Promise((resolve) => {
+                  const e = { reCmd: cmd, resolve };
+                  esperas.push(e);
+                  setTimeout(() => {
+                    const k = esperas.indexOf(e);
+                    if (k >= 0) {
+                      esperas.splice(k, 1);
+                      resolve(null);
+                    }
+                  }, 900);
+                  writer.write(frame).catch(() => resolve(null));
+                });
+                if (resp) return resp;
+              }
+              throw new Error('o leitor não respondeu ao comando de potência');
+            } finally {
+              pausado = false;
+            }
+          });
+          fila = vez.catch(() => {});
+          return vez;
+        };
+        const lerBat = async () => {
+          const r = await comando(0x21);
+          if (r.status !== 0x00) throw new Error(`o leitor não informou a potência (código ${r.status.toString(16)})`);
+          return potenciaDoInfoBat(r.data);
+        };
+        leitorRef.current = {
+          modelo: 'bat',
+          ...POTENCIA_LEITOR.bat,
+          ler: lerBat,
+          definir: async (dbm) => {
+            const r = await comando(0x2f, [dbm & 0xff]);
+            if (r.status === 0x14) throw new Error('o leitor não deixa ajustar a potência agora — desligue e ligue o leitor e tente de novo');
+            if (r.status === 0xff) throw new Error(`este leitor não aceita ${dbm} dBm — tente um valor menor`);
+            if (r.status !== 0x00) throw new Error(`o leitor recusou a potência (código ${r.status.toString(16)})`);
+            return lerBat();
+          },
+        };
+        iniciarPotencia();
 
         let pendente = new Uint8Array(0);
         while (keepReadingRef.current && port.readable) {
@@ -384,9 +587,13 @@ export default function useRfidReader(onRead) {
               const junto = new Uint8Array(pendente.length + value.length);
               junto.set(pendente);
               junto.set(value, pendente.length);
-              const { epcs, rest } = parseFrames(junto);
+              const { epcs, outros, rest } = parseFrames(junto);
               pendente = rest;
               epcs.forEach(emitEpc);
+              for (const f of outros) {
+                const k = esperas.findIndex((e) => e.reCmd === f.reCmd);
+                if (k >= 0) esperas.splice(k, 1)[0].resolve(f);
+              }
             }
             break; // stream fechado sem erro (cancel do disconnect)
           } finally {
@@ -405,6 +612,8 @@ export default function useRfidReader(onRead) {
         }
         writerRef.current = null;
         readerRef.current = null;
+        leitorRef.current = null;
+        setPotencia(null);
         try {
           await port.close();
         } catch {
@@ -413,7 +622,7 @@ export default function useRfidReader(onRead) {
         portRef.current = null;
       }
     },
-    [emitEpc],
+    [emitEpc, iniciarPotencia],
   );
 
   const connect = useCallback(async () => {
@@ -493,5 +702,5 @@ export default function useRfidReader(onRead) {
   // Desconecta ao desmontar a página
   useEffect(() => () => disconnect(), [disconnect]);
 
-  return { status, error, supported, connect, disconnect };
+  return { status, error, supported, connect, disconnect, potencia, lerPotencia, definirPotencia };
 }

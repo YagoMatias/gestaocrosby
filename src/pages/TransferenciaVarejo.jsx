@@ -41,6 +41,7 @@ import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
 import { apiJson } from '../utils/apiAuth';
 import useRfidReader from '../hooks/useRfidReader';
+import LeitorRfidPotencia from '../components/LeitorRfidPotencia';
 import { imprimirDanfe } from '../utils/danfeAcoes';
 
 const API = '/api/transferencias';
@@ -204,7 +205,7 @@ export default function TransferenciaVarejo() {
     },
     [consultar, somar],
   );
-  const { status: rfid, error: rfidErro, supported, connect, disconnect } = useRfidReader(onEpc);
+  const { status: rfid, error: rfidErro, supported, connect, disconnect, potencia, lerPotencia, definirPotencia } = useRfidReader(onEpc);
 
   const incluirManual = async (e) => {
     e?.preventDefault();
@@ -552,6 +553,8 @@ export default function TransferenciaVarejo() {
                 {rfid === 'conectado' ? 'Lendo: passe as peças no leitor' : rfid === 'reconectando' ? 'reconectando' : 'desligado'}
               </p>
               {rfidErro && <p className="mt-1 text-[11px] text-rose-600">{rfidErro}</p>}
+              {/* potência do leitor: abaixo do botão, como no portal (Yago, 19/11/2026) */}
+              {supported && <LeitorRfidPotencia status={rfid} potencia={potencia} lerPotencia={lerPotencia} definirPotencia={definirPotencia} className="mt-2" />}
 
               <form onSubmit={incluirManual} className="mt-3 border-t border-gray-100 pt-3">
                 <label className={labelCls}>Peça sem etiqueta (código)</label>
