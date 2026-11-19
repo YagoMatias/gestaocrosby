@@ -196,7 +196,7 @@ function montarMes(summaryRaw, detailsRaw, totalRaw, cntRaw) {
   const { details, cnt } = montarDetails(detailsRaw);
   const summary = Array.isArray(summaryRaw)
     ? summaryRaw.map((s) => ({ cat: s.cat, total: r2(s.total) }))
-    : Object.entries(details).map(([cat, rows]) => ({ cat, total: r2(rows.reduce((a, r) => a + (Number(r.val) || 0), 0)) }));
+    : Object.entries(details).map(([cat, rows]) => ({ cat, total: r2(rows.reduce((a, r) => a + (r.so2027 ? 0 : Number(r.val) || 0), 0)) }));
   if (!Array.isArray(summaryRaw)) summary.sort((a, b) => b.total - a.total);
   const total = Number.isFinite(Number(totalRaw)) && totalRaw !== null && totalRaw !== undefined
     ? r2(totalRaw)

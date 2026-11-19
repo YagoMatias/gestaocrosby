@@ -505,7 +505,8 @@ export default function DreAnalitica() {
       new Set(allRows.map((x) => x.d.forn).filter(Boolean)),
     ).sort((a, b) => a.localeCompare(b, 'pt-BR'));
     const available = forns.filter((f) => !selForns.includes(f));
-    const sub = dets.reduce((s, x) => s + (parseFloat(x.d.val) || 0), 0);
+    const sub = dets.reduce((s, x) => s + (x.d.so2027 ? 0 : parseFloat(x.d.val) || 0), 0);
+    const n2027 = allRows.filter(({ d }) => d.so2027).length;
 
     return (
       <tr key={cat + '::detail'}>
@@ -700,7 +701,7 @@ export default function DreAnalitica() {
                     <tr
                       key={i}
                       className={`border-b border-gray-50 hover:bg-blue-50/40 ${
-                        cortado ? 'bg-red-50/40 text-gray-400' : sel ? 'bg-sky-50/60' : ''
+                        cortado ? 'bg-red-50/40 text-gray-400' : sel ? 'bg-sky-50/60' : d.so2027 ? 'bg-indigo-50/50' : ''
                       }`}
                     >
                       <td className="px-1 py-1 whitespace-nowrap">
@@ -763,6 +764,14 @@ export default function DreAnalitica() {
                         {d.liq || <span className="text-gray-300">—</span>}
                       </td>
                       <td className={`px-2 py-1 text-right font-medium${cortado ? ' line-through text-red-500' : ''}`}>
+                        {d.so2027 && (
+                          <span
+                            className="mr-1 inline-block rounded bg-indigo-100 px-1 text-[9px] font-semibold text-indigo-700 align-middle"
+                            title="Só entra no Forecast 2027 — fora da despesa do mês"
+                          >
+                            só 2027
+                          </span>
+                        )}
                         <EditableText
                           value={fmtBRL(d.val)}
                           onCommit={(v) =>
@@ -880,9 +889,15 @@ export default function DreAnalitica() {
                     {fmtBRL(sub)}
                   </td>
                   <td colSpan={4} className="px-2 py-1.5 text-left">
-                    {nCortes > 0 && (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700" title="Subtotal sem os lançamentos cortados">
-                        <Knife size={11} weight="fill" className="text-red-500" /> {nCortes} corte{nCortes > 1 ? 's' : ''} · Forecast 2027: {fmtBRL(f27)}
+                    {(nCortes > 0 || n2027 > 0) && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700" title="Subtotal sem os cortes e com os lançamentos só do Forecast 2027">
+                        {nCortes > 0 && (
+                          <>
+                            <Knife size={11} weight="fill" className="text-red-500" /> {nCortes} corte{nCortes > 1 ? 's' : ''} ·{' '}
+                          </>
+                        )}
+                        {n2027 > 0 && `${n2027} só 2027 · `}
+                        Forecast 2027: {fmtBRL(f27)}
                       </span>
                     )}
                   </td>
@@ -895,6 +910,13 @@ export default function DreAnalitica() {
                         className="inline-flex items-center gap-1 text-[11px] text-[#000638] font-semibold hover:underline"
                       >
                         <Plus size={11} weight="bold" /> Adicionar lançamento
+                      </button>
+                      <button
+                        onClick={() => addRow(activeMonth, cat, { so2027: true })}
+                        title="O lançamento entra só no Forecast 2027 e não soma na despesa do mês"
+                        className="ml-4 inline-flex items-center gap-1 text-[11px] text-indigo-700 font-semibold hover:underline"
+                      >
+                        <Plus size={11} weight="bold" /> Adicionar só no Forecast 2027
                       </button>
                     </td>
                   </tr>

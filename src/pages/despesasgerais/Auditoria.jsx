@@ -196,7 +196,7 @@ export default function Auditoria() {
     );
     return MONTH_KEYS.map((m) => {
       const rows = (months[m] && months[m].details[CATEGORIA]) || [];
-      const dre = r2(rows.reduce((a, l) => a + (Number(l.val) || 0), 0));
+      const dre = r2(rows.reduce((a, l) => a + (l.so2027 ? 0 : Number(l.val) || 0), 0));
       const dry = porComp[compDe(m)] || 0;
       return { m, dre, dry, dif: r2(dre - dry), temDre: rows.length > 0 };
     });

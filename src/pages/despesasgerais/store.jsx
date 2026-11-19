@@ -162,7 +162,7 @@ export function parseHtmlMeses(html) {
     }
     const summary = Array.isArray(summaryRaw)
       ? summaryRaw.map((s) => ({ cat: s.cat, total: Math.round((Number(s.total) || 0) * 100) / 100 }))
-      : Object.entries(details).map(([cat, rows]) => ({ cat, total: Math.round(rows.reduce((a, r) => a + (Number(r.val) || 0), 0) * 100) / 100 }));
+      : Object.entries(details).map(([cat, rows]) => ({ cat, total: Math.round(rows.reduce((a, r) => a + (r.so2027 ? 0 : Number(r.val) || 0), 0) * 100) / 100 }));
     summary.sort((a, b) => b.total - a.total);
     const total = Math.round(summary.reduce((a, x) => a + x.total, 0) * 100) / 100;
     out[mk] = { summary, details, total, cnt };
@@ -768,6 +768,14 @@ export function DespesasGeraisProvider({ children }) {
               if (rows.every((r) => !r.id || String(r.id).startsWith('bonif|'))) details[cat] = rows;
             });
           }
+          // lançamentos "só Forecast 2027" (Niziany 19/11) nascem na tela e não
+          // existem no TOTVS: voltam para a despesa depois da sincronização
+          Object.entries((st.months[m] && st.months[m].details) || {}).forEach(([cat, rows]) => {
+            if ((catAlvo && cat !== catAlvo) || travadasMes[cat]) return;
+            const so2027 = rows.filter((r) => r.so2027);
+            if (!so2027.length || details[cat] === rows) return;
+            details[cat] = [...(details[cat] || []), ...so2027];
+          });
           // ordena lançamentos por valor desc dentro de cada categoria
           // (só a recarregada, no modo por despesa — as outras mantêm a ordem)
           (catAlvo ? [details[catAlvo]].filter(Boolean) : Object.values(details)).forEach((rows) => {
@@ -779,7 +787,7 @@ export function DespesasGeraisProvider({ children }) {
               cat,
               total:
                 Math.round(
-                  rows.reduce((s, r) => s + (parseFloat(r.val) || 0), 0) * 100,
+                  rows.reduce((s, r) => s + (r.so2027 ? 0 : parseFloat(r.val) || 0), 0) * 100,
                 ) / 100,
             }))
             .sort((a, b) => b.total - a.total);
@@ -932,7 +940,8 @@ export function DespesasGeraisProvider({ children }) {
     let total = 0;
     let cnt = 0;
     Object.entries(mo.details).forEach(([cat, rows]) => {
-      const t = rows.reduce((s, r) => s + (parseFloat(r.val) || 0), 0);
+      // "só Forecast 2027" fica fora da despesa do mês
+      const t = rows.reduce((s, r) => s + (r.so2027 ? 0 : parseFloat(r.val) || 0), 0);
       cats[cat] = t;
       total += t;
       cnt += rows.length;
@@ -1039,8 +1048,9 @@ export function DespesasGeraisProvider({ children }) {
     [mutateMonth],
   );
 
+  // so2027: lançamento que só entra no Forecast 2027, fora da despesa do mês
   const addRow = useCallback(
-    (m, cat) => {
+    (m, cat, { so2027 = false } = {}) => {
       const hoje = new Date().toLocaleDateString('pt-BR');
       mutateMonth(m, (mo, st) => {
         if (despesaTravadaEm(st, m, cat)) return;
@@ -1054,6 +1064,7 @@ export function DespesasGeraisProvider({ children }) {
           val: 0,
           estag: STATUS_LIST[2],
           obs: '',
+          ...(so2027 ? { so2027: true } : {}),
         });
       });
     },

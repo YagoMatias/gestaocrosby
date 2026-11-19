@@ -765,7 +765,7 @@ export default function Forecast({ modoCorte = false }) {
         if (n === 'SERVICOS PRESTADOS POR TERCEIROS') continue; // já está no PJ
         if (/BONIFIC.*MARKETING/.test(n)) continue; // bonificação marketing fora
         if (/FRETE/.test(n)) continue; // frete fora (Niziany 29/10)
-        const lanc = (rows || []).map((r) => ({
+        const lanc = (rows || []).filter((r) => !r.so2027).map((r) => ({
           forn: r.forn || '—',
           venc: r.venc || '',
           val: Number(r.val) || 0,
