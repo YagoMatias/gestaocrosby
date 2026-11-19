@@ -34,10 +34,13 @@ import {
   ArrowSquareOut,
   Receipt,
   Ticket,
+  UserSwitch,
+  Warning,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
 import { apiJson } from '../utils/apiAuth';
+import { useAuth } from '../components/AuthContext';
 import { imprimirDanfe, salvarDanfePdf, avisoDoPdf } from '../utils/danfeAcoes';
 import { imprimirCupomFiscalDaNota, imprimirCupomTrocaDaNota } from '../utils/cupomTroca';
 
@@ -147,10 +150,167 @@ function Secao({ titulo, icone: Icone, children, extra }) {
   );
 }
 
-function DetalheTransacao({ id, onFechar }) {
+// ─── Trocar o vendedor da transação (só owner — Yago, 19/11/2026) ────────────
+// A troca vale para o ranking do PDV, o New Forecast e o contas a receber
+// (PUT /api/hc/transacoes/:id/vendedor). A nota já emitida não muda.
+function TrocarVendedorModal({ d, onFechar, onFeito }) {
+  const [vendedores, setVendedores] = useState(null); // null = carregando
+  const [erroLista, setErroLista] = useState('');
+  const [busca, setBusca] = useState('');
+  const [escolhido, setEscolhido] = useState(null); // { code, name }
+  const [outroCode, setOutroCode] = useState('');
+  const [outroNome, setOutroNome] = useState('');
+  const [motivo, setMotivo] = useState('');
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState('');
+
+  useEffect(() => {
+    let vivo = true;
+    fetch(`${API_BASE_URL}/api/totvs/pdv/sellers?branch=${d.empresa}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (!vivo) return;
+        const items = j?.data?.items || [];
+        setVendedores(items);
+        if (!items.length) setErroLista('Não veio nenhum vendedor desta empresa. Informe o código e o nome abaixo.');
+      })
+      .catch(() => {
+        if (!vivo) return;
+        setVendedores([]);
+        setErroLista('Não consegui ler os vendedores da empresa. Informe o código e o nome abaixo.');
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [d.empresa]);
+
+  const atual = Number(d.vendedor?.code) || null;
+  const filtrados = useMemo(() => {
+    const t = busca.trim().toLowerCase();
+    return (vendedores || []).filter((v) => Number(v.code) !== atual && (!t || `${v.code} ${v.name}`.toLowerCase().includes(t)));
+  }, [vendedores, busca, atual]);
+  // vendedor informado à mão (fora da lista) tem prioridade quando preenchido
+  const manual = Number(outroCode) > 0 && outroNome.trim() ? { code: Number(outroCode), name: outroNome.trim().toUpperCase() } : null;
+  const novo = manual || escolhido;
+  const pode = !!novo && Number(novo.code) !== atual && !salvando;
+
+  const salvar = async () => {
+    if (!pode) return;
+    setSalvando(true);
+    setErro('');
+    try {
+      const j = await apiJson(`/api/hc/transacoes/${encodeURIComponent(d.id)}/vendedor`, { method: 'PUT', body: { vendedorCode: novo.code, vendedorNome: novo.name, motivo: motivo.trim() || undefined } });
+      onFeito(j.data);
+    } catch (e) {
+      setErro(e.message);
+      setSalvando(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-[#000638]/60 p-2 sm:p-6" onMouseDown={(e) => e.target === e.currentTarget && !salvando && onFechar()}>
+      <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center gap-2 border-b border-gray-200 px-4 py-3">
+          <UserSwitch size={18} className="text-[#000638]" />
+          <h4 className="min-w-0 flex-1 text-sm font-bold text-[#000638]">Alterar o vendedor da transação nº {d.numero}</h4>
+          <button onClick={onFechar} disabled={salvando} title="Fechar" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-gray-500 ring-1 ring-gray-200 hover:bg-gray-100 disabled:opacity-50">
+            <X size={15} weight="bold" />
+          </button>
+        </div>
+        <div className="space-y-3 p-4">
+          <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-gray-700 ring-1 ring-gray-200">
+            Vendedor atual:{' '}
+            <b className="text-[#000638]">
+              {d.vendedor?.code ? `${d.vendedor.code} — ` : ''}
+              {d.vendedor?.nome || 'sem vendedor'}
+            </b>
+            <span className="block text-[11px] text-gray-500">
+              {d.empresa} — {d.empresaNome} · {fmtBRL(d.valor)} · {fmtDataHora(d.data)}
+            </span>
+          </p>
+
+          <div>
+            <label className={labelCls}>Novo vendedor</label>
+            <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome ou código…" className={inputCls} autoFocus />
+            <div className="mt-1.5 max-h-52 overflow-y-auto rounded-lg ring-1 ring-gray-200">
+              {vendedores === null ? (
+                <p className="py-5 text-center text-xs text-gray-400">
+                  <Spinner size={16} className="mx-auto mb-1 animate-spin" />
+                  Carregando os vendedores…
+                </p>
+              ) : filtrados.length ? (
+                filtrados.map((v) => {
+                  const on = !manual && escolhido && Number(escolhido.code) === Number(v.code);
+                  return (
+                    <button
+                      key={v.code}
+                      type="button"
+                      onClick={() => {
+                        setEscolhido(v);
+                        setOutroCode('');
+                        setOutroNome('');
+                      }}
+                      className={`flex w-full items-center gap-2 border-b border-gray-100 px-3 py-1.5 text-left text-xs last:border-b-0 ${on ? 'bg-[#000638] font-bold text-white' : 'hover:bg-blue-50'}`}
+                    >
+                      <span className={`w-12 shrink-0 font-mono ${on ? 'text-white/80' : 'text-gray-500'}`}>{v.code}</span>
+                      <span className="min-w-0 flex-1 truncate">{v.name}</span>
+                    </button>
+                  );
+                })
+              ) : (
+                <p className="px-3 py-4 text-center text-xs text-gray-500">{erroLista || 'Nenhum vendedor com essa busca.'}</p>
+              )}
+            </div>
+          </div>
+
+          <details className="rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-gray-200" open={!!erroLista || undefined}>
+            <summary className="cursor-pointer text-[11px] font-semibold text-gray-600">Vendedor que não está na lista</summary>
+            <div className="mt-2 grid grid-cols-[90px_1fr] gap-2">
+              <div>
+                <label className={labelCls}>Código</label>
+                <input value={outroCode} onChange={(e) => setOutroCode(e.target.value.replace(/\D/g, ''))} inputMode="numeric" className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>Nome</label>
+                <input value={outroNome} onChange={(e) => setOutroNome(e.target.value)} className={inputCls} />
+              </div>
+            </div>
+          </details>
+
+          <div>
+            <label className={labelCls}>Motivo (opcional)</label>
+            <input value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ex.: venda lançada no vendedor errado" maxLength={200} className={inputCls} />
+          </div>
+
+          <p className="flex items-start gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-[11px] leading-snug text-amber-900 ring-1 ring-amber-200">
+            <Warning size={14} className="mt-0.5 shrink-0" />
+            <span>A venda passa a contar para o novo vendedor no ranking do PDV, no New Forecast e no contas a receber. A nota fiscal já emitida não é alterada.</span>
+          </p>
+          {erro && <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-700 ring-1 ring-rose-200">{erro}</p>}
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-gray-200 bg-slate-50 px-4 py-3">
+          <button onClick={onFechar} disabled={salvando} className="h-9 rounded-lg px-3 text-xs font-bold text-gray-600 ring-1 ring-gray-300 hover:bg-white disabled:opacity-50">
+            Cancelar
+          </button>
+          <button onClick={salvar} disabled={!pode} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#000638] px-4 text-xs font-bold text-white hover:bg-[#000638]/90 disabled:cursor-not-allowed disabled:opacity-40">
+            {salvando ? <Spinner size={14} className="animate-spin" /> : <UserSwitch size={14} weight="bold" />}
+            {novo ? `Passar para ${novo.name}` : 'Escolha o vendedor'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetalheTransacao({ id, onFechar, onAlterada }) {
   const [d, setD] = useState(null);
   const [erro, setErro] = useState('');
   const [aviso, setAviso] = useState('');
+  // só o owner troca o vendedor da transação (o servidor confere de novo)
+  const { user } = useAuth();
+  const ehOwner = user?.role === 'owner';
+  const [trocandoVendedor, setTrocandoVendedor] = useState(false);
+  const [versao, setVersao] = useState(0);
   useEffect(() => {
     let vivo = true;
     setD(null);
@@ -161,12 +321,18 @@ function DetalheTransacao({ id, onFechar }) {
     return () => {
       vivo = false;
     };
-  }, [id]);
+  }, [id, versao]);
+  const vendedorTrocado = (r) => {
+    setTrocandoVendedor(false);
+    setAviso([`Vendedor alterado para ${r.para.code} — ${r.para.nome}.`, ...(r.avisos || [])].join(' '));
+    setVersao((n) => n + 1);
+    onAlterada?.();
+  };
   useEffect(() => {
-    const esc = (e) => e.key === 'Escape' && onFechar();
+    const esc = (e) => e.key === 'Escape' && !trocandoVendedor && onFechar();
     window.addEventListener('keydown', esc);
     return () => window.removeEventListener('keydown', esc);
-  }, [onFechar]);
+  }, [onFechar, trocandoVendedor]);
 
   const S = d ? SIT[d.situacao] : null;
   const totalPecas = (d?.itens || []).reduce((t, i) => t + Number(i.quantidade || 0), 0);
@@ -230,6 +396,22 @@ function DetalheTransacao({ id, onFechar }) {
                   <Campo rotulo="Vendedor">
                     {d.vendedor?.code ? `${d.vendedor.code} — ` : ''}
                     {d.vendedor?.nome || '—'}
+                    {ehOwner && (
+                      <button
+                        type="button"
+                        onClick={() => setTrocandoVendedor(true)}
+                        title="Trocar o vendedor desta transação (só o owner)"
+                        className="ml-2 inline-flex h-6 items-center gap-1 rounded-md bg-white px-2 align-middle text-[10.5px] font-bold text-[#000638] ring-1 ring-[#000638]/30 hover:bg-blue-50"
+                      >
+                        <UserSwitch size={12} weight="bold" /> Alterar
+                      </button>
+                    )}
+                    {(d.vendedorAlteracoes || []).map((h) => (
+                      <span key={h.id} className="mt-1 block text-[10.5px] font-normal leading-snug text-gray-500">
+                        {fmtDataHora(h.em)} · {h.por || '—'} trocou de {h.de?.nome || h.de?.code || 'sem vendedor'} para {h.para?.nome || h.para?.code}
+                        {h.motivo ? ` — ${h.motivo}` : ''}
+                      </span>
+                    ))}
                   </Campo>
                   <Campo rotulo="Feita por">{d.criadoPor || '—'}</Campo>
                   {d.observacao && <Campo rotulo="Observação">{d.observacao}</Campo>}
@@ -529,6 +711,7 @@ function DetalheTransacao({ id, onFechar }) {
           </div>
         )}
       </div>
+      {trocandoVendedor && d && <TrocarVendedorModal d={d} onFechar={() => setTrocandoVendedor(false)} onFeito={vendedorTrocado} />}
     </div>
   );
 }
@@ -923,7 +1106,7 @@ export default function HcTransacoes() {
         </p>
       </div>
 
-      {aberta && <DetalheTransacao id={aberta} onFechar={() => setAberta(null)} />}
+      {aberta && <DetalheTransacao id={aberta} onFechar={() => setAberta(null)} onAlterada={() => carregar(consulta, pagina)} />}
     </div>
   );
 }
