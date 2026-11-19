@@ -306,13 +306,33 @@ const numeroDe = (v) => {
   const n = Number(String(v ?? '').replace(',', '.'));
   return Number.isFinite(n) ? n : 0;
 };
+// CRÉDITO DA LOJA VIRTUAL (19/11/2026 — VJ1591). Pedido pago com o crédito que o
+// cliente tinha na loja virtual (forma CREDITO_LV): o Dryland informa o valor usado
+// em `pagamento_info.credito_lv` da separação, mas o card chega com valor_pedido =
+// só o que entrou em dinheiro (zero, no VJ1591) e a diferença lançada como "desconto
+// do Pix". Sem tratar, a tela dava 100% de desconto nas peças e o servidor recusava
+// ("desconto inválido"). O crédito é PAGAMENTO: o pedido vale pago + crédito, sem
+// desconto, e a forma é ADIANTAMENTO (é onde esse crédito está no HeadCoach).
+const creditoLvDe = (dados) => {
+  if (dados?.card?.dados?.brejinho) return 0;
+  const v = numeroDe(dados?.separacao?.pagamento_info?.credito_lv);
+  return v > 0 ? Math.round(v * 100) / 100 : 0;
+};
+// dados do card já com o crédito da loja virtual no lugar certo
+function cardDoPedido(dados) {
+  const dd = dados?.card?.dados;
+  const lv = creditoLvDe(dados);
+  if (!dd || !(lv > 0)) return dd;
+  return { ...dd, credito_lv: lv, desconto_pix: Math.max(0, Math.round((numeroDe(dd.desconto_pix) - lv) * 100) / 100) };
+}
 function descontoDoPedido(dd, somaCard, pctSuframa = 0) {
   const declarado = round2((Number(dd?.desconto) || 0) + (Number(dd?.desconto_pix) || 0));
   const pago = Number(dd?.valor_pedido) || 0;
   // CREDEV informado no card é forma de pagamento como as outras: o pedido vale
   // pago + CREDEV (Yago, 11/11/2026 — PE781: 34,59 em Pix + 869,49 em CREDEV = 904,08).
-  // Pedido só em CREDEV vem com valor_pedido 0 e o CREDEV cheio.
-  const credev = numeroDe(dd?.credev);
+  // Pedido só em CREDEV vem com valor_pedido 0 e o CREDEV cheio. O crédito da loja
+  // virtual (credito_lv, ver cardDoPedido) entra do mesmo jeito.
+  const credev = numeroDe(dd?.credev) + numeroDe(dd?.credito_lv);
   if (dd?.brejinho || !(pago + credev > 0) || !(somaCard > 0)) return { total: declarado, declarado, ajuste: 0, base: somaCard, pago, alvo: null };
   const frete = Number(dd.valor_frete) || 0;
   // quanto as peças valem no pedido do Dryland. SUFRAMA: o pedido já vem com o ICMS
@@ -356,7 +376,7 @@ function itensDoPedido(dados, pctSuframa = 0) {
   // desconto do pedido rateado nas peças: o que leva as peças ao valor fechado no Dryland.
   // A proporção sai das peças do CARD (é a elas que valor_pedido se refere); se a
   // separação trouxe peças diferentes, cada uma leva a mesma proporção.
-  const dd = dados?.card?.dados || {};
+  const dd = cardDoPedido(dados) || {};
   const soma = unidades.reduce((s, u) => s + u.preco, 0);
   const somaCard = doCard.reduce((s, u) => s + u.preco, 0) || soma;
   const dp = descontoDoPedido(dd, round2(somaCard), pctSuframa);
@@ -402,7 +422,7 @@ function itensDoPedido(dados, pctSuframa = 0) {
 
 // Resumo dos descontos do pedido (para a tela)
 function resumoDescontos(dados, itens, pctSuframa = 0) {
-  const dd = dados?.card?.dados || {};
+  const dd = cardDoPedido(dados) || {};
   const unidades = itens.flatMap((i) => i.unidades);
   const total = unidades.length;
   const out = [];
@@ -2183,21 +2203,25 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
         // (Pix, cartão…) = valor_pedido do card, e o CREDEV = o valor que o card informa.
         // O total da transação é a soma dos dois. Pedido só em CREDEV fica com uma forma só.
         const pagoFora = round2(Number(d.card?.dados?.valor_pedido) || 0);
-        const formas =
-          credevCard > 0
-            ? [...(pagoFora > 0 ? formasPedido.filter((f) => f !== 'credito_loja') : []), 'credito_loja']
-            : formasPedido;
-        const iFora = formas.findIndex((f) => f !== 'credito_loja');
+        // Crédito da loja virtual informado pelo Dryland: mesma lógica, com a forma
+        // ADIANTAMENTO (ver creditoLvDe). `saldoCard` = o valor em saldo do cliente.
+        const lvCard = credevCard > 0 ? 0 : creditoLvDe(d);
+        const saldoCard = credevCard > 0 ? credevCard : lvCard;
+        const formaSaldo = credevCard > 0 ? 'credito_loja' : 'adiantamento';
+        const outras = formasPedido.filter((f) => f !== 'credito_loja' && f !== 'adiantamento');
+        const formas = saldoCard > 0 ? [...(pagoFora > 0 ? (outras.length ? outras : ['pix']) : []), formaSaldo] : formasPedido;
+        const iFora = formas.findIndex((f) => f !== formaSaldo);
         setPagamentos(
           formas.map((f, i) => ({
             forma: f,
-            valor: credevCard > 0 ? (f === 'credito_loja' ? credevCard : i === iFora ? pagoFora : 0) : 0,
+            valor: saldoCard > 0 ? (f === formaSaldo ? saldoCard : i === iFora ? pagoFora : 0) : 0,
             parcelas: f === 'boleto' || f === 'credito' ? p.pagamento.parcelas || 1 : 1,
             nsu: f === 'credito' || f === 'debito' ? p.pagamento.nsu || '' : '',
             autorizacao: f === 'credito' || f === 'debito' ? p.pagamento.autorizacao || '' : '',
             bandeira: f === 'credito' || f === 'debito' ? String(p.pagamento.bandeira || '').toLowerCase() : '',
-            // com CREDEV os valores são os do pedido (fixos); sem CREDEV a primeira forma acompanha o total
-            auto: credevCard > 0 ? false : i === 0,
+            // com CREDEV ou crédito da loja virtual os valores são os do pedido (fixos);
+            // sem eles a primeira forma acompanha o total
+            auto: saldoCard > 0 ? false : i === 0,
           })),
         );
         setVencimentos(p.pagamento.vencimentos || []);
@@ -4243,7 +4267,8 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                   {(() => {
                     // valor do pedido no Dryland = o que foi pago fora + o CREDEV que o card informa
                     const pagoFora = Number(card?.dados?.valor_pedido) || 0;
-                    const credevPedido = card?.dados?.brejinho ? 0 : numeroDe(card?.dados?.credev);
+                    const lvPedido = creditoLvDe(pedido);
+                    const credevPedido = card?.dados?.brejinho ? 0 : round2(numeroDe(card?.dados?.credev) + lvPedido);
                     const valorPedido = round2(pagoFora + credevPedido);
                     if (!(valorPedido > 0)) return null;
                     const naoBate = conf.ok && Math.abs(valorPedido - totalNota) > 0.01;
@@ -4259,7 +4284,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                         {credevPedido > 0 && (
                           <p className="text-right text-[10.5px] font-normal text-gray-500">
                             {pagoFora > 0 ? `${fmtBRL(pagoFora)} pago + ` : ''}
-                            {fmtBRL(credevPedido)} em Credev
+                            {fmtBRL(credevPedido)} {lvPedido > 0 ? 'em crédito da loja virtual' : 'em Credev'}
                           </p>
                         )}
                       </div>
