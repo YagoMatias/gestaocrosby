@@ -1234,6 +1234,8 @@ const headcoach = [
     icon: Package,
     color: 'text-indigo-600',
     children: [
+      // a loja manda mercadoria para outra loja ativa (leitor RFID, nota pela loja de origem)
+      { name: 'Transferência entre Lojas', href: '/varejo/transferencia-lojas', icon: ArrowsLeftRight, color: 'text-sky-600' },
       { name: 'Recebimento de Transferência', href: '/varejo/recebimento-mercadoria', icon: Truck, color: 'text-emerald-600' },
       { name: 'Balanço RFID', href: '/balanco-rfid/arquivos', icon: Broadcast, color: 'text-indigo-600' },
       { name: 'Estoque', href: '/headcoach/estoque', icon: Package, color: 'text-indigo-600' },

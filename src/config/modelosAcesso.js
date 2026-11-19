@@ -44,7 +44,8 @@ export const MODELOS_ACESSO = [
     paginas: [
       ...BASE,
       ...CAIXA,
-      // HeadCoach › Estoque (Recebimento de Transferência, Balanço RFID, Estoque)
+      // HeadCoach › Estoque (Transferência entre Lojas, Recebimento de Transferência, Balanço RFID, Estoque)
+      '/varejo/transferencia-lojas',
       '/varejo/recebimento-mercadoria',
       '/balanco-rfid/arquivos',
       '/headcoach/estoque',

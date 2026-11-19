@@ -157,6 +157,7 @@ const BalancoRfidApp = lazy(() => import('./pages/BalancoRfidApp'));
 const BalancoRfidArquivos = lazy(() => import('./pages/BalancoRfidArquivos'));
 const VendasPDV = lazy(() => import('./pages/VendasPDV'));
 const RecebimentoMercadoria = lazy(() => import('./pages/RecebimentoMercadoria'));
+const TransferenciaVarejo = lazy(() => import('./pages/TransferenciaVarejo'));
 const FiscalPDV = lazy(() => import('./pages/FiscalPDV'));
 const IntegracaoERP = lazy(() => import('./pages/IntegracaoERP'));
 const WhatsAppContasPagar = lazy(() => import('./pages/WhatsAppContasPagar'));
@@ -260,6 +261,7 @@ const protectedRoutes = [
   { path: '/balanco-rfid/arquivos', component: BalancoRfidArquivos },
   { path: '/varejo/vendas-pdv', component: VendasPDV },
   { path: '/varejo/recebimento-mercadoria', component: RecebimentoMercadoria },
+  { path: '/varejo/transferencia-lojas', component: TransferenciaVarejo },
   { path: '/admin/fiscal-pdv', component: FiscalPDV },
   { path: '/admin/integracao-erp', component: IntegracaoERP },
   { path: '/financeiro/whatsapp-contas-pagar', component: WhatsAppContasPagar },

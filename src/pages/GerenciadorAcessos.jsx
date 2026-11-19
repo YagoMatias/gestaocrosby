@@ -372,6 +372,7 @@ const AVAILABLE_PAGES = [
   },
   { path: '/varejo/vendas-pdv', name: 'Vendas PDV (HeadCoach)', category: 'Varejo' },
   { path: '/varejo/recebimento-mercadoria', name: 'Recebimento de Mercadoria (lojas)', category: 'Varejo' },
+  { path: '/varejo/transferencia-lojas', name: 'Transferência entre Lojas (leitor RFID, nota pela loja de origem)', category: 'Varejo' },
   { path: '/dashboard-varejo', name: 'Dashboard Varejo', category: 'Varejo' },
   { path: '/metas-varejo', name: 'Metas Varejo', category: 'Varejo' },
   {
