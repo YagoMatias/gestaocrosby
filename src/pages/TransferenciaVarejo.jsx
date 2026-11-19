@@ -3,11 +3,12 @@
 // A tela de Transferências feita para o varejo: a própria loja manda mercadoria
 // para outra loja.
 //   • EMPRESA DE ORIGEM = a loja de quem está logado (owner/admin escolhem);
-//   • EMPRESA DE DESTINO = uma das lojas ativas (2, 5, 55, 65, 87, 93, 94, 95,
-//     97, 98), diferente da origem;
-//   • operação travada pelo POP "Transferências entre empresas - Varejo" (a
-//     mesma regra da tela Transferências): 7272 transferência no mesmo grupo,
-//     7273 / 7280 venda entre empresas; o que o POP não prevê não emite;
+//   • EMPRESA DE DESTINO = uma das lojas ativas (2, 5, 55, 65, 87, 90, 93, 94,
+//     95, 97, 98), diferente da origem;
+//   • operação pela RAIZ DO CNPJ das duas lojas (o servidor decide): mesma
+//     empresa → TRANSFERÊNCIA; empresas diferentes → VENDA entre empresas, como
+//     uma venda normal (ex.: Cidade Jardim/FA MODA → Ayrton Senna/FERREIRA).
+//     Todas são lojas próprias, então nenhum par fica de fora;
 //   • peças bipadas com o LEITOR RFID de mesa (a loja não tem portal) — 1
 //     etiqueta = 1 peça; peça sem etiqueta entra pelo código, com quantidade;
 //   • preço = tabela 4 (atacado) − 25%, a regra das transferências;
