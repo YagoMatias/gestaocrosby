@@ -36,6 +36,7 @@ import {
   Ticket,
   UserSwitch,
   Warning,
+  ArrowsClockwise,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
@@ -311,6 +312,28 @@ function DetalheTransacao({ id, onFechar, onAlterada }) {
   const ehOwner = user?.role === 'owner';
   const [trocandoVendedor, setTrocandoVendedor] = useState(false);
   const [versao, setVersao] = useState(0);
+  // NF-e de devolução rejeitada: emitir de novo daqui (Sr. Macaxeira, 19/11/2026)
+  const [reemitindo, setReemitindo] = useState(false);
+  const reemitir = async () => {
+    if (reemitindo) return;
+    setReemitindo(true);
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/pdv-crosby/vendas/${String(d.id).replace(/\D/g, '')}/emitir`, { method: 'POST' });
+      const j = await r.json().catch(() => ({}));
+      const nota = j.data?.nota;
+      setAviso(
+        r.ok && nota?.status === 'autorizada'
+          ? `NF-e ${nota.numero}/${nota.serie} autorizada. O Credev do cliente foi gerado.`
+          : `A nota não saiu: ${j.message || nota?.xmotivo || 'erro na emissão'}`,
+      );
+      setVersao((n) => n + 1);
+      onAlterada?.();
+    } catch (e) {
+      setAviso(`Falha ao emitir: ${e.message}`);
+    } finally {
+      setReemitindo(false);
+    }
+  };
   useEffect(() => {
     let vivo = true;
     setD(null);
@@ -601,6 +624,16 @@ function DetalheTransacao({ id, onFechar, onAlterada }) {
                           <p className="mt-0.5 text-[11px] text-rose-600">
                             {n.cstat} {n.xmotivo}
                           </p>
+                        )}
+                        {n.status === 'rejeitada' && d.origem === 'devolucao' && d.situacao === 'andamento' && String(d.id).startsWith('V') && (
+                          <button
+                            onClick={reemitir}
+                            disabled={reemitindo}
+                            className={`${btn} mt-1.5 bg-[#000638] text-white hover:bg-[#000638]/90 disabled:opacity-60`}
+                            title="Emite de novo a NF-e de devolução desta transação"
+                          >
+                            {reemitindo ? <Spinner size={13} className="animate-spin" /> : <ArrowsClockwise size={13} weight="bold" />} Tentar emitir de novo
+                          </button>
                         )}
                         {n.cancel_em && (
                           <p className="mt-0.5 text-[11px] text-gray-500">
