@@ -19,6 +19,7 @@ import {
   LockKey,
   HandCoins,
   Prohibit,
+  Percent,
   FileText,
   Calendar,
   CalendarCheck,
@@ -1195,6 +1196,7 @@ const headcoach = [
       { name: 'Contas a Pagar HeadCoach', href: '/headcoach/contas-pagar', icon: Receipt, color: 'text-indigo-600' },
       { name: 'Saldo Cliente', href: '/headcoach/saldos-clientes', icon: Wallet, color: 'text-indigo-600' },
       { name: 'Cancelamento de Transação', href: '/headcoach/cancelamento-transacao', icon: Prohibit, color: 'text-rose-600' },
+      { name: 'Liberação de Desconto', href: '/headcoach/liberacao-desconto', icon: Percent, color: 'text-indigo-600' },
     ],
   },
   {

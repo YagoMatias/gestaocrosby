@@ -534,6 +534,7 @@ const AVAILABLE_PAGES = [
   { path: '/headcoach/contas-pagar', name: 'Contas a Pagar (HeadCoach)', category: 'HeadCoach' },
   { path: '/headcoach/saldos-clientes', name: 'Saldos de Clientes — CREDEV e adiantamento (HeadCoach)', category: 'HeadCoach' },
   { path: '/headcoach/cancelamento-transacao', name: 'Cancelamento de Transação — nota, transação e contas a receber (HeadCoach)', category: 'HeadCoach' },
+  { path: '/headcoach/liberacao-desconto', name: 'Liberação de Desconto — limite de desconto do PDV por vendedor (HeadCoach)', category: 'HeadCoach' },
   { path: '/headcoach/estoque', name: 'Estoque da loja (HeadCoach)', category: 'HeadCoach' },
   { path: '/headcoach/estoque-dryland', name: 'Estoque Dryland (saldo oficial, só consulta)', category: 'HeadCoach' },
   { path: '/headcoach/api', name: 'API HeadCoach — documentação das rotas de consulta (Dryland)', category: 'HeadCoach' },
