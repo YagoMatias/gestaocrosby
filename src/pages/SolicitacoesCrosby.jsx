@@ -1053,6 +1053,31 @@ const SolicitacoesCrosby = () => {
     }
   };
 
+  // LIBERAR PARA PAGAMENTO: a solicitação cai na Liberação de Pagamento do
+  // HEADCOACH (não mais na antiga). O servidor cria a duplicata no Contas a
+  // Pagar HC quando ela ainda não existe (status Nota Fiscal, que não passa
+  // pelo envio) e a coloca como PENDENTE na liberação.
+  const liberarNoHeadcoach = async (sol) => {
+    try {
+      const j = await apiJson(
+        `/api/hc/contas-pagar/solicitacoes/${sol.id}/liberar`,
+        { method: 'POST' },
+      );
+      return {
+        ok: true,
+        message:
+          j?.message ||
+          'Solicitação liberada na Liberação de Pagamento HeadCoach.',
+      };
+    } catch (err) {
+      console.error('Liberação de Pagamento HeadCoach:', err);
+      return {
+        ok: false,
+        message: `Não foi para a Liberação de Pagamento: ${err?.message || 'erro desconhecido'}`,
+      };
+    }
+  };
+
   const liberarParaPagamento = async (sol) => {
     if (!isFinanceiro) {
       notify('error', 'Apenas o financeiro pode liberar para pagamento.');
@@ -1067,121 +1092,16 @@ const SolicitacoesCrosby = () => {
     }
     if (
       !window.confirm(
-        `Liberar a solicitação ${sol.duplicate_code || ''} (${sol.supplier_name || ''}) para pagamento?`,
+        `Liberar a solicitação ${sol.duplicate_code || ''} (${sol.supplier_name || ''}) para pagamento?\n\nEla vai para a Liberação de Pagamento do HeadCoach.`,
       )
     )
       return;
 
-    try {
-      const nrDup = sol.duplicate_code ? String(sol.duplicate_code) : null;
-      const dtVenc = sol.dt_vencimento
-        ? String(sol.dt_vencimento).slice(0, 10)
-        : null;
-      const vlDup = Number(sol.valor_total || 0);
-      const nmForn = sol.supplier_name || null;
-
-      // Busca candidatos pela duplicata + vencimento (ignorando cancelados) e
-      // considera conflito se o valor OU o nome do fornecedor baterem — a linha
-      // enviada pelo Contas a Pagar usa o nome do TOTVS, que pode diferir do
-      // digitado no formulário.
-      let qry = supabaseAdmin
-        .from('pagamentos_liberacao')
-        .select('id, nm_fornecedor, vl_duplicata, status')
-        .not('status', 'eq', 'CANCELADO');
-      if (nrDup) qry = qry.eq('nr_duplicata', nrDup);
-      else qry = qry.is('nr_duplicata', null);
-      if (dtVenc) qry = qry.eq('dt_vencimento', dtVenc);
-      else qry = qry.is('dt_vencimento', null);
-      const { data: candidatos } = await qry;
-      const norm = (s) => String(s || '').trim().toUpperCase();
-      const jaExiste = (candidatos || []).some(
-        (ex) =>
-          Math.abs(Number(ex.vl_duplicata || 0) - vlDup) < 0.005 ||
-          (nmForn && norm(ex.nm_fornecedor) === norm(nmForn)),
-      );
-      if (jaExiste) {
-        notify(
-          'error',
-          `Duplicata ${nrDup || '--'} do fornecedor ${nmForn || '--'} (venc. ${dtVenc || '--'}, R$ ${vlDup.toFixed(2)}) já existe na Liberação de Pagamento.`,
-        );
-        return;
-      }
-
-      // mapear forma de pagamento (lowercase no formulário → uppercase em pagamentos_liberacao)
-      const fp = (sol.forma_pagamento || '').toLowerCase();
-      const formaUpper =
-        fp === 'pix'
-          ? 'PIX'
-          : fp === 'boleto'
-            ? 'BOLETO'
-            : fp === 'debito'
-              ? 'DEBITO'
-              : fp.startsWith('credito')
-                ? 'CREDITO'
-                : isPagbank(fp)
-                  ? 'PAGBANK'
-                  : null;
-
-      const linkPgto =
-        sol.dados_completos?.pix_qrcode_payload ||
-        sol.dados_completos?.link_pagamento ||
-        null;
-
-      const row = {
-        status: 'PENDENTE',
-        nm_empresa: sol.nm_empresa || null,
-        cd_empresa: sol.cd_empresa || null,
-        nm_fornecedor: nmForn,
-        cd_fornecedor: null,
-        nr_duplicata: nrDup,
-        dt_emissao: sol.dt_emissao ? String(sol.dt_emissao).slice(0, 10) : null,
-        dt_vencimento: dtVenc,
-        vl_duplicata: vlDup,
-        ds_despesaitem: sol.despesa_code
-          ? getDespesaNome(sol.despesa_code)
-          : null,
-        cd_ccusto: sol.cost_center_code ? String(sol.cost_center_code) : null,
-        forma_pagamento: formaUpper,
-        chave_pix: sol.chave_pix || null,
-        codigo_barras: sol.codigo_barras || null,
-        link_pagamento: linkPgto,
-        observacao: sol.descricao || null,
-        enviado_por: user?.email || null,
-        enviado_em: new Date().toISOString(),
-        dados_completos: {
-          origem: 'solicitacao_crosby',
-          solicitacao_id: sol.id,
-          duplicate_code: sol.duplicate_code || null,
-          supplier_cpf_cnpj: sol.supplier_cpf_cnpj || null,
-          tipo_solicitacao: sol.tipo_solicitacao || null,
-          setor: sol.setor || null,
-        },
-      };
-
-      const { data: novoPg, error: insErr } = await supabaseAdmin
-        .from('pagamentos_liberacao')
-        .insert([row])
-        .select('id')
-        .single();
-      if (insErr) throw insErr;
-
-      const { error: updErr } = await supabaseAdmin
-        .from('solicitacoes_crosby')
-        .update({
-          liberado_pagamento_em: new Date().toISOString(),
-          liberado_pagamento_por: user?.id || null,
-          liberado_pagamento_por_nome: userNome,
-          pagamento_liberacao_id: novoPg.id,
-        })
-        .eq('id', sol.id);
-      if (updErr) throw updErr;
-
+    const r = await liberarNoHeadcoach(sol);
+    notify(r.ok ? 'success' : 'error', r.message);
+    if (r.ok) {
       await carregarSolicitacoes();
       setModalDetalhe(null);
-      notify('success', 'Solicitação liberada para pagamento!');
-    } catch (err) {
-      console.error(err);
-      notify('error', 'Erro ao liberar para pagamento: ' + (err.message || ''));
     }
   };
 
@@ -1432,145 +1352,44 @@ const SolicitacoesCrosby = () => {
     const candidatas = solicitacoesFiltradas.filter(
       (s) =>
         selecionados.has(s.id) &&
-        s.status === 'enviado_totvs' &&
-        !s.pagamento_liberacao_id,
+        (s.status === 'enviado_totvs' || s.status === 'nota_fiscal') &&
+        !s.pagamento_liberacao_id &&
+        !s.liberado_pagamento_em &&
+        !ehPatrimonioProduto(s),
     );
     if (candidatas.length === 0) {
       notify(
         'error',
-        'Nenhuma selecionada está apta (status "Enviado ao Contas a Pagar" e sem liberação pendente).',
+        'Nenhuma selecionada está apta (status "Enviado ao Contas a Pagar" ou "Nota Fiscal" e ainda não liberada).',
       );
       return;
     }
     if (
       !window.confirm(
-        `Liberar ${candidatas.length} solicitação(ões) para pagamento?`,
+        `Liberar ${candidatas.length} solicitação(ões) para pagamento?\n\nElas vão para a Liberação de Pagamento do HeadCoach.`,
       )
     )
       return;
 
     setExecutandoMassa(true);
-    let okCount = 0,
-      dupCount = 0,
-      errCount = 0;
+    let okCount = 0;
+    const erros = [];
     try {
       for (const sol of candidatas) {
-        try {
-          const nrDup = sol.duplicate_code ? String(sol.duplicate_code) : null;
-          const dtVenc = sol.dt_vencimento
-            ? String(sol.dt_vencimento).slice(0, 10)
-            : null;
-          const vlDup = Number(sol.valor_total || 0);
-          const nmForn = sol.supplier_name || null;
-
-          let qry = supabaseAdmin
-            .from('pagamentos_liberacao')
-            .select('id', { count: 'exact', head: true });
-          if (nrDup) qry = qry.eq('nr_duplicata', nrDup);
-          else qry = qry.is('nr_duplicata', null);
-          if (nmForn) qry = qry.eq('nm_fornecedor', nmForn);
-          else qry = qry.is('nm_fornecedor', null);
-          if (dtVenc) qry = qry.eq('dt_vencimento', dtVenc);
-          else qry = qry.is('dt_vencimento', null);
-          qry = qry.eq('vl_duplicata', vlDup);
-          const { count: jaExiste } = await qry;
-          if (jaExiste > 0) {
-            dupCount++;
-            continue;
-          }
-
-          const fp = (sol.forma_pagamento || '').toLowerCase();
-          const formaUpper =
-            fp === 'pix'
-              ? 'PIX'
-              : fp === 'boleto'
-                ? 'BOLETO'
-                : fp === 'debito'
-                  ? 'DEBITO'
-                  : fp.startsWith('credito')
-                    ? 'CREDITO'
-                    : isPagbank(fp)
-                      ? 'PAGBANK'
-                      : null;
-
-          const linkPgto =
-            sol.dados_completos?.pix_qrcode_payload ||
-            sol.dados_completos?.link_pagamento ||
-            null;
-
-          const row = {
-            status: 'PENDENTE',
-            nm_empresa: sol.nm_empresa || null,
-            cd_empresa: sol.cd_empresa || null,
-            nm_fornecedor: nmForn,
-            cd_fornecedor: null,
-            nr_duplicata: nrDup,
-            dt_emissao: sol.dt_emissao
-              ? String(sol.dt_emissao).slice(0, 10)
-              : null,
-            dt_vencimento: dtVenc,
-            vl_duplicata: vlDup,
-            ds_despesaitem: sol.despesa_code
-              ? getDespesaNome(sol.despesa_code)
-              : null,
-            cd_ccusto: sol.cost_center_code
-              ? String(sol.cost_center_code)
-              : null,
-            forma_pagamento: formaUpper,
-            chave_pix: sol.chave_pix || null,
-            codigo_barras: sol.codigo_barras || null,
-            link_pagamento: linkPgto,
-            observacao: sol.descricao || null,
-            enviado_por: user?.email || null,
-            enviado_em: new Date().toISOString(),
-            dados_completos: {
-              origem: 'solicitacao_crosby',
-              solicitacao_id: sol.id,
-              duplicate_code: sol.duplicate_code || null,
-              supplier_cpf_cnpj: sol.supplier_cpf_cnpj || null,
-              tipo_solicitacao: sol.tipo_solicitacao || null,
-              setor: sol.setor || null,
-            },
-          };
-
-          const { data: novoPg, error: insErr } = await supabaseAdmin
-            .from('pagamentos_liberacao')
-            .insert([row])
-            .select('id')
-            .single();
-          if (insErr) throw insErr;
-
-          const { error: updErr } = await supabaseAdmin
-            .from('solicitacoes_crosby')
-            .update({
-              liberado_pagamento_em: new Date().toISOString(),
-              liberado_pagamento_por: user?.id || null,
-              liberado_pagamento_por_nome: userNome,
-              pagamento_liberacao_id: novoPg.id,
-            })
-            .eq('id', sol.id);
-          if (updErr) throw updErr;
-
-          okCount++;
-        } catch (err) {
-          console.error('Erro ao liberar solicitação', sol.id, err);
-          errCount++;
-        }
+        const r = await liberarNoHeadcoach(sol);
+        if (r.ok) okCount++;
+        else erros.push(`${sol.supplier_name || sol.id}: ${r.message}`);
       }
 
       await carregarSolicitacoes();
       setSelecionados(new Set());
 
       const partes = [];
-      if (okCount > 0) partes.push(`${okCount} liberada(s)`);
-      if (dupCount > 0) partes.push(`${dupCount} já existia(m) na liberação`);
-      if (errCount > 0) partes.push(`${errCount} com erro`);
-
-      if (errCount > 0 || (dupCount > 0 && okCount === 0)) {
-        notify('error', partes.join(', ') + '.');
-      } else {
-        notify('success', partes.join(', ') + '.');
-      }
+      if (okCount > 0)
+        partes.push(`${okCount} liberada(s) na Liberação de Pagamento HeadCoach`);
+      if (erros.length > 0)
+        partes.push(`${erros.length} com erro (${erros[0]}${erros.length > 1 ? '…' : ''})`);
+      notify(erros.length > 0 ? 'error' : 'success', partes.join(', ') + '.');
     } catch (err) {
       console.error(err);
       notify('error', 'Erro ao liberar em massa.');
@@ -2478,6 +2297,7 @@ const ModalDetalhe = ({
   const podeLiberarPagamento =
     (sol.status === 'enviado_totvs' || sol.status === 'nota_fiscal') &&
     !sol.pagamento_liberacao_id &&
+    !sol.liberado_pagamento_em &&
     !produtoPatrimonio &&
     isFinanceiro;
   const podeConciliar =
@@ -2548,7 +2368,10 @@ const ModalDetalhe = ({
       setConciliandoId(null);
     }
   };
-  const jaLiberadoPagamento = !!sol.pagamento_liberacao_id;
+  const jaLiberadoPagamento =
+    !!sol.pagamento_liberacao_id || !!sol.liberado_pagamento_em;
+  const liberadoNoHeadcoach =
+    !sol.pagamento_liberacao_id && !!sol.liberado_pagamento_em;
   const nf = nfSituacao(sol);
   const podeAbrirChamadoNF =
     sol.status === 'nota_fiscal' &&
@@ -3815,7 +3638,7 @@ const ModalDetalhe = ({
               <button
                 onClick={() => onLiberarPagamento(sol)}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
-                title="Cria um registro na Liberação de Pagamentos e vincula esta solicitação"
+                title="Manda a duplicata desta solicitação para a Liberação de Pagamento do HeadCoach"
               >
                 <HandCoins size={14} weight="bold" />
                 Liberar para Pagamento
@@ -3824,7 +3647,9 @@ const ModalDetalhe = ({
             {jaLiberadoPagamento && (
               <span className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                 <CheckCircle size={14} weight="fill" />
-                Liberado p/ pagamento
+                {liberadoNoHeadcoach
+                  ? 'Na Liberação de Pagamento HeadCoach'
+                  : 'Liberado p/ pagamento'}
                 {sol.liberado_pagamento_em && (
                   <span className="font-normal text-emerald-600 ml-1">
                     em{' '}
