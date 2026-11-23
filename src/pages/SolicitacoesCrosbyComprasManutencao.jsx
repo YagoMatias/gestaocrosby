@@ -3,6 +3,7 @@ import { useAuth } from '../components/AuthContext';
 import { useSetoresUsuario } from '../hooks/useSetoresUsuario';
 import { supabaseAdmin } from '../lib/supabase';
 import { API_BASE_URL } from '../config/constants';
+import { apiJson } from '../utils/apiAuth';
 import PageTitle from '../components/ui/PageTitle';
 import Notification from '../components/ui/Notification';
 import CadastrarFornecedorModal from '../components/CadastrarFornecedorModal';
@@ -333,13 +334,13 @@ const SolicitacoesCrosbyComprasManutencao = () => {
 
   const enviarParaTotvs = async (sol) => {
     if (!isAdmin) {
-      notify('error', 'Apenas financeiro/admin pode enviar ao TOTVS.');
+      notify('error', 'Apenas financeiro/admin pode enviar ao Contas a Pagar HC.');
       return;
     }
     if (sol.tem_nota_fiscal) {
       notify(
         'error',
-        'Esta solicitação possui nota fiscal — não envia ao TOTVS.',
+        'Esta solicitação possui nota fiscal — não vira duplicata no contas a pagar.',
       );
       return;
     }
@@ -394,56 +395,43 @@ const SolicitacoesCrosbyComprasManutencao = () => {
     }
     if (
       !window.confirm(
-        `Confirmar envio da duplicata ${sol.duplicate_code} (${sol.supplier_name || ''}) ao TOTVS?`,
+        `Confirmar envio da duplicata ${sol.duplicate_code} (${sol.supplier_name || ''}) ao Contas a Pagar HC?`,
       )
     )
       return;
     setEnviandoTotvs(true);
     try {
-      const resp = await fetch(
-        `${API_BASE_URL}/api/totvs/accounts-payable/duplicates/create`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        },
-      );
-      const result = await resp.json().catch(() => ({}));
-      if (!resp.ok || result?.success === false) {
-        const msg = result?.message || `Falha TOTVS (HTTP ${resp.status})`;
-        await supabaseAdmin
-          .from('solicitacoes_crosby')
-          .update({
-            status: 'erro_envio',
-            totvs_erro: msg,
-            totvs_response: result?.details || result || null,
-          })
-          .eq('id', sol.id);
-        const upd = { status: 'erro_envio', totvs_erro: msg };
-        setSolicitacoes((prev) =>
-          prev.map((s) => (s.id === sol.id ? { ...s, ...upd } : s)),
+      let upd;
+      let ok = true;
+      let msg;
+      try {
+        const j = await apiJson(
+          `/api/hc/contas-pagar/solicitacoes/${sol.id}/enviar`,
+          { method: 'POST' },
         );
-        if (modalDetalhe?.id === sol.id)
-          setModalDetalhe((m) => ({ ...m, ...upd }));
-        notify('error', `Erro TOTVS: ${msg}`);
-      } else {
-        const upd = {
-          status: 'enviado_totvs',
-          enviado_totvs_em: new Date().toISOString(),
-          totvs_response: result?.data ?? result ?? null,
+        const nova = j?.data?.solicitacao || {};
+        upd = {
+          status: nova.status || 'enviado_totvs',
+          enviado_totvs_em: nova.enviado_totvs_em || new Date().toISOString(),
+          totvs_response: nova.totvs_response || null,
           totvs_erro: null,
         };
-        await supabaseAdmin
-          .from('solicitacoes_crosby')
-          .update(upd)
-          .eq('id', sol.id);
-        setSolicitacoes((prev) =>
-          prev.map((s) => (s.id === sol.id ? { ...s, ...upd } : s)),
-        );
-        if (modalDetalhe?.id === sol.id)
-          setModalDetalhe((m) => ({ ...m, ...upd }));
-        notify('success', 'Duplicata enviada com sucesso ao TOTVS!');
+        msg = j?.message || 'Solicitação enviada ao Contas a Pagar HC!';
+      } catch (e) {
+        ok = false;
+        msg = e?.message || 'erro desconhecido';
+        // o servidor já grava o erro na solicitação quando o problema é nos dados
+        upd = { status: 'erro_envio', totvs_erro: msg };
       }
+      setSolicitacoes((prev) =>
+        prev.map((s) => (s.id === sol.id ? { ...s, ...upd } : s)),
+      );
+      if (modalDetalhe?.id === sol.id)
+        setModalDetalhe((m) => ({ ...m, ...upd }));
+      notify(
+        ok ? 'success' : 'error',
+        ok ? msg : `Não foi para o Contas a Pagar HC: ${msg}`,
+      );
     } catch (err) {
       console.error(err);
       notify('error', 'Erro ao enviar: ' + (err.message || ''));
@@ -720,7 +708,7 @@ const ListaView = ({
               'Vencimento',
               'Etapa',
               'NF',
-              'TOTVS',
+              'Contas a Pagar',
               '',
             ].map((h) => (
               <th
@@ -1256,7 +1244,7 @@ const ModalDetalheCompraManut = ({
                       value: 'sim',
                       icon: CheckCircle,
                       title: 'Tem nota fiscal',
-                      sub: 'Não envia ao TOTVS',
+                      sub: 'Não vira duplicata',
                       activeClass:
                         'border-emerald-500 bg-emerald-50 text-emerald-800',
                       iconClass: 'text-emerald-600',
@@ -1265,7 +1253,7 @@ const ModalDetalheCompraManut = ({
                       value: 'nao',
                       icon: Warning,
                       title: 'Sem nota fiscal',
-                      sub: 'Deve enviar ao TOTVS',
+                      sub: 'Deve enviar ao Contas a Pagar HC',
                       activeClass:
                         'border-amber-500 bg-amber-50 text-amber-800',
                       iconClass: 'text-amber-600',
@@ -1361,7 +1349,7 @@ const ModalDetalheCompraManut = ({
                   <div className="flex items-center gap-3">
                     <span className="flex items-center gap-1.5 text-sm font-bold text-emerald-700">
                       <CheckCircle size={16} weight="fill" />
-                      Possui nota fiscal — não envia ao TOTVS
+                      Possui nota fiscal — não vira duplicata no contas a pagar
                     </span>
                     {sol.nota_fiscal_url && (
                       <a
@@ -1379,7 +1367,7 @@ const ModalDetalheCompraManut = ({
                 {sol.tem_nota_fiscal === false && (
                   <span className="flex items-center gap-1.5 text-sm font-bold text-amber-700">
                     <Warning size={16} weight="fill" />
-                    Sem nota fiscal — deve enviar ao TOTVS
+                    Sem nota fiscal — deve enviar ao Contas a Pagar HC
                   </span>
                 )}
                 {(sol.tem_nota_fiscal === null ||
@@ -1752,7 +1740,7 @@ const ModalDetalheCompraManut = ({
                 }
               />
               <Badge
-                label="Enviado TOTVS"
+                label="Enviado Contas a Pagar"
                 ok={sol.status === 'enviado_totvs'}
                 tooltip={
                   sol.enviado_totvs_em ? fmtDataHora(sol.enviado_totvs_em) : ''
@@ -1761,31 +1749,31 @@ const ModalDetalheCompraManut = ({
             </div>
             {sol.status === 'erro_envio' && sol.totvs_erro && (
               <div className="mt-2 bg-red-50 border border-red-200 rounded-lg p-2 text-xs text-red-700">
-                <strong>Erro TOTVS:</strong> {sol.totvs_erro}
+                <strong>Erro no envio:</strong> {sol.totvs_erro}
               </div>
             )}
           </section>
 
-          {/* ── ENVIO AO TOTVS ── */}
+          {/* ── ENVIO AO CONTAS A PAGAR HC ── */}
           {isAdmin && sol.tem_nota_fiscal === false && (
             <section className="border rounded-xl p-4 bg-amber-50 border-amber-200">
               <p
                 className={`${lblCls} text-amber-800 mb-2 flex items-center gap-1.5`}
               >
                 <PaperPlaneTilt size={13} weight="bold" />
-                Envio ao TOTVS
+                Envio ao Contas a Pagar HC
               </p>
               {sol.status === 'enviado_totvs' ? (
                 <div className="flex items-center gap-2 text-sm font-bold text-teal-700">
                   <CheckCircle size={16} weight="fill" />
-                  Duplicata já enviada ao TOTVS em{' '}
+                  Duplicata já enviada ao contas a pagar em{' '}
                   {fmtDataHora(sol.enviado_totvs_em)}
                 </div>
               ) : (
                 <>
                   <p className="text-xs text-amber-700 mb-3">
                     Esta solicitação não possui nota fiscal. Preencha os dados
-                    da duplicata e envie ao TOTVS.
+                    da duplicata e envie ao Contas a Pagar HC.
                   </p>
                   <div className="space-y-1 mb-3">
                     {[
@@ -1834,7 +1822,7 @@ const ModalDetalheCompraManut = ({
                     ) : (
                       <PaperPlaneTilt size={14} weight="bold" />
                     )}
-                    {enviandoTotvs ? 'Enviando...' : 'Enviar ao TOTVS'}
+                    {enviandoTotvs ? 'Enviando...' : 'Enviar ao Contas a Pagar HC'}
                   </button>
                   {sol.status === 'erro_envio' && (
                     <p className="text-[11px] text-red-600 mt-2 font-semibold">

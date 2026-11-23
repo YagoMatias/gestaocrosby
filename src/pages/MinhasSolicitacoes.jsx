@@ -420,7 +420,12 @@ const MinhasSolicitacoes = () => {
   // fora do fluxo (direto no TOTVS ou pela Consulta do Contas a Pagar).
   const verificarTotvs = useCallback(async (sols) => {
     const alvo = sols.filter(
-      (s) => s.duplicate_code && (s.status === 'enviado_totvs' || s.enviado_totvs_em),
+      (s) =>
+        s.duplicate_code &&
+        (s.status === 'enviado_totvs' || s.enviado_totvs_em) &&
+        // enviada ao Contas a Pagar do HeadCoach: não existe no TOTVS — a situação
+        // de pagamento dela vem da Liberação de Pagamento
+        s.totvs_response?.destino !== 'contas-pagar-headcoach',
     );
     if (!alvo.length) {
       setTotvs({});

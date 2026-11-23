@@ -25,6 +25,9 @@ const fmtData = (iso) => (iso ? String(iso).slice(0, 10).split('-').reverse().jo
 const fmtDataHora = (d) => (d ? new Date(d).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
 // "1/11": duplicata 1, parcela 11
 const rotuloDup = (t) => `${t.duplicata}/${t.parcela}`;
+// cor da parcela pela situação: paga, cancelada, vencida ou em aberto
+const parcial = (p) => p.situacao === 'aberto' && Number(p.valor_pago || 0) > 0; // paga em parte: continua em aberto pelo que falta
+const corParcela = (p) => (p.situacao === 'pago' ? 'text-emerald-700 ring-emerald-300' : parcial(p) ? 'text-amber-700 ring-amber-300' : p.situacao === 'cancelado' ? 'text-gray-400 ring-gray-200 line-through' : String(p.vencimento).slice(0, 10) < hojeIso() ? 'text-rose-700 ring-rose-300' : 'text-[#000638] ring-gray-300');
 // parcela sugerida: o mês do vencimento (11 para novembro)
 const parcelaDoMes = (vencimento) => (vencimento ? Number(String(vencimento).slice(5, 7)) : '');
 const hojeIso = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Recife' }).format(new Date());
@@ -54,10 +57,18 @@ const CAMPOS_DATA = [
   { k: 'pagamento', label: 'Pagamento' },
 ];
 
+const faltaDepois = (b) => Math.max(0, round2(Number(b.valor_titulo || 0) - (Number(b.valor_pago || 0) - Number(b.juros || 0) - Number(b.multa || 0) + Number(b.desconto || 0))));
+
 function Situacao({ t }) {
   if (t.situacao === 'cancelado') return <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold text-gray-500 ring-1 ring-gray-200">CANCELADA</span>;
   if (t.situacao === 'pago') return <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-200">PAGA</span>;
   const dias = t.tela?.diasAtraso || 0;
+  if (parcial(t))
+    return (
+      <span title={`Pago ${fmtBRL(t.valor_pago)} · falta ${fmtBRL(t.tela?.saldo)}`} className="whitespace-nowrap rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 ring-1 ring-amber-300">
+        PAGA PARCIAL{dias > 0 ? ` · VENCIDA ${dias}d` : ''}
+      </span>
+    );
   return dias > 0 ? (
     <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-bold text-rose-700 ring-1 ring-rose-200">VENCIDA {dias}d</span>
   ) : (
@@ -183,12 +194,21 @@ function EditorRateio({ linhas, onChange, op, valorBase }) {
   );
 }
 
+// duplicata que veio do contas a pagar do TOTVS (já paga lá, na conciliação ou na Liberação)
+function MarcaTotvs() {
+  return (
+    <span title="Importada do contas a pagar do TOTVS" className="ml-1.5 inline-block rounded-full bg-amber-50 px-1.5 py-0.5 align-middle text-[9px] font-bold tracking-wide text-amber-700 no-underline ring-1 ring-amber-300">
+      TOTVS
+    </span>
+  );
+}
+
 export default function HcContasPagar() {
   const { user } = useAuth();
   const podeFinanceiro = PERFIS_FINANCEIRO.includes(user?.role);
   const [op, setOp] = useState(null);
   const [aviso, setAviso] = useState(null);
-  const [f, setF] = useState({ empresa: '', campoData: 'vencimento', de: inicioMes(), ate: fimMes(), situacao: '', fornecedor: '', duplicata: '', documentoFiscal: '', despesa: '', centroCusto: '', portador: '', forma: '' });
+  const [f, setF] = useState({ empresa: '', campoData: 'vencimento', de: inicioMes(), ate: fimMes(), situacao: '', fornecedor: '', duplicata: '', documentoFiscal: '', despesa: '', centroCusto: '', portador: '', forma: '', origem: '' });
   const [dados, setDados] = useState(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState('');
@@ -288,7 +308,8 @@ export default function HcContasPagar() {
                 <option value="aberto">Em aberto</option>
                 <option value="vencido">Vencidas</option>
                 <option value="a_vencer">A vencer</option>
-                <option value="pago">Pagas</option>
+                <option value="parcial">Pagas parcial</option>
+                <option value="pago">Pagas (com o já pago das parciais)</option>
                 <option value="cancelado">Canceladas</option>
               </select>
             </div>
@@ -333,7 +354,15 @@ export default function HcContasPagar() {
                 <Opcoes lista={op?.portadores || []} vazio="Todos" />
               </select>
             </div>
-            <div className="col-span-2 flex items-end gap-2 lg:col-span-8 lg:justify-end">
+            <div className="col-span-2 lg:col-span-1">
+              <label className={labelCls}>Origem</label>
+              <select value={f.origem} onChange={set('origem')} className={inputCls}>
+                <option value="">Todas</option>
+                <option value="headcoach">HeadCoach</option>
+                <option value="totvs">TOTVS</option>
+              </select>
+            </div>
+            <div className="col-span-2 flex items-end gap-2 lg:col-span-7 lg:justify-end">
               <button type="submit" disabled={carregando} className={`${btnPri} flex-1 lg:w-48 lg:flex-none`}>
                 {carregando ? <Spinner size={15} className="animate-spin" /> : <MagnifyingGlass size={15} weight="bold" />} BUSCAR
               </button>
@@ -356,7 +385,7 @@ export default function HcContasPagar() {
                 <Card rotulo="Descontos" valor={fmtBRL(tot.desconto)} />
               </div>
               <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-                <table className="w-full min-w-[1360px] text-xs">
+                <table className="w-full min-w-[1450px] text-xs">
                   <thead className="bg-gray-50 text-left text-[10px] uppercase tracking-wide text-gray-500">
                     <tr>
                       <th className="px-2 py-2">Empresa</th>
@@ -371,6 +400,9 @@ export default function HcContasPagar() {
                       <th className="px-2 py-2">Vencimento</th>
                       <th className="px-2 py-2 text-right">Valor</th>
                       <th className="px-2 py-2 text-right">Pago</th>
+                      <th className="px-2 py-2 text-right" title="O que ainda falta pagar da duplicata em aberto">
+                        Falta pagar
+                      </th>
                       <th className="px-2 py-2">Pagamento</th>
                       <th className="px-2 py-2">Situação</th>
                     </tr>
@@ -378,7 +410,7 @@ export default function HcContasPagar() {
                   <tbody className="divide-y divide-gray-100">
                     {dados.titulos.length === 0 && (
                       <tr>
-                        <td colSpan={14} className="px-2 py-10 text-center text-gray-400">
+                        <td colSpan={15} className="px-2 py-10 text-center text-gray-400">
                           Nenhuma duplicata com esses filtros.
                         </td>
                       </tr>
@@ -391,7 +423,10 @@ export default function HcContasPagar() {
                         <td className="max-w-[240px] truncate px-2 py-1.5" title={t.fornecedor_nome}>
                           {t.fornecedor_code} · {t.fornecedor_nome}
                         </td>
-                        <td className="px-2 py-1.5 font-semibold tabular-nums text-[#000638]">{rotuloDup(t)}</td>
+                        <td className="whitespace-nowrap px-2 py-1.5 font-semibold tabular-nums text-[#000638]">
+                          {rotuloDup(t)}
+                          {t.origem === 'totvs' && <MarcaTotvs />}
+                        </td>
                         <td className="px-2 py-1.5 tabular-nums">{t.documento_fiscal || '—'}</td>
                         <td className="max-w-[170px] truncate px-2 py-1.5" title={t.despesa_nome || ''}>
                           {t.despesa_code ? `${t.despesa_code} · ${t.despesa_nome}` : '—'}
@@ -404,7 +439,8 @@ export default function HcContasPagar() {
                         <td className="px-2 py-1.5 tabular-nums">{fmtData(t.emissao)}</td>
                         <td className="px-2 py-1.5 tabular-nums">{fmtData(t.vencimento)}</td>
                         <td className="px-2 py-1.5 text-right font-semibold tabular-nums">{fmtBRL(t.valor)}</td>
-                        <td className="px-2 py-1.5 text-right tabular-nums">{t.situacao === 'pago' ? fmtBRL(t.valor_pago) : '—'}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{t.situacao === 'pago' || parcial(t) ? fmtBRL(t.valor_pago) : '—'}</td>
+                        <td className={`px-2 py-1.5 text-right tabular-nums ${parcial(t) ? 'font-semibold text-amber-700' : ''}`}>{t.situacao === 'aberto' ? fmtBRL(t.tela?.saldo ?? t.valor) : '—'}</td>
                         <td className="px-2 py-1.5 tabular-nums">{fmtData(t.data_pagamento)}</td>
                         <td className="px-2 py-1.5">
                           <Situacao t={t} />
@@ -420,6 +456,7 @@ export default function HcContasPagar() {
                         </td>
                         <td className="px-2 py-2 text-right tabular-nums">{fmtBRL(tot.valor)}</td>
                         <td className="px-2 py-2 text-right tabular-nums">{fmtBRL(tot.valorPago)}</td>
+                        <td className="px-2 py-2 text-right tabular-nums">{fmtBRL(tot.aberto)}</td>
                         <td colSpan={2} />
                       </tr>
                     </tfoot>
@@ -792,18 +829,24 @@ function Detalhe({ id: idInicial, op, onFechar, onMudou }) {
   const abrir = (m) => {
     setErro('');
     if (m === 'editar') setForm({ vencimento: String(t.vencimento).slice(0, 10), valor: String(t.valor).replace('.', ','), formaPagamento: t.forma_pagamento || '', portadorCode: t.portador_code || '', rateio: (t.rateio?.length ? t.rateio : [{ despesa_code: t.despesa_code, centro_custo_code: t.centro_custo_code, percentual: 100 }]).map((r) => ({ despesaCode: r.despesa_code || '', centroCustoCode: r.centro_custo_code || '', percentual: String(r.percentual).replace('.', ',') })), chavePix: t.chave_pix || '', codigoBarras: t.codigo_barras || '', referencia: t.referencia || '', documentoFiscal: t.documento_fiscal || '', observacao: t.observacao || '', previsao: t.previsao });
-    if (m === 'baixar') setForm({ data: hojeIso(), juros: '', multa: '', desconto: '', forma: t.forma_pagamento || 'pix', conta: '', obs: '', senha: '' });
+    if (m === 'baixar') setForm({ data: hojeIso(), valorPago: '', juros: '', multa: '', desconto: '', forma: t.forma_pagamento || 'pix', conta: '', obs: '', senha: '' });
     if (m === 'cancelar') setForm({ motivo: '', senha: '' });
     setModo(m);
   };
-  const pago = modo === 'baixar' ? round2(Number(t.valor) + num(form.juros) + num(form.multa) - num(form.desconto)) : 0;
+  // baixa: "Valor pago" em branco paga tudo o que falta; menor que isso é baixa parcial
+  const saldo = t ? Number(t.tela?.saldo ?? t.valor) : 0;
+  const cheio = modo === 'baixar' ? round2(saldo + num(form.juros) + num(form.multa) - num(form.desconto)) : 0;
+  const pago = modo === 'baixar' ? (String(form.valorPago || '').trim() ? round2(num(form.valorPago)) : cheio) : 0;
+  const resta = modo === 'baixar' ? round2(saldo - (pago - num(form.juros) - num(form.multa) + num(form.desconto))) : 0;
+  const baixaParcial = resta > 0.005;
+  const baixaInvalida = pago < 0 || pago > cheio + 0.005 || resta > saldo + 0.005 || (baixaParcial && !(pago > 0));
   const enviar = async () => {
     setBusy(true);
     setErro('');
     try {
       let j;
       if (modo === 'editar') j = await apiJson(`${API}/titulos/${t.id}`, { method: 'PUT', body: { ...form, valor: num(form.valor), rateio: form.rateio.map((l) => ({ despesaCode: l.despesaCode, centroCustoCode: l.centroCustoCode, percentual: num(l.percentual) })) } });
-      if (modo === 'baixar') j = await apiJson(`${API}/titulos/${t.id}/baixar`, { method: 'POST', body: { dataPagamento: form.data, juros: num(form.juros), multa: num(form.multa), desconto: num(form.desconto), formaPagamento: form.forma, conta: form.conta, observacao: form.obs, senha: form.senha } });
+      if (modo === 'baixar') j = await apiJson(`${API}/titulos/${t.id}/baixar`, { method: 'POST', body: { dataPagamento: form.data, valorPago: String(form.valorPago || '').trim() ? num(form.valorPago) : null, juros: num(form.juros), multa: num(form.multa), desconto: num(form.desconto), formaPagamento: form.forma, conta: form.conta, observacao: form.obs, senha: form.senha } });
       if (modo === 'cancelar') j = await apiJson(`${API}/titulos/${t.id}/cancelar`, { method: 'POST', body: { motivo: form.motivo, senha: form.senha } });
       setModo(null);
       await carregar();
@@ -823,10 +866,11 @@ function Detalhe({ id: idInicial, op, onFechar, onMudou }) {
             {t && (
               <p className="truncate text-xs text-gray-500">
                 {t.fornecedor_code} · {t.fornecedor_nome} · empresa {t.empresa}
-                {t.origem !== 'manual' ? ` · incluída por ${t.origem}` : ''}
+                {t.origem === 'totvs' ? ' · importada do TOTVS' : t.origem !== 'manual' ? ` · incluída por ${t.origem}` : ''}
               </p>
             )}
           </div>
+          {t?.origem === 'totvs' && <MarcaTotvs />}
           {t && <Situacao t={t} />}
           <button onClick={onFechar} className="rounded-lg p-1 text-gray-500 hover:bg-gray-100">
             <X size={18} />
@@ -841,28 +885,54 @@ function Detalhe({ id: idInicial, op, onFechar, onMudou }) {
           )
         ) : (
           <div className="space-y-3">
-            {d.parcelas.length > 1 && (
+            {/* todas as parcelas da duplicata: os números trocam a parcela aberta e a lista mostra todas de uma vez */}
+            <div className="rounded-xl bg-white p-3 ring-1 ring-gray-200">
               <div className="flex flex-wrap items-center gap-1.5">
-                <p className="mr-1 text-[10.5px] font-bold uppercase tracking-wide text-gray-500">Parcelas</p>
-                {d.parcelas.map((p) => {
-                  const cor = p.situacao === 'pago' ? 'text-emerald-700 ring-emerald-300' : p.situacao === 'cancelado' ? 'text-gray-400 ring-gray-200 line-through' : String(p.vencimento).slice(0, 10) < hojeIso() ? 'text-rose-700 ring-rose-300' : 'text-[#000638] ring-gray-300';
-                  return (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => irParaParcela(p.id)}
-                      title={`Parcela ${p.parcela} da duplicata ${p.duplicata} · ${fmtBRL(p.valor)} · ${p.situacao === 'pago' ? `paga em ${fmtData(p.data_pagamento)}` : p.situacao === 'cancelado' ? 'cancelada' : `vence em ${fmtData(p.vencimento)}`}`}
-                      className={`h-8 min-w-[2rem] rounded-lg px-2 text-xs font-bold ring-1 ${p.id === t.id ? 'bg-[#000638] text-white ring-[#000638]' : `bg-white hover:bg-gray-50 ${cor}`}`}
-                    >
-                      {p.parcela}
-                    </button>
-                  );
-                })}
-                <p className="ml-1 text-[10.5px] text-gray-400">
-                  {d.parcelas.length} parcelas · {fmtBRL(d.parcelas.filter((p) => p.situacao !== 'cancelado').reduce((s, p) => s + Number(p.valor), 0))}
+                <p className="mr-1 text-[10.5px] font-bold uppercase tracking-wide text-gray-500">Parcelas da duplicata {t.duplicata}</p>
+                {d.parcelas.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => irParaParcela(p.id)}
+                    title={`Parcela ${p.parcela} · ${fmtBRL(p.valor)} · ${p.situacao === 'pago' ? `paga em ${fmtData(p.data_pagamento)}` : parcial(p) ? `paga em parte (${fmtBRL(p.valor_pago)}), vence em ${fmtData(p.vencimento)}` : p.situacao === 'cancelado' ? 'cancelada' : `vence em ${fmtData(p.vencimento)}`}`}
+                    className={`h-8 min-w-[2rem] rounded-lg px-2 text-xs font-bold ring-1 ${p.id === t.id ? 'bg-[#000638] text-white ring-[#000638]' : `bg-white hover:bg-gray-50 ${corParcela(p)}`}`}
+                  >
+                    {p.parcela}
+                  </button>
+                ))}
+                <p className="ml-auto text-[11px] font-semibold tabular-nums text-gray-500">
+                  {d.parcelas.length} parcela(s) · {fmtBRL(d.parcelas.filter((p) => p.situacao !== 'cancelado').reduce((s, p) => s + Number(p.valor), 0))}
                 </p>
               </div>
-            )}
+              {d.parcelas.length > 1 && (
+                <div className="mt-2 overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-left text-[10px] font-bold uppercase tracking-wide text-gray-500">
+                        <th className="px-2 py-1">Parcela</th>
+                        <th className="px-2 py-1">Doc. fiscal</th>
+                        <th className="px-2 py-1">Competência</th>
+                        <th className="px-2 py-1">Vencimento</th>
+                        <th className="px-2 py-1 text-right">Valor</th>
+                        <th className="px-2 py-1">Situação</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {d.parcelas.map((p) => (
+                        <tr key={p.id} onClick={() => irParaParcela(p.id)} className={`cursor-pointer border-t border-gray-100 ${p.id === t.id ? 'bg-indigo-50 font-semibold' : 'hover:bg-gray-50'}`}>
+                          <td className="px-2 py-1 tabular-nums text-[#000638]">{rotuloDup(p)}</td>
+                          <td className="px-2 py-1 tabular-nums">{p.documento_fiscal || '—'}</td>
+                          <td className="px-2 py-1 tabular-nums">{p.referencia || '—'}</td>
+                          <td className="px-2 py-1 tabular-nums">{fmtData(p.vencimento)}</td>
+                          <td className="px-2 py-1 text-right tabular-nums">{fmtBRL(p.valor)}</td>
+                          <td className={`px-2 py-1 ${corParcela(p).split(' ')[0]}`}>{p.situacao === 'pago' ? `Paga em ${fmtData(p.data_pagamento)}` : parcial(p) ? `Paga parcial (${fmtBRL(p.valor_pago)})` : p.situacao === 'cancelado' ? 'Cancelada' : String(p.vencimento).slice(0, 10) < hojeIso() ? 'Vencida' : 'Em aberto'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-xl bg-gray-50 p-3 ring-1 ring-gray-200 sm:grid-cols-4">
               <Campo rotulo="Fornecedor">{t.fornecedor_nome}</Campo>
               <Campo rotulo="Código">{t.fornecedor_code}</Campo>
@@ -879,7 +949,8 @@ function Detalhe({ id: idInicial, op, onFechar, onMudou }) {
               <Campo rotulo="Valor">{fmtBRL(t.valor)}</Campo>
               <Campo rotulo="Juros / multa">{`${fmtBRL(t.juros)} / ${fmtBRL(t.multa)}`}</Campo>
               <Campo rotulo="Desconto">{fmtBRL(t.desconto)}</Campo>
-              <Campo rotulo="Valor pago">{t.situacao === 'pago' ? fmtBRL(t.valor_pago) : null}</Campo>
+              <Campo rotulo="Valor pago">{t.situacao === 'pago' || parcial(t) ? fmtBRL(t.valor_pago) : null}</Campo>
+              {t.situacao === 'aberto' && <Campo rotulo="Falta pagar">{fmtBRL(t.tela?.saldo ?? t.valor)}</Campo>}
               <Campo rotulo="Pagamento">{fmtData(t.data_pagamento)}</Campo>
               <Campo rotulo="Conta do pagamento">{t.conta_pagamento}</Campo>
               <Campo rotulo="Previsão">{t.previsao === 'previsao' ? 'Previsão' : 'Real'}</Campo>
@@ -942,10 +1013,11 @@ function Detalhe({ id: idInicial, op, onFechar, onMudou }) {
 
             {d.baixas.length > 0 && (
               <div>
-                <p className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-gray-500">Baixa</p>
+                <p className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-gray-500">{d.baixas.length > 1 ? `Baixas (${d.baixas.length} pagamentos)` : 'Baixa'}</p>
                 {d.baixas.map((b) => (
                   <p key={b.id} className="text-xs text-gray-700">
-                    {fmtData(b.data_pagamento)} · pago <b>{fmtBRL(b.valor_pago)}</b> (duplicata {fmtBRL(b.valor_titulo)} + juros {fmtBRL(b.juros)} + multa {fmtBRL(b.multa)} − desconto {fmtBRL(b.desconto)}) · {op.formas[b.forma_pagamento] || '—'}
+                    {fmtData(b.data_pagamento)} · pago <b>{fmtBRL(b.valor_pago)}</b> (em aberto {fmtBRL(b.valor_titulo)} + juros {fmtBRL(b.juros)} + multa {fmtBRL(b.multa)} − desconto {fmtBRL(b.desconto)})
+                    {faltaDepois(b) > 0.005 && <span className="font-semibold text-amber-700"> · ficou faltando {fmtBRL(faltaDepois(b))}</span>} · {op.formas[b.forma_pagamento] || '—'}
                     {b.conta ? ` · ${b.conta}` : ''} · {b.por} em {fmtDataHora(b.em)}
                     {b.observacao ? ` · ${b.observacao}` : ''}
                   </p>
@@ -955,14 +1027,16 @@ function Detalhe({ id: idInicial, op, onFechar, onMudou }) {
 
             {t.situacao === 'aberto' && !modo && (
               <div className="flex flex-wrap justify-end gap-2">
-                <button onClick={() => abrir('cancelar')} className={`${btnSec} h-10 text-rose-700`}>
-                  <Prohibit size={14} weight="bold" /> Cancelar duplicata
-                </button>
+                {!parcial(t) && (
+                  <button onClick={() => abrir('cancelar')} className={`${btnSec} h-10 text-rose-700`}>
+                    <Prohibit size={14} weight="bold" /> Cancelar duplicata
+                  </button>
+                )}
                 <button onClick={() => abrir('editar')} className={`${btnSec} h-10`}>
                   <PencilSimple size={14} weight="bold" /> Alterar
                 </button>
                 <button onClick={() => abrir('baixar')} className={btnPri}>
-                  <CheckCircle size={15} weight="bold" /> BAIXAR DUPLICATA
+                  <CheckCircle size={15} weight="bold" /> {parcial(t) ? 'BAIXAR O QUE FALTA' : 'BAIXAR DUPLICATA'}
                 </button>
               </div>
             )}
@@ -1040,11 +1114,17 @@ function Detalhe({ id: idInicial, op, onFechar, onMudou }) {
 
             {modo === 'baixar' && (
               <div className="rounded-xl bg-emerald-50/60 p-3 ring-1 ring-emerald-200">
-                <p className="mb-2 text-sm font-bold text-emerald-900">Baixa da duplicata</p>
+                <p className="mb-2 text-sm font-bold text-emerald-900">Baixa da duplicata{parcial(t) ? ` — falta pagar ${fmtBRL(saldo)} de ${fmtBRL(t.valor)}` : ''}</p>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   <div>
                     <label className={labelCls}>Data do pagamento</label>
                     <input type="date" value={form.data} max={hojeIso()} onChange={setCampo('data')} className={inputCls} />
+                  </div>
+                  <div>
+                    <label className={labelCls} title="Em branco = paga tudo o que falta. Menor = baixa parcial: a duplicata continua em aberto pelo restante.">
+                      Valor pago
+                    </label>
+                    <input inputMode="decimal" value={form.valorPago} onChange={setCampo('valorPago')} placeholder={fmtBRL(cheio)} className={inputCls} />
                   </div>
                   <div>
                     <label className={labelCls}>Juros</label>
@@ -1072,7 +1152,7 @@ function Detalhe({ id: idInicial, op, onFechar, onMudou }) {
                     <label className={labelCls}>Conta / banco</label>
                     <input value={form.conta} onChange={setCampo('conta')} placeholder="ex.: Stone 0549" className={inputCls} />
                   </div>
-                  <div className="col-span-2">
+                  <div>
                     <label className={labelCls}>Observação</label>
                     <input value={form.obs} onChange={setCampo('obs')} className={inputCls} />
                   </div>
@@ -1081,7 +1161,13 @@ function Detalhe({ id: idInicial, op, onFechar, onMudou }) {
                   <div className="flex-1">
                     <p className="text-[10.5px] font-semibold uppercase tracking-wide text-gray-500">Valor pago</p>
                     <p className="text-xl font-bold tabular-nums text-emerald-800">{fmtBRL(pago)}</p>
-                    <p className="text-[10.5px] text-gray-500">A baixa não tem estorno.</p>
+                    {baixaParcial && !baixaInvalida && (
+                      <p className="text-xs font-bold text-amber-700">
+                        Baixa parcial: continua em aberto {fmtBRL(resta)} de {fmtBRL(saldo)}
+                      </p>
+                    )}
+                    {pago > cheio + 0.005 && <p className="text-xs font-bold text-rose-700">O valor pago é maior que o que falta pagar ({fmtBRL(cheio)}).</p>}
+                    <p className="text-[10.5px] text-gray-500">A baixa não tem estorno. Para pagar só uma parte, preencha o valor pago.</p>
                   </div>
                   <div className="w-48">
                     <label className={labelCls}>Sua senha do HeadCoach</label>
@@ -1090,8 +1176,8 @@ function Detalhe({ id: idInicial, op, onFechar, onMudou }) {
                   <button onClick={() => setModo(null)} disabled={busy} className={`${btnSec} h-10`}>
                     Voltar
                   </button>
-                  <button onClick={enviar} disabled={busy || !form.senha || pago < 0} className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-emerald-600 px-4 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-40">
-                    {busy ? <Spinner size={15} className="animate-spin" /> : <CheckCircle size={15} weight="bold" />} CONFIRMAR BAIXA
+                  <button onClick={enviar} disabled={busy || !form.senha || baixaInvalida} className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-emerald-600 px-4 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-40">
+                    {busy ? <Spinner size={15} className="animate-spin" /> : <CheckCircle size={15} weight="bold" />} {baixaParcial ? 'CONFIRMAR BAIXA PARCIAL' : 'CONFIRMAR BAIXA'}
                   </button>
                 </div>
               </div>

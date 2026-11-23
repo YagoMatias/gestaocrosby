@@ -123,8 +123,12 @@ const STATUS_CONFIG = {
     color: 'bg-indigo-100 text-indigo-800',
     icon: CheckSquare,
   },
+  // "Enviado": a duplicata foi para o contas a pagar — o do HeadCoach desde
+  // 23/11/2026 (totvs_response.destino = 'contas-pagar-headcoach'); as antigas
+  // foram ao TOTVS. O nome do status no banco ficou o mesmo para a Liberação
+  // de Pagamento continuar igual.
   enviado_totvs: {
-    label: 'Enviado ao TOTVS',
+    label: 'Enviado ao Contas a Pagar',
     color: 'bg-green-100 text-green-800',
     icon: CheckCircle,
   },
@@ -444,7 +448,7 @@ const SolicitacoesCrosby = () => {
   // Permissões
   // • isGestor     → todos os usuários com acesso à página podem aprovar como gestor
   // • isAdmin      → owner e admin: excluir solicitações e ver o RH (dados sensíveis)
-  // • isFinanceiro → quem envia ao TOTVS, aprova como financeiro e libera pagamento:
+  // • isFinanceiro → quem envia ao Contas a Pagar HC, aprova como financeiro e libera pagamento:
   //                  admin + quem está no setor FINANCEIRO. NÃO inclui 'manager'
   //                  avulso — gestor sem o setor nunca envia ao TOTVS.
   // O role 'user' é o perfil Financeiro legado, mantido só como fallback até
@@ -867,13 +871,9 @@ const SolicitacoesCrosby = () => {
       notify('error', 'Você não tem permissão financeira.');
       return;
     }
-    if (!sol.payload_totvs) {
-      notify('error', 'Solicitação sem payload TOTVS gerado.');
-      return;
-    }
     if (
       !window.confirm(
-        `Confirmar aprovação financeira e envio da duplicata ${sol.duplicate_code} para o TOTVS?`,
+        `Confirmar aprovação financeira e envio da duplicata ${sol.duplicate_code || ''} (${sol.supplier_name || ''}) para o Contas a Pagar HC?`,
       )
     )
       return;
@@ -893,89 +893,9 @@ const SolicitacoesCrosby = () => {
         .eq('id', sol.id);
       if (updErr) throw updErr;
 
-      // 2) Envia para TOTVS (com retry automático para código duplicado)
-      let solAtual = { ...sol };
-      let tentativas = 0;
-      const MAX_RETRIES = 5;
-      while (tentativas < MAX_RETRIES) {
-        tentativas++;
-        const payload = mergePayloadTotvs(solAtual);
-        console.log(
-          '📤 Enviando payload TOTVS:',
-          JSON.stringify(payload, null, 2),
-        );
-        const resp = await fetch(
-          `${API_BASE_URL}/api/totvs/accounts-payable/duplicates/create`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          },
-        );
-        const result = await resp.json().catch(() => ({}));
-        console.log(
-          '📥 Resposta TOTVS (HTTP',
-          resp.status,
-          '):',
-          JSON.stringify(result, null, 2),
-        );
-
-        if (!resp.ok || result?.success === false) {
-          const msg =
-            result?.message || `Falha no envio TOTVS (HTTP ${resp.status})`;
-          const detailMsgs = Array.isArray(result?.details)
-            ? result.details.map((d) => d?.message || '').join(' ')
-            : '';
-          if (isDuplicateCodeError(msg) || isDuplicateCodeError(detailMsgs)) {
-            const novoCodigo = gerarNovoCodigoNumerico();
-            await supabaseAdmin
-              .from('solicitacoes_crosby')
-              .update({
-                duplicate_code: novoCodigo,
-                payload_totvs: {
-                  ...solAtual.payload_totvs,
-                  duplicateCode: parseInt(novoCodigo),
-                },
-              })
-              .eq('id', sol.id);
-            solAtual = {
-              ...solAtual,
-              duplicate_code: novoCodigo,
-              payload_totvs: {
-                ...solAtual.payload_totvs,
-                duplicateCode: parseInt(novoCodigo),
-              },
-            };
-            notify(
-              'error',
-              `Código duplicado no TOTVS. Tentando novo código: ${novoCodigo}...`,
-            );
-            continue;
-          }
-          await supabaseAdmin
-            .from('solicitacoes_crosby')
-            .update({
-              status: 'erro_envio',
-              totvs_erro: msg,
-              totvs_response: result?.details || result || null,
-            })
-            .eq('id', sol.id);
-          notify('error', `Erro TOTVS: ${msg}`);
-          break;
-        } else {
-          await supabaseAdmin
-            .from('solicitacoes_crosby')
-            .update({
-              status: 'enviado_totvs',
-              enviado_totvs_em: new Date().toISOString(),
-              totvs_response: result?.data ?? result ?? null,
-              totvs_erro: null,
-            })
-            .eq('id', sol.id);
-          notify('success', 'Duplicata enviada com sucesso ao TOTVS!');
-          break;
-        }
-      }
+      // 2) Vira duplicata no Contas a Pagar do HeadCoach (nada vai ao TOTVS)
+      const r = await enviarAoContasPagarHc(sol);
+      notify(r.ok ? 'success' : 'error', r.message);
 
       await carregarSolicitacoes();
       setModalDetalhe(null);
@@ -987,92 +907,35 @@ const SolicitacoesCrosby = () => {
     }
   };
 
+  // Envia a solicitação ao Contas a Pagar do HeadCoach. O servidor monta a
+  // duplicata (empresa, fornecedor, parcelas, rateio), grava em
+  // HEADCOACH › CONTAS A PAGAR e marca a solicitação como enviada — ou como
+  // erro de envio, com o motivo, para o financeiro corrigir e reenviar.
+  const enviarAoContasPagarHc = async (sol) => {
+    try {
+      const j = await apiJson(
+        `/api/hc/contas-pagar/solicitacoes/${sol.id}/enviar`,
+        { method: 'POST' },
+      );
+      return {
+        ok: true,
+        message: j?.message || 'Solicitação enviada ao Contas a Pagar HC.',
+      };
+    } catch (err) {
+      console.error('Envio ao Contas a Pagar HC:', err);
+      return {
+        ok: false,
+        message: `Não foi para o Contas a Pagar HC: ${err?.message || 'erro desconhecido'}`,
+      };
+    }
+  };
+
   const reenviarTotvs = async (sol) => {
     if (!isFinanceiro) return;
-    if (!sol.payload_totvs) return;
     setEnviandoTotvs(true);
-    let solAtual = { ...sol };
-    const MAX_RETRIES = 5;
-    let tentativas = 0;
     try {
-      while (tentativas < MAX_RETRIES) {
-        tentativas++;
-        const payload = mergePayloadTotvs(solAtual);
-        console.log(
-          '📤 Reenviando payload TOTVS:',
-          JSON.stringify(payload, null, 2),
-        );
-        const resp = await fetch(
-          `${API_BASE_URL}/api/totvs/accounts-payable/duplicates/create`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          },
-        );
-        const result = await resp.json().catch(() => ({}));
-        console.log(
-          '📥 Resposta TOTVS reenvio (HTTP',
-          resp.status,
-          '):',
-          JSON.stringify(result, null, 2),
-        );
-        if (!resp.ok || result?.success === false) {
-          const msg =
-            result?.message || `Falha no envio TOTVS (HTTP ${resp.status})`;
-          const detailMsgs = Array.isArray(result?.details)
-            ? result.details.map((d) => d?.message || '').join(' ')
-            : '';
-          if (isDuplicateCodeError(msg) || isDuplicateCodeError(detailMsgs)) {
-            const novoCodigo = gerarNovoCodigoNumerico();
-            await supabaseAdmin
-              .from('solicitacoes_crosby')
-              .update({
-                duplicate_code: novoCodigo,
-                payload_totvs: {
-                  ...solAtual.payload_totvs,
-                  duplicateCode: parseInt(novoCodigo),
-                },
-              })
-              .eq('id', sol.id);
-            solAtual = {
-              ...solAtual,
-              duplicate_code: novoCodigo,
-              payload_totvs: {
-                ...solAtual.payload_totvs,
-                duplicateCode: parseInt(novoCodigo),
-              },
-            };
-            notify(
-              'error',
-              `Código duplicado no TOTVS. Tentando novo código: ${novoCodigo}...`,
-            );
-            continue;
-          }
-          await supabaseAdmin
-            .from('solicitacoes_crosby')
-            .update({
-              status: 'erro_envio',
-              totvs_erro: msg,
-              totvs_response: result?.details || result || null,
-            })
-            .eq('id', sol.id);
-          notify('error', `Erro TOTVS: ${msg}`);
-          break;
-        } else {
-          await supabaseAdmin
-            .from('solicitacoes_crosby')
-            .update({
-              status: 'enviado_totvs',
-              enviado_totvs_em: new Date().toISOString(),
-              totvs_response: result?.data ?? result ?? null,
-              totvs_erro: null,
-            })
-            .eq('id', sol.id);
-          notify('success', 'Reenvio realizado com sucesso!');
-          break;
-        }
-      }
+      const r = await enviarAoContasPagarHc(sol);
+      notify(r.ok ? 'success' : 'error', r.message);
       await carregarSolicitacoes();
       setModalDetalhe(null);
     } catch (err) {
@@ -1198,7 +1061,7 @@ const SolicitacoesCrosby = () => {
     if (sol.status !== 'enviado_totvs' && sol.status !== 'nota_fiscal') {
       notify(
         'error',
-        'Só é possível liberar após o envio ao TOTVS (ou no status Nota Fiscal).',
+        'Só é possível liberar após o envio ao Contas a Pagar (ou no status Nota Fiscal).',
       );
       return;
     }
@@ -1504,101 +1367,58 @@ const SolicitacoesCrosby = () => {
 
   const enviarTotvsEmMassa = async () => {
     if (!isFinanceiro) return;
+    // só o que já passou pelo gestor (ou deu erro no envio) e não tem nota fiscal
     const candidatas = solicitacoesFiltradas.filter(
-      (s) => selecionados.has(s.id) && s.payload_totvs,
+      (s) =>
+        selecionados.has(s.id) &&
+        ['aprovado_gestor', 'aprovado_financeiro', 'erro_envio'].includes(
+          s.status,
+        ),
     );
     if (candidatas.length === 0) {
-      notify('error', 'Nenhuma selecionada possui payload TOTVS.');
+      notify(
+        'error',
+        'Nenhuma selecionada está pronta para o Contas a Pagar HC (precisa estar aprovada pelo gestor ou com erro de envio).',
+      );
       return;
     }
-    if (!window.confirm(`Enviar ${candidatas.length} duplicata(s) ao TOTVS?`))
+    if (
+      !window.confirm(
+        `Enviar ${candidatas.length} solicitação(ões) ao Contas a Pagar HC?`,
+      )
+    )
       return;
     setExecutandoMassa(true);
     let okCount = 0;
-    let failCount = 0;
-    const MAX_RETRIES = 5;
+    const falhas = [];
     try {
       for (const sol of candidatas) {
-        let tentativas = 0;
-        let enviado = false;
-        let solAtual = { ...sol };
-        while (tentativas < MAX_RETRIES && !enviado) {
-          tentativas++;
-          try {
-            const payload = mergePayloadTotvs(solAtual);
-            const resp = await fetch(
-              `${API_BASE_URL}/api/totvs/accounts-payable/duplicates/create`,
-              {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-              },
-            );
-            const result = await resp.json().catch(() => ({}));
-            if (!resp.ok || result?.success === false) {
-              const msg = result?.message || `HTTP ${resp.status}`;
-              const detailMsgs = Array.isArray(result?.details)
-                ? result.details.map((d) => d?.message || '').join(' ')
-                : '';
-              if (
-                isDuplicateCodeError(msg) ||
-                isDuplicateCodeError(detailMsgs)
-              ) {
-                const novoCodigo = gerarNovoCodigoNumerico();
-                await supabaseAdmin
-                  .from('solicitacoes_crosby')
-                  .update({
-                    duplicate_code: novoCodigo,
-                    payload_totvs: {
-                      ...solAtual.payload_totvs,
-                      duplicateCode: parseInt(novoCodigo),
-                    },
-                  })
-                  .eq('id', sol.id);
-                solAtual = {
-                  ...solAtual,
-                  duplicate_code: novoCodigo,
-                  payload_totvs: {
-                    ...solAtual.payload_totvs,
-                    duplicateCode: parseInt(novoCodigo),
-                  },
-                };
-                continue;
-              }
-              await supabaseAdmin
-                .from('solicitacoes_crosby')
-                .update({
-                  status: 'erro_envio',
-                  totvs_erro: msg,
-                  totvs_response: result?.details || result || null,
-                })
-                .eq('id', sol.id);
-              failCount++;
-              enviado = true;
-            } else {
-              await supabaseAdmin
-                .from('solicitacoes_crosby')
-                .update({
-                  status: 'enviado_totvs',
-                  enviado_totvs_em: new Date().toISOString(),
-                  totvs_response: result?.data ?? result ?? null,
-                  totvs_erro: null,
-                })
-                .eq('id', sol.id);
-              okCount++;
-              enviado = true;
-            }
-          } catch {
-            if (tentativas >= MAX_RETRIES) failCount++;
-          }
+        if (sol.status === 'aprovado_gestor') {
+          await supabaseAdmin
+            .from('solicitacoes_crosby')
+            .update({
+              aprovado_financeiro_em: new Date().toISOString(),
+              aprovado_financeiro_por: user?.id || null,
+              aprovado_financeiro_por_nome: userNome,
+            })
+            .eq('id', sol.id);
         }
-        if (!enviado) failCount++;
+        const r = await enviarAoContasPagarHc(sol);
+        if (r.ok) okCount++;
+        else falhas.push(`${sol.supplier_name || sol.id}: ${r.message}`);
       }
       await carregarSolicitacoes();
       setSelecionados(new Set());
-      if (failCount === 0)
-        notify('success', `${okCount} duplicata(s) enviada(s) com sucesso!`);
-      else notify('error', `${okCount} enviada(s), ${failCount} com erro.`);
+      if (falhas.length === 0)
+        notify(
+          'success',
+          `${okCount} solicitação(ões) enviada(s) ao Contas a Pagar HC!`,
+        );
+      else
+        notify(
+          'error',
+          `${okCount} enviada(s), ${falhas.length} com erro. ${falhas[0]}`,
+        );
     } catch (err) {
       console.error(err);
       notify('error', 'Erro no envio em massa.');
@@ -1618,7 +1438,7 @@ const SolicitacoesCrosby = () => {
     if (candidatas.length === 0) {
       notify(
         'error',
-        'Nenhuma selecionada está apta (status "Enviado ao TOTVS" e sem liberação pendente).',
+        'Nenhuma selecionada está apta (status "Enviado ao Contas a Pagar" e sem liberação pendente).',
       );
       return;
     }
@@ -1844,7 +1664,7 @@ const SolicitacoesCrosby = () => {
     <div className="w-full max-w-7xl mx-auto flex flex-col items-stretch justify-start py-3 px-2">
       <PageTitle
         title="Solicitações Crosby"
-        subtitle="Aprovação de solicitações de pagamento e reembolso · Envio de duplicatas ao TOTVS"
+        subtitle="Aprovação de solicitações de pagamento e reembolso · Envio de duplicatas ao Contas a Pagar do HeadCoach"
         icon={ClipboardText}
         iconColor="text-[#000638]"
       />
@@ -1918,7 +1738,7 @@ const SolicitacoesCrosby = () => {
             filter: 'aprovado_financeiro',
           },
           {
-            label: 'Enviado TOTVS',
+            label: 'Enviado Contas a Pagar',
             value: totais.enviado_totvs,
             color: 'text-green-700',
             filter: 'enviado_totvs',
@@ -2168,7 +1988,7 @@ const SolicitacoesCrosby = () => {
                   {executandoMassa && (
                     <Spinner size={11} className="animate-spin" />
                   )}
-                  Enviar ao TOTVS
+                Enviar ao Contas a Pagar HC
                 </button>
               )}
               {isFinanceiro && (
@@ -2785,7 +2605,7 @@ const ModalDetalhe = ({
                   <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
                     <div className="flex items-center gap-1.5 font-bold mb-2">
                       <WarningCircle size={16} weight="bold" />
-                      Erro no envio ao TOTVS
+                      Erro no envio ao Contas a Pagar
                     </div>
                     {amigaveis.length > 0 ? (
                       <ul className="list-disc list-inside space-y-1 text-xs font-bold">
@@ -3047,7 +2867,7 @@ const ModalDetalhe = ({
                   {sol.conciliado_em
                     ? ` · ${formatarDataHora(sol.conciliado_em)}`
                     : ''}
-                  . A solicitação está paga; falta só o lançamento no TOTVS
+                  . A solicitação está paga; falta só o lançamento no Contas a Pagar HC
                   (não passa pela Liberação de Pagamento).
                 </p>
               </div>
@@ -3830,7 +3650,11 @@ const ModalDetalhe = ({
                     {sol.enviado_totvs_em && (
                       <TimelineItem
                         color="bg-green-500"
-                        label="Enviado ao TOTVS"
+                        label={
+                          sol.totvs_response?.destino === 'contas-pagar-headcoach'
+                            ? `Enviado ao Contas a Pagar HC${(sol.totvs_response.titulos || []).length ? ` · duplicata ${sol.totvs_response.titulos.map((t) => `${t.duplicata}/${t.parcela}`).join(', ')}` : ''}`
+                            : 'Enviado ao TOTVS'
+                        }
                         value={formatarDataHora(sol.enviado_totvs_em)}
                       />
                     )}
@@ -3923,8 +3747,8 @@ const ModalDetalhe = ({
                   <CloudArrowUp size={14} weight="bold" />
                 )}
                 {sol.status === 'conciliado'
-                  ? 'Lançar no TOTVS (aprovar financeiro)'
-                  : 'Aprovar Financeiro & Enviar ao TOTVS'}
+                  ? 'Lançar no Contas a Pagar HC (aprovar financeiro)'
+                  : 'Aprovar Financeiro & Enviar ao Contas a Pagar HC'}
               </button>
             )}
             {podeConciliar && !candidatos && (
@@ -3974,7 +3798,7 @@ const ModalDetalhe = ({
                 ) : (
                   <ArrowClockwise size={14} weight="bold" />
                 )}
-                Reenviar ao TOTVS
+                Reenviar ao Contas a Pagar HC
               </button>
             )}
             {podeAbrirChamadoNF && (
@@ -4938,7 +4762,7 @@ const ModalEdicao = ({
                   </select>
                   <p className="mt-1 text-[10px] text-gray-500">
                     Com nota fiscal, a aprovação do gestor envia para o status
-                    Nota Fiscal (sem TOTVS) e abre o chamado de escrituração.
+                    Nota Fiscal (sem duplicata no contas a pagar) e abre o chamado de escrituração.
                   </p>
                 </div>
               )}
@@ -4966,7 +4790,7 @@ const ModalEdicao = ({
                     </select>
                     <p className="mt-1 text-[10px] text-gray-500">
                       Produto não passa pela aprovação: vai para a conciliação
-                      com o extrato e, conciliado, é lançado no TOTVS.
+                      com o extrato e, conciliado, é lançado no Contas a Pagar HC.
                     </p>
                   </div>
                 </>
