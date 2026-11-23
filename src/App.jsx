@@ -202,6 +202,7 @@ const HcTransacoes = lazy(() => import('./pages/HcTransacoes'));
 const HcCaixa = lazy(() => import('./pages/HcCaixa'));
 const HcContasReceber = lazy(() => import('./pages/HcContasReceber'));
 const HcContasPagar = lazy(() => import('./pages/HcContasPagar'));
+const HcLiberacaoPagamento = lazy(() => import('./pages/HcLiberacaoPagamento'));
 const HcSaldosClientes = lazy(() => import('./pages/HcSaldosClientes'));
 const CancelamentoTransacao = lazy(() => import('./pages/CancelamentoTransacao'));
 const LiberacaoDesconto = lazy(() => import('./pages/LiberacaoDesconto'));
@@ -403,6 +404,7 @@ const protectedRoutes = [
   { path: '/headcoach/caixa/fechamento', component: HcCaixaFechamento },
   { path: '/headcoach/contas-receber', component: HcContasReceber },
   { path: '/headcoach/contas-pagar', component: HcContasPagar },
+  { path: '/headcoach/liberacao-pagamento', component: HcLiberacaoPagamento },
   { path: '/headcoach/saldos-clientes', component: HcSaldosClientes },
   { path: '/headcoach/cancelamento-transacao', component: CancelamentoTransacao },
   { path: '/headcoach/liberacao-desconto', component: LiberacaoDesconto },

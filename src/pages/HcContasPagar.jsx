@@ -12,7 +12,8 @@
 // API: /api/hc/contas-pagar (só owner, admin e financeiro) — services/hcContasPagar.js
 // ============================================================================
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Receipt, MagnifyingGlass, Spinner, X, CheckCircle, Plus, Trash, Copy, FilePdf, PencilSimple, Prohibit } from '@phosphor-icons/react';
+import { Receipt, MagnifyingGlass, Spinner, X, CheckCircle, Plus, Trash, Copy, FilePdf, PencilSimple, Prohibit, PaperPlaneTilt } from '@phosphor-icons/react';
+import { Link } from 'react-router-dom';
 import PageTitle from '../components/ui/PageTitle';
 import { useAuth } from '../components/AuthContext';
 import { apiJson } from '../utils/apiAuth';
@@ -194,6 +195,52 @@ function EditorRateio({ linhas, onChange, op, valorBase }) {
   );
 }
 
+// Liberação de Pagamento: a duplicata em aberto é liberada e segue pendente → previsão → aprovado → incluído → pago
+const ETAPAS_LIBERACAO = { pendente: 'PENDENTE', previsao: 'PREVISÃO', aprovado: 'APROVADA', incluido: 'INCLUÍDA', pago: 'PAGA', cancelado: 'DEVOLVIDA' };
+const podeLiberar = (t) => t.situacao === 'aberto' && !t.liberacao;
+function SeloLiberacao({ l }) {
+  if (!l) return null;
+  return (
+    <span title={`Na Liberação de Pagamento: ${fmtBRL(l.valor)}${l.data_prevista ? ` · previsto para ${fmtData(l.data_prevista)}` : ''}${l.banco ? ` · ${l.banco}` : ''}`} className="ml-1 whitespace-nowrap rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-700 ring-1 ring-indigo-200">
+      LIBERAÇÃO · {ETAPAS_LIBERACAO[l.status] || l.status}
+    </span>
+  );
+}
+
+const POR_PAGINA = 50; // linhas da tabela por página (mil linhas de uma vez travavam a tela)
+
+// Página 1, 2, 3… da tabela. Mostra a primeira, a última e as vizinhas da atual.
+function Paginacao({ pagina, total, qtd, onIr }) {
+  if (total <= 1) return null;
+  const nums = [...new Set([1, 2, pagina - 1, pagina, pagina + 1, total - 1, total])].filter((n) => n >= 1 && n <= total).sort((a, b) => a - b);
+  const btn = 'inline-flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-xs font-bold ring-1 ring-gray-200 disabled:opacity-40';
+  const de = (pagina - 1) * POR_PAGINA + 1;
+  const ate = Math.min(pagina * POR_PAGINA, qtd);
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-gray-600">
+      <span>
+        Mostrando <b>{de}</b>–<b>{ate}</b> de <b>{qtd}</b> duplicatas · página {pagina} de {total}
+      </span>
+      <div className="flex flex-wrap items-center gap-1">
+        <button type="button" onClick={() => onIr(pagina - 1)} disabled={pagina <= 1} className={`${btn} bg-white text-[#000638] hover:bg-gray-50`}>
+          ‹ Anterior
+        </button>
+        {nums.map((n, i) => (
+          <React.Fragment key={n}>
+            {i > 0 && n - nums[i - 1] > 1 && <span className="px-1 text-gray-400">…</span>}
+            <button type="button" onClick={() => onIr(n)} className={`${btn} ${n === pagina ? 'bg-[#000638] text-white ring-[#000638]' : 'bg-white text-[#000638] hover:bg-gray-50'}`}>
+              {n}
+            </button>
+          </React.Fragment>
+        ))}
+        <button type="button" onClick={() => onIr(pagina + 1)} disabled={pagina >= total} className={`${btn} bg-white text-[#000638] hover:bg-gray-50`}>
+          Próxima ›
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // duplicata que veio do contas a pagar do TOTVS (já paga lá, na conciliação ou na Liberação)
 function MarcaTotvs() {
   return (
@@ -213,6 +260,9 @@ export default function HcContasPagar() {
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState('');
   const [aberto, setAberto] = useState(null); // id da duplicata no detalhe
+  const [pagina, setPagina] = useState(1); // a tabela mostra POR_PAGINA duplicatas por vez
+  const [selecionadas, setSelecionadas] = useState(() => new Set()); // duplicatas marcadas para LIBERAR PARA PAGAMENTO
+  const [liberando, setLiberando] = useState(false);
   const [incluindo, setIncluindo] = useState(false);
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
   const avisar = useCallback((tipo, msg) => {
@@ -244,6 +294,36 @@ export default function HcContasPagar() {
   }, [podeFinanceiro]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const tot = dados?.totais || {};
+  const todasDuplicatas = dados?.titulos || [];
+  const totalPaginas = Math.max(1, Math.ceil(todasDuplicatas.length / POR_PAGINA));
+  const paginaAtual = Math.min(pagina, totalPaginas);
+  const daPagina = todasDuplicatas.slice((paginaAtual - 1) * POR_PAGINA, paginaAtual * POR_PAGINA);
+  // seleção: só duplicata em aberto que ainda não está na Liberação de Pagamento
+  const liberaveis = todasDuplicatas.filter(podeLiberar);
+  const liberaveisDaPagina = daPagina.filter(podeLiberar);
+  const marcadas = liberaveis.filter((t) => selecionadas.has(t.id));
+  const valorMarcado = marcadas.reduce((soma, t) => soma + Number(t.tela?.saldo ?? t.valor), 0);
+  const paginaToda = liberaveisDaPagina.length > 0 && liberaveisDaPagina.every((t) => selecionadas.has(t.id));
+  const marcar = (ids, sim) =>
+    setSelecionadas((atual) => {
+      const novo = new Set(atual);
+      ids.forEach((id) => (sim ? novo.add(id) : novo.delete(id)));
+      return novo;
+    });
+  const liberarParaPagamento = async () => {
+    if (!marcadas.length) return;
+    setLiberando(true);
+    try {
+      const j = await apiJson(`${API}/liberacoes`, { method: 'POST', body: { ids: marcadas.map((t) => t.id) } });
+      setSelecionadas(new Set());
+      avisar('ok', j?.message || 'Duplicatas liberadas para pagamento');
+      buscar(f);
+    } catch (e) {
+      avisar('erro', e.message);
+    } finally {
+      setLiberando(false);
+    }
+  };
   const empresas = op?.empresas || [];
   const formas = op?.formas || {};
   const nomeEmpresa = useMemo(() => Object.fromEntries(empresas.map((e) => [e.code, e.nome])), [empresas]);
@@ -268,6 +348,7 @@ export default function HcContasPagar() {
           <form
             onSubmit={(e) => {
               e.preventDefault();
+              setPagina(1);
               buscar(f);
             }}
             className="grid grid-cols-2 gap-2 rounded-xl border border-gray-200 bg-white p-3 shadow-sm sm:grid-cols-4 lg:grid-cols-8"
@@ -384,17 +465,51 @@ export default function HcContasPagar() {
                 <Card rotulo="Juros + multa pagos" valor={fmtBRL(tot.encargos)} />
                 <Card rotulo="Descontos" valor={fmtBRL(tot.desconto)} />
               </div>
+              <div className="flex flex-wrap items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50/60 px-3 py-2 text-xs text-[#000638]">
+                {marcadas.length > 0 ? (
+                  <span>
+                    <b>{marcadas.length}</b> duplicata(s) selecionada(s) · <b>{fmtBRL(valorMarcado)}</b> a pagar
+                  </span>
+                ) : (
+                  <span className="text-gray-600">Marque as duplicatas em aberto e clique em LIBERAR PARA PAGAMENTO.</span>
+                )}
+                {liberaveis.length > marcadas.length && (
+                  <button type="button" onClick={() => marcar(liberaveis.map((t) => t.id), true)} className="font-semibold text-indigo-700 underline">
+                    selecionar as {liberaveis.length} em aberto da consulta
+                  </button>
+                )}
+                {marcadas.length > 0 && (
+                  <button type="button" onClick={() => setSelecionadas(new Set())} className="font-semibold text-gray-600 underline">
+                    limpar
+                  </button>
+                )}
+                <div className="ml-auto flex flex-wrap items-center gap-2">
+                  <Link to="/headcoach/liberacao-pagamento" className="font-semibold text-indigo-700 underline">
+                    Abrir a Liberação de Pagamento
+                  </Link>
+                  <button type="button" onClick={liberarParaPagamento} disabled={liberando || marcadas.length === 0} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#000638] px-3 text-xs font-bold text-white hover:bg-indigo-900 disabled:opacity-40">
+                    {liberando ? <Spinner size={14} className="animate-spin" /> : <PaperPlaneTilt size={14} weight="bold" />} LIBERAR PARA PAGAMENTO
+                  </button>
+                </div>
+              </div>
               <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-sm">
-                <table className="w-full min-w-[1450px] text-xs">
+                <table className="w-full min-w-[1220px] text-xs">
                   <thead className="bg-gray-50 text-left text-[10px] uppercase tracking-wide text-gray-500">
                     <tr>
+                      <th className="w-8 px-2 py-2">
+                        <input
+                          type="checkbox"
+                          title="Selecionar as duplicatas em aberto desta página"
+                          checked={paginaToda}
+                          disabled={liberaveisDaPagina.length === 0}
+                          onChange={(e) => marcar(liberaveisDaPagina.map((t) => t.id), e.target.checked)}
+                        />
+                      </th>
                       <th className="px-2 py-2">Empresa</th>
                       <th className="px-2 py-2">Fornecedor</th>
                       <th className="px-2 py-2" title="Número da duplicata / parcela">Dup. / parc.</th>
                       <th className="px-2 py-2">Doc. fiscal</th>
                       <th className="px-2 py-2">Despesa</th>
-                      <th className="px-2 py-2">Centro de custo</th>
-                      <th className="px-2 py-2">Portador</th>
                       <th className="px-2 py-2">Forma</th>
                       <th className="px-2 py-2">Emissão</th>
                       <th className="px-2 py-2">Vencimento</th>
@@ -410,13 +525,16 @@ export default function HcContasPagar() {
                   <tbody className="divide-y divide-gray-100">
                     {dados.titulos.length === 0 && (
                       <tr>
-                        <td colSpan={15} className="px-2 py-10 text-center text-gray-400">
+                        <td colSpan={14} className="px-2 py-10 text-center text-gray-400">
                           Nenhuma duplicata com esses filtros.
                         </td>
                       </tr>
                     )}
-                    {dados.titulos.map((t) => (
+                    {daPagina.map((t) => (
                       <tr key={t.id} onClick={() => setAberto(t.id)} className={`cursor-pointer hover:bg-indigo-50/50 ${t.situacao === 'cancelado' ? 'text-gray-400 line-through' : ''}`}>
+                        <td className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
+                          {podeLiberar(t) && <input type="checkbox" checked={selecionadas.has(t.id)} onChange={(e) => marcar([t.id], e.target.checked)} />}
+                        </td>
                         <td className="px-2 py-1.5" title={nomeEmpresa[t.empresa]}>
                           {t.empresa}
                         </td>
@@ -431,10 +549,6 @@ export default function HcContasPagar() {
                         <td className="max-w-[170px] truncate px-2 py-1.5" title={t.despesa_nome || ''}>
                           {t.despesa_code ? `${t.despesa_code} · ${t.despesa_nome}` : '—'}
                         </td>
-                        <td className="max-w-[160px] truncate px-2 py-1.5" title={(t.rateio || []).map((r) => `${r.centro_custo_nome || '—'} ${String(r.percentual).replace('.', ',')}%`).join(' · ')}>
-                          {(t.rateio || []).length > 1 ? <span className="font-semibold text-[#000638]">Rateado ({t.rateio.length})</span> : t.centro_custo_nome || '—'}
-                        </td>
-                        <td className="max-w-[120px] truncate px-2 py-1.5">{t.portador_nome || '—'}</td>
                         <td className="px-2 py-1.5">{formas[t.forma_pagamento] || '—'}</td>
                         <td className="px-2 py-1.5 tabular-nums">{fmtData(t.emissao)}</td>
                         <td className="px-2 py-1.5 tabular-nums">{fmtData(t.vencimento)}</td>
@@ -444,6 +558,7 @@ export default function HcContasPagar() {
                         <td className="px-2 py-1.5 tabular-nums">{fmtData(t.data_pagamento)}</td>
                         <td className="px-2 py-1.5">
                           <Situacao t={t} />
+                          <SeloLiberacao l={t.liberacao} />
                         </td>
                       </tr>
                     ))}
@@ -451,8 +566,8 @@ export default function HcContasPagar() {
                   {dados.titulos.length > 0 && (
                     <tfoot className="bg-gray-50 text-xs font-bold">
                       <tr>
-                        <td className="px-2 py-2" colSpan={10}>
-                          {tot.qtd} duplicata(s)
+                        <td className="px-2 py-2" colSpan={9}>
+                          {tot.qtd} duplicata(s){totalPaginas > 1 ? ' · totais da consulta inteira' : ''}
                         </td>
                         <td className="px-2 py-2 text-right tabular-nums">{fmtBRL(tot.valor)}</td>
                         <td className="px-2 py-2 text-right tabular-nums">{fmtBRL(tot.valorPago)}</td>
@@ -463,6 +578,12 @@ export default function HcContasPagar() {
                   )}
                 </table>
               </div>
+              <Paginacao
+                pagina={paginaAtual}
+                total={totalPaginas}
+                qtd={todasDuplicatas.length}
+                onIr={(n) => setPagina(Math.min(Math.max(1, n), totalPaginas))}
+              />
             </>
           )}
         </div>
@@ -872,6 +993,7 @@ function Detalhe({ id: idInicial, op, onFechar, onMudou }) {
           </div>
           {t?.origem === 'totvs' && <MarcaTotvs />}
           {t && <Situacao t={t} />}
+          {t?.liberacao && <SeloLiberacao l={t.liberacao} />}
           <button onClick={onFechar} className="rounded-lg p-1 text-gray-500 hover:bg-gray-100">
             <X size={18} />
           </button>
