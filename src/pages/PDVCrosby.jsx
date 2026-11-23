@@ -399,7 +399,8 @@ const limiteDescontoItem = (i, pct) => {
   return Number((promo + ((i.unit - promo) * pct) / 100).toFixed(2));
 };
 
-// ─── Senha de owner/admin para desconto acima do limite ──────────────────────
+// ─── Senha de quem tem o desconto liberado (outro vendedor com limite maior,
+// gerente, admin ou owner) para desconto acima do limite de quem está vendendo ──
 function SenhaDescontoModal({ pct, limite, empresa, por, onLiberado, onCancelar }) {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
@@ -411,13 +412,8 @@ function SenhaDescontoModal({ pct, limite, empresa, por, onLiberado, onCancelar 
     setBusy(true);
     setErro(null);
     try {
-      const r = await fetch(`${API_BASE_URL}/api/pdv-crosby/autorizar-desconto`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), senha, pct: Number(pct.toFixed(2)), empresa, por }),
-      });
-      const j = await r.json();
-      if (!r.ok || !j.success) throw new Error(j?.message || 'Não autorizado');
+      // quem autoriza libera até o limite DELE (o servidor confere a senha e o limite)
+      const j = await apiJson('/api/pdv-crosby/descontos/autorizar', { method: 'POST', body: { email: email.trim(), senha, pct: Number(pct.toFixed(2)), empresa, por } });
       onLiberado(j.data);
     } catch (e) {
       setErro(e.message);
@@ -436,7 +432,7 @@ function SenhaDescontoModal({ pct, limite, empresa, por, onLiberado, onCancelar 
         </div>
         <p className="mt-1 text-sm text-gray-600">
           Desconto de <b>{pct.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%</b> passa do limite de{' '}
-          {String(limite ?? PDV_VAREJO_CONFIG.maxDescontoPct).replace('.', ',')}%. Um <b>owner</b> ou <b>admin</b> precisa digitar o e-mail e a senha do HeadCoach.
+          {String(limite ?? PDV_VAREJO_CONFIG.maxDescontoPct).replace('.', ',')}%. Quem tem esse desconto liberado (gerente, admin, owner ou outro usuário com limite maior) digita o e-mail e a senha do HeadCoach.
         </p>
         <div className="mt-3 space-y-2">
           <input
@@ -444,7 +440,7 @@ function SenhaDescontoModal({ pct, limite, empresa, por, onLiberado, onCancelar 
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="E-mail do owner/admin"
+            placeholder="E-mail de quem autoriza"
             autoComplete="off"
             className="w-full h-10 px-3 mb-0 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
           />
@@ -555,7 +551,7 @@ const PDVCrosby = () => {
   // Desconto: até 15% para todos; acima disso só owner/admin, ou com a senha
   // de um deles (a liberação vale até o fim desta venda)
   const descontoSemLimite = ['admin', 'owner'].includes(user?.role);
-  const [descontoLiberado, setDescontoLiberado] = useState(null); // { nome, email, role }
+  const [descontoLiberado, setDescontoLiberado] = useState(null); // { nome, email, role, pct, semLimite } — pct = até quanto ele liberou
   const [senhaDesconto, setSenhaDesconto] = useState(null); // { pct, aplicar }
   // Limite do vendedor: vem da tela Financeiro › Liberação de Desconto
   // (/api/pdv-crosby/descontos/meu). Sem resposta, vale o padrão de 15%.
@@ -573,7 +569,9 @@ const PDVCrosby = () => {
       vivo = false;
     };
   }, [user?.id, descontoSemLimite]);
-  const maxDescPct = descontoSemLimite || descontoLiberado ? 100 : limiteDescPct;
+  // com a liberação de outro usuário, vale o limite DELE nesta venda (owner/admin: tudo)
+  const liberadoAte = descontoLiberado ? (descontoLiberado.semLimite || descontoLiberado.pct == null ? 100 : Math.max(limiteDescPct, Number(descontoLiberado.pct) || 0)) : null;
+  const maxDescPct = descontoSemLimite ? 100 : liberadoAte ?? limiteDescPct;
   // Cashback não usado: pergunta ao finalizar (uma vez por cliente/venda)
   const [perguntaCashback, setPerguntaCashback] = useState(false);
   const [cashbackRecusado, setCashbackRecusado] = useState(false);
@@ -1237,7 +1235,7 @@ const PDVCrosby = () => {
       return;
     }
     if (descontoForaDoLimite) {
-      showToast('erro', `Desconto acima de ${PDV_VAREJO_CONFIG.maxDescontoPct}% precisa da senha do owner/admin`);
+      showToast('erro', `Desconto acima de ${String(maxDescPct).replace('.', ',')}% precisa da senha de quem tem esse desconto liberado`);
       return;
     }
     if (temVenda && !cashbackUsar && !cashbackRecusado && totals.cashbackDisponivel > 0) {
@@ -2198,7 +2196,7 @@ const PDVCrosby = () => {
                               value={i.discount}
                               title={
                                 maxDescPct < 100
-                                  ? `Até ${fmtBRL(limiteDescontoItem(i, maxDescPct))}${i.promoDesconto ? ' (promoção + ' : ' ('}${String(maxDescPct).replace('.', ',')}%); acima disso pede a senha do owner/admin`
+                                  ? `Até ${fmtBRL(limiteDescontoItem(i, maxDescPct))}${i.promoDesconto ? ' (promoção + ' : ' ('}${String(maxDescPct).replace('.', ',')}%); acima disso pede a senha de quem tem o desconto liberado`
                                   : 'Desconto liberado'
                               }
                               onChange={(e) => mudarDescontoItem(i, e.target.value)}
@@ -2257,7 +2255,7 @@ const PDVCrosby = () => {
                   onKeyDown={(e) => e.key === 'Enter' && items.length > 0 && aplicarDescontoGeral()}
                   placeholder={descModo === 'valor' ? '0,00' : '%'}
                   inputMode="decimal"
-                  title={maxDescPct < 100 ? `Até ${String(maxDescPct).replace('.', ',')}% da venda; acima disso pede a senha do owner/admin` : 'Desconto liberado'}
+                  title={maxDescPct < 100 ? `Até ${String(maxDescPct).replace('.', ',')}% da venda; acima disso pede a senha de quem tem o desconto liberado` : 'Desconto liberado'}
                   className="h-9 w-16 px-1.5 mb-0 rounded-lg border border-gray-300 text-xs text-center focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
                 />
                 <button
@@ -2278,11 +2276,11 @@ const PDVCrosby = () => {
               </div>
               {descontoLiberado ? (
                 <p className="mt-1 text-[10px] text-amber-700 inline-flex items-center gap-1">
-                  <LockKey size={11} weight="fill" /> Liberado por {descontoLiberado.nome} nesta venda
+                  <LockKey size={11} weight="fill" /> Liberado por {descontoLiberado.nome} nesta venda{maxDescPct < 100 ? ` (até ${String(maxDescPct).replace('.', ',')}%)` : ''}
                 </p>
               ) : (
                 !descontoSemLimite && (
-                  <p className="mt-1 text-[10px] text-gray-400">Até {PDV_VAREJO_CONFIG.maxDescontoPct}% — acima disso pede a senha do owner/admin.</p>
+                  <p className="mt-1 text-[10px] text-gray-400">Até {String(maxDescPct).replace('.', ',')}% — acima disso pede a senha de quem tem o desconto liberado.</p>
                 )
               )}
             </div>
@@ -2406,7 +2404,7 @@ const PDVCrosby = () => {
         {senhaDesconto && (
           <SenhaDescontoModal
             pct={senhaDesconto.pct}
-            limite={limiteDescPct}
+            limite={maxDescPct}
             empresa={branch ? parseInt(branch, 10) : null}
             por={user?.email || user?.name || null}
             onCancelar={() => setSenhaDesconto(null)}

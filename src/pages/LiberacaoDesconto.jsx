@@ -270,8 +270,8 @@ export default function LiberacaoDesconto() {
               </div>
             </div>
             <p className="mt-3 text-[11px] leading-relaxed text-gray-500">
-              Acima do limite o PDV continua pedindo o e-mail e a senha de um owner ou admin. Vendedor que nunca teve o limite mudado (e quem entrar depois) fica no padrão de {fmtPct(dados.padrao)}. Owner e admin
-              não têm limite. O vendedor passa a ver o limite novo ao abrir o PDV de novo.
+              Acima do limite o PDV pede o e-mail e a senha de quem tem aquele desconto liberado: outro usuário com limite maior, gerente, admin ou owner. Vendedor que nunca teve o limite mudado (e quem entrar
+              depois) fica no padrão de {fmtPct(dados.padrao)}; gerente já entra com {fmtPct(dados.padraoGerente ?? 30)}. Owner e admin não têm limite. O vendedor passa a ver o limite novo ao abrir o PDV de novo.
             </p>
           </div>
 
@@ -364,8 +364,8 @@ export default function LiberacaoDesconto() {
                           )}
                         </td>
                         <td className="px-2 py-2 text-right">
-                          <span className={`text-base font-bold ${u.pct === dados.padrao ? 'text-[#000638]' : u.pct > dados.padrao ? 'text-emerald-700' : 'text-amber-700'}`}>{fmtPct(u.pct)}</span>
-                          {u.semLimite ? <div className="text-[10px] text-gray-400">{u.role}: sem limite no PDV</div> : !u.proprio ? <div className="text-[10px] text-gray-400">padrão</div> : null}
+                          <span className={`text-base font-bold ${u.pct === (u.padrao ?? dados.padrao) ? 'text-[#000638]' : u.pct > (u.padrao ?? dados.padrao) ? 'text-emerald-700' : 'text-amber-700'}`}>{fmtPct(u.pct)}</span>
+                          {u.semLimite ? <div className="text-[10px] text-gray-400">{u.role}: sem limite no PDV</div> : !u.proprio ? <div className="text-[10px] text-gray-400">{u.role === 'manager' ? 'padrão de gerente' : 'padrão'}</div> : null}
                         </td>
                         <td className="px-2 py-2">
                           <div className="flex items-center gap-2">
