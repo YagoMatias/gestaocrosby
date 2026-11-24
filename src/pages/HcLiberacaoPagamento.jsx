@@ -806,6 +806,27 @@ export default function HcLiberacaoPagamento() {
               limpar
             </button>
           )}
+          {/* o mesmo banco para todas as selecionadas, de uma vez (a seleção continua para aprovar em seguida) */}
+          {marcadas.length > 0 && (
+            <select
+              value=""
+              disabled={ocupado}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v) executar('/banco', { ids: idsMarcados, banco: v === '__limpar__' ? '' : v }, { limpar: false });
+              }}
+              title="Põe o mesmo banco em todas as selecionadas"
+              className="h-8 rounded-lg border border-indigo-300 bg-white px-2 text-xs font-bold text-[#000638] focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
+            >
+              <option value="">Banco para as {marcadas.length} selecionada(s)…</option>
+              {bancos.map((b) => (
+                <option key={b} value={b}>
+                  {b}
+                </option>
+              ))}
+              <option value="__limpar__">— tirar o banco —</option>
+            </select>
+          )}
           <div className="ml-auto flex flex-wrap items-center gap-2">
             {etapa === 'incluido' && (
               <button type="button" disabled={ocupado} onClick={conferirExtratos} title="Confere nos extratos de hoje e dos últimos 7 dias quais duplicatas incluídas já foram pagas" className={`${btnAcao} bg-[#000638] hover:bg-[#0b1a6e]`}>
