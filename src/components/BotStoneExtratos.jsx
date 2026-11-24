@@ -337,7 +337,7 @@ const BotStoneExtratos = ({ onImportou }) => {
                   {abertaAqui ? <CaretDown size={12} /> : <CaretRight size={12} />}
                   <span className="font-mono text-gray-400">#{e.id}</span>
                   <Chip cfg={st}>{st.label}</Chip>
-                  <span className="text-gray-500">{e.origem === 'agendado' ? 'automática' : 'manual'}</span>
+                  <span className="text-gray-500">{e.origem === 'agendado' ? 'automática' : e.origem === 'saldo' ? 'só saldo (de hora em hora)' : 'manual'}</span>
                   <span className="text-gray-700">{fmtHora(e.criado_em)}</span>
                   {e.parametros?.de && (
                     <span className="text-gray-500 flex items-center gap-1">

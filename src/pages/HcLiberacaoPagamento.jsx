@@ -12,10 +12,11 @@
 // ============================================================================
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CurrencyDollar, Clock, CalendarCheck, CheckCircle, Bank, Receipt, Spinner, MagnifyingGlass, X, Copy, PencilSimple, ArrowUUpLeft, ArrowsClockwise, Lightning } from '@phosphor-icons/react';
+import { CurrencyDollar, Clock, CalendarCheck, CheckCircle, Bank, Receipt, Spinner, MagnifyingGlass, X, Copy, PencilSimple, ArrowUUpLeft, ArrowsClockwise, Lightning, Wallet, CaretDown } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import { useAuth } from '../components/AuthContext';
 import { apiJson } from '../utils/apiAuth';
+import { useAoAtivarAba } from '../components/AppTabs/TabContext';
 
 const API = '/api/hc/contas-pagar/liberacoes';
 const PERFIS_FINANCEIRO = ['owner', 'admin', 'user'];
@@ -51,6 +52,106 @@ function CardEtapa({ etapa, dados, ativo, onClick }) {
       <div className="text-xl font-bold">{dados?.qtd || 0}</div>
       <div className="text-[11px] font-semibold opacity-80">{fmtBRL(dados?.valor)}</div>
     </button>
+  );
+}
+
+// "24/11 às 14:02" (horário de Recife)
+const fmtQuando = (iso) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  const dia = d.toLocaleDateString('pt-BR', { timeZone: 'America/Recife', day: '2-digit', month: '2-digit' });
+  const hora = d.toLocaleTimeString('pt-BR', { timeZone: 'America/Recife', hour: '2-digit', minute: '2-digit' });
+  return `${dia} às ${hora}`;
+};
+
+/**
+ * SALDO BANCÁRIO: o total (Stone com o antecipável + Pagar.me disponível + os
+ * bancos informados à mão), um chip por banco e QUANDO o saldo foi atualizado
+ * pela última vez (o bot consulta de hora em hora, de segunda a sexta, 9h–20h).
+ * Clicar em STONE ou PAGARME abre as contas.
+ */
+function CardSaldos({ saldos, carregando, erro, onAtualizar }) {
+  const [aberto, setAberto] = useState(null); // 'STONE' | 'PAGARME'
+  const s = saldos || {};
+  const bancos = s.bancos || [];
+  const comSaldo = bancos.filter((b) => Number(b.valor) > 0).length;
+  // mais de 90 min sem atualizar em horário de consulta: avisa que o número pode estar velho
+  const minutos = s.atualizadoEm ? Math.round((Date.now() - new Date(s.atualizadoEm).getTime()) / 60000) : null;
+  const velho = minutos != null && minutos > 90;
+  const contas = aberto === 'STONE' ? s.stone || [] : aberto === 'PAGARME' ? s.pagarme || [] : [];
+  return (
+    <div className="mb-4 rounded-xl border border-teal-200 bg-white p-3 shadow-sm">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-100 text-teal-700">
+          <Wallet size={20} weight="bold" />
+        </div>
+        <div className="min-w-[180px]">
+          <div className="text-[10px] font-bold uppercase tracking-wide text-teal-700">
+            Saldo bancário <span className="font-normal normal-case tracking-normal text-gray-400">· {comSaldo} banco(s)</span>
+          </div>
+          <div className="text-2xl font-extrabold leading-tight text-gray-900">{saldos ? fmtBRL(s.total) : carregando ? '…' : '—'}</div>
+          <div className={`text-[11px] ${velho ? 'font-semibold text-amber-700' : 'text-gray-500'}`}>
+            {saldos ? (
+              <>
+                Atualizado em <b className={velho ? '' : 'text-gray-800'}>{fmtQuando(s.atualizadoEm)}</b>
+                {velho ? ' · pode estar desatualizado' : ''}
+              </>
+            ) : erro ? (
+              <span className="text-rose-700">{erro}</span>
+            ) : (
+              'Carregando o saldo…'
+            )}
+          </div>
+        </div>
+        <div className="flex flex-1 flex-wrap items-center gap-1.5">
+          {bancos.map((b) => {
+            const abre = b.banco === 'STONE' || b.banco === 'PAGARME';
+            const on = Number(b.valor) > 0;
+            return (
+              <button
+                key={b.banco}
+                type="button"
+                disabled={!abre}
+                onClick={() => setAberto((a) => (a === b.banco ? null : b.banco))}
+                title={`${b.automatico ? 'Atualizado pelo bot' : 'Informado à mão'} em ${fmtQuando(b.atualizadoEm)}`}
+                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-bold ${on ? 'border-teal-200 bg-teal-50 text-teal-800' : 'border-gray-200 bg-gray-50 text-gray-400'} ${abre ? 'hover:brightness-95' : 'cursor-default'} ${aberto === b.banco ? 'ring-2 ring-teal-300' : ''}`}
+              >
+                {b.banco}: {fmtBRL(b.valor)}
+                {abre && <CaretDown size={10} weight="bold" className={aberto === b.banco ? 'rotate-180' : ''} />}
+              </button>
+            );
+          })}
+        </div>
+        <button type="button" onClick={onAtualizar} disabled={carregando} title="Ler de novo o saldo guardado (o bot consulta o banco de hora em hora)" className="inline-flex h-8 items-center gap-1 rounded-lg px-2 text-[11px] font-bold text-gray-600 ring-1 ring-gray-200 hover:bg-gray-50 disabled:opacity-40">
+          {carregando ? <Spinner size={12} className="animate-spin" /> : <ArrowsClockwise size={12} weight="bold" />} Recarregar
+        </button>
+      </div>
+      {aberto && (
+        <div className="mt-3 border-t border-gray-100 pt-2">
+          <p className="mb-1 text-[11px] font-bold text-gray-500">
+            {aberto === 'STONE' ? 'Stone por conta (final do CNPJ)' : 'Pagar.me'}
+            {aberto === 'STONE' && Number(s.antecipavel) > 0 ? <span className="text-amber-700"> · {fmtBRL(s.antecipavel)} para antecipar (já no total)</span> : null}
+          </p>
+          <div className="grid grid-cols-1 gap-x-6 text-xs sm:grid-cols-2 lg:grid-cols-3">
+            {contas.length ? (
+              contas.map((c) => (
+                <div key={c.rotulo} className="flex items-center justify-between gap-2 border-b border-dashed border-gray-100 py-1" title={c.titular || ''}>
+                  <span className="truncate font-semibold text-gray-600">{c.rotulo}</span>
+                  <span className="whitespace-nowrap">
+                    <b className={Number(c.saldo) > 0 ? 'text-gray-900' : 'font-medium text-gray-400'}>{fmtBRL(c.saldo)}</b>
+                    {Number(c.antecipavel) > 0 && <span className="ml-1 text-[10px] text-amber-700">+{fmtBRL(c.antecipavel)} antec.</span>}
+                    {Number(c.aReceber) > 0 && <span className="ml-1 text-[10px] text-fuchsia-700">+{fmtBRL(c.aReceber)} a receber</span>}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <span className="text-gray-400">sem captura</span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -114,6 +215,22 @@ export default function HcLiberacaoPagamento() {
   const [ocupado, setOcupado] = useState(false);
   const [modal, setModal] = useState(null); // { tipo: 'pagar' | 'previsao' | 'devolver' | 'editar' | 'baixaAuto', ... }
   const [copiado, setCopiado] = useState(null);
+  // saldo bancário do card (lido à parte: não trava a lista se falhar)
+  const [saldos, setSaldos] = useState(null);
+  const [saldosBusy, setSaldosBusy] = useState(false);
+  const [saldosErro, setSaldosErro] = useState('');
+  const carregarSaldos = useCallback(async () => {
+    setSaldosBusy(true);
+    try {
+      const j = await apiJson(`${API}/saldos`);
+      setSaldos(j.data);
+      setSaldosErro('');
+    } catch (e) {
+      setSaldosErro(`Não consegui ler o saldo: ${e.message}`);
+    } finally {
+      setSaldosBusy(false);
+    }
+  }, []);
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
   const avisar = useCallback((tipo, msg) => {
     setAviso({ tipo, msg });
@@ -140,7 +257,15 @@ export default function HcLiberacaoPagamento() {
       .then((j) => setOp(j.data))
       .catch((e) => setErro(e.message));
     carregar(f);
+    carregarSaldos();
+    // o bot atualiza de hora em hora: a tela relê sozinha a cada 5 min
+    const t = setInterval(carregarSaldos, 5 * 60000);
+    return () => clearInterval(t);
   }, [podeFinanceiro]); // eslint-disable-line react-hooks/exhaustive-deps
+  // em aba: ao voltar para a frente, relê o saldo
+  useAoAtivarAba(() => {
+    if (podeFinanceiro) carregarSaldos();
+  });
 
   const formas = op?.formas || {};
   const bancos = op?.bancos || [];
@@ -247,6 +372,8 @@ export default function HcLiberacaoPagamento() {
       <PageTitle title="Liberação de Pagamento" subtitle="Duplicatas do Contas a Pagar HeadCoach liberadas para pagamento — pendente → previsão → aprovado → incluído → pago" icon={CurrencyDollar} iconColor="text-[#000638]" />
       {aviso && <p className={`mb-3 rounded-xl px-3 py-2 text-sm ring-1 ${aviso.tipo === 'ok' ? 'bg-emerald-50 text-emerald-800 ring-emerald-200' : 'bg-rose-50 text-rose-700 ring-rose-200'}`}>{aviso.msg}</p>}
       {erro && <p className="mb-3 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700 ring-1 ring-rose-200">{erro}</p>}
+
+      <CardSaldos saldos={saldos} carregando={saldosBusy} erro={saldosErro} onAtualizar={carregarSaldos} />
 
       {/* Cards de resumo: clicar troca a etapa */}
       <div className="mb-4 flex flex-wrap gap-3">
