@@ -407,7 +407,7 @@ function DuplicataBloco({ id, inicial, ehOwner }) {
     const destino = foneMudou ? fmtFone(fone) : fmtFone(dup.telefone);
     const pergunta = foneMudou
       ? jaSaiu
-        ? `Enviar a duplicata para o NOVO número ${destino}?\n\nO cliente recebe um documento novo para assinar e este passa a ser o número da duplicata.`
+        ? `Enviar a duplicata para o NOVO número ${destino}?\n\nO cliente recebe um documento novo para assinar, o link anterior deixa de valer e este passa a ser o número da duplicata.`
         : `Enviar a duplicata para ${destino}?`
       : jaSaiu
         ? `Reenviar a duplicata para ${destino}?\n\nO cliente recebe de novo a mesma mensagem, com o mesmo link de assinatura.`
@@ -464,7 +464,7 @@ function DuplicataBloco({ id, inicial, ehOwner }) {
 
       {!assinada && (
         <div className="mt-2">
-          <label className={labelCls}>WhatsApp do envio</label>
+          <label className={labelCls}>{ehOwner ? 'WhatsApp do envio — altere aqui para mandar a outro número' : 'WhatsApp do envio'}</label>
           {ehOwner ? (
             <>
               <input
@@ -480,8 +480,8 @@ function DuplicataBloco({ id, inicial, ehOwner }) {
                 {foneInvalido
                   ? 'Informe o número com DDD.'
                   : foneMudou && jaSaiu
-                    ? `Número alterado: o cliente recebe um documento novo em ${fmtFone(fone)}.`
-                    : 'Só o owner altera o número de envio.'}
+                    ? `Número alterado: o cliente recebe um documento novo em ${fmtFone(fone)} e o link anterior deixa de valer.`
+                    : 'Digite outro número e clique em enviar. Só o owner altera o número de envio.'}
               </p>
             </>
           ) : (
@@ -537,6 +537,7 @@ function DuplicataBloco({ id, inicial, ehOwner }) {
                 {h.telefone ? ` · ${fmtFone(h.telefone)}` : ''}
                 {h.de ? ` (antes: ${fmtFone(h.de)})` : ''}
                 {h.por ? ` · ${String(h.por).trim()}` : ''}
+                {h.linkAnteriorRemovido === true ? ' · link anterior removido' : h.linkAnteriorRemovido === false ? ' · o link anterior NÃO foi removido' : ''}
                 {h.erro ? ` — ${h.erro}` : ''}
               </li>
             ))}

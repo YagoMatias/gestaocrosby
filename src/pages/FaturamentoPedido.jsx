@@ -69,6 +69,7 @@ import {
   Wallet,
   Signature,
   PaperPlaneTilt,
+  Phone,
   ArrowsLeftRight,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
@@ -738,9 +739,33 @@ function resumoMinuta(m) {
   return null;
 }
 
-function BlocoDuplicata({ v, dup, nota, onAcao, busy }) {
+function BlocoDuplicata({ v, dup, nota, onAcao, busy, ehOwner, onMudou }) {
   const st = dup ? DUP_STATUS[dup.status] : null;
   const podeEnviar = nota?.status === 'autorizada' && v?.status !== 'cancelada';
+  // trocar o telefone do envio: só o owner (o servidor confere) — Yago, 24/11/2026
+  const [trocando, setTrocando] = useState(false);
+  const [fone, setFone] = useState('');
+  const [enviandoFone, setEnviandoFone] = useState(false);
+  const [erroFone, setErroFone] = useState('');
+  const digitos = fone.replace(/\D/g, '');
+  const podeTrocar = podeEnviar && dup?.status !== 'assinada' && dup?.status !== 'cancelada';
+  const enviarParaOutro = async () => {
+    if (enviandoFone || digitos.length < 10) return;
+    const jaSaiu = dup?.status === 'enviada' && !!dup?.link;
+    if (!window.confirm(`Enviar a duplicata para o número ${fone.trim()}?${jaSaiu ? '\n\nO cliente recebe um documento novo para assinar e o link anterior deixa de valer.' : ''}`)) return;
+    setEnviandoFone(true);
+    setErroFone('');
+    try {
+      const j = await apiJson(`/api/hc/transacoes/V${v.id}/duplicata/reenviar`, { method: 'POST', body: { telefone: digitos }, timeoutMs: 240000 });
+      setTrocando(false);
+      setFone('');
+      onMudou?.(j.message || 'Duplicata enviada para o novo número');
+    } catch (e) {
+      setErroFone(e.message);
+    } finally {
+      setEnviandoFone(false);
+    }
+  };
   return (
     <div className="rounded-xl bg-white p-3 text-xs ring-1 ring-gray-200">
       <p className="mb-1.5 flex flex-wrap items-center gap-1.5">
@@ -796,7 +821,7 @@ function BlocoDuplicata({ v, dup, nota, onAcao, busy }) {
               <ArrowsClockwise size={13} /> Conferir assinatura
             </button>
             <button
-              onClick={() => window.confirm('Gerar um documento NOVO e mandar outra mensagem para o cliente? O link anterior continua valendo no Autentique.') && onAcao(`${API}/vendas/${v.id}/duplicata`, { forcar: true })}
+              onClick={() => window.confirm('Gerar um documento NOVO e mandar outra mensagem para o cliente? O link anterior deixa de valer.') && onAcao(`${API}/vendas/${v.id}/duplicata`, { forcar: true })}
               disabled={busy}
               className="inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-[11px] font-bold text-amber-700 ring-1 ring-amber-300 hover:bg-amber-50 disabled:opacity-50"
             >
@@ -804,7 +829,54 @@ function BlocoDuplicata({ v, dup, nota, onAcao, busy }) {
             </button>
           </>
         )}
+        {podeTrocar && ehOwner && !trocando && (
+          <button
+            onClick={() => {
+              setTrocando(true);
+              setErroFone('');
+            }}
+            disabled={busy}
+            className="inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-[11px] font-bold text-[#000638] ring-1 ring-[#000638]/30 hover:bg-blue-50 disabled:opacity-50"
+            title="Enviar a duplicata para outro WhatsApp (só o owner)"
+            data-duplicata-trocar
+          >
+            <Phone size={13} /> Trocar telefone
+          </button>
+        )}
       </div>
+      {podeTrocar && ehOwner && trocando && (
+        <div className="mt-2 rounded-lg bg-amber-50 p-2 ring-1 ring-amber-200">
+          <p className="mb-1 text-[11px] font-semibold text-amber-900">Enviar a duplicata para outro WhatsApp</p>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <input
+              value={fone}
+              onChange={(e) => setFone(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && enviarParaOutro()}
+              placeholder="(84) 99999-9999"
+              inputMode="tel"
+              maxLength={20}
+              autoFocus
+              className="mb-0 h-8 w-44 rounded-lg border border-gray-300 bg-white px-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
+              data-duplicata-fone
+            />
+            <button
+              onClick={enviarParaOutro}
+              disabled={enviandoFone || digitos.length < 10}
+              className="inline-flex h-8 items-center gap-1 rounded-lg bg-amber-500 px-2.5 text-[11px] font-bold text-white hover:bg-amber-600 disabled:opacity-50"
+            >
+              {enviandoFone ? <Spinner size={13} className="animate-spin" /> : <PaperPlaneTilt size={13} />} Enviar para este número
+            </button>
+            <button onClick={() => setTrocando(false)} disabled={enviandoFone} className="inline-flex h-8 items-center rounded-lg px-2 text-[11px] font-bold text-gray-600 hover:bg-white">
+              Cancelar
+            </button>
+          </div>
+          <p className="mt-1 text-[10.5px] text-amber-800">
+            {dup?.status === 'enviada' ? 'O cliente recebe um documento novo neste número e o link anterior deixa de valer.' : 'A duplicata vai para este número em vez do telefone do pedido.'}
+          </p>
+          {erroFone && <p className="mt-1 text-[11px] font-semibold text-rose-700">{erroFone}</p>}
+        </div>
+      )}
+      {podeTrocar && !ehOwner && <p className="mt-1 text-[10.5px] text-gray-400">Para enviar a outro telefone, peça ao owner (só ele troca o número).</p>}
       <p className="mt-1 text-[10.5px] text-gray-400">Mesmo documento e mesma mensagem do Dryland. O lembrete de 3 h e o alerta de 24 h continuam saindo pelo robô de lá.</p>
     </div>
   );
@@ -1358,7 +1430,18 @@ function DetalheTransacao({ id, onReprocessar, reprocessando }) {
         </Cartao>
 
         {/* ── Duplicata e minuta ── */}
-        {v && vendaTemBoleto && <BlocoDuplicata v={v} dup={d.duplicata} nota={nota} onAcao={acao} busy={acaoBusy} />}
+        {v && vendaTemBoleto && <BlocoDuplicata
+            v={v}
+            dup={d.duplicata}
+            nota={nota}
+            onAcao={acao}
+            busy={acaoBusy}
+            ehOwner={user?.role === 'owner'}
+            onMudou={(m) => {
+              setAvisoAcao(m);
+              setVersao((x) => x + 1);
+            }}
+          />}
         {v && <BlocoMinuta v={v} m={d.minuta} dup={d.duplicata} temCard={d.temCard} temBoleto={vendaTemBoleto} nota={nota} onAcao={acao} busy={acaoBusy} />}
         {v && credito && <BlocoCredito v={v} credito={credito} nota={nota} onAcao={acao} busy={acaoBusy} />}
 
