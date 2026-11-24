@@ -7,13 +7,44 @@ import React, {
   useRef,
 } from 'react';
 import { useLocation } from 'react-router-dom';
+// (a URL guardada de cada aba — ver guardaUrl — é devolvida por destinoDaAba)
 import { TABS_STORAGE_KEY } from '../../utils/appTabs';
 
 // Páginas que abrem em aba, agrupadas pelas seções da Sidebar.
 // label: texto da aba (único — duas seções podem ter "Consulta")
 // group: seção de origem, exibida no tooltip
 // dot: cor do marcador, alinhada à cor da seção na Sidebar
+// guardaUrl: a página usa parâmetros na URL (?chave=…); a aba guarda os dela e
+//   continua vendo esses parâmetros mesmo com outra página na frente
+// naoDescartar: tem trabalho em andamento (venda, conferência) — não é a aba
+//   escolhida para sair quando o limite de abas estoura
+const HC = { group: 'HeadCoach', dot: 'bg-indigo-500' };
 const TABBED_PAGES = {
+  // ---- HeadCoach (todas as páginas do menu HEADCOACH) ----
+  '/headcoach/caixa/abertura': { label: 'Caixa · Abertura', ...HC },
+  '/headcoach/caixa/contagem': { label: 'Caixa · Contagem', ...HC },
+  '/headcoach/caixa/fechamento': { label: 'Caixa · Fechamento', ...HC },
+  '/headcoach/transacoes': { label: 'Transações', ...HC },
+  '/headcoach/contas-receber': { label: 'Contas a Receber HC', ...HC },
+  '/headcoach/contas-pagar': { label: 'Contas a Pagar HC', ...HC },
+  '/headcoach/liberacao-pagamento': { label: 'Liberação de Pagamento HC', ...HC },
+  '/headcoach/saldos-clientes': { label: 'Saldo Cliente', ...HC },
+  '/headcoach/cancelamento-transacao': { label: 'Cancelamento de Transação', ...HC },
+  '/headcoach/liberacao-desconto': { label: 'Liberação de Desconto', ...HC },
+  '/expedicao/pedidos-venda': { label: 'Pedido de Venda', ...HC },
+  '/expedicao/faturamento': { label: 'Faturamento', ...HC, guardaUrl: true, naoDescartar: true },
+  '/transferencias-mercadoria': { label: 'Transferências', ...HC },
+  '/expedicao/brejinho/pedidos': { label: 'Brejinho · Pedidos', ...HC },
+  '/expedicao/brejinho/faturamento': { label: 'Brejinho · Faturamento', ...HC, guardaUrl: true, naoDescartar: true },
+  '/tecnologia/pdv-crosby': { label: 'PDV Crosby', ...HC, naoDescartar: true },
+  '/varejo/transferencia-lojas': { label: 'Transferência entre Lojas', ...HC, naoDescartar: true },
+  '/varejo/recebimento-mercadoria': { label: 'Recebimento de Transferência', ...HC, naoDescartar: true },
+  '/balanco-rfid/arquivos': { label: 'Balanço RFID', ...HC },
+  '/headcoach/estoque': { label: 'Estoque', ...HC },
+  '/headcoach/estoque-dryland': { label: 'Estoque Dryland', ...HC },
+  '/headcoach/api': { label: 'API HeadCoach', ...HC },
+
+
   // ---- Financeiro › Contas a Pagar ----
   '/contas-a-pagar': {
     label: 'Consulta (Pagar)',
@@ -644,8 +675,35 @@ function buildInitialState(pathname) {
 
 const TabContext = createContext(null);
 
+// A página dentro de uma aba sabe se é a que está na frente. Fora de aba (rota
+// normal) o valor é null e a página se considera ativa.
+export const AbaPaginaContext = createContext(null);
+/** true quando a página está visível (aba da frente, ou página sem aba). */
+export function useAbaAtiva() {
+  const v = useContext(AbaPaginaContext);
+  return v === null ? true : v;
+}
+/** Roda `fn` toda vez que a aba volta para a frente (não roda na primeira montagem). */
+export function useAoAtivarAba(fn) {
+  const ativa = useAbaAtiva();
+  const fnRef = useRef(fn);
+  fnRef.current = fn;
+  const antes = useRef(ativa);
+  useEffect(() => {
+    if (ativa && !antes.current) fnRef.current?.();
+    antes.current = ativa;
+  }, [ativa]);
+}
+
 export function TabProvider({ children }) {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
+  // parâmetros da URL de cada aba que os guarda (path -> "?chave=…")
+  const urlRef = useRef(new Map());
+  if (TABBED_PAGES[pathname]?.guardaUrl) urlRef.current.set(pathname, search || '');
+  /** Para onde ir ao abrir a aba: o caminho dela + os parâmetros que ela guardou. */
+  const destinoDaAba = useCallback((path) => (TABBED_PAGES[path]?.guardaUrl ? `${path}${urlRef.current.get(path) || ''}` : path), []);
+  /** Os parâmetros guardados da aba (o que ela enxerga enquanto está em segundo plano). */
+  const urlGuardada = useCallback((path) => urlRef.current.get(path) || '', []);
   // Restaura as abas da sessão e já abre a da URL atual — evita renderizar
   // a tela vazia por um frame quando se entra direto numa página.
   const [initialState] = useState(() => buildInitialState(pathname));
@@ -697,15 +755,17 @@ export function TabProvider({ children }) {
 
       let next = [...current, path];
       if (next.length > MAX_TABS) {
-        // Descarta a aba usada há mais tempo — nunca a que acabou de abrir
-        const victim = next
-          .filter((t) => t !== path)
-          .reduce((oldest, t) =>
-            (usageRef.current.get(t) ?? 0) < (usageRef.current.get(oldest) ?? 0)
-              ? t
-              : oldest,
-          );
+        // Descarta a aba usada há mais tempo — nunca a que acabou de abrir, nem
+        // (enquanto houver outra) as que têm trabalho em andamento (naoDescartar)
+        const outras = next.filter((t) => t !== path);
+        const livres = outras.filter((t) => !TABBED_PAGES[t]?.naoDescartar);
+        const victim = (livres.length ? livres : outras).reduce((oldest, t) =>
+          (usageRef.current.get(t) ?? 0) < (usageRef.current.get(oldest) ?? 0)
+            ? t
+            : oldest,
+        );
         usageRef.current.delete(victim);
+        urlRef.current.delete(victim);
         next = next.filter((t) => t !== victim);
         setEvictedLabel(TABBED_PAGES[victim]?.label ?? null);
       }
@@ -720,6 +780,7 @@ export function TabProvider({ children }) {
     const next = tabsRef.current.filter((t) => t !== path);
     tabsRef.current = next;
     usageRef.current.delete(path);
+    urlRef.current.delete(path);
     setTabs(next);
     setActiveTab((current) => {
       if (current !== path) return current;
@@ -730,6 +791,7 @@ export function TabProvider({ children }) {
   const closeAllTabs = useCallback(() => {
     tabsRef.current = [];
     usageRef.current.clear();
+    urlRef.current.clear();
     setTabs([]);
     setActiveTab(null);
   }, []);
@@ -774,6 +836,8 @@ export function TabProvider({ children }) {
         switchTab,
         isTabMode,
         isTabbedPath,
+        destinoDaAba,
+        urlGuardada,
         evictedLabel,
         MAX_TABS,
         TABBED_PAGES,

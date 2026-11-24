@@ -1546,7 +1546,7 @@ const Sidebar = ({ isOpen, onClose, onToggle }) => {
         window.open(href, '_blank');
       } else if (tabCtx && tabCtx.isTabbedPath(href)) {
         tabCtx.openTab(href);
-        navigate(href);
+        navigate(tabCtx.destinoDaAba(href)); // aba já aberta volta como estava (ex.: o pedido em faturamento)
       } else {
         navigate(href);
       }

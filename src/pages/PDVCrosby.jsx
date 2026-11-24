@@ -13,6 +13,7 @@
 // caixa lê o CUPOM DE TROCA (código ou QR) no modo TROCA, escolhe as peças da
 // venda do cupom e a troca confere contra ESSA venda — a NF-e de devolução
 // referencia a nota original e o cupom anota o que foi trocado.
+import { useAoAtivarAba } from '../components/AppTabs/TabContext';
 import React, {
   useState,
   useEffect,
@@ -642,6 +643,8 @@ const PDVCrosby = () => {
       window.removeEventListener('focus', carregarCaixa);
     };
   }, [carregarCaixa]);
+  // em aba: ao voltar para a frente, relê o caixa (pode ter sido aberto/fechado em outra aba)
+  useAoAtivarAba(carregarCaixa);
 
   useEffect(() => {
     if (!user?.id || ['admin', 'owner'].includes(user.role)) return;

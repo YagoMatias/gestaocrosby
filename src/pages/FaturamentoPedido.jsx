@@ -26,6 +26,7 @@
 //     faturamento (services/saldoBonus.js); no TOTVS o valor é recebido na forma
 //     do pagamento que gerou o crédito
 // Backend: /api/faturamento-expedicao (services/faturamentoExpedicao.js).
+import { useAbaAtiva, useAoAtivarAba } from '../components/AppTabs/TabContext';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
@@ -2004,6 +2005,8 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
       window.removeEventListener('focus', carregarCaixa);
     };
   }, [carregarCaixa]);
+  // em aba: ao voltar para a frente, relê o caixa (pode ter sido aberto/fechado em outra aba)
+  useAoAtivarAba(carregarCaixa);
   // A transação fica na data de caixa. Venda de outro dia: "transação com data
   // diferente" → a data real vai na observação (VENDA DO DIA dd/mm/aaaa).
   const [dataDiferente, setDataDiferente] = useState(false);
@@ -2549,10 +2552,24 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     },
     [consultarProduto, somar],
   );
+  // Em aba: com outra aba na frente, esta tela para de ler o portal (senão as
+  // etiquetas da outra conferência entrariam aqui). Ao voltar, esvazia o que o
+  // portal guardou nesse meio-tempo antes de continuar lendo.
+  const abaAtiva = useAbaAtiva();
+  const limpandoPortal = useRef(false);
+  useAoAtivarAba(() => {
+    limpandoPortal.current = true;
+    portalClear()
+      .catch(() => {})
+      .finally(() => {
+        limpandoPortal.current = false;
+      });
+  });
   useEffect(() => {
-    if (!chave || aba !== 'faturar') return undefined;
+    if (!chave || aba !== 'faturar' || !abaAtiva) return undefined;
     const timer = setInterval(async () => {
       try {
+        if (limpandoPortal.current) return;
         const j = await portalTags();
         if (!j?.data) return;
         setPortalStatus(j.data.status);
@@ -2567,7 +2584,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
       }
     }, 1000);
     return () => clearInterval(timer);
-  }, [chave, aba, resolverEpc]);
+  }, [chave, aba, resolverEpc, abaAtiva]);
   const adicionarManual = useCallback(async () => {
     const code = codigoManual.trim();
     if (!code || manualBusy) return;

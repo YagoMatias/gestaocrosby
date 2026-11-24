@@ -33,6 +33,7 @@
 // depois de RESPONDER (0x21 ou inventário). Sem resposta, o hook tenta as outras
 // velocidades do aparelho e as outras portas já liberadas neste computador, e
 // avisa o que conferir (porta errada, cabo, chavinha DIP).
+import { useAbaAtiva } from '../components/AppTabs/TabContext';
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 
 const SERIAL_BAUD = 57600;
@@ -841,6 +842,25 @@ export default function useRfidReader(onRead) {
 
   // Desconecta ao desmontar a página
   useEffect(() => () => disconnect(), [disconnect]);
+
+  // Página aberta em ABA: quando outra aba vem para a frente, o leitor é solto —
+  // senão a etiqueta lida cairia na venda/conferência escondida e a outra tela
+  // não conseguiria abrir a porta. Ao voltar, o app PDV religa sozinho (lá a
+  // escolha do aparelho é automática); no navegador é só clicar em conectar.
+  const abaAtiva = useAbaAtiva();
+  const ligadoAoEsconder = useRef(false);
+  const abaAntes = useRef(abaAtiva);
+  useEffect(() => {
+    if (abaAntes.current === abaAtiva) return;
+    abaAntes.current = abaAtiva;
+    if (!abaAtiva) {
+      ligadoAoEsconder.current = keepReadingRef.current;
+      if (keepReadingRef.current) disconnect();
+    } else if (ligadoAoEsconder.current) {
+      ligadoAoEsconder.current = false;
+      if (typeof window !== 'undefined' && window.pdv) connect();
+    }
+  }, [abaAtiva, connect, disconnect]);
 
   return { status, error, supported, connect, disconnect, potencia, lerPotencia, definirPotencia };
 }

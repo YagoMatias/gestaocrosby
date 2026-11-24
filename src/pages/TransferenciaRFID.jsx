@@ -14,6 +14,7 @@
 //   • gera a transação "em andamento" no TOTVS e acompanha até ATENDIDA —
 //     o caixa finaliza no TRAFP005 (Continuar Transação → Encerrar → Receber)
 // Transferências em andamento ficam salvas por usuário (localStorage).
+import { useAbaAtiva, useAoAtivarAba } from '../components/AppTabs/TabContext';
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   ArrowsLeftRight,
@@ -545,10 +546,25 @@ const TransferenciaRFID = ({ embutido = false, solicitacao = null, onTransacaoGe
     [consultarProduto, mergeProduto, showToast],
   );
 
+  // Em aba: com outra aba na frente, esta tela para de ler o portal (senão as
+  // etiquetas da outra conferência entrariam aqui). Ao voltar, esvazia o que o
+  // portal guardou nesse meio-tempo antes de continuar lendo.
+  const abaAtiva = useAbaAtiva();
+  const limpandoPortal = useRef(false);
+  useAoAtivarAba(() => {
+    limpandoPortal.current = true;
+    portalClear()
+      .catch(() => {})
+      .finally(() => {
+        limpandoPortal.current = false;
+      });
+  });
   // Polling do portal
   useEffect(() => {
+    if (!abaAtiva) return undefined;
     const timer = setInterval(async () => {
       try {
+        if (limpandoPortal.current) return;
         const j = await portalTags();
         if (!j?.data) return;
         setPortalStatus(j.data.status);
@@ -563,7 +579,7 @@ const TransferenciaRFID = ({ embutido = false, solicitacao = null, onTransacaoGe
       }
     }, 1000);
     return () => clearInterval(timer);
-  }, [resolverEpc]);
+  }, [resolverEpc, abaAtiva]);
 
   // ─── Itens ───────────────────────────────────────────────────────────────
   const updateItem = useCallback((productCode, patch) => {

@@ -1,10 +1,44 @@
 import React, { Suspense, lazy } from 'react';
-import { useTabContext } from './TabContext';
+import { Routes, Route, useLocation } from 'react-router-dom';
+import { useTabContext, AbaPaginaContext } from './TabContext';
 import LoadingSpinner from '../LoadingSpinner';
+
+// Páginas do HeadCoach que servem mais de uma rota (a etapa / a origem vem por prop)
+const HcCaixa = lazy(() => import('../../pages/HcCaixa'));
+const FaturamentoPedido = lazy(() => import('../../pages/FaturamentoPedido'));
+const HcCaixaAbertura = () => <HcCaixa etapa="abertura" />;
+const HcCaixaContagem = () => <HcCaixa etapa="contagem" />;
+const HcCaixaFechamento = () => <HcCaixa etapa="fechamento" />;
+const FaturamentoBrejinho = () => <FaturamentoPedido origem="brejinho" />;
 
 // Componente de cada página que abre em aba.
 // As chaves precisam bater com as de TABBED_PAGES (TabContext).
 const PAGE_COMPONENTS = {
+  // ---- HeadCoach ----
+  '/headcoach/caixa/abertura': HcCaixaAbertura,
+  '/headcoach/caixa/contagem': HcCaixaContagem,
+  '/headcoach/caixa/fechamento': HcCaixaFechamento,
+  '/headcoach/transacoes': lazy(() => import('../../pages/HcTransacoes')),
+  '/headcoach/contas-receber': lazy(() => import('../../pages/HcContasReceber')),
+  '/headcoach/contas-pagar': lazy(() => import('../../pages/HcContasPagar')),
+  '/headcoach/liberacao-pagamento': lazy(() => import('../../pages/HcLiberacaoPagamento')),
+  '/headcoach/saldos-clientes': lazy(() => import('../../pages/HcSaldosClientes')),
+  '/headcoach/cancelamento-transacao': lazy(() => import('../../pages/CancelamentoTransacao')),
+  '/headcoach/liberacao-desconto': lazy(() => import('../../pages/LiberacaoDesconto')),
+  '/expedicao/pedidos-venda': lazy(() => import('../../pages/PedidosVenda')),
+  '/expedicao/faturamento': FaturamentoPedido,
+  '/transferencias-mercadoria': lazy(() => import('../../pages/TransferenciasMercadoria')),
+  '/expedicao/brejinho/pedidos': lazy(() => import('../../pages/BrejinhoPedidos')),
+  '/expedicao/brejinho/faturamento': FaturamentoBrejinho,
+  '/tecnologia/pdv-crosby': lazy(() => import('../../pages/PDVCrosby')),
+  '/varejo/transferencia-lojas': lazy(() => import('../../pages/TransferenciaVarejo')),
+  '/varejo/recebimento-mercadoria': lazy(() => import('../../pages/RecebimentoMercadoria')),
+  '/balanco-rfid/arquivos': lazy(() => import('../../pages/BalancoRfidArquivos')),
+  '/headcoach/estoque': lazy(() => import('../../pages/HcEstoque')),
+  '/headcoach/estoque-dryland': lazy(() => import('../../pages/EstoqueDryland')),
+  '/headcoach/api': lazy(() => import('../../pages/HcApiDocs')),
+
+
   // ---- Financeiro › Contas a Pagar ----
   '/contas-a-pagar': lazy(() => import('../../pages/ContasAPagar')),
   '/dash-contas-a-pagar': lazy(() => import('../../pages/DashContasAPagar')),
@@ -210,7 +244,8 @@ const PAGE_COMPONENTS = {
 };
 
 export default function TabContainer() {
-  const { tabs, activeTab } = useTabContext();
+  const { tabs, activeTab, TABBED_PAGES, urlGuardada } = useTabContext();
+  const location = useLocation();
 
   if (tabs.length === 0) return null;
 
@@ -219,6 +254,17 @@ export default function TabContainer() {
       {tabs.map((path) => {
         const Component = PAGE_COMPONENTS[path];
         if (!Component) return null;
+        // a página só está "na frente" quando é a aba ativa E a URL é a dela
+        const naFrente = path === activeTab && location.pathname === path;
+        // Página que usa parâmetros na URL: em segundo plano continua vendo os
+        // dela (o pedido aberto), não a URL da página que está na frente.
+        const pagina = TABBED_PAGES[path]?.guardaUrl ? (
+          <Routes location={naFrente ? location : { pathname: path, search: urlGuardada(path), hash: '', state: null, key: path }}>
+            <Route path="*" element={<Component />} />
+          </Routes>
+        ) : (
+          <Component />
+        );
         return (
           <div
             key={path}
@@ -232,7 +278,7 @@ export default function TabContainer() {
                 </div>
               }
             >
-              <Component />
+              <AbaPaginaContext.Provider value={naFrente}>{pagina}</AbaPaginaContext.Provider>
             </Suspense>
           </div>
         );

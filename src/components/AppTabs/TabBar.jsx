@@ -11,6 +11,7 @@ export default function TabBar() {
     closeTab,
     closeAllTabs,
     isTabbedPath,
+    destinoDaAba,
     evictedLabel,
     MAX_TABS,
     TABBED_PAGES,
@@ -26,7 +27,7 @@ export default function TabBar() {
 
   const handleSwitch = (path) => {
     switchTab(path);
-    navigate(path);
+    navigate(destinoDaAba(path)); // volta com os parâmetros que a aba guardou (o pedido aberto)
   };
 
   const handleClose = (path) => {
@@ -36,7 +37,7 @@ export default function TabBar() {
     if (remaining.length > 0) {
       const next =
         path === activeTab ? remaining[remaining.length - 1] : activeTab;
-      navigate(next);
+      navigate(destinoDaAba(next));
     } else {
       navigate('/home');
     }

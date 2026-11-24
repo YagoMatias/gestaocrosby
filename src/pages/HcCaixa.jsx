@@ -15,6 +15,7 @@
 //     e logo abaixo o encerramento do dia (data de caixa → próximo dia).
 // API: /api/hc/caixa (exige login) — services/hcCaixa.js
 // ============================================================================
+import { useAoAtivarAba } from '../components/AppTabs/TabContext';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -334,6 +335,8 @@ export default function HcCaixa({ etapa = 'abertura' }) {
   useEffect(() => {
     carregar();
   }, [carregar]);
+  // em aba: ao voltar para a frente, relê a situação (o caixa pode ter sido aberto/fechado em outra aba)
+  useAoAtivarAba(carregar);
 
   // executa uma ação no servidor e recarrega
   const acao = async (fn, ok) => {

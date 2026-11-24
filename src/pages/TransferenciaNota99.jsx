@@ -8,6 +8,7 @@
 //     transferência fica registrada só no HeadCoach — sem transação no TOTVS
 //     (Yago, 11/11/2026: a API do TOTVS não finaliza transferência)
 // Backend: /api/transferencias/nota (services/transferenciaNota.js).
+import { useAbaAtiva, useAoAtivarAba } from '../components/AppTabs/TabContext';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowsLeftRight,
@@ -212,10 +213,24 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
     },
     [consultarProduto, somar],
   );
+  // Em aba: com outra aba na frente, esta tela para de ler o portal (senão as
+  // etiquetas da outra conferência entrariam aqui). Ao voltar, esvazia o que o
+  // portal guardou nesse meio-tempo antes de continuar lendo.
+  const abaAtiva = useAbaAtiva();
+  const limpandoPortal = useRef(false);
+  useAoAtivarAba(() => {
+    limpandoPortal.current = true;
+    portalClear()
+      .catch(() => {})
+      .finally(() => {
+        limpandoPortal.current = false;
+      });
+  });
   useEffect(() => {
-    if (!prep || resultado) return undefined;
+    if (!prep || resultado || !abaAtiva) return undefined;
     const timer = setInterval(async () => {
       try {
+        if (limpandoPortal.current) return;
         const j = await portalTags();
         if (!j?.data) return;
         setPortalStatus(j.data.status);
@@ -230,7 +245,7 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
       }
     }, 1000);
     return () => clearInterval(timer);
-  }, [prep, resultado, resolverEpc]);
+  }, [prep, resultado, resolverEpc, abaAtiva]);
   const adicionarManual = async () => {
     const code = codigoManual.trim();
     if (!code || manualBusy) return;
