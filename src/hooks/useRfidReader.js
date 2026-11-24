@@ -27,9 +27,45 @@
 //    inventário parado (0x8C), que é religado em seguida.
 // A potência escolhida fica guardada neste computador (localStorage) e é
 // reaplicada ao ligar o leitor, caso o aparelho volte com outro valor.
+//
+// LEITOR MUDO (24/11/2026): abrir a porta não prova que o leitor está lá — numa
+// loja a tela mostrava LEITOR ATIVO sem ler nada. Agora o .bat só fica ATIVO
+// depois de RESPONDER (0x21 ou inventário). Sem resposta, o hook tenta as outras
+// velocidades do aparelho e as outras portas já liberadas neste computador, e
+// avisa o que conferir (porta errada, cabo, chavinha DIP).
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 
 const SERIAL_BAUD = 57600;
+// velocidades que o leitor .bat aceita (a de fábrica primeiro)
+const SERIAL_BAUDS = [57600, 115200, 38400, 19200, 9600];
+const PREF_BAUD = 'rfid_leitor_baud';
+// chip USB→serial do leitor .bat (Silicon Labs CP210x)
+const USB_CP210X = 0x10c4;
+function baudPreferido() {
+  try {
+    const n = Number(localStorage.getItem(PREF_BAUD));
+    return SERIAL_BAUDS.includes(n) ? n : SERIAL_BAUD;
+  } catch {
+    return SERIAL_BAUD;
+  }
+}
+function ehPortaDoLeitor(port) {
+  try {
+    return port.getInfo?.().usbVendorId === USB_CP210X;
+  } catch {
+    return false;
+  }
+}
+function nomeDaPorta(port) {
+  try {
+    const i = port.getInfo?.() || {};
+    if (!i.usbVendorId) return 'porta que não é USB (COM antiga ou Bluetooth)';
+    const id = `${i.usbVendorId.toString(16).padStart(4, '0')}:${(i.usbProductId || 0).toString(16).padStart(4, '0')}`.toUpperCase();
+    return i.usbVendorId === USB_CP210X ? `porta do leitor (USB ${id})` : `porta de outro aparelho (USB ${id})`;
+  } catch {
+    return 'porta escolhida';
+  }
+}
 const POLL_INTERVAL_MS = 400;
 // Mesma tag relida dentro desta janela é ignorada (tag parada no leitor)
 const REREAD_COOLDOWN_MS = 2000;
@@ -180,6 +216,7 @@ const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
 export function parseFrames(buf) {
   const epcs = [];
   const outros = []; // respostas de comando: { reCmd, status, data }
+  let validos = 0; // frames com CRC certo (prova de que o leitor está respondendo)
   let i = 0;
   while (i < buf.length) {
     const len = buf[i];
@@ -195,6 +232,7 @@ export function parseFrames(buf) {
       i += 1;
       continue;
     }
+    validos += 1;
     const reCmd = frame[2];
     const status = frame[3];
     if (reCmd === 0x01 && status >= 0x01 && status <= 0x04 && len > 6) {
@@ -211,7 +249,7 @@ export function parseFrames(buf) {
     }
     i += total;
   }
-  return { epcs, outros, rest: buf.slice(i) };
+  return { epcs, outros, rest: buf.slice(i), validos };
 }
 
 /**
@@ -507,23 +545,30 @@ export default function useRfidReader(onRead) {
   }, []);
 
   const runSession = useCallback(
-    async (port) => {
-      await port.open({ baudRate: SERIAL_BAUD });
+    async (port, baud = SERIAL_BAUD) => {
+      await port.open({ baudRate: baud });
       portRef.current = port;
-      setStatus('conectado');
-      setError('');
+      // respondeu: null = ainda sondando, true = leitor falando, false = mudo nesta porta/velocidade
+      let respondeu = null;
 
       try {
         const writer = port.writable.getWriter();
         writerRef.current = writer;
         let pausado = false; // comando de potência em curso: suspende a consulta de etiquetas
         const esperas = []; // { reCmd, resolve }
-        pollTimerRef.current = setInterval(() => {
-          if (pausado) return;
-          writer.write(INVENTORY_CMD).catch(() => {
-            /* porta caiu — o loop de leitura encerra a sessão */
+        let aoResponder = null;
+        const esperarResposta = (ms) =>
+          new Promise((resolve) => {
+            if (respondeu) return resolve(true);
+            const t = setTimeout(() => {
+              aoResponder = null;
+              resolve(false);
+            }, ms);
+            aoResponder = () => {
+              clearTimeout(t);
+              resolve(true);
+            };
           });
-        }, POLL_INTERVAL_MS);
 
         // Comando de configuração: o leitor ignora o que chega durante um inventário,
         // então espera o que estava no ar terminar e tenta de novo se não vier resposta.
@@ -562,7 +607,7 @@ export default function useRfidReader(onRead) {
           if (r.status !== 0x00) throw new Error(`o leitor não informou a potência (código ${r.status.toString(16)})`);
           return potenciaDoInfoBat(r.data);
         };
-        leitorRef.current = {
+        const leitorBat = {
           modelo: 'bat',
           ...POTENCIA_LEITOR.bat,
           ler: lerBat,
@@ -574,7 +619,43 @@ export default function useRfidReader(onRead) {
             return lerBat();
           },
         };
-        iniciarPotencia();
+
+        // Sonda: pede as informações do leitor (responde na hora) e, se não vier
+        // nada, um inventário (sem etiqueta ele demora o tempo de varredura).
+        // Só depois de uma resposta o leitor fica ATIVO e a consulta começa.
+        (async () => {
+          try {
+            await writer.write(frameBat(0x21));
+            let vivo = await esperarResposta(700);
+            if (!vivo) {
+              await writer.write(INVENTORY_CMD);
+              vivo = await esperarResposta(2600);
+            }
+            if (!keepReadingRef.current || portRef.current !== port) return;
+            if (!vivo) {
+              respondeu = false;
+              readerRef.current?.cancel().catch(() => {});
+              return;
+            }
+            try {
+              localStorage.setItem(PREF_BAUD, String(baud));
+            } catch {
+              /* sem localStorage: tudo bem */
+            }
+            setStatus('conectado');
+            setError('');
+            pollTimerRef.current = setInterval(() => {
+              if (pausado) return;
+              writer.write(INVENTORY_CMD).catch(() => {
+                /* porta caiu — o loop de leitura encerra a sessão */
+              });
+            }, POLL_INTERVAL_MS);
+            leitorRef.current = leitorBat;
+            iniciarPotencia();
+          } catch {
+            /* porta caiu no meio da sonda — o loop de leitura encerra a sessão */
+          }
+        })();
 
         let pendente = new Uint8Array(0);
         while (keepReadingRef.current && port.readable) {
@@ -587,8 +668,12 @@ export default function useRfidReader(onRead) {
               const junto = new Uint8Array(pendente.length + value.length);
               junto.set(pendente);
               junto.set(value, pendente.length);
-              const { epcs, outros, rest } = parseFrames(junto);
+              const { epcs, outros, rest, validos } = parseFrames(junto);
               pendente = rest;
+              if (validos > 0 && !respondeu) {
+                respondeu = true;
+                aoResponder?.();
+              }
               epcs.forEach(emitEpc);
               for (const f of outros) {
                 const k = esperas.findIndex((e) => e.reCmd === f.reCmd);
@@ -621,6 +706,7 @@ export default function useRfidReader(onRead) {
         }
         portRef.current = null;
       }
+      return { respondeu };
     },
     [emitEpc, iniciarPotencia],
   );
@@ -676,9 +762,16 @@ export default function useRfidReader(onRead) {
       return;
     }
 
+    // velocidades a tentar: a que funcionou por último neste computador primeiro
+    const bauds = [...new Set([baudPreferido(), ...SERIAL_BAUDS])];
+    let iBaud = 0;
+    let mudas = 0; // tentativas seguidas sem resposta nesta porta
+    const portasMudas = new Set();
+    setStatus('reconectando'); // só vira ATIVO quando o leitor responder
     while (keepReadingRef.current) {
+      let fim = null;
       try {
-        await runSession(port);
+        fim = await runSession(port, bauds[iBaud]);
       } catch (err) {
         if (keepReadingRef.current)
           setError(
@@ -688,10 +781,57 @@ export default function useRfidReader(onRead) {
       if (!keepReadingRef.current) break;
 
       setStatus('reconectando');
+      // Porta abriu mas o leitor não respondeu: repete uma vez (pode estar ligando),
+      // tenta as outras velocidades e depois as outras portas já liberadas.
+      if (fim && fim.respondeu === false) {
+        mudas += 1;
+        // a porta escolhida não é a de um leitor .bat e há outra liberada que é: vai direto nela
+        if (mudas === 1 && !ehPortaDoLeitor(port)) {
+          let melhor = null;
+          try {
+            melhor = (await navigator.serial.getPorts()).find((x) => x !== port && ehPortaDoLeitor(x) && !portasMudas.has(x)) || null;
+          } catch {
+            melhor = null;
+          }
+          if (melhor) {
+            portasMudas.add(port);
+            port = melhor;
+            mudas = 0;
+            iBaud = 0;
+            await dormir(400);
+            continue;
+          }
+        }
+        if (mudas >= 2) iBaud = (iBaud + 1) % bauds.length;
+        if (mudas > bauds.length) {
+          portasMudas.add(port);
+          mudas = 0;
+          iBaud = 0;
+          let outras = [];
+          try {
+            outras = (await navigator.serial.getPorts()).filter((x) => !portasMudas.has(x));
+          } catch {
+            outras = [];
+          }
+          if (outras.length) {
+            [port] = outras;
+          } else {
+            portasMudas.clear();
+            setError(
+              `O leitor não responde: ${nomeDaPorta(port)}. Confira se a porta escolhida é a do leitor (Silicon Labs CP210x), o cabo USB e a chavinha (DIP) embaixo do aparelho, que deve estar igual à dos leitores que funcionam. Clique no botão para desligar e escolher a porta de novo — sigo tentando.`,
+            );
+          }
+        }
+        await dormir(400);
+        continue;
+      }
+      mudas = 0;
+      portasMudas.clear();
       await new Promise((r) => setTimeout(r, 1500));
       try {
         const ports = await navigator.serial.getPorts();
-        if (ports.length > 0) [port] = ports;
+        // mantém a porta que estava funcionando; só troca se ela sumiu (aparelho religado na USB)
+        if (ports.length > 0 && !ports.includes(port)) [port] = ports;
       } catch {
         /* tenta de novo com a mesma referência */
       }

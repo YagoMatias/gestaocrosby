@@ -90,6 +90,8 @@ const PDV_VAREJO_CONFIG = {
   // ser >= 3x o valor usado (ex.: R$ 200 de saldo exigem compra de R$ 600).
   // O cashback vale em QUALQUER loja (Yago, 18/11/2026): o saldo é a soma das lojas e
   // o consumo sai primeiro da loja da venda, depois das outras.
+  // O cashback NOVO nasce no HeadCoach (18/11/2026): só pode ser usado depois de 3
+  // dias (carência) e vale até o dia 93; o saldo antigo do TOTVS segue valendo.
   cashbackGerarPct: 20,
   cashbackFatorMinimo: 3,
 };
@@ -527,7 +529,7 @@ const PDVCrosby = () => {
   const [customer, setCustomer] = useState(null);
 
   // Cashback (no TOTVS: saldo bônus do cliente) — soma de todas as lojas
-  const [cashback, setCashback] = useState(null); // { balance, cpf, porEmpresa: [{ branchCode, balance }] }
+  const [cashback, setCashback] = useState(null); // { balance, cpf, porEmpresa: [{ branchCode, balance }], headcoach: { disponivel, emCarencia, proximaLiberacao, proximoVencimento } }
   const [cashbackUsar, setCashbackUsar] = useState(false);
   // quanto do cashback usar (R$): vazio = tudo o que a venda permite; dá para usar só parte
   const [cashbackValor, setCashbackValor] = useState('');
@@ -728,15 +730,11 @@ const PDVCrosby = () => {
         const jc = await rc.json();
         setClienteInfo(jc?.data || null);
         const cpf = (jc?.data?.cpfCnpj || '').replace(/\D/g, '');
-        if (!cpf) {
-          setCashback({ balance: 0, cpf: null });
-          return;
-        }
         const rb = await fetch(
-          `${API_BASE_URL}/api/totvs/pdv/bonus?cpf=${cpf}&branch=${branch}`,
+          `${API_BASE_URL}/api/totvs/pdv/bonus?${cpf ? `cpf=${cpf}&` : ''}branch=${branch}&cliente=${customer.code}`,
         );
         const jb = await rb.json();
-        setCashback({ balance: jb?.data?.balance || 0, cpf, porEmpresa: jb?.data?.porEmpresa || [] });
+        setCashback({ balance: jb?.data?.balance || 0, cpf: cpf || null, porEmpresa: jb?.data?.porEmpresa || [], headcoach: jb?.data?.headcoach || null });
       } catch {
         setCashback({ balance: 0, cpf: null });
       }
@@ -1273,7 +1271,7 @@ const PDVCrosby = () => {
 
   // Venda ATENDIDA/AUTORIZADA → cashback novo (20%), uma vez por venda
   const gerarCashback = useCallback(
-    async ({ total, customerCode, transactionCode, transactionDate, origem }) => {
+    async ({ total, customerCode, transactionCode, transactionDate, origem, vendaId = null }) => {
       if (cashbackGeradoRef.current || !customerCode) return null;
       cashbackGeradoRef.current = true;
       const valor = Number(((total * PDV_VAREJO_CONFIG.cashbackGerarPct) / 100).toFixed(2));
@@ -1286,6 +1284,7 @@ const PDVCrosby = () => {
             personCode: customerCode,
             branchCode: parseInt(branch, 10),
             value: valor,
+            vendaId: vendaId || undefined,
             transactionCode: transactionCode || undefined,
             transactionDate: transactionDate || undefined,
             historic: `Cashback ${PDV_VAREJO_CONFIG.cashbackGerarPct}% - ${origem}`,
@@ -1293,8 +1292,15 @@ const PDVCrosby = () => {
         });
         const j = await r.json();
         if (r.ok && j.success) {
-          showToast('ok', `Cashback de ${fmtBRL(valor)} gerado para o cliente! 💰`);
-          return valor;
+          const dia = (d) => String(d || '').slice(0, 10).split('-').reverse().slice(0, 2).join('/');
+          const gerado = Number(j.data?.valor) > 0 ? Number(j.data.valor) : valor;
+          showToast(
+            'ok',
+            j.data?.liberaEm
+              ? `Cashback de ${fmtBRL(gerado)} gerado para o cliente! 💰 Pode usar a partir de ${dia(j.data.liberaEm)}, vale até ${dia(j.data.expiraEm)}.`
+              : `Cashback de ${fmtBRL(gerado)} gerado para o cliente! 💰`,
+          );
+          return gerado;
         }
         cashbackGeradoRef.current = false;
         showToast('erro', `Cashback não gerado: ${j?.message || ''}`);
@@ -1510,16 +1516,17 @@ const PDVCrosby = () => {
               usedValue: cb,
               // com o CPF o servidor baixa o cashback de qualquer loja em que o cliente tenha saldo
               cpf: cashback?.cpf || null,
+              vendaId: venda.id,
             }),
           });
           const jc = await rc.json();
           if (!rc.ok || !jc.success)
             showToast(
               'erro',
-              `Venda ok, mas o consumo do cashback falhou: ${jc?.message || ''} — baixe no PESFC054`,
+              `Venda ok, mas a baixa do cashback falhou: ${jc?.message || ''} — avise o financeiro`,
             );
         } catch {
-          showToast('erro', 'Venda ok, mas o consumo do cashback falhou — baixe no PESFC054');
+          showToast('erro', 'Venda ok, mas a baixa do cashback falhou — avise o financeiro');
         }
       }
 
@@ -1538,6 +1545,7 @@ const PDVCrosby = () => {
           total: Number(venda.total),
           customerCode: customer?.code,
           origem: `venda HeadCoach ${venda.id} (PDV Crosby)`,
+          vendaId: venda.id,
         });
         if (gerado)
           setResultado((prev) =>
@@ -1663,6 +1671,7 @@ const PDVCrosby = () => {
           total: Number(res.venda.total),
           customerCode: res.venda.cliente_code,
           origem: `venda HeadCoach ${res.venda.id} (PDV Crosby)`,
+          vendaId: res.venda.id,
         });
       }
     } finally {
@@ -1774,9 +1783,24 @@ const PDVCrosby = () => {
                     </span>
                   </label>
                 )}
+                {cashback?.headcoach?.emCarencia > 0 && (
+                  <p className="mt-1.5 rounded-md bg-amber-50 px-2 py-1 text-[10.5px] text-amber-800 ring-1 ring-amber-200">
+                    <b>{fmtBRL(cashback.headcoach.emCarencia)}</b> de cashback ainda em carência (só pode usar 3 dias depois da compra)
+                    {cashback.headcoach.proximaLiberacao?.data &&
+                      ` — ${fmtBRL(cashback.headcoach.proximaLiberacao.valor)} libera${cashback.headcoach.proximaLiberacao.valor >= 2 ? 'm' : ''} em ${String(cashback.headcoach.proximaLiberacao.data).split('-').reverse().join('/')}`}
+                    .
+                  </p>
+                )}
+                {cashback?.headcoach?.disponivel > 0 && cashback.headcoach.proximoVencimento?.data && (
+                  <p className="mt-1 text-[10px] text-emerald-700">
+                    {fmtBRL(cashback.headcoach.proximoVencimento.valor)} do cashback vale{cashback.headcoach.proximoVencimento.valor >= 2 ? 'm' : ''} até{' '}
+                    {String(cashback.headcoach.proximoVencimento.data).split('-').reverse().join('/')}.
+                  </p>
+                )}
                 {cashback && cashback.balance > 0 && (cashback.porEmpresa || []).some((b) => Number(b.branchCode) !== Number(branch)) && (
                   <p className="mt-1 text-[10px] text-emerald-700">
                     O cashback vale em qualquer loja. Saldo por loja: {cashback.porEmpresa.map((b) => `${b.branchCode} ${fmtBRL(b.balance)}`).join(' · ')}
+                    {cashback.headcoach?.disponivel > 0 ? ` · HeadCoach ${fmtBRL(cashback.headcoach.disponivel)}` : ''}
                   </p>
                 )}
                 {cashback && cashback.balance > 0 && cashbackUsar && totals.cashbackDisponivel > 0 && (

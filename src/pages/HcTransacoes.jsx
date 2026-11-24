@@ -449,24 +449,49 @@ function DetalheTransacao({ id, onFechar, onAlterada }) {
                   </p>
                   <p className="flex justify-between">
                     <span className="text-gray-500">Desconto</span>
-                    <span className="font-semibold tabular-nums text-amber-700">− {fmtBRL(d.desconto)}</span>
+                    <span className="font-semibold tabular-nums text-amber-700">− {fmtBRL(d.descontoSemCashback ?? d.desconto)}</span>
                   </p>
+                  {d.cashbackUsado > 0 && (
+                    <p className="flex justify-between">
+                      <span className="text-gray-500">
+                        Cashback usado
+                        {d.cashback?.usadoTotvs > 0 && d.cashback?.usadoHeadcoach > 0 && (
+                          <span className="text-[10.5px] text-gray-400">
+                            {' '}
+                            ({fmtBRL(d.cashback.usadoTotvs)} do saldo antigo + {fmtBRL(d.cashback.usadoHeadcoach)} do HeadCoach)
+                          </span>
+                        )}
+                      </span>
+                      <span className="font-semibold tabular-nums text-emerald-700">− {fmtBRL(d.cashbackUsado)}</span>
+                    </p>
+                  )}
                   {d.frete > 0 && (
                     <p className="flex justify-between">
                       <span className="text-gray-500">Frete</span>
                       <span className="font-semibold tabular-nums">{fmtBRL(d.frete)}</span>
                     </p>
                   )}
-                  {d.cashbackUsado > 0 && (
-                    <p className="flex justify-between">
-                      <span className="text-gray-500">Cashback usado</span>
-                      <span className="font-semibold tabular-nums">{fmtBRL(d.cashbackUsado)}</span>
-                    </p>
-                  )}
                   <p className="flex justify-between border-t border-gray-100 pt-1 text-sm">
                     <span className="font-bold text-[#000638]">Valor da transação</span>
                     <span className="font-bold tabular-nums text-[#000638]">{fmtBRL(d.valor)}</span>
                   </p>
+                  {(d.cashback?.gerado || d.cashbackGerado > 0) && (
+                    <p className="flex justify-between rounded-lg bg-emerald-50 px-2 py-1 text-emerald-800 ring-1 ring-emerald-200">
+                      <span>
+                        Cashback gerado para o cliente
+                        {d.cashback?.gerado ? (
+                          <span className="block text-[10.5px] text-emerald-700">
+                            {d.cashback.gerado.canceladoEm
+                              ? 'cancelado junto com a venda'
+                              : `libera em ${fmtData(d.cashback.gerado.liberaEm)} · vale até ${fmtData(d.cashback.gerado.expiraEm)}${d.cashback.gerado.usado > 0 ? ` · cliente já usou ${fmtBRL(d.cashback.gerado.usado)}` : ''}`}
+                          </span>
+                        ) : (
+                          <span className="block text-[10.5px] text-emerald-700">gerado no saldo antigo do TOTVS</span>
+                        )}
+                      </span>
+                      <span className={`font-semibold tabular-nums ${d.cashback?.gerado?.canceladoEm ? 'line-through' : ''}`}>{fmtBRL(d.cashback?.gerado?.valor ?? d.cashbackGerado)}</span>
+                    </p>
+                  )}
                   {d.pedido?.descontoFaturamento && (
                     <p className="text-[10.5px] text-amber-700">
                       Desconto de {String(d.pedido.descontoFaturamento.pct).replace('.', ',')}% no faturamento
@@ -802,7 +827,7 @@ export default function HcTransacoes() {
         linhas.push(...j.data.items);
         if (pg >= j.data.paginas) break;
       }
-      const cab = ['Empresa', 'Nome empresa', 'Nº transação', 'Data', 'Tipo', 'Operação', 'Nome operação', 'Origem', 'Situação', 'Dt encerramento', 'Cliente', 'Nome cliente', 'CPF/CNPJ', 'Vendedor', 'Nome vendedor', 'Peças', 'Valor bruto', 'Desconto', 'Frete', 'Valor', 'Formas', 'NF', 'Pedido', 'Feita por'];
+      const cab = ['Empresa', 'Nome empresa', 'Nº transação', 'Data', 'Tipo', 'Operação', 'Nome operação', 'Origem', 'Situação', 'Dt encerramento', 'Cliente', 'Nome cliente', 'CPF/CNPJ', 'Vendedor', 'Nome vendedor', 'Peças', 'Valor bruto', 'Desconto', 'Cashback usado', 'Cashback gerado', 'Frete', 'Valor', 'Formas', 'NF', 'Pedido', 'Feita por'];
       const cel = (v) => {
         const s = String(v ?? '');
         return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -827,7 +852,9 @@ export default function HcTransacoes() {
           l.vendedor?.nome,
           l.qtdPecas,
           num(l.valorBruto),
-          num(l.desconto),
+          num(l.descontoSemCashback ?? l.desconto),
+          num(l.cashbackUsado || 0),
+          num(l.cashbackGerado || 0),
           num(l.frete),
           num(l.valor),
           l.formas,
@@ -859,7 +886,8 @@ export default function HcTransacoes() {
         ? [
             { label: 'Transações', valor: fmtNum(r.transacoes), sub: `${fmtNum(r.saidas)} saída(s) · ${fmtNum(r.entradas)} entrada(s)` },
             { label: 'Valor das saídas', valor: fmtBRL(r.valor), sub: `${fmtNum(r.pecas)} peça(s) · sem as canceladas` },
-            { label: 'Descontos', valor: fmtBRL(r.desconto), sub: 'nas saídas não canceladas' },
+            { label: 'Descontos', valor: fmtBRL(r.descontoSemCashback ?? r.desconto), sub: 'nas saídas não canceladas · sem o cashback' },
+            { label: 'Cashback usado', valor: fmtBRL(r.cashbackUsado || 0), sub: `${fmtBRL(r.cashbackGerado || 0)} gerado para os clientes`, cor: 'text-emerald-700' },
             { label: 'Em andamento', valor: fmtNum(r.porSituacao.andamento), sub: 'nota não autorizada / aberta', cor: 'text-amber-700' },
             { label: 'Atendidas', valor: fmtNum(r.porSituacao.atendida), sub: 'concluídas', cor: 'text-emerald-700' },
             { label: 'Canceladas', valor: fmtNum(r.porSituacao.cancelada), sub: 'nota/venda cancelada', cor: 'text-gray-500' },
@@ -1019,7 +1047,7 @@ export default function HcTransacoes() {
 
         {/* Resumo */}
         {r && (
-          <div className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6">
+          <div className="mb-3 grid grid-cols-2 gap-2 md:grid-cols-4 xl:grid-cols-7">
             {quadros.map((q) => (
               <div key={q.label} className="rounded-xl bg-white p-3 shadow-sm ring-1 ring-gray-200">
                 <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500">{q.label}</p>
@@ -1033,7 +1061,7 @@ export default function HcTransacoes() {
         {/* Lista */}
         <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1180px] text-xs">
+            <table className="w-full min-w-[1260px] text-xs">
               <thead className="bg-gray-50 text-[10px] uppercase tracking-wide text-gray-500">
                 <tr>
                   <th className="px-2 py-2 text-left">Emp.</th>
@@ -1046,6 +1074,9 @@ export default function HcTransacoes() {
                   <th className="px-2 py-2 text-right">Pçs</th>
                   <th className="px-2 py-2 text-right">Valor bruto</th>
                   <th className="px-2 py-2 text-right">Desconto</th>
+                  <th className="px-2 py-2 text-right" title="Cashback usado pelo cliente nesta transação (e, embaixo, o que ela gerou)">
+                    Cashback
+                  </th>
                   <th className="px-2 py-2 text-right">Valor</th>
                   <th className="px-2 py-2 text-left">Situação</th>
                   <th className="px-2 py-2 text-left">Dt. encerr.</th>
@@ -1055,14 +1086,14 @@ export default function HcTransacoes() {
               <tbody className="divide-y divide-gray-100">
                 {!dados && carregando && (
                   <tr>
-                    <td colSpan={14} className="py-12 text-center text-gray-400">
+                    <td colSpan={15} className="py-12 text-center text-gray-400">
                       <Spinner size={20} className="mx-auto animate-spin" />
                     </td>
                   </tr>
                 )}
                 {dados && dados.items.length === 0 && (
                   <tr>
-                    <td colSpan={14} className="py-12 text-center text-gray-400">
+                    <td colSpan={15} className="py-12 text-center text-gray-400">
                       Nenhuma transação com esses filtros.
                     </td>
                   </tr>
@@ -1098,7 +1129,15 @@ export default function HcTransacoes() {
                       </td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{fmtNum(l.qtdPecas)}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{fmtBRL(l.valorBruto)}</td>
-                      <td className="px-2 py-1.5 text-right tabular-nums text-amber-700">{l.desconto > 0 ? fmtBRL(l.desconto) : '—'}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums text-amber-700">{(l.descontoSemCashback ?? l.desconto) > 0 ? fmtBRL(l.descontoSemCashback ?? l.desconto) : '—'}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums text-emerald-700">
+                        {l.cashbackUsado > 0 ? fmtBRL(l.cashbackUsado) : '—'}
+                        {l.cashbackGerado > 0 && (
+                          <span className="block text-[10px] text-gray-400" title="Cashback que esta venda gerou para o cliente">
+                            gerou {fmtBRL(l.cashbackGerado)}
+                          </span>
+                        )}
+                      </td>
                       <td className={`px-2 py-1.5 text-right font-bold tabular-nums ${l.situacao === 'cancelada' ? 'line-through' : 'text-[#000638]'}`}>{fmtBRL(l.valor)}</td>
                       <td className="px-2 py-1.5">
                         <Chip cls={S.cls}>{S.label}</Chip>
