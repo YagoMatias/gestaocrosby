@@ -13,7 +13,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { autorExibicao } from '../utils/autorExibicao';
 import { Link } from 'react-router-dom';
-import { CurrencyDollar, Clock, CalendarCheck, CheckCircle, Bank, Receipt, Spinner, MagnifyingGlass, X, Copy, PencilSimple, ArrowUUpLeft, ArrowsClockwise, Lightning, Wallet, CaretDown } from '@phosphor-icons/react';
+import { CurrencyDollar, Clock, CalendarCheck, CheckCircle, Bank, Receipt, Spinner, MagnifyingGlass, X, Copy, PencilSimple, ArrowUUpLeft, ArrowsClockwise, Lightning, Wallet, CaretDown, ListBullets, Kanban, Warning } from '@phosphor-icons/react';
 import { ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, LabelList } from 'recharts';
 import PageTitle from '../components/ui/PageTitle';
 import { useAuth } from '../components/AuthContext';
@@ -271,6 +271,138 @@ function GraficoPrevisao({ liberacoes, hoje, diaEscolhido, onEscolherDia }) {
   );
 }
 
+// ─── Previsão em KANBAN ──────────────────────────────────────────────────────
+/**
+ * Colunas do quadro: VENCIDOS (tudo o que tem dia previsto antes de hoje, num bolo
+ * só) e depois uma coluna por dia previsto, em ordem. O dia previsto nasce igual
+ * ao vencimento; se alguém reprogramar, o cartão acompanha o dia novo.
+ */
+function colunasDoKanban(liberacoes, hoje) {
+  const vencidos = [];
+  const porDia = new Map();
+  for (const l of liberacoes) {
+    const dia = l.data_prevista ? String(l.data_prevista).slice(0, 10) : String(l.titulo?.vencimento || '').slice(0, 10);
+    if (!dia || dia < hoje) vencidos.push(l);
+    else {
+      if (!porDia.has(dia)) porDia.set(dia, []);
+      porDia.get(dia).push(l);
+    }
+  }
+  const ordem = (a, b) => String(a.data_prevista || '').localeCompare(String(b.data_prevista || '')) || Number(b.valor) - Number(a.valor);
+  const cols = [];
+  if (vencidos.length) cols.push({ k: 'vencidos', vencidos: true, itens: vencidos.sort(ordem) });
+  for (const dia of [...porDia.keys()].sort()) cols.push({ k: dia, dia, itens: porDia.get(dia).sort((a, b) => Number(b.valor) - Number(a.valor)) });
+  return cols.map((c) => ({ ...c, total: c.itens.reduce((t, l) => t + Number(l.valor || 0), 0) }));
+}
+
+function KanbanPrevisao({ liberacoes, hoje, selecionadas, marcar, onMoverDia, onAvancar, nomeEmpresa, formas, ocupado }) {
+  const colunas = useMemo(() => colunasDoKanban(liberacoes, hoje), [liberacoes, hoje]);
+  const [arrastando, setArrastando] = useState(null); // id da liberação
+  const [sobre, setSobre] = useState(null); // coluna debaixo do cartão arrastado
+  if (!colunas.length) return <div className="rounded-xl border border-gray-200 bg-white py-12 text-center text-sm text-gray-400 shadow">Nenhuma duplicata em previsão.</div>;
+  const soltar = (col) => {
+    const l = liberacoes.find((x) => x.id === arrastando);
+    setArrastando(null);
+    setSobre(null);
+    if (!l || col.vencidos || !col.dia || String(l.data_prevista || '').slice(0, 10) === col.dia) return;
+    onMoverDia(l, col.dia);
+  };
+  return (
+    <div className="flex items-start gap-3 overflow-x-auto pb-3">
+      {colunas.map((col) => {
+        const ids = col.itens.map((l) => l.id);
+        const todasMarcadas = ids.every((id) => selecionadas.has(id));
+        const alvo = arrastando != null && !col.vencidos && sobre === col.k;
+        return (
+          <div
+            key={col.k}
+            onDragOver={(e) => {
+              if (arrastando == null || col.vencidos) return;
+              e.preventDefault();
+              if (sobre !== col.k) setSobre(col.k);
+            }}
+            onDragLeave={() => sobre === col.k && setSobre(null)}
+            onDrop={(e) => {
+              e.preventDefault();
+              soltar(col);
+            }}
+            className={`flex w-[272px] shrink-0 flex-col rounded-xl border bg-gray-100/70 ${col.vencidos ? 'border-rose-200' : col.dia === hoje ? 'border-orange-300' : 'border-gray-200'} ${alvo ? 'ring-2 ring-indigo-400' : ''}`}
+          >
+            <div className={`rounded-t-xl border-b px-3 py-2 ${col.vencidos ? 'border-rose-200 bg-rose-50' : col.dia === hoje ? 'border-orange-200 bg-orange-50' : 'border-gray-200 bg-white'}`}>
+              <div className="flex items-center gap-2">
+                <input type="checkbox" title="Selecionar a coluna" checked={todasMarcadas} onChange={(e) => marcar(ids, e.target.checked)} />
+                {col.vencidos ? (
+                  <span className="inline-flex items-center gap-1 text-xs font-extrabold uppercase tracking-wide text-rose-700">
+                    <Warning size={14} weight="bold" /> Vencidos
+                  </span>
+                ) : (
+                  <span className="text-xs font-extrabold uppercase tracking-wide text-gray-800">
+                    <span className="capitalize">{diaSemana(col.dia).replace('-feira', '')}</span> {diaMes(col.dia)}
+                    {col.dia === hoje && <span className="ml-1.5 rounded bg-orange-200 px-1 text-[10px] text-orange-900">hoje</span>}
+                  </span>
+                )}
+                <span className="ml-auto rounded-full bg-white px-1.5 text-[11px] font-bold text-gray-600 ring-1 ring-gray-200">{col.itens.length}</span>
+              </div>
+              <div className={`mt-0.5 text-sm font-extrabold tabular-nums ${col.vencidos ? 'text-rose-700' : 'text-gray-900'}`}>{fmtBRL(col.total)}</div>
+            </div>
+            <div className="flex max-h-[62vh] flex-col gap-2 overflow-y-auto p-2">
+              {col.itens.map((l) => {
+                const t = l.titulo || {};
+                const venc = String(t.vencimento || '').slice(0, 10);
+                const previsto = String(l.data_prevista || '').slice(0, 10);
+                const marcada = selecionadas.has(l.id);
+                return (
+                  <div
+                    key={l.id}
+                    draggable={!ocupado}
+                    onDragStart={(e) => {
+                      e.dataTransfer.effectAllowed = 'move';
+                      e.dataTransfer.setData('text/plain', String(l.id));
+                      setArrastando(l.id);
+                    }}
+                    onDragEnd={() => {
+                      setArrastando(null);
+                      setSobre(null);
+                    }}
+                    className={`cursor-grab rounded-lg border bg-white p-2 text-xs shadow-sm active:cursor-grabbing ${marcada ? 'border-indigo-400 ring-1 ring-indigo-300' : 'border-gray-200'} ${arrastando === l.id ? 'opacity-50' : ''}`}
+                  >
+                    <div className="flex items-start gap-2">
+                      <input type="checkbox" className="mt-0.5" checked={marcada} onChange={(e) => marcar([l.id], e.target.checked)} />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate font-bold text-gray-900" title={`${t.fornecedor_code} · ${t.fornecedor_nome}`}>
+                          {t.fornecedor_nome}
+                        </div>
+                        <div className="truncate text-[11px] text-gray-500" title={t.despesa_nome || ''}>
+                          {t.despesa_nome || '—'}
+                        </div>
+                      </div>
+                      <div className="whitespace-nowrap text-right font-extrabold tabular-nums text-gray-900">{fmtBRL(l.valor)}</div>
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-gray-600">
+                      <span className="tabular-nums" title="Duplicata">
+                        <b>{t.rotulo}</b>
+                      </span>
+                      <span title={nomeEmpresa[t.empresa] || ''}>emp. {t.empresa}</span>
+                      <span className={venc && venc < hoje ? 'font-bold text-rose-700' : ''}>
+                        vence {diaMes(venc)}
+                        {col.vencidos && previsto && previsto !== venc ? ` · previsto ${diaMes(previsto)}` : ''}
+                      </span>
+                      {(l.forma_pagamento || l.banco) && <span className="rounded bg-gray-100 px-1 text-[10px] font-semibold text-gray-600">{[formas[l.forma_pagamento] || l.forma_pagamento, l.banco].filter(Boolean).join(' · ')}</span>}
+                      <button type="button" disabled={ocupado} onClick={() => onAvancar(l)} className="ml-auto rounded bg-[#000638] px-2 py-0.5 text-[10px] font-bold text-white hover:bg-indigo-900 disabled:opacity-40" title="Mover para Aprovado">
+                        APROVAR
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function Paginacao({ pagina, total, qtd, onIr }) {
   if (total <= 1) return null;
   const nums = [...new Set([1, 2, pagina - 1, pagina, pagina + 1, total - 1, total])].filter((n) => n >= 1 && n <= total).sort((a, b) => a - b);
@@ -331,6 +463,22 @@ export default function HcLiberacaoPagamento() {
   const [ocupado, setOcupado] = useState(false);
   const [modal, setModal] = useState(null); // { tipo: 'pagar' | 'devolver' | 'editar' | 'baixaAuto', ... }
   const [copiado, setCopiado] = useState(null);
+  // Previsão: lista (tabela) ou kanban por dia — a escolha fica guardada neste navegador
+  const [visaoPrevisao, setVisaoPrevisao] = useState(() => {
+    try {
+      return localStorage.getItem('hc_lib_visao_previsao') === 'kanban' ? 'kanban' : 'lista';
+    } catch {
+      return 'lista';
+    }
+  });
+  const trocarVisao = (v) => {
+    setVisaoPrevisao(v);
+    try {
+      localStorage.setItem('hc_lib_visao_previsao', v);
+    } catch {
+      /* sem armazenamento: vale só nesta visita */
+    }
+  };
   // saldo bancário do card (lido à parte: não trava a lista se falhar)
   const [saldos, setSaldos] = useState(null);
   const [saldosBusy, setSaldosBusy] = useState(false);
@@ -668,8 +816,39 @@ export default function HcLiberacaoPagamento() {
       {/* Previsão: quanto há para pagar por dia */}
       {etapa === 'previsao' && <GraficoPrevisao liberacoes={daPrevisao} hoje={hojeIso()} diaEscolhido={diaEscolhido} onEscolherDia={escolherDiaPrevisto} />}
 
+      {/* Previsão: lista ou kanban */}
+      {etapa === 'previsao' && (
+        <div className="mb-2 flex items-center gap-2">
+          <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500">Visualização</span>
+          <div className="inline-flex overflow-hidden rounded-lg ring-1 ring-gray-300">
+            {[
+              { k: 'lista', rotulo: 'Lista', Icone: ListBullets },
+              { k: 'kanban', rotulo: 'Kanban', Icone: Kanban },
+            ].map((v) => (
+              <button key={v.k} type="button" onClick={() => trocarVisao(v.k)} className={`inline-flex h-8 items-center gap-1.5 px-3 text-xs font-bold ${visaoPrevisao === v.k ? 'bg-[#000638] text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
+                <v.Icone size={14} weight="bold" /> {v.rotulo}
+              </button>
+            ))}
+          </div>
+          {visaoPrevisao === 'kanban' && <span className="text-[11px] text-gray-500">Arraste um cartão para outro dia para mudar a data prevista.</span>}
+        </div>
+      )}
+      {etapa === 'previsao' && visaoPrevisao === 'kanban' && (
+        <KanbanPrevisao
+          liberacoes={filtradas}
+          hoje={hojeIso()}
+          selecionadas={selecionadas}
+          marcar={marcar}
+          onMoverDia={(l, dia) => alterar(l, { dataPrevista: dia })}
+          onAvancar={(l) => mover([l.id], 'aprovado')}
+          nomeEmpresa={nomeEmpresa}
+          formas={formas}
+          ocupado={ocupado}
+        />
+      )}
+
       {/* Tabela */}
-      <div className="rounded-xl border border-gray-200 bg-white shadow">
+      <div className={`rounded-xl border border-gray-200 bg-white shadow ${etapa === 'previsao' && visaoPrevisao === 'kanban' ? 'hidden' : ''}`}>
         {!dados && carregando ? (
           <div className="py-12 text-center text-sm text-gray-400">Carregando…</div>
         ) : filtradas.length === 0 ? (
@@ -810,7 +989,7 @@ export default function HcLiberacaoPagamento() {
           </div>
         )}
       </div>
-      <Paginacao pagina={paginaAtual} total={totalPaginas} qtd={filtradas.length} onIr={(n) => setPagina(Math.min(Math.max(1, n), totalPaginas))} />
+      {!(etapa === 'previsao' && visaoPrevisao === 'kanban') && <Paginacao pagina={paginaAtual} total={totalPaginas} qtd={filtradas.length} onIr={(n) => setPagina(Math.min(Math.max(1, n), totalPaginas))} />}
 
       {/* PAGAR: grava a baixa (sem estorno) */}
       {modal?.tipo === 'pagar' &&
