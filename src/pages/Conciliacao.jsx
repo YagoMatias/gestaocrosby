@@ -2139,7 +2139,41 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
       setOcupado(null);
     }
   };
+  // marcar/desmarcar transferência entre contas à mão (quando o cruzamento automático não pega)
+  const patchLancamento = async (id, corpo) => {
+    const resp = await fetch(`${API}/lancamentos/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...headersUsuario() }, body: JSON.stringify(corpo) });
+    const j = await resp.json();
+    if (!j?.success) throw new Error(j?.message || 'Falha ao atualizar o lançamento.');
+  };
+  const marcarTransferencia = async () => {
+    const alvo = (r.lancamentos || []).filter((l) => selLinhas.includes(l.id) && l.pendente);
+    if (!alvo.length) return;
+    if (!window.confirm(`Marcar ${alvo.length} lançamento(s) como transferência entre contas do grupo (${fmt(alvo.reduce((s, l) => s + Math.abs(l.valor), 0))})?`)) return;
+    setOcupado('lote');
+    try {
+      for (const l of alvo) await patchLancamento(l.id, { tipo: 'TRANSFERENCIA', observacao: MARCA_MANUAL_TRANSF });
+      setSelLinhas([]);
+      if (onRecarregar) await onRecarregar();
+    } catch (e) {
+      setErroModal(e.message);
+    } finally {
+      setOcupado(null);
+    }
+  };
   const desfazerLinha = async (l) => {
+    if (!l.conciliacao?.id && l.observacao === MARCA_MANUAL_TRANSF) {
+      if (!window.confirm('Tirar a marca de transferência entre contas desta linha? Ela volta a ficar pendente.')) return;
+      setOcupado(l.id);
+      try {
+        await patchLancamento(l.id, { tipo: l.valor < 0 ? 'SAIDA' : 'ENTRADA', observacao: '' });
+        if (onRecarregar) await onRecarregar();
+      } catch (e) {
+        setErroModal(e.message);
+      } finally {
+        setOcupado(null);
+      }
+      return;
+    }
     if (!l.conciliacao?.id) return;
     if (!window.confirm('Desfazer a conciliação desta linha?')) return;
     setOcupado(l.id);
@@ -2299,6 +2333,16 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
             Pró-labore ({proLabore.length})
           </button>
           <span className="w-px h-5 bg-gray-200 mx-1" />
+          {(r.lancamentos || []).some((l) => selLinhas.includes(l.id) && l.pendente) && (
+            <button
+              onClick={marcarTransferencia}
+              disabled={ocupado === 'lote'}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50 text-[11px] font-medium"
+              title="Marca as linhas selecionadas como transferência entre contas do grupo (quando o cruzamento automático não achou a outra ponta). Dá para desfazer na própria linha."
+            >
+              <ArrowsLeftRight size={12} /> Transferência entre contas ({(r.lancamentos || []).filter((l) => selLinhas.includes(l.id) && l.pendente).length})
+            </button>
+          )}
           {(r.lancamentos || []).some((l) => selLinhas.includes(l.id) && l.valor < 0) && (
             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-purple-50 border border-purple-200 text-[11px] text-purple-900">
               {(r.lancamentos || []).filter((l) => selLinhas.includes(l.id) && l.valor < 0).length} saída(s) marcada(s) → pró-labore de
@@ -2890,6 +2934,9 @@ const confirmarFornecedor = (l, cands) => {
 Fornecedor diferente — conciliar mesmo assim?`);
 };
 
+// lançamento marcado à mão como transferência entre contas (Titia, 24/11/2026) — mesma frase do backend
+const MARCA_MANUAL_TRANSF = 'Transferência marcada à mão';
+
 // nº da(s) duplicata(s) conciliada(s) — "99246637/1" (Titia, 11/11/2026)
 const fmtDupConc = (d) => {
   if (!d) return null;
@@ -2945,8 +2992,8 @@ const CelulaConciliacao = ({ l, podeConciliar = l.valor < 0, ocupado, onConcilia
           )}
           {c.usuario && <div className="text-[10px] text-gray-400">por {c.usuario}</div>}
         </div>
-        {c.id && (
-          <button onClick={onDesfazer} title="Desfazer conciliação" className="ml-auto text-gray-300 hover:text-red-600 shrink-0">
+        {(c.id || l.observacao === MARCA_MANUAL_TRANSF) && (
+          <button onClick={onDesfazer} title={c.id ? 'Desfazer conciliação' : 'Tirar a marca de transferência entre contas'} className="ml-auto text-gray-300 hover:text-red-600 shrink-0">
             <ArrowCounterClockwise size={13} />
           </button>
         )}
