@@ -213,7 +213,7 @@ export default function HcLiberacaoPagamento() {
   const [selecionadas, setSelecionadas] = useState(() => new Set());
   const [pagina, setPagina] = useState(1);
   const [ocupado, setOcupado] = useState(false);
-  const [modal, setModal] = useState(null); // { tipo: 'pagar' | 'previsao' | 'devolver' | 'editar' | 'baixaAuto', ... }
+  const [modal, setModal] = useState(null); // { tipo: 'pagar' | 'devolver' | 'editar' | 'baixaAuto', ... }
   const [copiado, setCopiado] = useState(null);
   // saldo bancário do card (lido à parte: não trava a lista se falhar)
   const [saldos, setSaldos] = useState(null);
@@ -504,7 +504,7 @@ export default function HcLiberacaoPagamento() {
               </button>
             )}
             {etapa !== 'previsao' && (
-              <button type="button" disabled={ocupado || !marcadas.length} onClick={() => setModal({ tipo: 'previsao', ids: idsMarcados, data: hojeIso() })} className={`${btnAcao} bg-orange-600 hover:bg-orange-700`}>
+              <button type="button" disabled={ocupado || !marcadas.length} onClick={() => mover(idsMarcados, 'previsao')} title="Só muda de etapa: a data prevista continua a mesma (o vencimento) e pode ser ajustada na linha" className={`${btnAcao} bg-orange-600 hover:bg-orange-700`}>
                 <CalendarCheck size={14} weight="bold" /> PREVISÃO
               </button>
             )}
@@ -650,7 +650,7 @@ export default function HcLiberacaoPagamento() {
                       {emAndamento && (
                         <td className="whitespace-nowrap px-2 py-1.5 text-center">
                           {proxima && proxima.k !== 'pago' && (
-                            <button type="button" disabled={ocupado} onClick={() => (proxima.k === 'previsao' ? setModal({ tipo: 'previsao', ids: [l.id], data: l.data_prevista || hojeIso() }) : mover([l.id], proxima.k))} className="mr-1 rounded bg-[#000638] px-2 py-1 text-[10px] font-bold text-white hover:bg-indigo-900 disabled:opacity-40" title={`Mover para ${proxima.um}`}>
+                            <button type="button" disabled={ocupado} onClick={() => mover([l.id], proxima.k)} className="mr-1 rounded bg-[#000638] px-2 py-1 text-[10px] font-bold text-white hover:bg-indigo-900 disabled:opacity-40" title={`Mover para ${proxima.um}`}>
                               {proxima.acao}
                             </button>
                           )}
@@ -671,22 +671,6 @@ export default function HcLiberacaoPagamento() {
         )}
       </div>
       <Paginacao pagina={paginaAtual} total={totalPaginas} qtd={filtradas.length} onIr={(n) => setPagina(Math.min(Math.max(1, n), totalPaginas))} />
-
-      {/* PREVISÃO: dia programado */}
-      {modal?.tipo === 'previsao' && (
-        <Modal titulo={`Previsão de pagamento — ${modal.ids.length} duplicata(s)`} onFechar={() => setModal(null)} largura="max-w-sm">
-          <label className={labelCls}>Dia previsto para pagar</label>
-          <input type="date" value={modal.data} onChange={(e) => setModal((m) => ({ ...m, data: e.target.value }))} className={inputCls} />
-          <div className="mt-3 flex justify-end gap-2">
-            <button onClick={() => setModal(null)} className="h-9 rounded-lg px-3 text-xs font-bold text-gray-600 ring-1 ring-gray-200 hover:bg-gray-50">
-              Voltar
-            </button>
-            <button disabled={ocupado || !modal.data} onClick={() => mover(modal.ids, 'previsao', { dataPrevista: modal.data })} className={`${btnAcao} bg-orange-600 hover:bg-orange-700`}>
-              {ocupado ? <Spinner size={14} className="animate-spin" /> : <CalendarCheck size={14} weight="bold" />} MOVER PARA PREVISÃO
-            </button>
-          </div>
-        </Modal>
-      )}
 
       {/* PAGAR: grava a baixa (sem estorno) */}
       {modal?.tipo === 'pagar' &&
