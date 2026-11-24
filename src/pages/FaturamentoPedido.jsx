@@ -135,7 +135,12 @@ const OPERACOES_DOC_INTERNO = [
   { code: 7807, label: '7807 - VENDAS FRANQUIAS N/OFC', canal: 'franquias' },
   { code: 7808, label: '7808 - VENDAS MTM N/OFC', canal: 'mtm' },
   { code: 7809, label: '7809 - VENDA REVENDEDORES N/OFC', canal: 'revenda' },
+  // BONIFICAÇÃO (Yago, 23/11/2026): peças que o marketing dá a clientes TOP, sem custo para eles.
+  // Só no faturamento avulso; a nota sai com cada peça no custo médio sem imposto, sem pagamento.
+  { code: 5910, label: '5910 - BONIFICAÇÃO (sem custo para o cliente)', canal: 'bonificacao', soAvulso: true },
 ];
+const OPERACAO_BONIFICACAO = 5910;
+const JUSTIFICATIVA_BONIFICACAO_MINIMO = 15;
 
 const FORMAS = {
   pix: 'Pix',
@@ -149,7 +154,7 @@ const FORMAS = {
   saldo_bonus: 'Saldo bônus',
 };
 
-const CANAIS = { varejo: 'Varejo', revenda: 'Revenda', mtm: 'Multimarcas', franquias: 'Franquias' };
+const CANAIS = { varejo: 'Varejo', revenda: 'Revenda', mtm: 'Multimarcas', franquias: 'Franquias', bonificacao: 'Bonificação' };
 
 const CENARIOS = {
   interna: { label: 'Dentro do RN', cfop: '5101 / 5102', icms: 'ICMS 20%' },
@@ -468,7 +473,8 @@ async function salvarPdfDaNota(notaId, opcoes) {
   return avisoDoPdf(await salvarDanfePdf(notaId, opcoes));
 }
 
-function Bloco({ titulo, icone: Icone, children, extra }) {
+function Bloco({ titulo, icone: Icone, children, extra, oculto = false }) {
+  if (oculto) return null;
   return (
     <section className="rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
       <div className="mb-2 flex items-center gap-1.5">
@@ -1288,7 +1294,7 @@ function DetalheTransacao({ id, onReprocessar, reprocessando }) {
                 title="Trocar a operação abre uma NOVA transação no TOTVS; a anterior fica para cancelar"
               >
                 <option value="">operação {v?.operacao_doc_interno || ''}</option>
-                {OPERACOES_DOC_INTERNO.filter((o) => o.code !== Number(v?.operacao_doc_interno)).map((o) => (
+                {OPERACOES_DOC_INTERNO.filter((o) => !o.soAvulso && o.code !== Number(v?.operacao_doc_interno)).map((o) => (
                   <option key={o.code} value={o.code}>
                     trocar p/ {o.code}
                   </option>
@@ -1301,7 +1307,17 @@ function DetalheTransacao({ id, onReprocessar, reprocessando }) {
 
         {/* ── Pagamento ── */}
         <Cartao titulo="Pagamento" icone={CreditCard} chip={<span className="text-sm font-bold tabular-nums text-[#000638]">{fmtBRL(v?.total ?? fat.total)}</span>}>
-          {(v?.pagamentos || []).length === 0 ? (
+          {v?.pedido_info?.bonificacao ? (
+            <div className="rounded-lg bg-fuchsia-50 p-2 text-fuchsia-900 ring-1 ring-fuchsia-200">
+              <p className="font-bold">BONIFICAÇÃO — o cliente não paga (sem pagamento e sem contas a receber).</p>
+              <p className="mt-1">
+                <b>Justificativa:</b> {v.pedido_info.bonificacao.justificativa}
+              </p>
+              <p className="mt-0.5 text-[10.5px] text-fuchsia-800">
+                {[v.pedido_info.bonificacao.por && `por ${v.pedido_info.bonificacao.por}`, v.pedido_info.bonificacao.em && fmtData(v.pedido_info.bonificacao.em), `peças no custo ${String(v.pedido_info.bonificacao.custo?.nome || 'médio s/ imposto').toLowerCase()}`].filter(Boolean).join(' · ')}
+              </p>
+            </div>
+          ) : (v?.pagamentos || []).length === 0 ? (
             <p className="text-gray-400">Sem pagamento registrado.</p>
           ) : (
             <ul className="divide-y divide-gray-100">
@@ -1963,6 +1979,12 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   const [previa, setPrevia] = useState(null);
   const [previaErro, setPreviaErro] = useState('');
   const [operacao, setOperacao] = useState('');
+  // BONIFICAÇÃO: operação 5910 no faturamento avulso — peças no custo MÉDIO S/ IMPOSTO,
+  // sem pagamento e com a justificativa obrigatória de quem está fazendo
+  const bonificacao = avulso && String(operacao) === String(OPERACAO_BONIFICACAO);
+  const [custos, setCustos] = useState(null); // { custos: { sku: valor }, semCusto: [sku], nome, erro }
+  const [justif, setJustif] = useState('');
+  const [modalJustif, setModalJustif] = useState(false);
   // Desde 13/11/2026 a transação e o contas a receber são só do HeadCoach,
   // no CAIXA DO HEADCOACH da empresa 99 (sem terminal nem recebimento no TOTVS)
   const comoFatura = false;
@@ -2320,13 +2342,14 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     return Object.values(lidos)
       .map((l) => {
         const n = l.epcs.length + l.manual;
-        const preco = round2(l.precoTotvs || 0);
+        // bonificação: a peça entra pelo custo médio sem imposto (0 enquanto o custo não chega)
+        const preco = bonificacao ? round2(custos?.custos?.[l.sku] || 0) : round2(l.precoTotvs || 0);
         const unidades = Array.from({ length: n }, () => ({ sku: l.sku, descricao: l.nome || '', cor: '', tam: '', preco, desc: 0, black: null, troca: null, brinde: false }));
-        return { sku: l.sku, descricao: l.nome || '', cor: '', tam: '', unidades, qtd: n, precos: unidades.map((u) => u.preco), preco, fonte: l.fonte || null };
+        return { sku: l.sku, descricao: l.nome || '', cor: '', tam: '', unidades, qtd: n, precos: unidades.map((u) => u.preco), preco, fonte: bonificacao ? 'custo' : l.fonte || null };
       })
       .filter((i) => i.qtd > 0)
       .sort((a, b) => a.descricao.localeCompare(b.descricao));
-  }, [pedido, lidos, pctSuframaPedido]);
+  }, [pedido, lidos, pctSuframaPedido, bonificacao, custos]);
   const descontos = useMemo(() => (pedido ? resumoDescontos(pedido, itensPedido, pctSuframaPedido) : []), [pedido, itensPedido, pctSuframaPedido]);
   // peças que continuam no pedido do Dryland mas saíram da separação sem ser separadas:
   // ao abrir o pedido, um modal avisa que falta a peça e que o crédito precisa ser gerado
@@ -2357,7 +2380,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
         const r = await fetch(`${API}/previa`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ clienteCode: customer.code, consumidorFinal, itens: itensPedido.map((i) => ({ productCode: Number(i.sku), referencia: i.descricao })) }),
+          body: JSON.stringify({ clienteCode: customer.code, consumidorFinal, bonificacao, itens: itensPedido.map((i) => ({ productCode: Number(i.sku), referencia: i.descricao })) }),
         });
         const j = await r.json();
         if (!vivo) return;
@@ -2371,7 +2394,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
       vivo = false;
       clearTimeout(t);
     };
-  }, [customer, consumidorFinal, itensPedido]);
+  }, [customer, consumidorFinal, itensPedido, bonificacao]);
   const cfopPor = useMemo(() => new Map((previa?.itens || []).map((i) => [String(i.productCode), i])), [previa]);
 
   // ─── Portal RFID ─────────────────────────────────────────────────────────
@@ -2456,6 +2479,34 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
       vivo = false;
     };
   }, [avulso, tabela?.carregada, tabela?.code, consultarProduto]);
+  // BONIFICAÇÃO: custo MÉDIO S/ IMPOSTO das peças lidas (é o valor com que saem na nota)
+  const skusLidos = Object.keys(lidos).sort().join(',');
+  useEffect(() => {
+    if (!bonificacao) {
+      setCustos(null);
+      return undefined;
+    }
+    if (!skusLidos) {
+      setCustos({ custos: {}, semCusto: [] });
+      return undefined;
+    }
+    let vivo = true;
+    const tm = setTimeout(async () => {
+      try {
+        const r = await fetch(`${API}/bonificacao/custos`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ produtos: skusLidos.split(',').map(Number) }) });
+        const j = await r.json();
+        if (!vivo) return;
+        if (!j.success) throw new Error(j.message || 'falha ao ler o custo');
+        setCustos({ custos: j.data?.custos || {}, semCusto: (j.data?.semCusto || []).map(String), nome: j.data?.custo?.nome || null });
+      } catch (e) {
+        if (vivo) setCustos((c) => ({ custos: c?.custos || {}, semCusto: c?.semCusto || [], nome: c?.nome || null, erro: e.message }));
+      }
+    }, 250);
+    return () => {
+      vivo = false;
+      clearTimeout(tm);
+    };
+  }, [bonificacao, skusLidos]);
   // AVULSO: anexa o comprovante de pagamento (foto ou PDF) — vai junto da transação
   const anexarComprovante = async (file) => {
     if (!file) return;
@@ -2601,7 +2652,8 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   }, []);
 
   // desconto dado na tela (só Brejinho), em % sobre o valor de cada peça
-  const descDigitado = Math.max(0, round2(Number(String(descPct).replace(',', '.')) || 0));
+  // (bonificação não tem desconto: a peça já sai no custo)
+  const descDigitado = bonificacao ? 0 : Math.max(0, round2(Number(String(descPct).replace(',', '.')) || 0));
 
   // ─── Conferência: SKU do pedido × SKU lido ───────────────────────────────
   const conf = useMemo(() => {
@@ -2639,9 +2691,10 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     }
     // preço e desconto do pedido de cada unidade (antes do desconto do operador)
     const precosDe = (i, l) => {
-      const pmTxt = precoManual[i.sku];
+      const pmTxt = bonificacao ? undefined : precoManual[i.sku];
       const pm = pmTxt != null && pmTxt !== '' ? round2(Number(String(pmTxt).replace(',', '.')) || 0) : 0;
-      return i.unidades.map((u) => ({ pm, preco: pm > 0 ? pm : u.preco > 0 ? u.preco : round2(l?.precoTotvs || 0), descPedido: pm > 0 ? 0 : u.desc }));
+      // (bonificação: peça sem custo fica com valor 0 — nunca cai no preço de tabela)
+      return i.unidades.map((u) => ({ pm, preco: pm > 0 ? pm : u.preco > 0 || bonificacao ? u.preco : round2(l?.precoTotvs || 0), descPedido: pm > 0 ? 0 : u.desc }));
     };
     // DESCONTO DO OPERADOR em % ou em R$. Em R$, o valor digitado vira % sobre o
     // líquido das peças conferidas e os centavos que sobram do rateio vão na peça
@@ -2695,10 +2748,10 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
       // PREÇO = o do pedido do Dryland, sempre. Só muda se o OPERADOR digitar outro
       // na linha (aí vale o que ele digitou, sem o desconto do pedido por cima).
       // Unidade que veio sem preço no pedido usa o do TOTVS.
-      const pmTxt = precoManual[i.sku];
+      const pmTxt = bonificacao ? undefined : precoManual[i.sku];
       const pm = pmTxt != null && pmTxt !== '' ? round2(Number(String(pmTxt).replace(',', '.')) || 0) : 0;
       const unidades = i.unidades.map((u, k) => {
-        const preco = pm > 0 ? pm : u.preco > 0 ? u.preco : round2(l?.precoTotvs || 0);
+        const preco = pm > 0 ? pm : u.preco > 0 || bonificacao ? u.preco : round2(l?.precoTotvs || 0);
         const descPedido = pm > 0 ? 0 : u.desc;
         // desconto do operador neste faturamento, por cima do que o pedido já trouxe
         const extra = extras.get(`${i.sku}|${k}`) || 0;
@@ -2751,7 +2804,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     const totalConferido = round2(brutoConferido - descConferido);
     const descExtraConferido = round2(linhas.reduce((s, l) => s + l.descExtraConferido, 0));
     return { linhas, fora, esperado, conferidas, faltando, sobrando, totalPedido, brutoConferido, descConferido, descExtraConferido, totalConferido, pctDesc: round2(pctDesc), baseOperador, ok: esperado > 0 && faltando === 0 && sobrando === 0 };
-  }, [itensPedido, lidos, skusPedido, descDigitado, descModo, trocas, trocaLiberada, precoManual]);
+  }, [itensPedido, lidos, skusPedido, descDigitado, descModo, trocas, trocaLiberada, precoManual, bonificacao]);
   // % efetivo do desconto do operador (o digitado, ou o que o valor em R$ representa)
   const pctDesc = conf.pctDesc;
   // as trocas que estão valendo agora, já no formato { sku do pedido: [sku de fora, ...] }
@@ -2777,11 +2830,12 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
 
   // ─── Totais e pagamento ──────────────────────────────────────────────────
   const temTransportadora = transp.id !== 'RETIRADA' && !!transp.code;
-  const frete = temTransportadora ? round2(transp.frete) : 0;
+  // bonificação sai sem custo para o cliente: sem frete cobrado
+  const frete = temTransportadora && !bonificacao ? round2(transp.frete) : 0;
   const cenarioCliente = previa?.cenario || prep?.cenario || null;
   const pctSuframa = cenarioCliente?.suframa ? Number(cenarioCliente.pctSuframa) || 12 : 0;
   const itensNota = useMemo(() => itensDaNota(conf), [conf]);
-  const icmsSuframa = pctSuframa > 0 ? desoneracaoSuframa(itensNota, frete, pctSuframa) : 0;
+  const icmsSuframa = pctSuframa > 0 && !bonificacao ? desoneracaoSuframa(itensNota, frete, pctSuframa) : 0;
   const totalNota = round2(conf.totalConferido + frete - icmsSuframa);
   // forma "automática" (a primeira) acompanha o total: total − as outras formas
   useEffect(() => {
@@ -2813,7 +2867,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   // (só o conferido entra); o valor dela vira crédito de adiantamento
   const falta = pecasEmFalta(conf);
   const creditoPossivel = conf.conferidas > 0 && conf.faltando > 0 && falta.valor > 0;
-  const creditoAtivo = gerarCredito && creditoPossivel;
+  const creditoAtivo = gerarCredito && creditoPossivel && !bonificacao;
 
   // ─── Validação ───────────────────────────────────────────────────────────
   const card = pedido?.card || null;
@@ -2857,12 +2911,21 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   if (dataDiferente && !/^\d{4}-\d{2}-\d{2}$/.test(dataVenda)) pendencias.push('Informe a data da venda (transação com data diferente).');
   if (dataDiferente && dataVenda > hojeIso()) pendencias.push('A data da venda não pode ser depois de hoje.');
   if (conf.conferidas === 0) pendencias.push(avulso ? 'Ligue o portal ou digite o código das peças.' : 'Ligue o portal e passe as peças do pedido.');
-  if (semPreco) pendencias.push('Há peça conferida sem preço.');
+  if (semPreco)
+    pendencias.push(
+      !bonificacao
+        ? 'Há peça conferida sem preço.'
+        : custos?.erro
+          ? `Não consegui ler o custo das peças (${custos.erro}).`
+          : !custos
+            ? 'Aguarde o custo das peças.'
+            : `Bonificação: ${(custos.semCusto || []).length ? `a peça ${custos.semCusto.join(', ')} não tem` : 'há peça sem'} custo médio sem imposto cadastrado — sem o custo a nota não sai.`,
+    );
   if (transp.id !== 'RETIRADA' && !transp.code) pendencias.push('Escolha a transportadora (em "Outro", pesquise pelo nome ou código).');
-  if (!pagamentos.length) pendencias.push('Informe o pagamento.');
-  if (!comoFatura && pagamentos.some((p) => (p.forma === 'credito' || p.forma === 'debito') && !cartaoDe(p)?.opcao))
+  if (!bonificacao && !pagamentos.length) pendencias.push('Informe o pagamento.');
+  if (!bonificacao && !comoFatura && pagamentos.some((p) => (p.forma === 'credito' || p.forma === 'debito') && !cartaoDe(p)?.opcao))
     pendencias.push('Escolha a operadora e o parcelamento do cartão (cadastro do TOTVS).');
-  if (Math.abs(somaPag - totalNota) > 0.01) pendencias.push(`Pagamento (${fmtBRL(somaPag)}) não fecha com o total da nota (${fmtBRL(totalNota)}).`);
+  if (!bonificacao && Math.abs(somaPag - totalNota) > 0.01) pendencias.push(`Pagamento (${fmtBRL(somaPag)}) não fecha com o total da nota (${fmtBRL(totalNota)}).`);
   // desconto acima do limite: quem é owner/admin/financeiro passa direto; os demais pedem a senha
   const descSemLimite = ROLES_LIBERAM_DESCONTO.includes(user?.role);
   const descPrecisaSenha = descLivre && pctDesc > LIMITE_DESCONTO_LIVRE && !descSemLimite && !(descLiberado && Number(descLiberado.pct) >= pctDesc);
@@ -2871,7 +2934,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   if (descPrecisaSenha) pendencias.push(`Desconto de ${pctDesc.toLocaleString('pt-BR')}% passa de ${LIMITE_DESCONTO_LIVRE}%: precisa da senha de owner, admin ou financeiro.`);
   if (pctDesc >= 100) pendencias.push('O desconto não pode ser de 100%.');
   // CREDEV / adiantamento: não pode usar mais do que o cliente tem no HeadCoach
-  const usoSaldo = (forma) => round2(pagamentos.filter((p) => p.forma === forma).reduce((t, p) => t + Number(p.valor || 0), 0));
+  const usoSaldo = (forma) => (bonificacao ? 0 : round2(pagamentos.filter((p) => p.forma === forma).reduce((t, p) => t + Number(p.valor || 0), 0)));
   for (const forma of Object.keys(CAMPO_SALDO)) {
     const uso = usoSaldo(forma);
     if (!(uso > 0)) continue;
@@ -2887,7 +2950,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     else if (bonus.erro) pendencias.push(`Não consegui consultar o saldo bônus do cliente (${bonus.erro}).`);
     else if (usoBonus > (bonus.total || 0) + 0.005) pendencias.push(`Saldo bônus usado (${fmtBRL(usoBonus)}) é maior que o saldo do cliente (${fmtBRL(bonus.total || 0)}).`);
   }
-  if (pBoleto && parcelasBoleto.some((_, i) => !/^\d{4}-\d{2}-\d{2}$/.test(vencimentos[i] || ''))) pendencias.push('Informe o vencimento de cada parcela do boleto.');
+  if (!bonificacao && pBoleto && parcelasBoleto.some((_, i) => !/^\d{4}-\d{2}-\d{2}$/.test(vencimentos[i] || ''))) pendencias.push('Informe o vencimento de cada parcela do boleto.');
   if (precisaConfirmar && !confirmaDuplicar) pendencias.push('Confirme o aviso de lançamento já existente.');
   const podeFaturar = !posting && !resultado && pendencias.length === 0;
 
@@ -2935,6 +2998,8 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
         vendedorCode: Number(seller),
         vendedorNome: vend?.name || null,
         operacaoDocInterno: Number(operacao),
+        // bonificação: por que estas peças estão sendo dadas ao cliente (obrigatório)
+        bonificacao: bonificacao ? { justificativa: justif.trim() } : null,
         consumidorFinal,
         dataVenda: dataDiferente && dataVenda ? dataVenda : null,
         descontoFaturamento:
@@ -2952,7 +3017,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
         transporte: temTransportadora
           ? { code: transp.code, servico: transp.servico || null, frete, modFrete: Number(transp.modFrete), volumes: Number(transp.volumes) || 1, pesoB: Number(transp.pesoB) || 0 }
           : { code: null, frete: 0 },
-        pagamentos: pagamentos.map((p) => {
+        pagamentos: (bonificacao ? [] : pagamentos).map((p) => {
           const c = cartaoDe(p);
           return {
             forma: p.forma,
@@ -2966,7 +3031,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
               : null,
           };
         }),
-        vencimentos: pBoleto ? parcelasBoleto.map((_, i) => vencimentos[i]) : [],
+        vencimentos: !bonificacao && pBoleto ? parcelasBoleto.map((_, i) => vencimentos[i]) : [],
         comprovantes: [...(prep?.comprovantes || []), ...anexados.map((c) => ({ url: c.url, path: c.path }))],
         pedidoInfo: {
           forma: prep?.pagamento?.formaTexto,
@@ -2987,7 +3052,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
         // peça em falta com o cliente ficando com o crédito
         creditoFalta: (() => {
           const f = pecasEmFalta(conf);
-          return gerarCredito && conf.conferidas > 0 && conf.faltando > 0 && f.valor > 0 ? { valor: f.valor, pecas: f.pecas } : null;
+          return !bonificacao && gerarCredito && conf.conferidas > 0 && conf.faltando > 0 && f.valor > 0 ? { valor: f.valor, pecas: f.pecas } : null;
         })(),
         sobrando: [
           ...conf.linhas.filter((l) => l.sobra > 0).map((l) => ({ productCode: l.sku, name: l.descricao, quantidade: l.sobra, epcs: l.epcs.slice(l.qtd) })),
@@ -3011,7 +3076,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     } finally {
       setPosting(false);
     }
-  }, [gerarCredito, podeFaturar, prep, customer, conf, frete, operacao, dataDiferente, dataVenda, sellers, seller, chave, ref, consumidorFinal, temTransportadora, transp, pagamentos, cartaoDe, pBoleto, parcelasBoleto, vencimentos, user, showToast, pctDesc, descLiberado, descSemLimite, tirarRascunho, trocasFeitas, clientePedido, trocaCliente, itensNota]);
+  }, [gerarCredito, podeFaturar, prep, customer, conf, frete, operacao, dataDiferente, dataVenda, sellers, seller, chave, ref, consumidorFinal, temTransportadora, transp, pagamentos, cartaoDe, pBoleto, parcelasBoleto, vencimentos, user, showToast, pctDesc, descLiberado, descSemLimite, tirarRascunho, trocasFeitas, clientePedido, trocaCliente, itensNota, bonificacao, justif]);
 
   const reprocessar = useCallback(async () => {
     if (!resultado?.vendaId) return;
@@ -3044,6 +3109,11 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
       setPedirCaixa(true);
       return;
     }
+    // bonificação: antes de emitir, quem está fazendo justifica (obrigatório)
+    if (bonificacao) {
+      setModalJustif(true);
+      return;
+    }
     setModalFat(true);
   };
 
@@ -3051,7 +3121,9 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   const irAba = (a) => setParams(a === 'transacoes' ? { aba: 'transacoes' } : chave ? { chave } : {});
 
   // ─── Render ──────────────────────────────────────────────────────────────
-  const cen = previa ? CENARIOS[previa.cenario.chave] : null;
+  const cenBase = previa ? CENARIOS[previa.cenario.chave] : null;
+  // bonificação: o CFOP é o da remessa em bonificação (5910 no estado, 6910 fora)
+  const cen = cenBase && bonificacao ? { ...cenBase, cfop: previa.cenario.chave === 'interna' ? '5910' : '6910' } : cenBase;
   const notaRes = resultado?.nota;
   return (
     <div className="flex-1 overflow-y-auto bg-gray-100 p-3 lg:p-4">
@@ -3349,7 +3421,9 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                     )}
                   </div>
                   <p className="border-b border-gray-100 bg-gray-50 px-3 py-1 text-[10.5px] text-gray-500">
-                    {avulso
+                    {bonificacao
+                      ? 'BONIFICAÇÃO: entra na nota tudo o que for bipado ou digitado, pelo custo médio sem imposto de cada peça. O cliente não paga.'
+                      : avulso
                       ? 'Faturamento avulso: entra na nota tudo o que for bipado ou digitado. Preço pela tabela do cliente (sem tabela, atacado); use "alterar preço" se precisar.'
                       : pedido?.separacaoIncompleta
                       ? 'Pedido antigo: a separação saiu da tela do Dryland antes de o HeadCoach guardar todas as linhas. Peças do card do pedido (com as trocas registradas nele).'
@@ -3395,6 +3469,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                                   {l.cor ? ` · ${l.cor}` : ''}
                                   {l.tam ? ` · ${l.tam}` : ''} · {[...new Set(l.precos)].map((v) => fmtBRL(v)).join(' + ')}
                                   {!resultado &&
+                                    !bonificacao &&
                                     (editandoPreco === l.sku ? (
                                       <span className="ml-1 inline-flex items-center gap-1">
                                         <input
@@ -3455,7 +3530,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                                   )}
                                   {avulso && l.fonte && !l.unidades.some((u) => u.alterado) && (
                                     <span className={`ml-1 rounded px-1 font-semibold ${l.fonte === 'tabela' ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-600'}`} title={l.fonte === 'tabela' ? 'Preço da tabela do cliente' : 'O cliente não tem tabela, ou a tabela dele não tem preço para esta peça: preço de atacado'}>
-                                      {l.fonte === 'tabela' ? 'tabela do cliente' : 'atacado'}
+                                      {l.fonte === 'custo' ? 'custo médio s/ imposto' : l.fonte === 'tabela' ? 'tabela do cliente' : 'atacado'}
                                     </span>
                                   )}
                                   {fx && (
@@ -3696,10 +3771,25 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                   {transp.id === 'RETIRADA' && <p className="mt-1 text-[11px] text-gray-500">Sem transportadora: a NF-e sai com "sem frete" (modFrete 9).</p>}
                 </Bloco>
 
+                {/* Bonificação: no lugar do pagamento */}
+                {bonificacao && (
+                  <Bloco titulo="Bonificação" icone={Tag}>
+                    <div className="rounded-lg bg-fuchsia-50 p-2.5 text-xs text-fuchsia-900 ring-1 ring-fuchsia-200">
+                      <p className="font-bold">O cliente não paga: não há pagamento nem contas a receber.</p>
+                      <p className="mt-1">
+                        Cada peça sai na nota pelo custo {custos?.nome ? custos.nome.toLowerCase() : 'médio s/ imposto'}. Valor da nota: <b className="tabular-nums">{fmtBRL(totalNota)}</b>
+                        {conf.conferidas > 0 ? ` (${conf.conferidas} ${conf.conferidas === 1 ? 'peça' : 'peças'})` : ''}.
+                      </p>
+                      <p className="mt-1 text-fuchsia-800">Ao faturar, é obrigatório escrever a justificativa da bonificação.</p>
+                      {custos?.erro && <p className="mt-1 font-semibold text-rose-700">Não consegui ler o custo das peças: {custos.erro}</p>}
+                    </div>
+                  </Bloco>
+                )}
                 {/* Pagamento */}
                 <Bloco
                   titulo="Pagamento"
                   icone={CreditCard}
+                  oculto={bonificacao}
                   extra={
                     <button
                       onClick={() => setPagamentos((ps) => [...ps, { forma: 'pix', valor: 0, parcelas: 1, nsu: '', autorizacao: '', bandeira: '', auto: ps.length === 0 }])}
@@ -4074,7 +4164,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                   </div>
                 </Bloco>
 
-                <Bloco titulo="Descontos do pedido" icone={Tag}>
+                <Bloco titulo="Descontos do pedido" icone={Tag} oculto={bonificacao}>
                   {!descLivre && (
                     <div className="mb-2 rounded-lg bg-amber-50 p-2 ring-1 ring-amber-200">
                       <label className={labelCls}>Desconto do operador · em % ou em R$ · máximo {LIMITE_DESCONTO_PEDIDOS}%</label>
@@ -4196,12 +4286,15 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                   <label className={labelCls}>Operação</label>
                   <select value={operacao} onChange={(e) => setOperacao(e.target.value)} className={inputCls}>
                     <option value="">Selecione…</option>
-                    {OPERACOES_DOC_INTERNO.map((o) => (
+                    {OPERACOES_DOC_INTERNO.filter((o) => avulso || !o.soAvulso).map((o) => (
                       <option key={o.code} value={o.code}>
                         {o.label}
                       </option>
                     ))}
                   </select>
+                  {bonificacao && (
+                    <p className="mt-1 text-[10.5px] font-semibold text-fuchsia-800">Bonificação: nota de remessa em bonificação (CFOP 5910 / 6910), peças no custo médio sem imposto, sem pagamento.</p>
+                  )}
                   <div className="mt-2 flex items-end gap-2">
                     <div className="min-w-0 flex-1">
                       <label className={labelCls}>
@@ -4372,10 +4465,16 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                       <div className={`rounded-lg p-2 ring-1 ${resultado.totvs?.ok ? 'bg-emerald-50 ring-emerald-200' : 'bg-amber-50 ring-amber-200'}`}>
                         <p className={`inline-flex items-center gap-1 font-bold ${resultado.totvs?.ok ? 'text-emerald-800' : 'text-amber-800'}`}>
                           {resultado.totvs?.ok ? <CheckCircle size={14} weight="fill" /> : <Warning size={14} weight="fill" />}
-                          {resultado.totvs?.ok ? `Transação nº ${resultado.vendaId} · contas a receber gerado` : 'Contas a receber ainda não gerado'}
+                          {resultado.totvs?.ok
+                            ? resultado.contasReceber?.bonificacao
+                              ? `Transação nº ${resultado.vendaId} · bonificação`
+                              : `Transação nº ${resultado.vendaId} · contas a receber gerado`
+                            : 'Contas a receber ainda não gerado'}
                         </p>
                         <p className="text-[11px] text-gray-700">
-                          {resultado.contasReceber?.ok
+                          {resultado.contasReceber?.bonificacao
+                            ? 'O cliente não paga: sem contas a receber.'
+                            : resultado.contasReceber?.ok
                             ? `Fatura ${resultado.contasReceber.fatura} · ${resultado.contasReceber.titulos.length} título(s) · ${fmtBRL(resultado.contasReceber.total)}`
                             : resultado.contasReceber?.mensagem || resultado.totvs?.mensagem}
                         </p>
@@ -4449,6 +4548,58 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
           }}
         />
       )}
+      {modalJustif && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#000638]/50 backdrop-blur-[2px] sm:items-center sm:p-4" onClick={() => setModalJustif(false)}>
+          <div className="w-full overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:max-w-lg sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 bg-gradient-to-r from-fuchsia-800 to-fuchsia-600 px-5 py-4 text-white">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/15">
+                <Tag size={22} weight="fill" />
+              </span>
+              <div className="min-w-0">
+                <h3 className="text-base font-bold">Justificativa da bonificação</h3>
+                <p className="truncate text-xs text-white/80">
+                  {customer?.name} · {conf.conferidas} {conf.conferidas === 1 ? 'peça' : 'peças'} · nota de {fmtBRL(totalNota)} sem custo para o cliente
+                </p>
+              </div>
+            </div>
+            <div className="p-5">
+              <label className={labelCls} htmlFor="justificativa-bonificacao">
+                Por que estas peças estão sendo dadas ao cliente? (obrigatório)
+              </label>
+              <textarea
+                id="justificativa-bonificacao"
+                autoFocus
+                rows={4}
+                maxLength={1000}
+                value={justif}
+                onChange={(e) => setJustif(e.target.value)}
+                placeholder="Ex.: cliente TOP de novembro — ação do marketing aprovada pela diretoria"
+                className="w-full rounded-lg border border-gray-300 p-2 text-sm outline-none focus:border-fuchsia-600 focus:ring-1 focus:ring-fuchsia-600"
+              />
+              <p className={`mt-1 text-[11px] ${justif.trim().length >= JUSTIFICATIVA_BONIFICACAO_MINIMO ? 'text-gray-500' : 'text-amber-700'}`}>
+                {justif.trim().length >= JUSTIFICATIVA_BONIFICACAO_MINIMO
+                  ? 'A justificativa fica guardada na transação, com o seu nome.'
+                  : `Escreva pelo menos ${JUSTIFICATIVA_BONIFICACAO_MINIMO} letras (faltam ${JUSTIFICATIVA_BONIFICACAO_MINIMO - justif.trim().length}).`}
+              </p>
+              <div className="mt-4 flex gap-2">
+                <button onClick={() => setModalJustif(false)} className="h-11 flex-1 rounded-xl text-sm font-bold text-gray-600 ring-1 ring-gray-300 hover:bg-gray-50">
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => {
+                    setModalJustif(false);
+                    setModalFat(true);
+                  }}
+                  disabled={justif.trim().length < JUSTIFICATIVA_BONIFICACAO_MINIMO}
+                  className="inline-flex h-11 flex-[2] items-center justify-center gap-2 rounded-xl bg-fuchsia-700 text-sm font-bold text-white hover:bg-fuchsia-800 disabled:opacity-40"
+                >
+                  Continuar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {modalFat && pedido && prep && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#000638]/50 backdrop-blur-[2px] sm:items-center sm:p-4" onClick={() => !posting && setModalFat(false)}>
           <div className="w-full overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:max-w-lg sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
@@ -4492,7 +4643,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                 <div className={`rounded-xl p-3 ring-1 ${resultado.totvs?.ok ? 'bg-emerald-50 ring-emerald-200' : 'bg-amber-50 ring-amber-200'}`}>
                   <p className={`flex items-center gap-1.5 text-sm font-bold ${resultado.totvs?.ok ? 'text-emerald-800' : 'text-amber-800'}`}>
                     {resultado.totvs?.ok ? <CheckCircle size={18} weight="fill" /> : <Warning size={18} weight="fill" />}
-                    {resultado.totvs?.ok ? 'Transação e contas a receber (HeadCoach)' : 'Contas a receber ainda não gerado'}
+                    {resultado.totvs?.ok ? (resultado.contasReceber?.bonificacao ? 'Transação de bonificação (HeadCoach)' : 'Transação e contas a receber (HeadCoach)') : 'Contas a receber ainda não gerado'}
                   </p>
                   {resultado.totvs?.ok ? (
                     <>
@@ -4500,7 +4651,8 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                         Nº {resultado.vendaId}
                         <span className="text-sm font-semibold text-emerald-700"> · caixa #{resultado.venda?.caixa_id || '—'} · {fmtData(resultado.venda?.data_caixa)}</span>
                       </p>
-                      {resultado.contasReceber?.ok && (
+                      {resultado.contasReceber?.bonificacao && <p className="text-xs text-gray-600">Bonificação: o cliente não paga, não há contas a receber.</p>}
+                      {resultado.contasReceber?.ok && !resultado.contasReceber.bonificacao && (
                         <p className="text-xs text-gray-600">
                           Fatura {resultado.contasReceber.fatura} ·{' '}
                           {resultado.contasReceber.titulos.map((t) => `${FORMAS[t.forma] || t.forma} ${fmtBRL(t.valor)}${t.situacao === 'aberto' ? ` vence ${fmtData(t.vencimento)}` : ''}`).join(' · ')}
@@ -4575,8 +4727,11 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                     ['Cliente', `${customer?.code} — ${customer?.name}`],
                     ['Fiscal', cen ? `${cen.label} · CFOP ${cen.cfop} · ${cen.icms}${previa?.aliqDifal ? ` (${previa.cenario.destUf} ${previa.aliqDifal}%)` : ''}` : '—'],
                     ['Transporte', temTransportadora ? `${transp.nome || transp.id}${transp.servico ? ` · ${transp.servico}` : ''} · ${transp.volumes} vol · ${transp.pesoB} kg` : 'Retirada (sem transportadora)'],
-                    ['Pagamento', pagamentos.map((p) => `${FORMAS[p.forma]} ${fmtBRL(p.valor)}${Number(p.parcelas) > 1 ? ` em ${p.parcelas}x` : ''}`).join(' + ')],
-                    ['Transação', `HeadCoach · caixa #${caixaSit?.id || '—'} · data de caixa ${caixaSit?.data ? dataBR(caixaSit.data) : '—'} · contas a receber no HeadCoach (nada vai para o TOTVS)`],
+                    bonificacao
+                      ? ['Bonificação', `o cliente não paga · nota de ${fmtBRL(totalNota)} pelo custo médio sem imposto · sem pagamento`]
+                      : ['Pagamento', pagamentos.map((p) => `${FORMAS[p.forma]} ${fmtBRL(p.valor)}${Number(p.parcelas) > 1 ? ` em ${p.parcelas}x` : ''}`).join(' + ')],
+                    ...(bonificacao ? [['Justificativa', justif.trim()]] : []),
+                    ['Transação', `HeadCoach · caixa #${caixaSit?.id || '—'} · data de caixa ${caixaSit?.data ? dataBR(caixaSit.data) : '—'} · ${bonificacao ? 'sem contas a receber' : 'contas a receber no HeadCoach'} (nada vai para o TOTVS)`],
                     ...(trocasFeitas.length ? [['Trocas', trocasFeitas.map((t) => `${t.quantidade}x ${t.de} → ${t.para} ${t.paraNome || ''}`).join(' · ') + ' (mesmo valor)']] : []),
                     ...(dataDiferente && dataVenda ? [['Data diferente', `observação na transação: VENDA DO DIA ${fmtData(dataVenda)}`]] : []),
                     ...(card?.dados?.transacao || card?.dados?.pedido_totvs
