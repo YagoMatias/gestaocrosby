@@ -13,12 +13,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { autorExibicao } from '../utils/autorExibicao';
 import { Link } from 'react-router-dom';
-import { CurrencyDollar, Clock, CalendarCheck, CheckCircle, Bank, Receipt, Spinner, MagnifyingGlass, X, Copy, PencilSimple, ArrowUUpLeft, ArrowsClockwise, Lightning, Wallet, CaretDown, ListBullets, Kanban, Warning } from '@phosphor-icons/react';
+import { CurrencyDollar, Clock, CalendarCheck, CheckCircle, Bank, Receipt, Spinner, MagnifyingGlass, X, Copy, PencilSimple, ArrowUUpLeft, ArrowsClockwise, Lightning, Wallet, CaretDown, ListBullets, Kanban, Warning, ArrowsLeftRight } from '@phosphor-icons/react';
 import { ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, LabelList } from 'recharts';
 import PageTitle from '../components/ui/PageTitle';
 import { useAuth } from '../components/AuthContext';
 import { apiJson } from '../utils/apiAuth';
 import { useAoAtivarAba } from '../components/AppTabs/TabContext';
+import StoneEntreContasModal from '../components/StoneEntreContasModal';
 
 const API = '/api/hc/contas-pagar/liberacoes';
 const PERFIS_FINANCEIRO = ['owner', 'admin', 'user'];
@@ -73,7 +74,7 @@ const fmtQuando = (iso) => {
  * pela última vez (o bot consulta de hora em hora, de segunda a sexta, 9h–20h).
  * Clicar em STONE ou PAGARME abre as contas.
  */
-function CardSaldos({ saldos, carregando, erro, onAtualizar }) {
+function CardSaldos({ saldos, carregando, erro, onAtualizar, onEntreContas }) {
   const [aberto, setAberto] = useState(null); // 'STONE' | 'PAGARME'
   const s = saldos || {};
   const bancos = s.bancos || [];
@@ -125,6 +126,9 @@ function CardSaldos({ saldos, carregando, erro, onAtualizar }) {
             );
           })}
         </div>
+        <button type="button" onClick={onEntreContas} title="Transferir entre as contas da Stone: o bot inclui e o Fábio aprova" className="inline-flex h-8 items-center gap-1 rounded-lg bg-[#000638] px-2.5 text-[11px] font-bold text-white hover:bg-indigo-900">
+          <ArrowsLeftRight size={12} weight="bold" /> Entre contas
+        </button>
         <button type="button" onClick={onAtualizar} disabled={carregando} title="Ler de novo o saldo guardado (o bot consulta o banco de hora em hora)" className="inline-flex h-8 items-center gap-1 rounded-lg px-2 text-[11px] font-bold text-gray-600 ring-1 ring-gray-200 hover:bg-gray-50 disabled:opacity-40">
           {carregando ? <Spinner size={12} className="animate-spin" /> : <ArrowsClockwise size={12} weight="bold" />} Recarregar
         </button>
@@ -461,7 +465,7 @@ export default function HcLiberacaoPagamento() {
   const [selecionadas, setSelecionadas] = useState(() => new Set());
   const [pagina, setPagina] = useState(1);
   const [ocupado, setOcupado] = useState(false);
-  const [modal, setModal] = useState(null); // { tipo: 'pagar' | 'devolver' | 'editar' | 'baixaAuto', ... }
+  const [modal, setModal] = useState(null); // { tipo: 'pagar' | 'devolver' | 'editar' | 'baixaAuto' | 'entreContas', ... }
   const [copiado, setCopiado] = useState(null);
   // Previsão: lista (tabela) ou kanban por dia — a escolha fica guardada neste navegador
   const [visaoPrevisao, setVisaoPrevisao] = useState(() => {
@@ -658,7 +662,7 @@ export default function HcLiberacaoPagamento() {
       {aviso && <p className={`mb-3 rounded-xl px-3 py-2 text-sm ring-1 ${aviso.tipo === 'ok' ? 'bg-emerald-50 text-emerald-800 ring-emerald-200' : 'bg-rose-50 text-rose-700 ring-rose-200'}`}>{aviso.msg}</p>}
       {erro && <p className="mb-3 rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-700 ring-1 ring-rose-200">{erro}</p>}
 
-      <CardSaldos saldos={saldos} carregando={saldosBusy} erro={saldosErro} onAtualizar={carregarSaldos} />
+      <CardSaldos saldos={saldos} carregando={saldosBusy} erro={saldosErro} onAtualizar={carregarSaldos} onEntreContas={() => setModal({ tipo: 'entreContas' })} />
 
       {/* Cards de resumo: clicar troca a etapa */}
       <div className="mb-4 flex flex-wrap gap-3">
@@ -990,6 +994,16 @@ export default function HcLiberacaoPagamento() {
         )}
       </div>
       {!(etapa === 'previsao' && visaoPrevisao === 'kanban') && <Paginacao pagina={paginaAtual} total={totalPaginas} qtd={filtradas.length} onIr={(n) => setPagina(Math.min(Math.max(1, n), totalPaginas))} />}
+
+      {/* ENTRE CONTAS: transferência entre as contas da Stone (fila do bot) */}
+      {modal?.tipo === 'entreContas' && (
+        <StoneEntreContasModal
+          onFechar={() => {
+            setModal(null);
+            carregarSaldos();
+          }}
+        />
+      )}
 
       {/* PAGAR: grava a baixa (sem estorno) */}
       {modal?.tipo === 'pagar' &&
