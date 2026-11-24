@@ -29,7 +29,9 @@ const fmtDataHora = (d) => (d ? new Date(d).toLocaleString('pt-BR', { day: '2-di
 const rotuloDup = (t) => `${t.duplicata}/${t.parcela}`;
 // cor da parcela pela situação: paga, cancelada, vencida ou em aberto
 const parcial = (p) => p.situacao === 'aberto' && Number(p.valor_pago || 0) > 0; // paga em parte: continua em aberto pelo que falta
-const corParcela = (p) => (p.situacao === 'pago' ? 'text-emerald-700 ring-emerald-300' : parcial(p) ? 'text-amber-700 ring-amber-300' : p.situacao === 'cancelado' ? 'text-gray-400 ring-gray-200 line-through' : String(p.vencimento).slice(0, 10) < hojeIso() ? 'text-rose-700 ring-rose-300' : 'text-[#000638] ring-gray-300');
+// quitada sem dinheiro (acordo, mercadoria…): baixa só com desconto do valor todo — aparece como ABATIMENTO (Titia, 24/11/2026)
+const abatimento = (p) => p.situacao === 'pago' && Number(p.valor_pago || 0) < 0.005 && Number(p.desconto || 0) >= Number(p.valor || 0) - 0.005;
+const corParcela = (p) => (abatimento(p) ? 'text-sky-700 ring-sky-300' : p.situacao === 'pago' ? 'text-emerald-700 ring-emerald-300' : parcial(p) ? 'text-amber-700 ring-amber-300' : p.situacao === 'cancelado' ? 'text-gray-400 ring-gray-200 line-through' : String(p.vencimento).slice(0, 10) < hojeIso() ? 'text-rose-700 ring-rose-300' : 'text-[#000638] ring-gray-300');
 // parcela sugerida: o mês do vencimento (11 para novembro)
 const parcelaDoMes = (vencimento) => (vencimento ? Number(String(vencimento).slice(5, 7)) : '');
 const hojeIso = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Recife' }).format(new Date());
@@ -63,6 +65,7 @@ const faltaDepois = (b) => Math.max(0, round2(Number(b.valor_titulo || 0) - (Num
 
 function Situacao({ t }) {
   if (t.situacao === 'cancelado') return <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-bold text-gray-500 ring-1 ring-gray-200">CANCELADA</span>;
+  if (abatimento(t)) return <span title={`Abatimento de ${fmtBRL(t.desconto)} em ${fmtData(t.data_pagamento)}`} className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-bold text-sky-700 ring-1 ring-sky-200">ABATIMENTO</span>;
   if (t.situacao === 'pago') return <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-emerald-200">PAGA</span>;
   const dias = t.tela?.diasAtraso || 0;
   if (parcial(t))
@@ -1017,7 +1020,7 @@ function Detalhe({ id: idInicial, op, onFechar, onMudou }) {
                     key={p.id}
                     type="button"
                     onClick={() => irParaParcela(p.id)}
-                    title={`Parcela ${p.parcela} · ${fmtBRL(p.valor)} · ${p.situacao === 'pago' ? `paga em ${fmtData(p.data_pagamento)}` : parcial(p) ? `paga em parte (${fmtBRL(p.valor_pago)}), vence em ${fmtData(p.vencimento)}` : p.situacao === 'cancelado' ? 'cancelada' : `vence em ${fmtData(p.vencimento)}`}`}
+                    title={`Parcela ${p.parcela} · ${fmtBRL(p.valor)} · ${abatimento(p) ? 'abatimento' : p.situacao === 'pago' ? `paga em ${fmtData(p.data_pagamento)}` : parcial(p) ? `paga em parte (${fmtBRL(p.valor_pago)}), vence em ${fmtData(p.vencimento)}` : p.situacao === 'cancelado' ? 'cancelada' : `vence em ${fmtData(p.vencimento)}`}`}
                     className={`h-8 min-w-[2rem] rounded-lg px-2 text-xs font-bold ring-1 ${p.id === t.id ? 'bg-[#000638] text-white ring-[#000638]' : `bg-white hover:bg-gray-50 ${corParcela(p)}`}`}
                   >
                     {p.parcela}
@@ -1048,7 +1051,7 @@ function Detalhe({ id: idInicial, op, onFechar, onMudou }) {
                           <td className="px-2 py-1 tabular-nums">{p.referencia || '—'}</td>
                           <td className="px-2 py-1 tabular-nums">{fmtData(p.vencimento)}</td>
                           <td className="px-2 py-1 text-right tabular-nums">{fmtBRL(p.valor)}</td>
-                          <td className={`px-2 py-1 ${corParcela(p).split(' ')[0]}`}>{p.situacao === 'pago' ? `Paga em ${fmtData(p.data_pagamento)}` : parcial(p) ? `Paga parcial (${fmtBRL(p.valor_pago)})` : p.situacao === 'cancelado' ? 'Cancelada' : String(p.vencimento).slice(0, 10) < hojeIso() ? 'Vencida' : 'Em aberto'}</td>
+                          <td className={`px-2 py-1 ${corParcela(p).split(' ')[0]}`}>{abatimento(p) ? 'Abatimento' : p.situacao === 'pago' ? `Paga em ${fmtData(p.data_pagamento)}` : parcial(p) ? `Paga parcial (${fmtBRL(p.valor_pago)})` : p.situacao === 'cancelado' ? 'Cancelada' : String(p.vencimento).slice(0, 10) < hojeIso() ? 'Vencida' : 'Em aberto'}</td>
                         </tr>
                       ))}
                     </tbody>
