@@ -69,6 +69,7 @@ const ORIGENS = {
   LIBERACAO: { label: 'Liberação de Pagamento', cor: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
   SOLICITACAO: { label: 'Solicitações Crosby', cor: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
   TOTVS_CP: { label: 'Contas a Pagar (TOTVS)', cor: 'bg-blue-100 text-blue-800 border-blue-300' },
+  HC_CP: { label: 'Contas a Pagar HeadCoach', cor: 'bg-sky-100 text-sky-800 border-sky-300' },
   STONE: { label: 'Vendas Stone', cor: 'bg-green-100 text-green-800 border-green-300' },
   REDE_DEPOSITO: { label: 'Depósito Rede', cor: 'bg-orange-100 text-orange-800 border-orange-300' },
   TOTVS_CR: { label: 'Contas a Receber (TOTVS)', cor: 'bg-cyan-100 text-cyan-800 border-cyan-300' },
@@ -1937,9 +1938,10 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
   const [picker, setPicker] = useState(null); // { lancamento, candidatos, avisos, decisao }
   const [selecao, setSelecao] = useState([]); // candidatos marcados (podem somar a saída)
   // busca manual (mesmos filtros das telas Contas a Pagar / Receber): devolve só o que foi pesquisado
-  const BUSCA_VAZIA = { aberta: false, duplicata: '', codigo: '', cnpj: '', nome: '', tipoData: 'vencimento', de: '', ate: '', status: 'todos', valorMin: '', valorMax: '', fontes: ['totvs', 'liberacao', 'solicitacoes'], carregando: false, resultados: null, avisos: [] };
+  const BUSCA_VAZIA = { aberta: false, duplicata: '', codigo: '', cnpj: '', nome: '', tipoData: 'vencimento', de: '', ate: '', status: 'todos', valorMin: '', valorMax: '', fontes: ['totvs', 'headcoach', 'liberacao', 'solicitacoes'], carregando: false, resultados: null, avisos: [] };
   const FONTES_CP = [
     { id: 'totvs', label: 'Contas a Pagar (TOTVS)' },
+    { id: 'headcoach', label: 'Contas a Pagar HeadCoach' },
     { id: 'liberacao', label: 'Liberação de Pagamento' },
     { id: 'solicitacoes', label: 'Solicitações Crosby' },
   ];
