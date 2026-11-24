@@ -6,7 +6,9 @@
 //     (EM ANDAMENTO / ATENDIDA / CANCELADA), origem e NF;
 //   • lista com o resumo do que foi filtrado e exportação em CSV;
 //   • detalhe em modal: dados da transação, peças com as etiquetas RFID,
-//     pagamento, nota fiscal (imprimir / salvar PDF / XML), quem fez e quando.
+//     pagamento, nota fiscal (imprimir / salvar PDF / XML), quem fez e quando;
+//   • venda com boleto: a duplicata enviada ao cliente — assinou ou não, ver,
+//     baixar e reenviar (para outro telefone, só o owner).
 // Fontes: PDV Crosby, Faturamento (pedidos, Brejinho, avulso), Transferências
 // e Devoluções — GET /api/hc/transacoes (exige login).
 // ============================================================================
@@ -37,10 +39,13 @@ import {
   UserSwitch,
   Warning,
   ArrowsClockwise,
+  Signature,
+  Eye,
+  PaperPlaneTilt,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
-import { apiJson } from '../utils/apiAuth';
+import { apiJson, apiFetch } from '../utils/apiAuth';
 import { useAuth } from '../components/AuthContext';
 import { imprimirDanfe, salvarDanfePdf, avisoDoPdf } from '../utils/danfeAcoes';
 import { imprimirCupomFiscalDaNota, imprimirCupomTrocaDaNota } from '../utils/cupomTroca';
@@ -299,6 +304,245 @@ function TrocarVendedorModal({ d, onFechar, onFeito }) {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── Duplicata da venda com boleto (Yago, 24/11/2026) ────────────────────────
+// A "confirmação de compra a prazo" que o cliente assina e que segue pelo WhatsApp
+// no faturamento. Aqui: situação (assinou ou não), ver/baixar o documento, conferir
+// a assinatura e reenviar. Mandar para OUTRO telefone é só do owner — para ele o
+// número fica aberto para alterar (o servidor confere de novo).
+const DUP_SIT = {
+  pendente: { label: 'ainda não enviada', cls: 'bg-gray-100 text-gray-600 ring-gray-200' },
+  enviando: { label: 'enviando…', cls: 'bg-amber-50 text-amber-800 ring-amber-200' },
+  enviada: { label: 'aguardando assinatura', cls: 'bg-amber-50 text-amber-800 ring-amber-200' },
+  assinada: { label: 'assinada pelo cliente', cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200' },
+  erro: { label: 'não enviada', cls: 'bg-rose-50 text-rose-700 ring-rose-200' },
+  cancelada: { label: 'cancelada', cls: 'bg-gray-100 text-gray-500 ring-gray-200' },
+};
+const DUP_EVENTO = { envio: 'enviada', reenvio: 'reenviada (mesmo link)', novo_documento: 'documento novo enviado', outro_telefone: 'enviada para outro telefone', falha: 'envio não saiu' };
+const soDigitos = (t) => String(t || '').replace(/\D/g, '');
+const fmtFone = (t) => {
+  let n = soDigitos(t);
+  if (n.length >= 12 && n.startsWith('55')) n = n.slice(2);
+  if (n.length === 11) return `(${n.slice(0, 2)}) ${n.slice(2, 7)}-${n.slice(7)}`;
+  if (n.length === 10) return `(${n.slice(0, 2)}) ${n.slice(2, 6)}-${n.slice(6)}`;
+  return n || '';
+};
+// mesmo número, com ou sem o 55 e com ou sem o 9 do celular
+const mesmoFone = (a, b) => {
+  const n = (x) => {
+    let d = soDigitos(x);
+    if (d.length >= 12 && d.startsWith('55')) d = d.slice(2);
+    return d.length >= 10 ? `${d.slice(0, 2)}${d.slice(-8)}` : d;
+  };
+  return !!soDigitos(a) && n(a) === n(b);
+};
+
+function DuplicataBloco({ id, inicial, ehOwner }) {
+  const [dup, setDup] = useState(inicial);
+  const [fone, setFone] = useState(fmtFone(inicial?.telefone));
+  const [busy, setBusy] = useState(''); // ver | baixar | conferir | reenviar
+  const [msg, setMsg] = useState(null); // { ok, texto }
+  useEffect(() => {
+    setDup(inicial);
+    setFone(fmtFone(inicial?.telefone));
+  }, [inicial]);
+  if (!dup) return null;
+  const S = DUP_SIT[dup.status] || DUP_SIT.pendente;
+  const assinada = dup.status === 'assinada';
+  const jaSaiu = dup.status === 'enviada' && !!dup.link;
+  const rota = `/api/hc/transacoes/${encodeURIComponent(id)}/duplicata`;
+  const foneMudou = ehOwner && soDigitos(fone).length >= 10 && !mesmoFone(fone, dup.telefone);
+  const foneInvalido = ehOwner && soDigitos(fone).length > 0 && soDigitos(fone).length < 10;
+  const btn = 'inline-flex h-8 items-center gap-1 rounded-lg px-2.5 text-[11px] font-bold disabled:opacity-60';
+
+  const documento = async (baixar) => {
+    if (busy) return;
+    // a aba é aberta já no clique (depois da espera o navegador bloquearia)
+    const aba = baixar ? null : window.open('', '_blank');
+    setBusy(baixar ? 'baixar' : 'ver');
+    setMsg(null);
+    try {
+      const r = await apiFetch(`${rota}/pdf${baixar ? '?baixar=1' : ''}`, { timeoutMs: 180000 });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.message || `HTTP ${r.status}`);
+      }
+      const url = URL.createObjectURL(await r.blob());
+      if (baixar) {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `duplicata-nf-${dup.nf || id}${r.headers.get('X-Duplicata-Assinada') === '1' ? '-assinada' : ''}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      } else if (aba) aba.location.href = url;
+      else window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 120000);
+    } catch (e) {
+      aba?.close();
+      setMsg({ ok: false, texto: `Não consegui abrir a duplicata: ${e.message}` });
+    } finally {
+      setBusy('');
+    }
+  };
+  const conferir = async () => {
+    if (busy) return;
+    setBusy('conferir');
+    setMsg(null);
+    try {
+      const j = await apiJson(`${rota}?conferir=1`);
+      setDup(j.data);
+      setMsg({ ok: true, texto: j.data?.status === 'assinada' ? 'O cliente já assinou a duplicata.' : 'Ainda sem assinatura do cliente.' });
+    } catch (e) {
+      setMsg({ ok: false, texto: e.message });
+    } finally {
+      setBusy('');
+    }
+  };
+  const reenviar = async () => {
+    if (busy || foneInvalido) return;
+    const destino = foneMudou ? fmtFone(fone) : fmtFone(dup.telefone);
+    const pergunta = foneMudou
+      ? jaSaiu
+        ? `Enviar a duplicata para o NOVO número ${destino}?\n\nO cliente recebe um documento novo para assinar e este passa a ser o número da duplicata.`
+        : `Enviar a duplicata para ${destino}?`
+      : jaSaiu
+        ? `Reenviar a duplicata para ${destino}?\n\nO cliente recebe de novo a mesma mensagem, com o mesmo link de assinatura.`
+        : `Enviar a duplicata ao cliente${destino ? ` (${destino})` : ''}?`;
+    if (!window.confirm(pergunta)) return;
+    setBusy('reenviar');
+    setMsg(null);
+    try {
+      const j = await apiJson(`${rota}/reenviar`, { method: 'POST', body: foneMudou ? { telefone: soDigitos(fone) } : {}, timeoutMs: 240000 });
+      if (j.data?.duplicata) {
+        setDup(j.data.duplicata);
+        setFone(fmtFone(j.data.duplicata.telefone));
+      }
+      setMsg({ ok: true, texto: j.message || 'Duplicata enviada.' });
+    } catch (e) {
+      setMsg({ ok: false, texto: e.message });
+      // a situação pode ter mudado (ex.: o cliente assinou nesse meio-tempo)
+      apiJson(rota)
+        .then((j) => j.data && setDup(j.data))
+        .catch(() => {});
+    } finally {
+      setBusy('');
+    }
+  };
+
+  return (
+    <div className="mt-2 border-t border-gray-100 pt-2" data-duplicata>
+      <p className="mb-1 flex flex-wrap items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+        <Signature size={12} /> Duplicata do boleto <Chip cls={S.cls}>{S.label}</Chip>
+      </p>
+      <div className="space-y-0.5 text-xs text-gray-700">
+        {dup.enviadaEm ? (
+          <p>
+            Enviada em <b>{fmtDataHora(dup.enviadaEm)}</b>
+            {dup.telefone ? (
+              <>
+                {' '}
+                para <b>{fmtFone(dup.telefone)}</b>
+              </>
+            ) : null}
+            {dup.enviadaPor ? ` · por ${String(dup.enviadaPor).trim()}` : ''}
+          </p>
+        ) : (
+          <p className="text-gray-500">A duplicata desta venda ainda não foi enviada ao cliente.</p>
+        )}
+        {assinada && (
+          <p className="font-semibold text-emerald-700">
+            Assinada pelo cliente em {fmtDataHora(dup.assinadaEm)}
+          </p>
+        )}
+        {dup.status === 'enviada' && <p className="text-amber-700">O cliente ainda não assinou.</p>}
+        {dup.status === 'erro' && dup.erro && <p className="text-rose-600">{dup.erro}</p>}
+      </div>
+
+      {!assinada && (
+        <div className="mt-2">
+          <label className={labelCls}>WhatsApp do envio</label>
+          {ehOwner ? (
+            <>
+              <input
+                value={fone}
+                onChange={(e) => setFone(e.target.value)}
+                placeholder="(84) 99999-9999"
+                inputMode="tel"
+                maxLength={20}
+                className={`${inputCls} max-w-[220px]`}
+                data-duplicata-fone
+              />
+              <p className={`mt-1 text-[10.5px] ${foneInvalido ? 'text-rose-600' : foneMudou && jaSaiu ? 'text-amber-700' : 'text-gray-400'}`}>
+                {foneInvalido
+                  ? 'Informe o número com DDD.'
+                  : foneMudou && jaSaiu
+                    ? `Número alterado: o cliente recebe um documento novo em ${fmtFone(fone)}.`
+                    : 'Só o owner altera o número de envio.'}
+              </p>
+            </>
+          ) : (
+            <p className="text-xs font-semibold text-gray-800">
+              {fmtFone(dup.telefone) || 'o do pedido / cadastro do cliente'} <span className="font-normal text-gray-400">· só o owner altera o número</span>
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {dup.aplicavel && (
+          <>
+            <button onClick={() => documento(false)} disabled={!!busy} className={`${btn} bg-[#000638] text-white hover:bg-[#000638]/90`} title={assinada ? 'Abre a duplicata assinada' : 'Abre a duplicata enviada ao cliente'}>
+              {busy === 'ver' ? <Spinner size={13} className="animate-spin" /> : <Eye size={13} />} {assinada ? 'Ver assinada' : 'Ver duplicata'}
+            </button>
+            <button onClick={() => documento(true)} disabled={!!busy} className={`${btn} text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50`}>
+              {busy === 'baixar' ? <Spinner size={13} className="animate-spin" /> : <DownloadSimple size={13} />} Baixar PDF
+            </button>
+          </>
+        )}
+        {dup.status === 'enviada' && (
+          <button onClick={conferir} disabled={!!busy} className={`${btn} text-[#000638] ring-1 ring-gray-300 hover:bg-gray-50`} title="Consulta agora se o cliente já assinou">
+            {busy === 'conferir' ? <Spinner size={13} className="animate-spin" /> : <ArrowsClockwise size={13} />} Conferir assinatura
+          </button>
+        )}
+        {!assinada && dup.aplicavel && dup.status !== 'cancelada' && (
+          <button
+            onClick={reenviar}
+            disabled={!!busy || foneInvalido}
+            className={`${btn} ${foneMudou ? 'bg-amber-500 text-white hover:bg-amber-600' : 'bg-emerald-600 text-white hover:bg-emerald-700'}`}
+            data-duplicata-reenviar
+          >
+            {busy === 'reenviar' ? <Spinner size={13} className="animate-spin" /> : <PaperPlaneTilt size={13} />}
+            {foneMudou ? (jaSaiu ? 'Enviar para o novo número' : 'Enviar para este número') : jaSaiu ? 'Reenviar' : 'Enviar duplicata'}
+          </button>
+        )}
+        {dup.link && !assinada && (
+          <a href={dup.link} target="_blank" rel="noreferrer" className={`${btn} text-blue-700 hover:underline`} title="Link de assinatura que o cliente recebeu">
+            link de assinatura <ArrowSquareOut size={11} />
+          </a>
+        )}
+      </div>
+      {msg && <p className={`mt-2 rounded-lg px-2 py-1.5 text-[11px] ring-1 ${msg.ok ? 'bg-emerald-50 text-emerald-800 ring-emerald-200' : 'bg-rose-50 text-rose-700 ring-rose-200'}`}>{msg.texto}</p>}
+
+      {(dup.historico || []).length > 0 && (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-[10.5px] font-semibold text-gray-600">Histórico de envios ({dup.historico.length})</summary>
+          <ul className="mt-1 space-y-0.5 text-[10.5px] text-gray-500">
+            {dup.historico.map((h, i) => (
+              <li key={`${h.em}-${i}`} className={h.tipo === 'falha' ? 'text-rose-600' : ''}>
+                {fmtDataHora(h.em)} · {DUP_EVENTO[h.tipo] || h.tipo}
+                {h.telefone ? ` · ${fmtFone(h.telefone)}` : ''}
+                {h.de ? ` (antes: ${fmtFone(h.de)})` : ''}
+                {h.por ? ` · ${String(h.por).trim()}` : ''}
+                {h.erro ? ` — ${h.erro}` : ''}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </div>
   );
 }
@@ -607,6 +851,7 @@ function DetalheTransacao({ id, onFechar, onAlterada }) {
                     </p>
                   </div>
                 )}
+                {d.duplicata && <DuplicataBloco id={d.id} inicial={d.duplicata} ehOwner={ehOwner} />}
                 {d.comprovantes.length > 0 && (
                   <p className="mt-2 flex flex-wrap gap-x-2 gap-y-1 border-t border-gray-100 pt-2 text-xs">
                     {d.comprovantes.map((c, i) => (
