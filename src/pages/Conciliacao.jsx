@@ -2175,7 +2175,8 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
       return;
     }
     if (!l.conciliacao?.id) return;
-    if (!window.confirm('Desfazer a conciliação desta linha?')) return;
+    const temHc = l.conciliacao.origem === 'HC_CP' || (l.conciliacao.referencia?.itens || []).some((it) => it.origem === 'HC_CP');
+    if (!window.confirm(temHc ? 'Desfazer a conciliação desta linha?\n\nAtenção: a baixa automática feita no Contas a Pagar HeadCoach NÃO é desfeita (a baixa não tem estorno).' : 'Desfazer a conciliação desta linha?')) return;
     setOcupado(l.id);
     try {
       await desfazer(l.conciliacao.id);
