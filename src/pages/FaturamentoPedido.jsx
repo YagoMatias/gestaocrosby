@@ -2044,6 +2044,8 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
   const [posting, setPosting] = useState(false);
   const [resultado, setResultado] = useState(null);
   const [modalFat, setModalFat] = useState(false); // confirmação → andamento → resultado
+  // forma de saldo do pedido trocada pela tela porque o crédito do cliente está na outra ({ de, para, valor })
+  const [saldoTrocado, setSaldoTrocado] = useState(null);
 
   // Desconto dado na tela (Brejinho): % sobre as peças; acima do limite pede senha
   const [descPct, setDescPct] = useState('');
@@ -2143,6 +2145,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     setErroPedido('');
     setResultado(null);
     setConfirmaDuplicar(false);
+    setSaldoTrocado(null);
     setGerarCredito(false);
     setConsumidorFinal(false);
     setDataDiferente(false);
@@ -2222,6 +2225,8 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
             // com CREDEV ou crédito da loja virtual os valores são os do pedido (fixos);
             // sem eles a primeira forma acompanha o total
             auto: saldoCard > 0 ? false : i === 0,
+            // forma de saldo posta pelo pedido: se o cliente não tiver esse saldo e tiver o outro, a tela troca
+            doPedido: saldoCard > 0 && f === formaSaldo,
           })),
         );
         setVencimentos(p.pagamento.vencimentos || []);
@@ -2286,6 +2291,25 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
     },
     [saldos],
   );
+
+  // O pedido do Dryland diz "CREDEV", mas no HeadCoach o crédito do cliente pode estar como
+  // crédito da loja virtual (Adiantamento) — ou o contrário. Quando o saldo da forma do pedido
+  // não cobre e o da outra cobre, a tela passa a usar a forma em que o saldo existe (uma vez;
+  // o operador pode mudar depois). RV1592, 24/11/2026.
+  useEffect(() => {
+    if (!saldos || saldos.erro) return;
+    const OUTRA = { credito_loja: 'adiantamento', adiantamento: 'credito_loja' };
+    const tem = (forma) => Math.max(0, round2(Number(saldos[CAMPO_SALDO[forma]]) || 0));
+    const i = pagamentos.findIndex((pg) => pg.doPedido && OUTRA[pg.forma]);
+    if (i < 0) return;
+    const pg = pagamentos[i];
+    const valor = round2(pg.valor);
+    const para = OUTRA[pg.forma];
+    const troca = valor > 0 && tem(pg.forma) + 0.005 < valor && tem(para) + 0.005 >= valor && !pagamentos.some((x, k) => k !== i && x.forma === para);
+    // conferido uma vez: daqui em diante vale o que o operador escolher
+    setPagamentos((ps) => ps.map((x, k) => (k === i ? { ...x, forma: troca ? para : x.forma, doPedido: false } : x)));
+    if (troca) setSaldoTrocado({ de: pg.forma, para, valor });
+  }, [saldos, pagamentos]);
 
   // SUFRAMA do cliente do pedido (o desconto que fecha no valor do pedido depende dele)
   const pctSuframaPedido = prep?.cenario?.suframa ? Number(prep.cenario.pctSuframa) || 12 : 0;
@@ -3690,6 +3714,12 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                       No pedido: <b>{prep.pagamento.formaTexto}</b>
                       {prep.pagamento.pix ? ` · Pix ${prep.pagamento.pix}` : ''}
                       {prep.pagamento.credev ? ` · Credev ${prep.pagamento.credev}` : ''}
+                    </p>
+                  )}
+                  {saldoTrocado && (
+                    <p className="mb-2 rounded-lg bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900 ring-1 ring-amber-200">
+                      O pedido veio com <b>{fmtBRL(saldoTrocado.valor)}</b> em {FORMAS[saldoTrocado.de]}, mas o crédito deste cliente no HeadCoach está em <b>{FORMAS[saldoTrocado.para]}</b>
+                      {saldoTrocado.para === 'adiantamento' ? ' (crédito da loja virtual)' : ''}: a forma de pagamento já foi ajustada.
                     </p>
                   )}
                   <div className="mb-2 rounded-lg bg-blue-50 px-2 py-1.5 text-[11px] text-blue-900 ring-1 ring-blue-200">
