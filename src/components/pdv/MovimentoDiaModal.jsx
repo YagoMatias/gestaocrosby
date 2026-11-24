@@ -2,6 +2,8 @@
 // tanto as do TOTVS (notas fiscais do dia, inclusive as feitas direto no caixa)
 // quanto as emitidas pelo HeadCoach. Mostra cliente, valor e pagamento, deixa
 // detalhar os produtos e separa por vendedor.
+// Venda do HeadCoach cuja nota NÃO saiu (rejeitada ou parada na emissão) aparece destacada,
+// fica FORA dos totais — como no ranking, que só conta venda com nota — e pode ser emitida daqui.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { X, Spinner, ArrowsClockwise, CaretDown, CaretRight, ChartBar, Warning } from '@phosphor-icons/react';
 import { API_BASE_URL } from '../../config/constants';
@@ -18,6 +20,8 @@ export default function MovimentoDiaModal({ empresa, empresaNome, sellers = [], 
   const [porVendedor, setPorVendedor] = useState(true);
   const [filtroTipo, setFiltroTipo] = useState(''); // '' | venda | devolucao
   const [abertos, setAbertos] = useState(() => new Set());
+  const [emitindo, setEmitindo] = useState(null); // id da venda cuja nota está sendo emitida
+  const [aviso, setAviso] = useState(null); // { ok, texto }
 
   const nomeVendedor = useCallback(
     (code, fallback) => {
@@ -49,10 +53,14 @@ export default function MovimentoDiaModal({ empresa, empresaNome, sellers = [], 
           lista.push({
             key: `h-${v.id}`,
             origem: 'headcoach',
+            vendaId: v.id,
+            // nota que não saiu: a venda existe, mas não conta até a nota ser autorizada
+            pendente: v.status !== 'autorizada',
+            motivoPendente: v.nota && v.nota.status !== 'autorizada' ? [v.nota.cstat, v.nota.xmotivo].filter(Boolean).join(' ') : null,
             tipo: v.tipo_venda === 'troca' ? 'devolucao' : 'venda',
             hora: v.criado_em ? new Date(v.criado_em).toLocaleTimeString('pt-BR', { timeZone: 'America/Recife' }) : null,
             documentType: v.nota?.modelo,
-            invoiceCode: v.nota?.numero,
+            invoiceCode: v.status === 'autorizada' ? v.nota?.numero : null,
             serialCode: v.nota?.serie,
             customerCode: v.cliente_code,
             customerName: v.cliente_nome || 'Consumidor não identificado',
@@ -86,11 +94,32 @@ export default function MovimentoDiaModal({ empresa, empresaNome, sellers = [], 
     carregar();
   }, [carregar]);
 
+  // emite a nota da venda que ficou sem nota (a mesma emissão do fechamento da venda)
+  const emitirNota = async (m) => {
+    if (emitindo) return;
+    setEmitindo(m.vendaId);
+    setAviso(null);
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/pdv-crosby/vendas/${m.vendaId}/emitir`, { method: 'POST' });
+      const j = await r.json().catch(() => ({}));
+      const nota = j.data?.nota;
+      const saiu = r.ok && (nota?.status === 'autorizada' || j.data?.jaAutorizada);
+      setAviso({ ok: saiu, texto: saiu ? `Nota ${nota?.numero ? `${nota.numero}/${nota.serie} ` : ''}autorizada: a venda de ${fmtBRL(m.total)} já conta no total e no ranking.` : `A nota não saiu: ${j.message || nota?.xmotivo || 'erro na emissão'}` });
+      await carregar();
+    } catch (e) {
+      setAviso({ ok: false, texto: `Não consegui emitir a nota: ${e.message}` });
+    } finally {
+      setEmitindo(null);
+    }
+  };
+
   const resumo = useMemo(() => {
-    const v = movs.filter((m) => m.tipo === 'venda');
-    const d = movs.filter((m) => m.tipo === 'devolucao');
+    // só o que tem nota entra nos totais (o ranking faz a mesma conta)
+    const v = movs.filter((m) => m.tipo === 'venda' && !m.pendente);
+    const d = movs.filter((m) => m.tipo === 'devolucao' && !m.pendente);
+    const pend = movs.filter((m) => m.pendente);
     const soma = (l, k) => l.reduce((s, m) => s + Number(m[k] || 0), 0);
-    return { vendas: v.length, vendasValor: soma(v, 'total'), devol: d.length, devolValor: soma(d, 'total'), pecas: soma(v, 'quantity'), pecasDev: soma(d, 'quantity') };
+    return { vendas: v.length, vendasValor: soma(v, 'total'), devol: d.length, devolValor: soma(d, 'total'), pecas: soma(v, 'quantity'), pecasDev: soma(d, 'quantity'), pendentes: pend.length, pendentesValor: soma(pend, 'total') };
   }, [movs]);
 
   const grupos = useMemo(() => {
@@ -102,7 +131,7 @@ export default function MovimentoDiaModal({ empresa, empresaNome, sellers = [], 
       if (!map.has(k)) map.set(k, { nome: nomeVendedor(m.sellerCode, m.sellerName), itens: [] });
       map.get(k).itens.push(m);
     }
-    const liquido = (g) => g.itens.reduce((s, m) => s + (m.tipo === 'venda' ? m.total : -m.total), 0);
+    const liquido = (g) => g.itens.reduce((s, m) => s + (m.pendente ? 0 : m.tipo === 'venda' ? m.total : -m.total), 0);
     return [...map.values()].sort((a, b) => liquido(b) - liquido(a));
   }, [movs, porVendedor, filtroTipo, nomeVendedor]);
 
@@ -119,7 +148,7 @@ export default function MovimentoDiaModal({ empresa, empresaNome, sellers = [], 
     const dev = m.tipo === 'devolucao';
     return (
       <React.Fragment key={m.key}>
-        <tr className={`hover:bg-gray-50/60 cursor-pointer ${dev ? 'bg-purple-50/40' : ''}`} onClick={() => toggle(m.key)}>
+        <tr className={`hover:bg-gray-50/60 cursor-pointer ${m.pendente ? 'bg-rose-50/60' : dev ? 'bg-purple-50/40' : ''}`} onClick={() => toggle(m.key)} data-pendente={m.pendente ? '1' : undefined}>
           <td className="px-2 py-1.5 text-gray-400">{aberto ? <CaretDown size={12} weight="bold" /> : <CaretRight size={12} weight="bold" />}</td>
           <td className="px-2 py-1.5 tabular-nums whitespace-nowrap">{String(m.hora || '').slice(0, 5) || '—'}</td>
           <td className="px-2 py-1.5">
@@ -129,7 +158,29 @@ export default function MovimentoDiaModal({ empresa, empresaNome, sellers = [], 
             {m.origem === 'headcoach' && <span className="ml-1 inline-flex px-1.5 py-0.5 rounded-full ring-1 text-[10px] font-semibold bg-blue-50 text-blue-700 ring-blue-200">HeadCoach</span>}
           </td>
           <td className="px-2 py-1.5 whitespace-nowrap">
-            {m.invoiceCode ? `${Number(m.documentType) === 65 ? 'NFC-e' : 'NF'} ${m.invoiceCode}/${m.serialCode}` : 'sem nota'}
+            {m.pendente ? (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="inline-flex px-1.5 py-0.5 rounded-full ring-1 text-[10px] font-bold bg-rose-50 text-rose-700 ring-rose-200" title={m.motivoPendente || 'A nota fiscal desta venda não saiu'}>
+                  NOTA NÃO EMITIDA
+                </span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    emitirNota(m);
+                  }}
+                  disabled={!!emitindo}
+                  className="h-6 px-2 rounded-md text-[10.5px] font-bold text-white bg-[#000638] hover:bg-[#000638]/90 disabled:opacity-50 inline-flex items-center gap-1"
+                  data-emitir-nota
+                >
+                  {emitindo === m.vendaId ? <Spinner size={11} className="animate-spin" /> : null} Emitir nota
+                </button>
+              </span>
+            ) : m.invoiceCode ? (
+              `${Number(m.documentType) === 65 ? 'NFC-e' : 'NF'} ${m.invoiceCode}/${m.serialCode}`
+            ) : (
+              'sem nota'
+            )}
           </td>
           <td className="px-2 py-1.5 truncate max-w-[220px]">
             {m.customerName}
@@ -140,7 +191,7 @@ export default function MovimentoDiaModal({ empresa, empresaNome, sellers = [], 
           <td className="px-2 py-1.5 text-gray-600">
             {(m.pagamentos || []).map((p) => `${p.forma}${p.parcelas > 1 ? ` ${p.parcelas}x` : ''} ${fmtBRL(p.valor)}`).join(' · ') || '—'}
           </td>
-          <td className={`px-2 py-1.5 text-right tabular-nums font-bold ${dev ? 'text-purple-700' : 'text-[#000638]'}`}>
+          <td className={`px-2 py-1.5 text-right tabular-nums font-bold ${m.pendente ? 'text-gray-400' : dev ? 'text-purple-700' : 'text-[#000638]'}`} title={m.pendente ? 'Não entra no total enquanto a nota não sair' : undefined}>
             {dev ? '− ' : ''}
             {fmtBRL(m.total)}
           </td>
@@ -249,6 +300,18 @@ export default function MovimentoDiaModal({ empresa, empresaNome, sellers = [], 
           </button>
         </div>
 
+        {resumo.pendentes > 0 && (
+          <p className="mb-2 text-xs text-rose-800 bg-rose-50 rounded-lg px-3 py-2 ring-1 ring-rose-200 flex items-start gap-1.5" data-aviso-pendentes>
+            <Warning size={14} weight="bold" className="shrink-0 mt-0.5" />
+            <span>
+              <b>
+                {resumo.pendentes} venda(s) sem nota fiscal · {fmtBRL(resumo.pendentesValor)}
+              </b>{' '}
+              — não entram no total acima nem no ranking enquanto a nota não sair. Clique em <b>Emitir nota</b> na linha da venda (ou cancele a transação, se a venda não aconteceu).
+            </span>
+          </p>
+        )}
+        {aviso && <p className={`mb-2 text-xs rounded-lg px-3 py-2 ring-1 ${aviso.ok ? 'text-emerald-800 bg-emerald-50 ring-emerald-200' : 'text-rose-700 bg-rose-50 ring-rose-200'}`}>{aviso.texto}</p>}
         {erro && (
           <p className="mb-2 text-xs text-rose-700 bg-rose-50 rounded-lg px-3 py-2 ring-1 ring-rose-200 flex items-start gap-1.5">
             <Warning size={14} weight="bold" className="shrink-0 mt-0.5" /> {erro}
@@ -265,8 +328,9 @@ export default function MovimentoDiaModal({ empresa, empresaNome, sellers = [], 
           {grupos
             .filter((g) => g.itens.length > 0)
             .map((g, gi) => {
-              const v = g.itens.filter((m) => m.tipo === 'venda');
-              const d = g.itens.filter((m) => m.tipo === 'devolucao');
+              const v = g.itens.filter((m) => m.tipo === 'venda' && !m.pendente);
+              const d = g.itens.filter((m) => m.tipo === 'devolucao' && !m.pendente);
+              const semNota = g.itens.filter((m) => m.pendente);
               const sv = v.reduce((s, m) => s + m.total, 0);
               const sd = d.reduce((s, m) => s + m.total, 0);
               return (
@@ -282,6 +346,7 @@ export default function MovimentoDiaModal({ empresa, empresaNome, sellers = [], 
                           {d.length} devolução(ões) − {fmtBRL(sd)}
                         </span>
                       )}
+                      {semNota.length > 0 && <span className="rounded bg-rose-500 px-1.5 font-bold">{semNota.length} sem nota · {fmtBRL(semNota.reduce((s, m) => s + m.total, 0))}</span>}
                       <span className="ml-auto font-bold tabular-nums">líquido {fmtBRL(sv - sd)}</span>
                     </div>
                   )}
