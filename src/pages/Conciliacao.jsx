@@ -452,7 +452,7 @@ const ModalSaidasPendentes = ({ de, ate, onClose, onConcluido }) => {
     const prontos = marcados.filter(prontoParaCriar);
     if (!prontos.length) return;
     const total = prontos.reduce((s, i) => s + i.valor, 0);
-    if (!window.confirm(`Criar ${prontos.length} duplicata(s) (total ${fmt(total)}) no TOTVS e na Solicitação Crosby e conciliar cada saída?${semDados ? `\n\n${semDados} marcada(s) sem fornecedor/despesa ficam de fora.` : ''}`)) return;
+    if (!window.confirm(`Criar ${prontos.length} duplicata(s) (total ${fmt(total)}) no Contas a Pagar HeadCoach e conciliar cada saída (já fica baixada)?${semDados ? `\n\n${semDados} marcada(s) sem fornecedor/despesa ficam de fora.` : ''}`)) return;
     const acc = { criadas: [], recusadas: [], total: 0 };
     setResultado(null);
     for (let k = 0; k < prontos.length; k += 10) {
@@ -1767,7 +1767,7 @@ const Conciliacao = () => {
           <button
             onClick={() => setSaidasPendAberta(true)}
             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-orange-600 text-white hover:bg-orange-700 text-[11px] font-medium"
-            title="Abre a lista de saídas pendentes de todas as contas: selecione as tarifas e afins, baixe o Excel e crie as duplicatas (TOTVS + Solicitação Crosby) de uma vez"
+            title="Abre a lista de saídas pendentes de todas as contas: selecione as tarifas e afins, baixe o Excel e crie as duplicatas no Contas a Pagar HeadCoach de uma vez"
           >
             <Plus size={12} weight="bold" /> Saídas pendentes (todas as contas)
           </button>
@@ -1893,7 +1893,7 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
     if (!ids.length) return;
     const linhas = (r.lancamentos || []).filter((l) => ids.includes(l.id));
     const total = linhas.reduce((s, l) => s + Math.abs(l.valor), 0);
-    if (!window.confirm(`Criar ${ids.length} duplicata(s) de tarifa (total ${fmt(total)}) no TOTVS e na Solicitação Crosby, em nome do banco da conta (despesa 7008 TARIFAS BANCARIAS), e conciliar cada saída?`)) return;
+    if (!window.confirm(`Criar ${ids.length} duplicata(s) de tarifa (total ${fmt(total)}) no Contas a Pagar HeadCoach, em nome do banco da conta (despesa 7008 TARIFAS BANCARIAS), e conciliar cada saída (já fica baixada)?`)) return;
     setCriandoTarifas(true);
     setCsvMsg(null);
     try {
@@ -2407,7 +2407,7 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
                 onClick={() => criarDuplicatasTarifas(tarifasSel)}
                 disabled={criandoTarifas || !tarifasSel.length}
                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-50 text-[11px] font-medium"
-                title={`Cria a duplicata de cada tarifa no TOTVS e na Solicitação Crosby (nome do banco da conta, despesa 7008) e concilia a saída.${fora ? ` ${fora} marcada(s) que não são tarifa ficam de fora.` : ''}`}
+                title={`Cria a duplicata de cada tarifa no Contas a Pagar HeadCoach (nome do banco da conta, despesa 7008), concilia a saída e dá a baixa.${fora ? ` ${fora} marcada(s) que não são tarifa ficam de fora.` : ''}`}
               >
                 {criandoTarifas ? <ArrowsClockwise size={12} className="animate-spin" /> : <Plus size={12} weight="bold" />} Criar duplicatas ({tarifasSel.length})
               </button>
