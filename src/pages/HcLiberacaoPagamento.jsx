@@ -13,7 +13,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { autorExibicao } from '../utils/autorExibicao';
 import { Link } from 'react-router-dom';
-import { CurrencyDollar, Clock, CalendarCheck, CheckCircle, Bank, Receipt, Spinner, MagnifyingGlass, X, Copy, PencilSimple, ArrowUUpLeft, ArrowsClockwise, Lightning, Wallet, CaretDown, ListBullets, Kanban, Warning, ArrowsLeftRight } from '@phosphor-icons/react';
+import { CurrencyDollar, Clock, CalendarCheck, CheckCircle, Bank, Receipt, Spinner, MagnifyingGlass, X, Copy, PencilSimple, ArrowUUpLeft, ArrowsClockwise, Lightning, Wallet, CaretDown, ListBullets, Kanban, Warning, ArrowsLeftRight, Robot } from '@phosphor-icons/react';
 import { ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, LabelList } from 'recharts';
 import PageTitle from '../components/ui/PageTitle';
 import { useAuth } from '../components/AuthContext';
@@ -407,6 +407,28 @@ function KanbanPrevisao({ liberacoes, hoje, selecionadas, marcar, onMoverDia, on
   );
 }
 
+// Inclusão automática na Stone: o que o bot fez (ou vai fazer) com esta liberação
+const INCLUSAO = {
+  fila: { rotulo: 'Na fila do bot', cor: 'bg-gray-100 text-gray-700 border-gray-300' },
+  processando: { rotulo: 'Bot incluindo…', cor: 'bg-blue-100 text-blue-800 border-blue-300' },
+  incluido: { rotulo: 'Incluída pelo bot', cor: 'bg-green-100 text-green-800 border-green-300' },
+  erro: { rotulo: 'Bot não incluiu', cor: 'bg-rose-100 text-rose-800 border-rose-300' },
+  bloqueado: { rotulo: 'Bloqueada na Stone', cor: 'bg-rose-100 text-rose-800 border-rose-300' },
+  verificar: { rotulo: 'Conferir na Stone', cor: 'bg-orange-100 text-orange-800 border-orange-300' },
+  cancelada: { rotulo: 'Bot cancelou', cor: 'bg-gray-100 text-gray-500 border-gray-200' },
+  manual: { rotulo: 'Incluir à mão', cor: 'bg-amber-100 text-amber-800 border-amber-300' },
+};
+function SeloInclusao({ inclusao }) {
+  const cfg = inclusao && INCLUSAO[inclusao.status];
+  if (!cfg) return null;
+  const detalhe = [inclusao.conta ? `conta ${inclusao.conta}` : null, inclusao.recebedor ? `recebedor: ${inclusao.recebedor}` : null, inclusao.erro || inclusao.motivo || null].filter(Boolean).join(' · ');
+  return (
+    <span className={`mt-0.5 inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-1.5 py-0.5 text-[9px] font-bold ${cfg.cor}`} title={detalhe || cfg.rotulo}>
+      <Robot size={10} weight="bold" /> {cfg.rotulo}
+    </span>
+  );
+}
+
 function Paginacao({ pagina, total, qtd, onIr }) {
   if (total <= 1) return null;
   const nums = [...new Set([1, 2, pagina - 1, pagina, pagina + 1, total - 1, total])].filter((n) => n >= 1 && n <= total).sort((a, b) => a - b);
@@ -769,7 +791,10 @@ export default function HcLiberacaoPagamento() {
               <b>{marcadas.length}</b> selecionada(s) · <b>{fmtBRL(valorMarcado)}</b>
             </span>
           ) : (
-            <span className="text-gray-600">Marque as duplicatas para mudar de etapa ou pagar.</span>
+            <span className="text-gray-600">
+              Marque as duplicatas para mudar de etapa ou pagar.
+              {(etapa === 'pendente' || etapa === 'previsao') && ' Ao APROVAR, a que tiver banco STONE e Pix (chave ou copia e cola) vai sozinha para o bot incluir na Stone.'}
+            </span>
           )}
           {filtradas.length > marcadas.length && (
             <button type="button" onClick={() => marcar(filtradas.map((l) => l.id), true)} className="font-semibold text-indigo-700 underline">
@@ -805,6 +830,11 @@ export default function HcLiberacaoPagamento() {
             {etapa !== 'incluido' && (
               <button type="button" disabled={ocupado || !marcadas.length} onClick={() => mover(idsMarcados, 'incluido')} className={`${btnAcao} bg-violet-600 hover:bg-violet-700`}>
                 <Bank size={14} weight="bold" /> INCLUÍDO NO BANCO
+              </button>
+            )}
+            {etapa === 'aprovado' && (
+              <button type="button" disabled={ocupado || !marcadas.length} onClick={() => executar('/incluir-stone', { ids: idsMarcados })} title="Manda de novo para o bot incluir na Stone as aprovadas que ele ainda não incluiu (Pix por chave ou copia e cola, banco STONE)" className={`${btnAcao} bg-slate-700 hover:bg-slate-800`}>
+                <Robot size={14} weight="bold" /> ENVIAR AO BOT
               </button>
             )}
             <button type="button" disabled={ocupado || !marcadas.length} onClick={() => setModal({ tipo: 'pagar', ids: idsMarcados, data: hojeIso(), banco: '', senha: '' })} className={`${btnAcao} bg-green-600 hover:bg-green-700`}>
@@ -900,6 +930,12 @@ export default function HcLiberacaoPagamento() {
                       )}
                       <td className="px-2 py-1.5">
                         <span className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-bold ${ETAPA[l.status]?.selo || ''}`}>{ETAPA[l.status]?.um || l.status}</span>
+                        {emAndamento && l.inclusao && (
+                          <div>
+                            <SeloInclusao inclusao={l.inclusao} />
+                            {['erro', 'bloqueado', 'verificar', 'cancelada', 'manual'].includes(l.inclusao.status) && (l.inclusao.erro || l.inclusao.motivo) && <div className="max-w-[180px] whitespace-normal text-[10px] leading-tight text-gray-500">{l.inclusao.erro || l.inclusao.motivo}</div>}
+                          </div>
+                        )}
                       </td>
                       <td className="w-[124px] px-2 py-1.5 tabular-nums">
                         {emAndamento ? <input type="date" defaultValue={l.data_prevista || ''} key={`${l.id}-${l.data_prevista}`} disabled={ocupado} onBlur={(e) => e.target.value !== (l.data_prevista || '') && alterar(l, { dataPrevista: e.target.value })} className={celCls} /> : fmtData(l.data_pagamento)}
