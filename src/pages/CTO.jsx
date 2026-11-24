@@ -216,6 +216,7 @@ const ModalFaturas = ({ info, onClose }) => {
                 <th className="py-2 px-2">Fornecedor</th>
                 <th className="py-2 px-2">Empresa</th>
                 <th className="py-2 px-2">Vencimento</th>
+                <th className="py-2 px-2">Pagamento</th>
                 <th className="py-2 px-2 text-center">Status</th>
                 <th className="py-2 px-2 text-right">Valor</th>
               </tr>
@@ -235,6 +236,12 @@ const ModalFaturas = ({ info, onClose }) => {
                   </td>
                   <td className="py-1.5 px-2 text-gray-700">
                     {formatarData(item.dt_vencimento)}
+                  </td>
+                  <td className="py-1.5 px-2 text-gray-700 whitespace-nowrap">
+                    {item.dt_liq ? formatarData(item.dt_liq) : '—'}
+                    {item.dt_liq && (item._pagoConciliacao || item._pagoLiberacao) ? (
+                      <span className="block text-[9px] text-gray-400">{item._pagoConciliacao ? `conciliação${item._pagoConciliacaoBanco ? ` · ${item._pagoConciliacaoBanco}` : ''}` : 'liberação'}</span>
+                    ) : null}
                   </td>
                   <td className="py-1.5 px-2 text-center">
                     {item.dt_liq ? (
@@ -456,6 +463,9 @@ const CTO = () => {
       }
       meses.forEach((cel) => {
         cel.status = statusCelula(cel.itens);
+        // data de pagamento do mês (a mais recente das faturas pagas) — Titia, 24/11/2026
+        const datas = cel.itens.filter((i) => i.dt_liq).map((i) => String(i.dt_liq).slice(0, 10)).sort();
+        cel.dataPagamento = datas.length ? datas[datas.length - 1] : null;
       });
       const totalAtrasado = itens
         .filter(estaVencida)
@@ -853,6 +863,11 @@ const CTO = () => {
                                 <span className="font-semibold text-[#000638]">
                                   {formatarMoeda(cel.total)}
                                 </span>
+                                {cel.dataPagamento && (
+                                  <span className="block text-[9px] text-gray-500">
+                                    pg {formatarData(cel.dataPagamento)}
+                                  </span>
+                                )}
                               </div>
                             ) : (
                               '—'
