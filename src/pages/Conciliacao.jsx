@@ -10,6 +10,7 @@
 // O CTA (código da conta no TOTVS) fica salvo na própria conta importada
 // (fluxo_caixa_contas.cta_totvs) e vale para todos os meses.
 import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { autorExibicao } from '../utils/autorExibicao';
 import PageTitle from '../components/ui/PageTitle';
 import { API_BASE_URL } from '../config/constants';
 import { supabaseAdmin } from '../lib/supabase';
@@ -2991,7 +2992,7 @@ const CelulaConciliacao = ({ l, podeConciliar = l.valor < 0, ocupado, onConcilia
               dup {duplicatasDaConciliacao(c).join(', ')}
             </div>
           )}
-          {c.usuario && <div className="text-[10px] text-gray-400">por {c.usuario}</div>}
+          {c.usuario && <div className="text-[10px] text-gray-400" title={c.usuario}>por {autorExibicao(c.usuario)}</div>}
         </div>
         {(c.id || l.observacao === MARCA_MANUAL_TRANSF) && (
           <button onClick={onDesfazer} title={c.id ? 'Desfazer conciliação' : 'Tirar a marca de transferência entre contas'} className="ml-auto text-gray-300 hover:text-red-600 shrink-0">
@@ -3118,7 +3119,7 @@ const PainelProLabore = ({ linhas, salvar, justificar, desfazer, setErro, onDeta
                       {!c.origem ? (
                         <span className="px-1.5 py-0.5 rounded text-[10px] bg-amber-100 text-amber-800">pendente</span>
                       ) : c.origem === 'PRO_LABORE' ? (
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] ${auto ? 'bg-gray-100 text-gray-600' : 'bg-purple-100 text-purple-800'}`}>{auto ? 'pró-labore automático' : `marcado${c.usuario ? ` por ${c.usuario}` : ''}`}</span>
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] ${auto ? 'bg-gray-100 text-gray-600' : 'bg-purple-100 text-purple-800'}`}>{auto ? 'pró-labore automático' : `marcado${c.usuario ? ` por ${autorExibicao(c.usuario)}` : ''}`}</span>
                       ) : (
                         <Badge cfg={ocfg}>{ocfg.label}</Badge>
                       )}
@@ -3692,7 +3693,7 @@ const DetalheConciliacao = ({ detalhe, onClose, onAnexar, onRemoverAnexo }) => {
           {dados && !o && ['MANUAL', 'PRO_LABORE', 'REDE_DEPOSITO'].includes(c?.origem) && (
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               <Campo label="Justificativa">{c.justificativa}</Campo>
-              <Campo label="Por">{c.usuario || '—'}</Campo>
+              <Campo label="Por">{autorExibicao(c.usuario) || '—'}</Campo>
               <Campo label="Em">{c.criado_em ? fmtData(c.criado_em) : '—'}</Campo>
             </div>
           )}
@@ -3811,7 +3812,7 @@ const DetalheConciliacao = ({ detalhe, onClose, onAnexar, onRemoverAnexo }) => {
                         .map((a) => (
                           <div key={a.idx} className="flex items-center gap-2">
                             <Link href={a.url}>{a.nome || 'abrir'}</Link>
-                            <span className="text-[10px] text-gray-400">{a.usuario ? `por ${a.usuario} · ` : ''}{a.em ? fmtData(a.em) : ''}</span>
+                            <span className="text-[10px] text-gray-400">{a.usuario ? `por ${autorExibicao(a.usuario)} · ` : ''}{a.em ? fmtData(a.em) : ''}</span>
                             <button onClick={() => onRemoverAnexo(a.idx)} className="text-gray-300 hover:text-red-600" title="Remover anexo">
                               <X size={12} />
                             </button>
@@ -3828,7 +3829,7 @@ const DetalheConciliacao = ({ detalhe, onClose, onAnexar, onRemoverAnexo }) => {
             <p className="text-[11px] text-gray-400">
               Conciliado {c.automatico ? 'automaticamente' : 'manualmente'}
               {c.pontuacao != null ? ` · ${c.pontuacao} pontos` : ''}
-              {c.usuario ? ` · por ${c.usuario}` : ''}
+              {c.usuario ? ` · por ${autorExibicao(c.usuario)}` : ''}
               {c.criado_em ? ` · em ${fmtData(c.criado_em)}` : ''}
               {c.referencia?.motivos?.length ? ` · ${c.referencia.motivos.join(', ')}` : ''}
             </p>

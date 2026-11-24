@@ -12,6 +12,7 @@
 // API: /api/hc/contas-pagar (só owner, admin e financeiro) — services/hcContasPagar.js
 // ============================================================================
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { autorExibicao } from '../utils/autorExibicao';
 import { Receipt, MagnifyingGlass, Spinner, X, CheckCircle, Plus, Trash, Copy, FilePdf, PencilSimple, Prohibit, PaperPlaneTilt } from '@phosphor-icons/react';
 import { Link } from 'react-router-dom';
 import PageTitle from '../components/ui/PageTitle';
@@ -1076,8 +1077,8 @@ function Detalhe({ id: idInicial, op, onFechar, onMudou }) {
               <Campo rotulo="Pagamento">{fmtData(t.data_pagamento)}</Campo>
               <Campo rotulo="Conta do pagamento">{t.conta_pagamento}</Campo>
               <Campo rotulo="Previsão">{t.previsao === 'previsao' ? 'Previsão' : 'Real'}</Campo>
-              <Campo rotulo="Incluída por">{`${t.criado_por || '—'} · ${fmtDataHora(t.criado_em)}`}</Campo>
-              {t.baixado_por && <Campo rotulo="Baixada por">{`${t.baixado_por} · ${fmtDataHora(t.baixado_em)}`}</Campo>}
+              <Campo rotulo="Incluída por">{`${autorExibicao(t.criado_por) || '—'} · ${fmtDataHora(t.criado_em)}`}</Campo>
+              {t.baixado_por && <Campo rotulo="Baixada por">{`${autorExibicao(t.baixado_por)} · ${fmtDataHora(t.baixado_em)}`}</Campo>}
               {t.situacao === 'cancelado' && (
                 <Campo rotulo="Cancelada" largo>
                   {`${t.cancelado_por || ''} · ${fmtDataHora(t.cancelado_em)} · ${t.cancelado_motivo || ''}`}
@@ -1140,7 +1141,7 @@ function Detalhe({ id: idInicial, op, onFechar, onMudou }) {
                   <p key={b.id} className="text-xs text-gray-700">
                     {fmtData(b.data_pagamento)} · pago <b>{fmtBRL(b.valor_pago)}</b> (em aberto {fmtBRL(b.valor_titulo)} + juros {fmtBRL(b.juros)} + multa {fmtBRL(b.multa)} − desconto {fmtBRL(b.desconto)})
                     {faltaDepois(b) > 0.005 && <span className="font-semibold text-amber-700"> · ficou faltando {fmtBRL(faltaDepois(b))}</span>} · {op.formas[b.forma_pagamento] || '—'}
-                    {b.conta ? ` · ${b.conta}` : ''} · {b.por} em {fmtDataHora(b.em)}
+                    {b.conta ? ` · ${b.conta}` : ''} · {autorExibicao(b.por)} em {fmtDataHora(b.em)}
                     {b.observacao ? ` · ${b.observacao}` : ''}
                   </p>
                 ))}

@@ -11,8 +11,10 @@
 // API: /api/hc/contas-pagar/liberacoes (services/hcCpLiberacao.js).
 // ============================================================================
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { autorExibicao } from '../utils/autorExibicao';
 import { Link } from 'react-router-dom';
 import { CurrencyDollar, Clock, CalendarCheck, CheckCircle, Bank, Receipt, Spinner, MagnifyingGlass, X, Copy, PencilSimple, ArrowUUpLeft, ArrowsClockwise, Lightning, Wallet, CaretDown } from '@phosphor-icons/react';
+import { ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, LabelList } from 'recharts';
 import PageTitle from '../components/ui/PageTitle';
 import { useAuth } from '../components/AuthContext';
 import { apiJson } from '../utils/apiAuth';
@@ -155,6 +157,120 @@ function CardSaldos({ saldos, carregando, erro, onAtualizar }) {
   );
 }
 
+// ─── Previsão por dia (gráfico de linha) ─────────────────────────────────────
+const somaDias = (iso, n) => {
+  const d = new Date(`${iso}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+const diaMes = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : '');
+const diaSemana = (iso) => new Date(`${iso}T12:00:00Z`).toLocaleDateString('pt-BR', { weekday: 'long', timeZone: 'UTC' });
+// eixo: valores cheios até 9.999 e "10 mil" daí em diante (um estilo só no eixo)
+const eixoReais = (max) => (v) => (max >= 10000 ? (v === 0 ? '0' : `${(v / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mil`) : Number(v).toLocaleString('pt-BR'));
+
+/** Soma do que está em PREVISÃO por dia previsto. Até 45 dias de intervalo, os dias sem nada entram com zero (a linha é uma linha do tempo). */
+function serieDaPrevisao(liberacoes) {
+  const por = new Map();
+  for (const l of liberacoes) {
+    const dia = l.data_prevista ? String(l.data_prevista).slice(0, 10) : null;
+    if (!dia) continue;
+    const x = por.get(dia) || { dia, valor: 0, qtd: 0 };
+    x.valor = Math.round((x.valor + Number(l.valor || 0)) * 100) / 100;
+    x.qtd += 1;
+    por.set(dia, x);
+  }
+  const dias = [...por.keys()].sort();
+  if (!dias.length) return [];
+  const ini = dias[0];
+  const fim = dias[dias.length - 1];
+  const intervalo = Math.round((new Date(`${fim}T12:00:00Z`) - new Date(`${ini}T12:00:00Z`)) / 86400000);
+  if (intervalo > 45) return dias.map((d) => por.get(d));
+  const out = [];
+  for (let d = ini; d <= fim; d = somaDias(d, 1)) out.push(por.get(d) || { dia: d, valor: 0, qtd: 0 });
+  return out;
+}
+
+const COR_PREVISAO = '#ea580c'; // a cor da etapa Previsão (laranja)
+
+function DicaDoDia({ active, payload, hoje }) {
+  const p = active ? payload?.[0]?.payload : null;
+  if (!p) return null;
+  return (
+    <div className="rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs shadow-lg">
+      <div className="font-bold capitalize text-gray-900">
+        {diaSemana(p.dia)}, {diaMes(p.dia)}
+        {p.dia < hoje && p.valor > 0 ? <span className="ml-1 rounded bg-rose-100 px-1 text-[10px] font-bold uppercase text-rose-700">vencido</span> : p.dia === hoje ? <span className="ml-1 rounded bg-gray-100 px-1 text-[10px] font-bold uppercase text-gray-600">hoje</span> : null}
+      </div>
+      <div className="mt-0.5 flex items-center gap-1.5 text-gray-700">
+        <span className="inline-block h-2 w-2 rounded-full" style={{ background: COR_PREVISAO }} />
+        <b className="tabular-nums text-gray-900">{fmtBRL(p.valor)}</b>
+        <span className="text-gray-500">· {p.qtd} duplicata(s)</span>
+      </div>
+      {p.qtd > 0 && <div className="mt-0.5 text-[10px] text-gray-400">clique para ver só este dia</div>}
+    </div>
+  );
+}
+
+/**
+ * PREVISÃO POR DIA: quanto há para pagar em cada dia previsto (linha do tempo).
+ * Uma série só (sem legenda: o título diz o que é). Passar o mouse mostra o dia;
+ * clicar num dia filtra a tabela por ele.
+ */
+function GraficoPrevisao({ liberacoes, hoje, diaEscolhido, onEscolherDia }) {
+  const serie = useMemo(() => serieDaPrevisao(liberacoes), [liberacoes]);
+  if (!serie.length) return null;
+  const total = serie.reduce((t, p) => t + p.valor, 0);
+  const pico = serie.reduce((m, p) => (p.valor > m.valor ? p : m), serie[0]);
+  const vencido = serie.filter((p) => p.dia < hoje).reduce((t, p) => t + p.valor, 0);
+  const deHoje = serie.find((p) => p.dia === hoje)?.valor || 0;
+  const temHoje = serie.some((p) => p.dia === hoje);
+  const max = pico.valor;
+  const umDia = serie.length === 1;
+  return (
+    <div className="mb-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm">
+      <div className="mb-1 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <h3 className="text-[11px] font-bold uppercase tracking-wide text-orange-700">Previsão por dia</h3>
+        <span className="text-xs text-gray-600">
+          Total <b className="tabular-nums text-gray-900">{fmtBRL(total)}</b>
+        </span>
+        <span className="text-xs text-gray-600">
+          Hoje <b className="tabular-nums text-gray-900">{fmtBRL(deHoje)}</b>
+        </span>
+        {vencido > 0 && (
+          <span className="text-xs text-gray-600">
+            Vencido <b className="tabular-nums text-rose-700">{fmtBRL(vencido)}</b>
+          </span>
+        )}
+        <span className="text-xs text-gray-600">
+          Maior dia <b className="tabular-nums text-gray-900">{diaMes(pico.dia)}</b> · <b className="tabular-nums text-gray-900">{fmtBRL(pico.valor)}</b>
+        </span>
+        {diaEscolhido && (
+          <button type="button" onClick={() => onEscolherDia(null)} className="ml-auto text-xs font-semibold text-indigo-700 underline">
+            mostrando só {diaMes(diaEscolhido)} · ver todos os dias
+          </button>
+        )}
+      </div>
+      <div className="h-44 w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <ComposedChart data={serie} margin={{ top: 18, right: 16, bottom: 0, left: 0 }} onClick={(st) => st?.activeLabel && onEscolherDia(String(st.activeLabel))} style={{ cursor: 'pointer' }}>
+            <CartesianGrid vertical={false} stroke="#eef0f3" />
+            <XAxis dataKey="dia" tickFormatter={diaMes} tick={{ fontSize: 10, fill: '#6b7280' }} tickLine={false} axisLine={{ stroke: '#e5e7eb' }} interval="preserveStartEnd" minTickGap={24} padding={{ left: umDia ? 60 : 12, right: umDia ? 60 : 12 }} />
+            <YAxis width={52} tickFormatter={eixoReais(max)} tick={{ fontSize: 10, fill: '#6b7280' }} tickLine={false} axisLine={false} domain={[0, 'auto']} />
+            <Tooltip content={<DicaDoDia hoje={hoje} />} cursor={{ stroke: '#9ca3af', strokeWidth: 1 }} />
+            {temHoje && <ReferenceLine x={hoje} stroke="#9ca3af" strokeWidth={1} label={{ value: 'hoje', position: 'top', fontSize: 10, fill: '#6b7280' }} />}
+            {diaEscolhido && serie.some((p) => p.dia === diaEscolhido) && <ReferenceLine x={diaEscolhido} stroke="#4338ca" strokeWidth={1} />}
+            <Area type="linear" dataKey="valor" stroke="none" fill={COR_PREVISAO} fillOpacity={0.1} isAnimationActive={false} />
+            <Line type="linear" dataKey="valor" stroke={COR_PREVISAO} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" isAnimationActive={false} dot={(p) => (p.payload.valor > 0 ? <circle key={p.payload.dia} cx={p.cx} cy={p.cy} r={4} fill={COR_PREVISAO} stroke="#fff" strokeWidth={2} /> : <g key={p.payload.dia} />)} activeDot={{ r: 6, fill: COR_PREVISAO, stroke: '#fff', strokeWidth: 2 }}>
+              {/* só o maior dia leva o valor escrito; os outros ficam no eixo e na dica */}
+              <LabelList dataKey="valor" position="top" offset={8} formatter={(v) => (serie.length > 1 && v === max && v > 0 ? fmtBRL(v) : '')} style={{ fontSize: 10, fontWeight: 700, fill: '#111827' }} />
+            </Line>
+          </ComposedChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
+
 function Paginacao({ pagina, total, qtd, onIr }) {
   if (total <= 1) return null;
   const nums = [...new Set([1, 2, pagina - 1, pagina, pagina + 1, total - 1, total])].filter((n) => n >= 1 && n <= total).sort((a, b) => a - b);
@@ -290,6 +406,27 @@ export default function HcLiberacaoPagamento() {
       return true;
     });
   }, [todas, etapa, f.fornecedor, f.banco, f.forma, f.previstoDe, f.previstoAte]);
+
+  const daPrevisao = useMemo(() => {
+    if (etapa !== 'previsao') return [];
+    const busca = f.fornecedor.trim().toLowerCase();
+    return todas.filter((l) => {
+      if (l.status !== 'previsao') return false;
+      if (f.banco && (l.banco || '') !== f.banco) return false;
+      if (f.forma && (l.forma_pagamento || '') !== f.forma) return false;
+      if (busca) {
+        const t = l.titulo || {};
+        if (!`${t.fornecedor_code} ${t.fornecedor_nome} ${t.fornecedor_cpf_cnpj || ''} ${t.documento_fiscal || ''}`.toLowerCase().includes(busca)) return false;
+      }
+      return true;
+    });
+  }, [todas, etapa, f.fornecedor, f.banco, f.forma]);
+  // clicar num dia do gráfico filtra a tabela por ele (null = todos os dias)
+  const escolherDiaPrevisto = (dia) => {
+    setF((x) => ({ ...x, previstoDe: dia || '', previstoAte: dia || '' }));
+    setPagina(1);
+  };
+  const diaEscolhido = f.previstoDe && f.previstoDe === f.previstoAte ? f.previstoDe : null;
 
   const totalPaginas = Math.max(1, Math.ceil(filtradas.length / POR_PAGINA));
   const paginaAtual = Math.min(pagina, totalPaginas);
@@ -528,6 +665,9 @@ export default function HcLiberacaoPagamento() {
         </div>
       )}
 
+      {/* Previsão: quanto há para pagar por dia */}
+      {etapa === 'previsao' && <GraficoPrevisao liberacoes={daPrevisao} hoje={hojeIso()} diaEscolhido={diaEscolhido} onEscolherDia={escolherDiaPrevisto} />}
+
       {/* Tabela */}
       <div className="rounded-xl border border-gray-200 bg-white shadow">
         {!dados && carregando ? (
@@ -645,7 +785,7 @@ export default function HcLiberacaoPagamento() {
                         </div>
                       </td>
                       <td className="max-w-[150px] truncate px-2 py-1.5 text-[11px] text-gray-600" title={l.observacao || ''}>
-                        {etapa === 'pago' ? `${l.pago_por || '—'} · ${fmtDataHora(l.pago_em)}` : `${l.liberado_por || '—'} · ${fmtDataHora(l.liberado_em)}`}
+                        {etapa === 'pago' ? `${autorExibicao(l.pago_por) || '—'} · ${fmtDataHora(l.pago_em)}` : `${autorExibicao(l.liberado_por) || '—'} · ${fmtDataHora(l.liberado_em)}`}
                       </td>
                       {emAndamento && (
                         <td className="whitespace-nowrap px-2 py-1.5 text-center">
