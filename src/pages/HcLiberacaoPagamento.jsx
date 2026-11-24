@@ -12,7 +12,7 @@
 // ============================================================================
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CurrencyDollar, Clock, CalendarCheck, CheckCircle, Bank, Receipt, Spinner, MagnifyingGlass, X, Copy, PencilSimple, ArrowUUpLeft, ArrowsClockwise } from '@phosphor-icons/react';
+import { CurrencyDollar, Clock, CalendarCheck, CheckCircle, Bank, Receipt, Spinner, MagnifyingGlass, X, Copy, PencilSimple, ArrowUUpLeft, ArrowsClockwise, Lightning } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import { useAuth } from '../components/AuthContext';
 import { apiJson } from '../utils/apiAuth';
@@ -112,7 +112,7 @@ export default function HcLiberacaoPagamento() {
   const [selecionadas, setSelecionadas] = useState(() => new Set());
   const [pagina, setPagina] = useState(1);
   const [ocupado, setOcupado] = useState(false);
-  const [modal, setModal] = useState(null); // { tipo: 'pagar' | 'previsao' | 'devolver' | 'editar', ... }
+  const [modal, setModal] = useState(null); // { tipo: 'pagar' | 'previsao' | 'devolver' | 'editar' | 'baixaAuto', ... }
   const [copiado, setCopiado] = useState(null);
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
   const avisar = useCallback((tipo, msg) => {
@@ -204,6 +204,21 @@ export default function HcLiberacaoPagamento() {
     }
   };
   const mover = (ids, status, extra = {}) => executar('/status', { ids, status, ...extra });
+  // BAIXA AUTOMÁTICA (aba Incluídos): o servidor confere nos extratos de hoje e dos 7 dias
+  // anteriores quais duplicatas incluídas já saíram. Aqui só mostra o que achou; a baixa
+  // é gravada quando o usuário confirma com a senha (não tem estorno).
+  const conferirExtratos = async () => {
+    setOcupado(true);
+    try {
+      const j = await apiJson(`${API}/baixa-automatica`, { method: 'POST', body: {} });
+      const r = j.data || {};
+      setModal({ tipo: 'baixaAuto', r, ids: (r.casadas || []).flatMap((c) => c.liberacoes.map((l) => l.id)), senha: '' });
+    } catch (e) {
+      avisar('erro', e.message);
+    } finally {
+      setOcupado(false);
+    }
+  };
   const alterar = (l, patch) => executar(`/${l.id}`, patch, { metodo: 'PUT', limpar: false });
   const copiar = async (id, valor) => {
     try {
@@ -351,6 +366,11 @@ export default function HcLiberacaoPagamento() {
             </button>
           )}
           <div className="ml-auto flex flex-wrap items-center gap-2">
+            {etapa === 'incluido' && (
+              <button type="button" disabled={ocupado} onClick={conferirExtratos} title="Confere nos extratos de hoje e dos últimos 7 dias quais duplicatas incluídas já foram pagas" className={`${btnAcao} bg-[#000638] hover:bg-[#0b1a6e]`}>
+                {ocupado && !modal ? <Spinner size={14} className="animate-spin" /> : <Lightning size={14} weight="bold" />} BAIXA AUTOMÁTICA
+              </button>
+            )}
             {etapa !== 'pendente' && (
               <button type="button" disabled={ocupado || !marcadas.length} onClick={() => mover(idsMarcados, 'pendente')} className={`${btnAcao} bg-yellow-600 hover:bg-yellow-700`}>
                 <ArrowUUpLeft size={14} weight="bold" /> VOLTAR P/ PENDENTE
@@ -592,6 +612,110 @@ export default function HcLiberacaoPagamento() {
                 <button disabled={ocupado || !modal.senha || !modal.data || (semBanco > 0 && !modal.banco)} onClick={() => executar('/pagar', { ids: modal.ids, dataPagamento: modal.data, banco: modal.banco, senha: modal.senha })} className={`${btnAcao} bg-green-600 hover:bg-green-700`}>
                   {ocupado ? <Spinner size={14} className="animate-spin" /> : <CurrencyDollar size={14} weight="bold" />} CONFIRMAR PAGAMENTO
                 </button>
+              </div>
+            </Modal>
+          );
+        })()}
+
+      {/* BAIXA AUTOMÁTICA: o que o extrato confirma como pago; grava só depois da senha */}
+      {modal?.tipo === 'baixaAuto' &&
+        (() => {
+          const r = modal.r || {};
+          const casadas = r.casadas || [];
+          const semSaida = r.semSaida || [];
+          const marcada = (c) => c.liberacoes.every((l) => modal.ids.includes(l.id));
+          const alternar = (c) =>
+            setModal((m) => {
+              const dela = c.liberacoes.map((l) => l.id);
+              const tem = dela.every((id) => m.ids.includes(id));
+              return { ...m, ids: tem ? m.ids.filter((id) => !dela.includes(id)) : [...new Set([...m.ids, ...dela])] };
+            });
+          const escolhidas = casadas.filter(marcada);
+          const total = escolhidas.reduce((t, c) => t + c.liberacoes.reduce((x, l) => x + Number(l.valor), 0), 0);
+          const qtd = escolhidas.reduce((n, c) => n + c.liberacoes.length, 0);
+          return (
+            <Modal titulo="Baixa automática pelos extratos" onFechar={() => setModal(null)} largura="max-w-4xl">
+              <p className="mb-3 text-xs text-gray-600">
+                Conferi as <b>{r.incluidas}</b> duplicata(s) incluída(s) no banco com as saídas dos extratos de <b>{fmtData(r.periodo?.de)}</b> a <b>{fmtData(r.periodo?.ate)}</b>
+                {r.periodo?.ultimaSaida ? ` (última saída importada: ${fmtData(r.periodo.ultimaSaida)})` : ' — não há nenhuma saída importada nesse período'}. Vale valor igual, centavo a centavo, para o mesmo fornecedor.
+              </p>
+
+              <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-green-700">Pagas no extrato ({casadas.length})</p>
+              {casadas.length ? (
+                <div className="mb-3 max-h-72 overflow-auto rounded-lg ring-1 ring-gray-200">
+                  <table className="w-full text-left text-xs">
+                    <thead className="sticky top-0 bg-gray-50 text-[10px] uppercase tracking-wide text-gray-500">
+                      <tr>
+                        <th className="px-2 py-1.5" />
+                        <th className="px-2 py-1.5">Duplicata</th>
+                        <th className="px-2 py-1.5 text-right">Valor</th>
+                        <th className="px-2 py-1.5">Saiu em</th>
+                        <th className="px-2 py-1.5">Banco</th>
+                        <th className="px-2 py-1.5">No extrato</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {casadas.map((c) => (
+                        <tr key={c.lancamentoId} className="border-t border-gray-100 align-top">
+                          <td className="px-2 py-1.5">
+                            <input type="checkbox" checked={marcada(c)} onChange={() => alternar(c)} className="h-4 w-4 accent-[#000638]" />
+                          </td>
+                          <td className="px-2 py-1.5">
+                            {c.liberacoes.map((l) => (
+                              <div key={l.id}>
+                                <b>{l.fornecedor}</b> · {l.rotulo} · emp. {l.empresa} · vence {fmtData(l.vencimento)}
+                                {c.liberacoes.length > 1 ? ` · ${fmtBRL(l.valor)}` : ''}
+                              </div>
+                            ))}
+                            {c.tipo === 'soma' && <span className="mt-0.5 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">UMA SAÍDA PAGOU AS {c.liberacoes.length}</span>}
+                          </td>
+                          <td className="px-2 py-1.5 text-right font-bold tabular-nums">{fmtBRL(c.valor)}</td>
+                          <td className="px-2 py-1.5 whitespace-nowrap">{fmtData(c.data)}</td>
+                          <td className="px-2 py-1.5 whitespace-nowrap">{c.banco}</td>
+                          <td className="px-2 py-1.5 text-gray-600">{c.contraparte}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="mb-3 rounded-lg bg-gray-50 p-3 text-xs text-gray-600 ring-1 ring-gray-200">Nenhuma das duplicatas incluídas apareceu como paga nos extratos desse período.</p>
+              )}
+
+              {semSaida.length > 0 && (
+                <>
+                  <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-gray-500">Continuam em Incluídos ({semSaida.length})</p>
+                  <div className="mb-3 max-h-40 overflow-y-auto rounded-lg bg-gray-50 p-2 text-xs ring-1 ring-gray-200">
+                    {semSaida.map((x) => (
+                      <div key={x.id} className="py-0.5">
+                        <b>{x.fornecedor}</b> · {x.rotulo} · emp. {x.empresa} · {fmtBRL(x.valor)} — <span className="text-gray-600">{x.motivo}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {casadas.length > 0 && (
+                <div className="grid grid-cols-1 items-end gap-2 sm:grid-cols-[1fr_auto]">
+                  <div>
+                    <label className={labelCls}>Sua senha do HeadCoach</label>
+                    <input type="password" autoComplete="off" value={modal.senha} onChange={(e) => setModal((m) => ({ ...m, senha: e.target.value }))} className={inputCls} />
+                  </div>
+                  <p className="text-sm sm:text-right">
+                    {qtd} duplicata(s) · <b className="text-green-700">{fmtBRL(total)}</b>
+                  </p>
+                </div>
+              )}
+              <p className="mt-2 text-[11px] text-gray-500">A baixa usa a data e o banco do extrato, grava o pagamento na duplicata do contas a pagar e não tem estorno. Desmarque o que não quiser baixar agora.</p>
+              <div className="mt-3 flex justify-end gap-2">
+                <button onClick={() => setModal(null)} className="h-9 rounded-lg px-3 text-xs font-bold text-gray-600 ring-1 ring-gray-200 hover:bg-gray-50">
+                  {casadas.length ? 'Voltar' : 'Fechar'}
+                </button>
+                {casadas.length > 0 && (
+                  <button disabled={ocupado || !modal.senha || !qtd} onClick={() => executar('/baixa-automatica', { confirmar: true, ids: modal.ids, senha: modal.senha })} className={`${btnAcao} bg-green-600 hover:bg-green-700`}>
+                    {ocupado ? <Spinner size={14} className="animate-spin" /> : <Lightning size={14} weight="bold" />} BAIXAR {qtd} DUPLICATA(S)
+                  </button>
+                )}
               </div>
             </Modal>
           );
