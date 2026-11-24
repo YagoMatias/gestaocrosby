@@ -3221,7 +3221,7 @@ const TabelaCandidatos = ({ candidatos, selecao, onToggle, onUsar, ocupado, keyC
               {cand.pago === false && <span className="block text-[10px] text-amber-700">em aberto</span>}
               {soConsulta && (
                 <span className="block text-[10px] text-amber-800 font-medium max-w-[180px]" title={motivoTrava}>
-                  {cand.origem === 'SOLICITACAO' ? 'só consulta · aprovar no Financeiro' : 'só consulta · duplicata não lançada no TOTVS'}
+                  {cand.origem === 'SOLICITACAO' ? 'só consulta · aprovar no Financeiro' : 'só consulta · conciliar pelo Contas a Pagar HeadCoach'}
                 </span>
               )}
             </td>
