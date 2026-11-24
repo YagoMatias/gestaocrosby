@@ -3,6 +3,7 @@ import PageTitle from '../components/ui/PageTitle';
 import useApiClient from '../hooks/useApiClient';
 import * as XLSX from 'xlsx';
 import centrosCusto from '../config/centrosCusto.json';
+import { anotarPagosNaConciliacao, anotarPagosNaLiberacao } from '../components/ContasAPagar/pagosHeadcoach';
 import {
   Funnel,
   Spinner,
@@ -240,6 +241,7 @@ const ModalFaturas = ({ info, onClose }) => {
                       <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-green-700 bg-green-50 border border-green-200 rounded-full px-2 py-0.5">
                         <CheckCircle size={10} weight="fill" />
                         PAGA
+                        {item._pagoConciliacao ? ' · conciliação' : item._pagoLiberacao ? ' · liberação' : ''}
                       </span>
                     ) : estaVencida(item) ? (
                       <span className="inline-flex items-center text-[10px] font-semibold text-red-700 bg-red-50 border border-red-200 rounded-full px-2 py-0.5">
@@ -338,11 +340,20 @@ const CTO = () => {
         empresaMap[String(f.cd)] = f.nome;
       });
 
-      const processados = dadosArray.map((item) => ({
+      let processados = dadosArray.map((item) => ({
         ...item,
         nm_empresa:
           empresaMap[String(item.cd_empresa)] || item.nm_empresa || '',
       }));
+      // aluguel pago no HeadCoach (conciliação do extrato ou Liberação PAGO)
+      // conta como pago, mesmo sem baixa no TOTVS — Titia, 24/11/2026
+      processados = await anotarPagosNaConciliacao(processados);
+      processados = await anotarPagosNaLiberacao(processados);
+      processados = processados.map((item) =>
+        !item.dt_liq && item._pagoLiberacao
+          ? { ...item, dt_liq: `${item._pagoLiberacaoData || item.dt_vencimento?.slice(0, 10)}T00:00:00`, vl_pago: item.vl_pago || item.vl_duplicata }
+          : item,
+      );
 
       setDados(processados);
       setDadosCarregados(true);
