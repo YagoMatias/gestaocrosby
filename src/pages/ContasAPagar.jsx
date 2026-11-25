@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useAuth } from '../components/AuthContext';
 import useApiClient from '../hooks/useApiClient';
 import { API_BASE_URL } from '../config/constants';
+import { apiJson } from '../utils/apiAuth';
 import { supabase } from '../lib/supabase';
 import PageTitle from '../components/ui/PageTitle';
 import {
@@ -535,7 +536,10 @@ const ContasAPagar = (props) => {
     setTermoBuscaFornecedor('');
   }, []);
 
-  // ─── Enviar títulos selecionados para Liberação de Pagamento ───
+  // ─── Enviar títulos selecionados para pagamento ───
+  // Desde 25/11/2026 (pedido do Yago) o envio vai para o HEADCOACH: o servidor cria a
+  // duplicata no Contas a Pagar HeadCoach (em aberto, com a marca TOTVS) e a coloca na
+  // Liberação de Pagamento do HeadCoach. Nada mais é gravado na Liberação antiga por aqui.
   const enviarParaPagamento = useCallback(async () => {
     if (linhasSelecionadasAgrupadas.size === 0) {
       alert('Selecione pelo menos um título para enviar.');
@@ -563,141 +567,39 @@ const ContasAPagar = (props) => {
       return;
     }
 
+    const destino =
+      'Eles viram duplicata no Contas a Pagar HeadCoach e vão para a Liberação de Pagamento HeadCoach.';
     if (idsInvalidos.length > 0) {
       const continuar = window.confirm(
-        `${idsInvalidos.length} título(s) já pago(s) serão ignorados. Enviar os ${itensSelecionados.length} em aberto?`,
+        `${idsInvalidos.length} título(s) já pago(s) serão ignorados. Enviar os ${itensSelecionados.length} em aberto?\n\n${destino}`,
       );
       if (!continuar) return;
     } else if (
       !window.confirm(
-        `Enviar ${itensSelecionados.length} título(s) para Liberação de Pagamento?`,
+        `Enviar ${itensSelecionados.length} título(s) para pagamento?\n\n${destino}`,
       )
     ) {
       return;
     }
 
-    const toDate = (d) => {
-      if (!d) return null;
-      const s = String(d).split('T')[0];
-      return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
-    };
-
-    const registros = itensSelecionados.map((item) => ({
-      cd_empresa: item.cd_empresa ? parseInt(item.cd_empresa) : null,
-      nm_empresa: item.nm_empresa || null,
-      nr_duplicata: item.nr_duplicata ? String(item.nr_duplicata) : null,
-      nr_parcela: item.nr_parcela ? String(item.nr_parcela) : null,
-      nr_portador: item.nr_portador ? String(item.nr_portador) : null,
-      cd_fornecedor: item.cd_fornecedor ? String(item.cd_fornecedor) : null,
-      nm_fornecedor: item.nm_fornecedor || null,
-      cd_despesaitem: item.cd_despesaitem ? String(item.cd_despesaitem) : null,
-      ds_despesaitem: item.ds_despesaitem || null,
-      cd_ccusto: item.cd_ccusto ? String(item.cd_ccusto) : null,
-      dt_emissao: toDate(item.dt_emissao),
-      dt_vencimento: toDate(item.dt_vencimento),
-      vl_duplicata: parseFloat(item.vl_duplicata || 0),
-      status: 'PENDENTE',
-      enviado_por: user?.email || null,
-      dados_completos: item,
-    }));
-
     try {
-      // Verificar duplicatas já enviadas (mesma nr_duplicata + cd_empresa + cd_fornecedor + nr_parcela + dt_vencimento + status não cancelado)
-      const chaves = registros
-        .filter((r) => r.nr_duplicata && r.cd_empresa)
-        .map((r) => ({
-          nr_duplicata: r.nr_duplicata,
-          cd_empresa: r.cd_empresa,
-          nr_parcela: r.nr_parcela,
-          cd_fornecedor: r.cd_fornecedor,
-          dt_vencimento: r.dt_vencimento,
-          vl_duplicata: r.vl_duplicata,
-        }));
-
-      if (chaves.length > 0) {
-        // Supabase corta cada consulta em 1000 linhas — pagina até o fim, senão
-        // um conflito real pode passar despercebido e o título ser duplicado.
-        const PAGE = 1000;
-        const jaExistentes = [];
-        for (let from = 0; ; from += PAGE) {
-          const { data: pagina } = await supabase
-            .from('pagamentos_liberacao')
-            .select(
-              'nr_duplicata, cd_empresa, nr_parcela, status, cd_fornecedor, dt_vencimento, vl_duplicata',
-            )
-            .in(
-              'nr_duplicata',
-              chaves.map((c) => c.nr_duplicata),
-            )
-            .not('status', 'eq', 'CANCELADO')
-            .order('id', { ascending: true })
-            .range(from, from + PAGE - 1);
-          jaExistentes.push(...(pagina || []));
-          if (!pagina || pagina.length < PAGE) break;
-        }
-
-        if (jaExistentes && jaExistentes.length > 0) {
-          // Linhas criadas pela Solicitação Crosby não têm cd_fornecedor/nr_parcela —
-          // nesses casos o conflito é detectado por duplicata + empresa + vencimento + valor.
-          const conflitos = jaExistentes.filter((ex) => {
-            const exVenc = ex.dt_vencimento
-              ? String(ex.dt_vencimento).split('T')[0]
-              : null;
-            return chaves.some((c) => {
-              if (c.nr_duplicata !== ex.nr_duplicata) return false;
-              if ((c.dt_vencimento || null) !== exVenc) return false;
-              if (
-                c.cd_empresa != null &&
-                ex.cd_empresa != null &&
-                String(c.cd_empresa) !== String(ex.cd_empresa)
-              )
-                return false;
-              const temFornecedor =
-                c.cd_fornecedor != null && ex.cd_fornecedor != null;
-              const temParcela = c.nr_parcela != null && ex.nr_parcela != null;
-              if (temFornecedor && c.cd_fornecedor !== ex.cd_fornecedor)
-                return false;
-              if (
-                temParcela &&
-                String(c.nr_parcela) !== String(ex.nr_parcela)
-              )
-                return false;
-              if (temFornecedor && temParcela) return true;
-              return (
-                Math.abs(
-                  Number(c.vl_duplicata || 0) - Number(ex.vl_duplicata || 0),
-                ) < 0.005
-              );
-            });
-          });
-
-          if (conflitos.length > 0) {
-            const msgs = conflitos
-              .map(
-                (c) =>
-                  `Fornecedor ${c.cd_fornecedor} • Duplicata ${c.nr_duplicata}${c.nr_parcela ? `/${c.nr_parcela}` : ''}${c.dt_vencimento ? ` • Venc. ${String(c.dt_vencimento).split('T')[0].split('-').reverse().join('/')}` : ''} — já enviada (${c.status})`,
-              )
-              .join('\n');
-            alert(
-              `⚠️ Envio bloqueado!\n\nAs seguintes duplicatas já foram enviadas para Liberação de Pagamento:\n\n${msgs}\n\nDesmarque-as e tente novamente.`,
-            );
-            return;
-          }
-        }
-      }
-
-      const { error } = await supabase
-        .from('pagamentos_liberacao')
-        .insert(registros);
-      if (error) throw error;
+      const j = await apiJson('/api/hc/contas-pagar/totvs/liberar', {
+        method: 'POST',
+        body: { itens: itensSelecionados },
+      });
+      const r = j?.data || {};
+      const fora = (r.ignoradas || [])
+        .slice(0, 8)
+        .map((i) => `• ${i.rotulo}: ${i.motivo}`)
+        .join('\n');
       alert(
-        `${registros.length} título(s) enviado(s) com sucesso para Liberação de Pagamento!`,
+        `${j?.message || 'Enviado.'}${fora ? `\n\nFicaram de fora:\n${fora}${(r.ignoradas || []).length > 8 ? '\n…' : ''}` : ''}`,
       );
       setLinhasSelecionadasAgrupadas(new Set());
     } catch (err) {
       alert('Erro ao enviar para pagamento: ' + (err.message || err));
     }
-  }, [linhasSelecionadasAgrupadas, dadosOrdenadosParaCards, user]);
+  }, [linhasSelecionadasAgrupadas, dadosOrdenadosParaCards]);
 
   // ─── Exportar Excel ───
   const exportarExcelDetalhamento = useCallback(() => {
