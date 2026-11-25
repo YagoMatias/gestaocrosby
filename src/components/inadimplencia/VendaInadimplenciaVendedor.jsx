@@ -24,6 +24,16 @@ function Pct({ valor }) {
   return <span className={`font-bold ${corPct(Number(valor))}`}>{pct2(valor)}</span>;
 }
 
+// De onde veio o faturado (João, 25/11/2026): parte do TOTVS e parte do HeadCoach
+function Origem({ l }) {
+  if (l?.faturado_totvs == null || l?.faturado_headcoach == null) return null;
+  return (
+    <div className="text-[10px] font-normal text-gray-500" title="Faturado do sistema dividido por origem (antes dos ajustes)">
+      TOTVS {brl(l.faturado_totvs)} · HeadCoach {brl(l.faturado_headcoach)}
+    </div>
+  );
+}
+
 function Variacao({ v }) {
   if (!v || v.pp == null) return <span className="text-gray-300">—</span>;
   const pp = Number(v.pp);
@@ -114,7 +124,10 @@ export default function VendaInadimplenciaVendedor({ onVerClientes }) {
     t ? (
       <tr className={`${destaque ? 'bg-gray-100' : 'bg-gray-50'} font-bold text-[#000638]`}>
         <td className="px-3 py-2">{rotulo}</td>
-        <td className="px-3 py-2 text-right">{brl(t.faturado_final)}</td>
+        <td className="px-3 py-2 text-right">
+          {brl(t.faturado_final)}
+          <Origem l={t} />
+        </td>
         <td className="px-3 py-2 text-right text-red-600">{brl(t.inadimplencia_final)}</td>
         <td className="px-3 py-2 text-right">
           <Pct valor={t.pct_inadimplencia} />
@@ -205,6 +218,7 @@ export default function VendaInadimplenciaVendedor({ onVerClientes }) {
                       </td>
                       <td className="px-3 py-2 text-right">
                         <div>{brl(a.faturado_final)}</div>
+                        <Origem l={a} />
                         {ajF !== 0 && (
                           <div className="text-[10px] text-indigo-600" title="Sistema + ajustes">
                             sistema {brl(a.faturado)} {ajF > 0 ? '+' : '−'} ajuste {brl(Math.abs(ajF))}
