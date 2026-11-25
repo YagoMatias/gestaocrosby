@@ -132,8 +132,10 @@ const STATUS_CONFIG = {
     color: 'bg-green-100 text-green-800',
     icon: CheckCircle,
   },
-  // Solicitação COM nota fiscal: não vai ao TOTVS (a NF é escriturada lá
-  // direto). Entra aqui na aprovação do gestor e sai para pagamento.
+  // Solicitação COM nota fiscal: entra aqui na aprovação do gestor, com o
+  // chamado de escrituração aberto. Desde 25/11/2026 o financeiro pode mandá-la
+  // ao Contas a Pagar HC sem esperar a escrituração: a duplicata nasce com o
+  // selo NÃO ESCRITURADA e o status é trocado lá.
   nota_fiscal: {
     label: 'Nota Fiscal',
     color: 'bg-purple-100 text-purple-800',
@@ -1287,24 +1289,34 @@ const SolicitacoesCrosby = () => {
 
   const enviarTotvsEmMassa = async () => {
     if (!isFinanceiro) return;
-    // só o que já passou pelo gestor (ou deu erro no envio) e não tem nota fiscal
+    // o que já passou pelo gestor (ou deu erro no envio) e a nota fiscal, que vai
+    // mesmo sem escrituração (a duplicata fica com o selo NÃO ESCRITURADA)
     const candidatas = solicitacoesFiltradas.filter(
       (s) =>
         selecionados.has(s.id) &&
-        ['aprovado_gestor', 'aprovado_financeiro', 'erro_envio'].includes(
-          s.status,
-        ),
+        [
+          'aprovado_gestor',
+          'aprovado_financeiro',
+          'erro_envio',
+          'nota_fiscal',
+        ].includes(s.status),
     );
     if (candidatas.length === 0) {
       notify(
         'error',
-        'Nenhuma selecionada está pronta para o Contas a Pagar HC (precisa estar aprovada pelo gestor ou com erro de envio).',
+        'Nenhuma selecionada está pronta para o Contas a Pagar HC (precisa estar aprovada pelo gestor, no status Nota Fiscal ou com erro de envio).',
       );
       return;
     }
     if (
       !window.confirm(
-        `Enviar ${candidatas.length} solicitação(ões) ao Contas a Pagar HC?`,
+        `Enviar ${candidatas.length} solicitação(ões) ao Contas a Pagar HC?${
+          candidatas.some(
+            (s) => s.tem_nota_fiscal === true && !s.nf_escriturado_em,
+          )
+            ? `\n\n${candidatas.filter((s) => s.tem_nota_fiscal === true && !s.nf_escriturado_em).length} com nota fiscal ainda não escriturada: a duplicata entra com o selo NÃO ESCRITURADA.`
+            : ''
+        }`,
       )
     )
       return;
@@ -1313,7 +1325,7 @@ const SolicitacoesCrosby = () => {
     const falhas = [];
     try {
       for (const sol of candidatas) {
-        if (sol.status === 'aprovado_gestor') {
+        if (sol.status === 'aprovado_gestor' || sol.status === 'nota_fiscal') {
           await supabaseAdmin
             .from('solicitacoes_crosby')
             .update({
@@ -2279,6 +2291,14 @@ const ModalDetalhe = ({
       (sol.status === 'conciliado' && produtoPatrimonio)) &&
     isFinanceiro;
   const podeReenviar = sol.status === 'erro_envio' && isFinanceiro;
+  // Nota fiscal: vai ao Contas a Pagar HC mesmo sem escrituração (a duplicata
+  // nasce com o selo NÃO ESCRITURADA). A que já foi liberada já tem duplicata lá.
+  const podeEnviarNotaFiscal =
+    sol.status === 'nota_fiscal' &&
+    isFinanceiro &&
+    !produtoPatrimonio &&
+    !sol.pagamento_liberacao_id &&
+    !sol.liberado_pagamento_em;
   const podeRejeitar =
     (sol.status === 'pendente' && isGestor) ||
     (sol.status === 'aguardando_conciliacao' && (isGestor || isFinanceiro)) ||
@@ -3622,6 +3642,32 @@ const ModalDetalhe = ({
                   <ArrowClockwise size={14} weight="bold" />
                 )}
                 Reenviar ao Contas a Pagar HC
+              </button>
+            )}
+            {podeEnviarNotaFiscal && (
+              <button
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      `Enviar a solicitação ${sol.duplicate_code || ''} (${sol.supplier_name || ''}) ao Contas a Pagar HC?\n\n${
+                        sol.nf_escriturado_em
+                          ? 'A nota fiscal já está escriturada.'
+                          : 'A nota fiscal ainda não foi escriturada: a duplicata entra com o selo NÃO ESCRITURADA e o status pode ser trocado no Contas a Pagar HC.'
+                      }`,
+                    )
+                  )
+                    onReenviar(sol);
+                }}
+                disabled={enviandoTotvs}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-60 transition-colors"
+                title="Cria a duplicata no Contas a Pagar HC sem esperar a escrituração da nota fiscal"
+              >
+                {enviandoTotvs ? (
+                  <Spinner size={14} className="animate-spin" />
+                ) : (
+                  <CloudArrowUp size={14} weight="bold" />
+                )}
+                Enviar ao Contas a Pagar HC
               </button>
             )}
             {podeAbrirChamadoNF && (

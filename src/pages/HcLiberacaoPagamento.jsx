@@ -656,6 +656,8 @@ export default function HcLiberacaoPagamento() {
     }
   };
   const alterar = (l, patch) => executar(`/${l.id}`, patch, { metodo: 'PUT', limpar: false });
+  // ALTERAR da linha: valor (parcial), observação e a chave Pix / boleto, que são gravados na duplicata
+  const abrirEdicao = (l) => setModal({ tipo: 'editar', l, valor: String(l.valor).replace('.', ','), observacao: l.observacao || '', chavePix: l.titulo?.chave_pix || '', codigoBarras: l.titulo?.codigo_barras || '' });
   const copiar = async (id, valor) => {
     try {
       await navigator.clipboard.writeText(valor);
@@ -951,6 +953,13 @@ export default function HcLiberacaoPagamento() {
                       )}
                       <td className="px-2 py-1.5">
                         <span className={`whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-bold ${ETAPA[l.status]?.selo || ''}`}>{ETAPA[l.status]?.um || l.status}</span>
+                        {l.titulo?.escrituracao === 'pendente' && (
+                          <div>
+                            <span title="A nota fiscal desta duplicata ainda não foi escriturada (o status é trocado no Contas a Pagar)" className="whitespace-nowrap rounded-full bg-orange-50 px-2 py-0.5 text-[10px] font-bold text-orange-700 ring-1 ring-orange-300">
+                              NÃO ESCRITURADA
+                            </span>
+                          </div>
+                        )}
                         {emAndamento && l.inclusao && (
                           <div>
                             <SeloInclusao inclusao={l.inclusao} />
@@ -1021,7 +1030,13 @@ export default function HcLiberacaoPagamento() {
                               <Copy size={11} /> {copiado === `cb-${l.id}` ? 'copiado' : 'Boleto'}
                             </button>
                           )}
-                          {!t.chave_pix && !t.codigo_barras && <span className="text-gray-400">—</span>}
+                          {emAndamento && l.status !== 'incluido' ? (
+                            <button type="button" disabled={ocupado} onClick={() => abrirEdicao(l)} title={t.chave_pix || t.codigo_barras ? 'Trocar a chave Pix ou o boleto' : 'Informar a chave Pix ou o boleto'} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 ring-1 ring-indigo-200 hover:bg-indigo-50 disabled:opacity-40">
+                              <PencilSimple size={11} weight="bold" /> {t.chave_pix || t.codigo_barras ? 'trocar' : 'Pix / boleto'}
+                            </button>
+                          ) : (
+                            !t.chave_pix && !t.codigo_barras && <span className="text-gray-400">—</span>
+                          )}
                         </div>
                       </td>
                       <td className="max-w-[150px] truncate px-2 py-1.5 text-[11px] text-gray-600" title={l.observacao || ''}>
@@ -1037,7 +1052,7 @@ export default function HcLiberacaoPagamento() {
                           <button type="button" disabled={ocupado} onClick={() => setModal({ tipo: 'pagar', ids: [l.id], data: hojeIso(), banco: '', senha: '' })} className="mr-1 rounded bg-green-600 px-2 py-1 text-[10px] font-bold text-white hover:bg-green-700 disabled:opacity-40">
                             PAGAR
                           </button>
-                          <button type="button" disabled={ocupado} onClick={() => setModal({ tipo: 'editar', l, valor: String(l.valor).replace('.', ','), observacao: l.observacao || '' })} className="rounded p-1 text-gray-600 hover:bg-gray-100" title="Alterar valor (pagamento parcial) e observação">
+                          <button type="button" disabled={ocupado} onClick={() => abrirEdicao(l)} className="rounded p-1 text-gray-600 hover:bg-gray-100" title="Alterar valor (pagamento parcial), observação, chave Pix e boleto">
                             <PencilSimple size={13} weight="bold" />
                           </button>
                         </td>
@@ -1239,9 +1254,9 @@ export default function HcLiberacaoPagamento() {
         </Modal>
       )}
 
-      {/* ALTERAR valor (parcial) e observação */}
+      {/* ALTERAR valor (parcial), observação, chave Pix e boleto */}
       {modal?.tipo === 'editar' && (
-        <Modal titulo={`${modal.l.titulo?.fornecedor_nome} · ${modal.l.titulo?.rotulo}`} onFechar={() => setModal(null)} largura="max-w-md">
+        <Modal titulo={`${modal.l.titulo?.fornecedor_nome} · ${modal.l.titulo?.rotulo}`} onFechar={() => setModal(null)} largura="max-w-lg">
           <p className="mb-2 text-xs text-gray-600">
             Duplicata de {fmtBRL(modal.l.titulo?.valor)} · faltam <b>{fmtBRL(modal.l.titulo?.falta)}</b>. Com valor menor, o pagamento é parcial e o resto continua em aberto no contas a pagar.
           </p>
@@ -1254,12 +1269,25 @@ export default function HcLiberacaoPagamento() {
               <label className={labelCls}>Observação</label>
               <input value={modal.observacao} onChange={(e) => setModal((m) => ({ ...m, observacao: e.target.value }))} className={inputCls} />
             </div>
+            <div className="col-span-2">
+              <label className={labelCls}>Chave Pix ou Pix copia e cola</label>
+              <textarea rows={3} disabled={modal.l.status === 'incluido'} value={modal.chavePix} onChange={(e) => setModal((m) => ({ ...m, chavePix: e.target.value }))} placeholder="CPF, CNPJ, e-mail, telefone, chave aleatória ou o código copia e cola inteiro" style={{ height: 'auto' }} className={`${inputCls} py-1.5 font-mono text-[11px] leading-snug disabled:bg-gray-100`} />
+            </div>
+            <div className="col-span-2">
+              <label className={labelCls}>Boleto (linha digitável)</label>
+              <input disabled={modal.l.status === 'incluido'} value={modal.codigoBarras} onChange={(e) => setModal((m) => ({ ...m, codigoBarras: e.target.value }))} placeholder="47 ou 48 dígitos" className={`${inputCls} font-mono text-[11px] disabled:bg-gray-100`} />
+            </div>
           </div>
+          <p className="mt-2 text-[11px] text-gray-500">
+            {modal.l.status === 'incluido'
+              ? 'Já incluída no banco: a chave Pix e o boleto não mudam mais (volte para Aprovados se precisar corrigir).'
+              : 'A chave Pix e o boleto ficam gravados na duplicata do Contas a Pagar. Com os dois, o pagamento vai por Pix.'}
+          </p>
           <div className="mt-3 flex justify-end gap-2">
             <button onClick={() => setModal(null)} className="h-9 rounded-lg px-3 text-xs font-bold text-gray-600 ring-1 ring-gray-200 hover:bg-gray-50">
               Voltar
             </button>
-            <button disabled={ocupado || !(num(modal.valor) > 0)} onClick={() => alterar(modal.l, { valor: num(modal.valor), observacao: modal.observacao })} className={`${btnAcao} bg-[#000638] hover:bg-indigo-900`}>
+            <button disabled={ocupado || !(num(modal.valor) > 0)} onClick={() => alterar(modal.l, { valor: num(modal.valor), observacao: modal.observacao, ...(modal.l.status !== 'incluido' ? { chavePix: modal.chavePix, codigoBarras: modal.codigoBarras } : {}) })} className={`${btnAcao} bg-[#000638] hover:bg-indigo-900`}>
               {ocupado ? <Spinner size={14} className="animate-spin" /> : <CheckCircle size={14} weight="bold" />} SALVAR
             </button>
           </div>

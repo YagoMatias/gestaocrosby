@@ -211,6 +211,36 @@ function SeloLiberacao({ l }) {
   );
 }
 
+// Escrituração da nota fiscal: a duplicata de solicitação com nota fiscal entra aqui mesmo antes de a nota
+// ser escriturada. O selo mostra o status; clicar nele (ou os botões do detalhe) troca.
+const ESCRITURACAO = { pendente: 'NÃO ESCRITURADA', escriturada: 'ESCRITURADA' };
+function SeloEscrituracao({ t, onTrocar, ocupado }) {
+  if (!t?.escrituracao) return null;
+  const pendente = t.escrituracao === 'pendente';
+  const cls = `ml-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-bold ring-1 ${pendente ? 'bg-orange-50 text-orange-700 ring-orange-300' : 'bg-teal-50 text-teal-700 ring-teal-200'}`;
+  const dica = `Nota fiscal ${pendente ? 'ainda não escriturada' : 'escriturada'}${t.escrituracao_em ? ` · ${t.escrituracao_por ? autorExibicao(t.escrituracao_por) : 'veio da solicitação'} em ${fmtDataHora(t.escrituracao_em)}` : ''}${onTrocar ? ` · clique para marcar como ${pendente ? 'ESCRITURADA' : 'NÃO ESCRITURADA'}` : ''}`;
+  if (!onTrocar)
+    return (
+      <span title={dica} className={cls}>
+        {ESCRITURACAO[t.escrituracao]}
+      </span>
+    );
+  return (
+    <button
+      type="button"
+      disabled={ocupado}
+      title={dica}
+      onClick={(e) => {
+        e.stopPropagation();
+        onTrocar(t, pendente ? 'escriturada' : 'pendente');
+      }}
+      className={`${cls} hover:brightness-95 disabled:opacity-50`}
+    >
+      {ESCRITURACAO[t.escrituracao]}
+    </button>
+  );
+}
+
 const POR_PAGINA = 50; // linhas da tabela por página (mil linhas de uma vez travavam a tela)
 
 // Página 1, 2, 3… da tabela. Mostra a primeira, a última e as vizinhas da atual.
@@ -259,7 +289,7 @@ export default function HcContasPagar() {
   const podeFinanceiro = PERFIS_FINANCEIRO.includes(user?.role);
   const [op, setOp] = useState(null);
   const [aviso, setAviso] = useState(null);
-  const [f, setF] = useState({ empresa: '', campoData: 'vencimento', de: inicioMes(), ate: fimMes(), situacao: '', fornecedor: '', duplicata: '', documentoFiscal: '', despesa: '', centroCusto: '', portador: '', forma: '', origem: '' });
+  const [f, setF] = useState({ empresa: '', campoData: 'vencimento', de: inicioMes(), ate: fimMes(), situacao: '', fornecedor: '', duplicata: '', documentoFiscal: '', despesa: '', centroCusto: '', portador: '', forma: '', origem: '', escrituracao: '' });
   const [dados, setDados] = useState(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState('');
@@ -267,6 +297,7 @@ export default function HcContasPagar() {
   const [pagina, setPagina] = useState(1); // a tabela mostra POR_PAGINA duplicatas por vez
   const [selecionadas, setSelecionadas] = useState(() => new Set()); // duplicatas marcadas para LIBERAR PARA PAGAMENTO
   const [liberando, setLiberando] = useState(false);
+  const [escriturando, setEscriturando] = useState(false);
   const [incluindo, setIncluindo] = useState(false);
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
   const avisar = useCallback((tipo, msg) => {
@@ -327,6 +358,27 @@ export default function HcContasPagar() {
     } finally {
       setLiberando(false);
     }
+  };
+  // escrituração: troca o status direto na linha (pede confirmação)
+  const naoEscrituradas = todasDuplicatas.filter((t) => t.escrituracao === 'pendente' && t.situacao !== 'cancelado');
+  const trocarEscrituracao = async (t, novo) => {
+    if (!window.confirm(`Marcar a duplicata ${rotuloDup(t)} de ${t.fornecedor_nome} como ${ESCRITURACAO[novo]}?`)) return;
+    setEscriturando(true);
+    try {
+      const j = await apiJson(`${API}/titulos/escrituracao`, { method: 'POST', body: { ids: [t.id], escrituracao: novo } });
+      avisar('ok', j?.message || 'Escrituração atualizada');
+      buscar(f);
+    } catch (e) {
+      avisar('erro', e.message);
+    } finally {
+      setEscriturando(false);
+    }
+  };
+  const verNaoEscrituradas = () => {
+    const novo = { ...f, escrituracao: 'pendente' };
+    setF(novo);
+    setPagina(1);
+    buscar(novo);
   };
   const empresas = op?.empresas || [];
   const formas = op?.formas || {};
@@ -396,6 +448,16 @@ export default function HcContasPagar() {
                 <option value="parcial">Pagas parcial</option>
                 <option value="pago">Pagas (com o já pago das parciais)</option>
                 <option value="cancelado">Canceladas</option>
+              </select>
+            </div>
+            <div>
+              <label className={labelCls} title="Duplicata de solicitação com nota fiscal: mostra se a nota já foi escriturada">
+                Escrituração
+              </label>
+              <select value={f.escrituracao} onChange={set('escrituracao')} className={inputCls}>
+                <option value="">Todas</option>
+                <option value="pendente">Não escrituradas</option>
+                <option value="escriturada">Escrituradas</option>
               </select>
             </div>
             <div>
@@ -469,6 +531,19 @@ export default function HcContasPagar() {
                 <Card rotulo="Juros + multa pagos" valor={fmtBRL(tot.encargos)} />
                 <Card rotulo="Descontos" valor={fmtBRL(tot.desconto)} />
               </div>
+              {naoEscrituradas.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 rounded-xl border border-orange-200 bg-orange-50/70 px-3 py-2 text-xs text-orange-900">
+                  <span>
+                    <b>{naoEscrituradas.length}</b> duplicata(s) com nota fiscal ainda <b>NÃO ESCRITURADA</b> · <b>{fmtBRL(naoEscrituradas.reduce((soma, t) => soma + Number(t.valor || 0), 0))}</b>
+                  </span>
+                  <span className="text-orange-700">Clique no selo da linha para trocar o status.</span>
+                  {f.escrituracao !== 'pendente' && (
+                    <button type="button" onClick={verNaoEscrituradas} className="ml-auto font-semibold text-orange-800 underline">
+                      ver só elas
+                    </button>
+                  )}
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-2 rounded-xl border border-indigo-200 bg-indigo-50/60 px-3 py-2 text-xs text-[#000638]">
                 {marcadas.length > 0 ? (
                   <span>
@@ -563,6 +638,7 @@ export default function HcContasPagar() {
                         <td className="px-2 py-1.5">
                           <Situacao t={t} />
                           <SeloLiberacao l={t.liberacao} />
+                          <SeloEscrituracao t={t} onTrocar={trocarEscrituracao} ocupado={escriturando} />
                         </td>
                       </tr>
                     ))}
@@ -942,6 +1018,20 @@ function Detalhe({ id: idInicial, op, onFechar, onMudou }) {
     setId(outroId);
   };
   const setCampo = (k) => (e) => setForm((x) => ({ ...x, [k]: e.target.value }));
+  // escrituração da nota fiscal: pendente | escriturada | null (tira a marca) — vale também para a duplicata já paga
+  const escriturar = async (novo) => {
+    setBusy(true);
+    setErro('');
+    try {
+      const j = await apiJson(`${API}/titulos/escrituracao`, { method: 'POST', body: { ids: [t.id], escrituracao: novo } });
+      await carregar();
+      onMudou(j?.message || 'Escrituração atualizada');
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
   const copiar = async (rotulo, valor) => {
     try {
       await navigator.clipboard.writeText(valor);
@@ -998,6 +1088,7 @@ function Detalhe({ id: idInicial, op, onFechar, onMudou }) {
           {t?.origem === 'totvs' && <MarcaTotvs />}
           {t && <Situacao t={t} />}
           {t?.liberacao && <SeloLiberacao l={t.liberacao} />}
+          {t && <SeloEscrituracao t={t} />}
           <button onClick={onFechar} className="rounded-lg p-1 text-gray-500 hover:bg-gray-100">
             <X size={18} />
           </button>
@@ -1148,6 +1239,36 @@ function Detalhe({ id: idInicial, op, onFechar, onMudou }) {
                     {b.observacao ? ` · ${b.observacao}` : ''}
                   </p>
                 ))}
+              </div>
+            )}
+
+            {t.situacao !== 'cancelado' && !modo && (
+              <div className={`flex flex-wrap items-center gap-2 rounded-xl px-3 py-2 text-xs ring-1 ${t.escrituracao === 'pendente' ? 'bg-orange-50/70 ring-orange-200' : 'bg-gray-50 ring-gray-200'}`}>
+                <span className="font-bold text-[#000638]">Escrituração da nota fiscal</span>
+                {t.escrituracao ? <SeloEscrituracao t={t} /> : <span className="text-gray-500">sem marca (não se aplica)</span>}
+                {t.escrituracao && t.escrituracao_em && (
+                  <span className="text-gray-500">
+                    {t.escrituracao_por ? autorExibicao(t.escrituracao_por) : 'veio da solicitação'} · {fmtDataHora(t.escrituracao_em)}
+                  </span>
+                )}
+                {t.escrituracao === 'pendente' && !t.escrituracao_em && <span className="text-gray-500">veio da solicitação com nota fiscal</span>}
+                <div className="ml-auto flex flex-wrap gap-2">
+                  {t.escrituracao !== 'escriturada' && (
+                    <button onClick={() => escriturar('escriturada')} disabled={busy} className={`${btnSec} h-8 text-teal-700`}>
+                      Marcar ESCRITURADA
+                    </button>
+                  )}
+                  {t.escrituracao !== 'pendente' && (
+                    <button onClick={() => escriturar('pendente')} disabled={busy} className={`${btnSec} h-8 text-orange-700`}>
+                      Marcar NÃO ESCRITURADA
+                    </button>
+                  )}
+                  {t.escrituracao && (
+                    <button onClick={() => escriturar(null)} disabled={busy} className={`${btnSec} h-8 text-gray-600`}>
+                      Tirar a marca
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
