@@ -23,6 +23,9 @@ const CANAL_POR_LINHA = {
   FRANQUIA: 'franquia',
   REVENDA: 'revenda',
   BAZAR: 'bazar',
+  // 25/11/2026: BlueCred (o Varejo já vem sem ele) e Magazine Jesus como imobilizado
+  BLUECRED: 'bluecred',
+  IMOBILIZADO: 'imobilizado',
 };
 // Linhas de canal que podem abrir para mostrar o CREDEV do canal (só visual).
 const CREDEV_CANAL_POR_LINHA = {
