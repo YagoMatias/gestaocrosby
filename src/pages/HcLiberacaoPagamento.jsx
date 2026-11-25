@@ -640,7 +640,7 @@ export default function HcLiberacaoPagamento() {
     }
   };
   const mover = (ids, status, extra = {}) => executar('/status', { ids, status, ...extra });
-  // BAIXA AUTOMÁTICA (aba Incluídos): o servidor confere nos extratos de hoje e dos 7 dias
+  // BAIXA AUTOMÁTICA (aba Incluídos): o servidor confere nos extratos de hoje e dos 30 dias
   // anteriores quais duplicatas incluídas já saíram. Aqui só mostra o que achou; a baixa
   // é gravada quando o usuário confirma com a senha (não tem estorno).
   const conferirExtratos = async () => {
@@ -829,7 +829,7 @@ export default function HcLiberacaoPagamento() {
           )}
           <div className="ml-auto flex flex-wrap items-center gap-2">
             {etapa === 'incluido' && (
-              <button type="button" disabled={ocupado} onClick={conferirExtratos} title="Confere nos extratos de hoje e dos últimos 7 dias quais duplicatas incluídas já foram pagas" className={`${btnAcao} bg-[#000638] hover:bg-[#0b1a6e]`}>
+              <button type="button" disabled={ocupado} onClick={conferirExtratos} title="Confere nos extratos de hoje e dos últimos 30 dias quais duplicatas incluídas já foram pagas" className={`${btnAcao} bg-[#000638] hover:bg-[#0b1a6e]`}>
                 {ocupado && !modal ? <Spinner size={14} className="animate-spin" /> : <Lightning size={14} weight="bold" />} BAIXA AUTOMÁTICA
               </button>
             )}
