@@ -675,7 +675,7 @@ const AVAILABLE_PAGES = [
   {
     path: '/tecnologia/orcamento-rfid',
     name: 'Orçamento RFID',
-    category: 'Tecnologia',
+    category: 'Expedição',
   },
   {
     path: '/tecnologia/devolucao-rfid',

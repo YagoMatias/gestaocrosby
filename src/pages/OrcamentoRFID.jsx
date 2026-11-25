@@ -4,6 +4,8 @@
 // cliente (só o desconto altersa o valor). Itens agrupados por grade (grupo de
 // produto) na tela e no PDF. Orçamentos ficam SALVOS POR USUÁRIO (localStorage
 // por login): vários em andamento ao mesmo tempo, retomáveis a qualquer hora.
+// Também baixa um TXT das peças do orçamento: só os códigos RFID, só os SKUs ou
+// os dois (uma linha por peça) — Yago, 25/11/2026.
 import React, {
   useState,
   useEffect,
@@ -41,6 +43,7 @@ import {
   Copy,
   ArrowSquareOut,
   WifiHigh,
+  FileTxt,
 } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import PortalPotenciaModal from '../components/PortalPotenciaModal';
@@ -797,6 +800,47 @@ const OrcamentoRFID = () => {
     );
   }, [items, gerarPdf, customer, draftId]);
 
+  // TXT das peças do orçamento, UMA LINHA POR PEÇA (Yago, 25/11/2026):
+  //   rfid  → o código RFID (EPC) de cada peça lida pelo portal
+  //   sku   → o SKU de cada peça (repetido conforme a quantidade)
+  //   ambos → "RFID;SKU" (peça digitada, sem etiqueta, sai com o RFID vazio)
+  const baixarTxt = useCallback(
+    (tipo) => {
+      if (items.length === 0) return;
+      const linhas = [];
+      let semEtiqueta = 0;
+      for (const i of items) {
+        const sku = String(i.sku || i.productCode || '').trim();
+        const manuais = Math.max(0, Number(i.manualQty) || 0);
+        semEtiqueta += manuais;
+        for (const epc of i.epcs || []) linhas.push(tipo === 'rfid' ? epc : tipo === 'sku' ? sku : `${epc};${sku}`);
+        if (tipo !== 'rfid') for (let k = 0; k < manuais; k += 1) linhas.push(tipo === 'sku' ? sku : `;${sku}`);
+      }
+      if (linhas.length === 0) {
+        showToast('erro', 'Nenhuma peça deste orçamento tem etiqueta RFID (foram digitadas à mão).');
+        return;
+      }
+      const agora = new Date();
+      const dois = (n) => String(n).padStart(2, '0');
+      const carimbo = `${agora.getFullYear()}${dois(agora.getMonth() + 1)}${dois(agora.getDate())}-${dois(agora.getHours())}${dois(agora.getMinutes())}`;
+      const sufixo = tipo === 'rfid' ? 'rfid' : tipo === 'sku' ? 'sku' : 'rfid-sku';
+      const blob = new Blob([`${linhas.join('\r\n')}\r\n`], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `orcamento-${customer?.code || 'sem-cliente'}-${carimbo}-${sufixo}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+      showToast(
+        'ok',
+        `TXT baixado: ${linhas.length} linha(s)${tipo === 'rfid' && semEtiqueta > 0 ? ` — ${semEtiqueta} peça(s) digitada(s) à mão ficaram de fora (não têm etiqueta)` : ''}.`,
+      );
+    },
+    [items, customer, showToast],
+  );
+
   const enviarWhatsapp = useCallback(() => {
     if (items.length === 0 || sending) return;
     let tel = phone.replace(/\D/g, '');
@@ -1477,6 +1521,30 @@ const OrcamentoRFID = () => {
               >
                 <FilePdf size={15} /> Baixar PDF
               </button>
+              {/* TXT das peças: uma linha por peça */}
+              <div className="mt-2 rounded-lg bg-gray-50 p-2 ring-1 ring-gray-200" data-baixar-txt>
+                <p className="mb-1.5 flex items-center gap-1 text-[10.5px] font-bold uppercase tracking-wide text-gray-500">
+                  <FileTxt size={13} /> Baixar TXT das peças
+                </p>
+                <div className="grid grid-cols-3 gap-1">
+                  {[
+                    ['rfid', 'Códigos RFID', 'Um código RFID por linha (só as peças lidas pelo portal)'],
+                    ['sku', 'SKU', 'Um SKU por linha, repetido conforme a quantidade'],
+                    ['ambos', 'RFID + SKU', 'Uma linha por peça: RFID;SKU'],
+                  ].map(([tipo, rotulo, dica]) => (
+                    <button
+                      key={tipo}
+                      onClick={() => baixarTxt(tipo)}
+                      disabled={items.length === 0}
+                      title={dica}
+                      className="h-8 rounded-md bg-white text-[11px] font-semibold text-[#000638] ring-1 ring-gray-300 hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {rotulo}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-1 text-[10px] text-gray-400">Uma linha por peça. No “RFID + SKU” vai RFID;SKU.</p>
+              </div>
             </div>
           </div>
         </div>

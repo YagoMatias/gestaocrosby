@@ -1209,6 +1209,7 @@ const headcoach = [
       { name: 'Pedido de Venda', href: '/expedicao/pedidos-venda', icon: ShoppingBag, color: 'text-sky-600' },
       { name: 'Faturamento', href: '/expedicao/faturamento', icon: Receipt, color: 'text-emerald-600' },
       { name: 'Transferências', href: '/transferencias-mercadoria', icon: ArrowsLeftRight, color: 'text-sky-600' },
+      { name: 'Orçamento RFID', href: '/tecnologia/orcamento-rfid', icon: Tag, color: 'text-purple-600' },
       {
         name: 'Expedição Brejinho',
         href: '#',
@@ -1283,6 +1284,13 @@ const expedicao = [
     href: '/transferencias-mercadoria',
     icon: ArrowsLeftRight,
     color: 'text-sky-600',
+  },
+  // orçamento montado pelo portal RFID, com o TXT das peças (Yago, 25/11/2026)
+  {
+    name: 'Orçamento RFID',
+    href: '/tecnologia/orcamento-rfid',
+    icon: Tag,
+    color: 'text-purple-600',
   },
   {
     name: 'Expedição Brejinho',
