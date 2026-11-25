@@ -391,7 +391,10 @@ const TransferenciasMercadoria = () => {
     }
   };
   // transferência com nota pelo HeadCoach em que a NF-e ainda não saiu (não há transação no TOTVS)
-  const podeTentarDeNovo = (t) => soHeadcoach(t) && t.nf_status !== 'cancelada' && t.nf_status !== 'autorizada';
+  // (movimentação entre estoques — Brejinho ↔ Matriz — não tem nota: nf_status 'sem_nota')
+  const podeTentarDeNovo = (t) => soHeadcoach(t) && t.nf_status !== 'cancelada' && t.nf_status !== 'autorizada' && t.nf_status !== 'sem_nota';
+  // Brejinho (99) ↔ Matriz (1): mesmo estoque — a solicitação entre os dois usa a tela do HeadCoach (sem nota)
+  const usaTelaHeadcoach = (sol) => Number(sol?.empresa_origem) === EMPRESA_NOTA_HEADCOACH || (Number(sol?.empresa_origem) === 1 && Number(sol?.empresa_destino) === EMPRESA_NOTA_HEADCOACH);
 
   const irParaRfid = (t) => {
     setAvulsa99(false);
@@ -579,7 +582,7 @@ const TransferenciasMercadoria = () => {
                           <td className="px-2 py-1.5">
                             {soHeadcoach(t) ? (
                               <span className="font-semibold text-[#000638]" title="Nota pelo HeadCoach · sem transação no TOTVS">
-                                {t.nf_numero ? `NF ${t.nf_numero}` : 'sem NF'}
+                                {t.nf_numero ? `NF ${t.nf_numero}` : t.nf_status === 'sem_nota' ? 'sem nota (mesmo estoque)' : 'sem NF'}
                               </span>
                             ) : t.transacao_code ? (
                               <button onClick={() => consultarTrxSolicitacao(t)} className="font-mono text-[#000638] hover:underline" title="Consultar a situação no TOTVS">
@@ -636,7 +639,7 @@ const TransferenciasMercadoria = () => {
         )}
 
         {/* ───────────── Transferência RFID (embutida) ───────────── */}
-        {aba === 'rfid' && (avulsa99 || Number(selecionada?.empresa_origem) === EMPRESA_NOTA_HEADCOACH) && (
+        {aba === 'rfid' && (avulsa99 || usaTelaHeadcoach(selecionada)) && (
           <div className="-mx-3 -mb-3 lg:-mx-4 lg:-mb-4">
             <TransferenciaNota99
               key={selecionada?.id || 'avulsa'}
@@ -653,7 +656,7 @@ const TransferenciasMercadoria = () => {
             />
           </div>
         )}
-        {aba === 'rfid' && !(avulsa99 || Number(selecionada?.empresa_origem) === EMPRESA_NOTA_HEADCOACH) && (
+        {aba === 'rfid' && !(avulsa99 || usaTelaHeadcoach(selecionada)) && (
           <div className="-mx-3 -mb-3 lg:-mx-4 lg:-mb-4">
             {!selecionada && (
               <p className="mx-3 lg:mx-4 mb-2 text-xs text-gray-600 bg-white rounded-xl ring-1 ring-gray-200 px-3 py-2">
@@ -764,10 +767,10 @@ const TransferenciasMercadoria = () => {
                           {t.venda_id && (
                             <span
                               className={`mt-0.5 block w-fit rounded-full px-1.5 py-0.5 font-sans text-[9.5px] font-bold ring-1 ${
-                                t.nf_status === 'autorizada' ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : t.nf_status === 'cancelada' ? 'bg-gray-100 text-gray-500 ring-gray-200' : 'bg-rose-50 text-rose-700 ring-rose-200'
+                                t.nf_status === 'autorizada' ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : t.nf_status === 'sem_nota' ? 'bg-sky-50 text-sky-800 ring-sky-200' : t.nf_status === 'cancelada' ? 'bg-gray-100 text-gray-500 ring-gray-200' : 'bg-rose-50 text-rose-700 ring-rose-200'
                               }`}
                             >
-                              {t.nf_numero ? `NF ${t.nf_numero}/${t.nf_serie || ''}` : 'sem NF'} · {t.nf_status || 'pendente'}
+                              {t.nf_status === 'sem_nota' ? 'sem nota fiscal · mesmo estoque' : `${t.nf_numero ? `NF ${t.nf_numero}/${t.nf_serie || ''}` : 'sem NF'} · ${t.nf_status || 'pendente'}`}
                             </span>
                           )}
                         </td>
@@ -830,14 +833,14 @@ const TransferenciasMercadoria = () => {
                 <div>
                   <h3 className="text-base font-bold text-[#000638]">
                     {soHeadcoach(trxDetalhe)
-                      ? `Transferência ${trxDetalhe.nf_numero ? `NF ${trxDetalhe.nf_numero}` : '(sem nota)'}`
+                      ? `Transferência ${trxDetalhe.nf_numero ? `NF ${trxDetalhe.nf_numero}` : trxDetalhe.nf_status === 'sem_nota' ? `nº ${trxDetalhe.venda_id} (sem nota fiscal)` : '(sem nota)'}`
                       : `Transação ${trxDetalhe.transacao_code ? `${trxDetalhe.empresa_totvs ? `${trxDetalhe.empresa_totvs}/` : ''}${trxDetalhe.transacao_code}` : '(ainda não aberta)'}`}{' '}
                     · empresa {trxDetalhe.empresa} → {trxDetalhe.empresa_destino || '—'}
                   </h3>
                   {trxDetalhe.venda_id && (
                     <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
-                      <span className={`rounded-full px-2 py-0.5 font-bold ring-1 ${trxDetalhe.nf_status === 'autorizada' ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-rose-50 text-rose-700 ring-rose-200'}`}>
-                        {trxDetalhe.nf_numero ? `NF-e ${trxDetalhe.nf_numero}/${trxDetalhe.nf_serie || ''}` : 'sem NF-e'} · {trxDetalhe.nf_status || 'pendente'}
+                      <span className={`rounded-full px-2 py-0.5 font-bold ring-1 ${trxDetalhe.nf_status === 'autorizada' ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : trxDetalhe.nf_status === 'sem_nota' ? 'bg-sky-50 text-sky-800 ring-sky-200' : 'bg-rose-50 text-rose-700 ring-rose-200'}`}>
+                        {trxDetalhe.nf_status === 'sem_nota' ? 'Sem nota fiscal · Brejinho e Matriz são o mesmo estoque' : `${trxDetalhe.nf_numero ? `NF-e ${trxDetalhe.nf_numero}/${trxDetalhe.nf_serie || ''}` : 'sem NF-e'} · ${trxDetalhe.nf_status || 'pendente'}`}
                       </span>
                       <span className="text-gray-500">
                         nota pelo HeadCoach · {trxDetalhe.natureza === 'venda' ? 'venda entre filiais' : 'transferência'} · registrada só no HeadCoach (sem transação no TOTVS)

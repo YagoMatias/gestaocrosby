@@ -7,6 +7,9 @@
 //   • EMITIR: a NF-e de transferência sai pelo HeadCoach (empresa 99) e a
 //     transferência fica registrada só no HeadCoach — sem transação no TOTVS
 //     (Yago, 11/11/2026: a API do TOTVS não finaliza transferência)
+//   • MESMO ESTOQUE (Yago, 25/11/2026): Brejinho (99) e Matriz (1) são o mesmo estoque em
+//     dois CNPJs. Entre os dois, em qualquer sentido, NÃO sai nota: fica só a transação
+//     e a saída das peças. A transferência avulsa pode sair da Matriz (só para o Brejinho).
 // Backend: /api/transferencias/nota (services/transferenciaNota.js).
 import { useAbaAtiva, useAoAtivarAba } from '../components/AppTabs/TabContext';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -38,6 +41,9 @@ import PortalPotenciaModal from '../components/PortalPotenciaModal';
 import { imprimirDanfe, salvarDanfePdf, avisoDoPdf } from '../utils/danfeAcoes';
 
 const EMPRESA = 99;
+// Matriz: mesmo estoque do Brejinho em outro CNPJ — entre os dois a transferência é sem nota
+const MATRIZ = 1;
+const PESSOA_BREJINHO = 82254; // cadastro (pessoa) da empresa 99, destino quando a origem é a Matriz
 // Inclusão manual de peça (sem etiqueta): o operador informa a QUANTIDADE e
 // entram todas de uma vez, até 1000 por inclusão (Yago, 11/11/2026).
 const LIMITE_INCLUSAO_MANUAL = 1000;
@@ -84,6 +90,9 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
   const [carregando, setCarregando] = useState(false);
   const [filiais, setFiliais] = useState([]);
   const [destino, setDestino] = useState(''); // pessoa da loja de destino (avulsa)
+  // avulsa: de onde sai — 99 (Brejinho, para qualquer loja) ou 1 (Matriz, só para o Brejinho e sem nota)
+  const [origemSel, setOrigemSel] = useState(EMPRESA);
+  const origemCode = solicitacao ? Number(solicitacao.empresa_origem) || EMPRESA : origemSel;
   const [sellers, setSellers] = useState([]);
   const [seller, setSeller] = useState('');
   // leituras: sku → { sku, nome, epcs[], manual, precoTotvs }
@@ -116,7 +125,7 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
   }, []);
 
   // ─── carrega o contexto (solicitação ou destino escolhido) ────────────────
-  const pessoaDestino = solicitacao ? null : destino;
+  const pessoaDestino = solicitacao ? null : origemSel === MATRIZ ? String(PESSOA_BREJINHO) : destino;
   useEffect(() => {
     setPrep(null);
     setErro('');
@@ -125,7 +134,7 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
     if (!solicitacao && !pessoaDestino) return undefined;
     let vivo = true;
     setCarregando(true);
-    const qs = solicitacao ? `solicitacao=${solicitacao.id}` : `destino=${pessoaDestino}`;
+    const qs = solicitacao ? `solicitacao=${solicitacao.id}` : `destino=${pessoaDestino}&origem=${origemSel}`;
     fetch(`${API}/nota/preparar?${qs}`)
       .then((r) => r.json())
       .then((j) => {
@@ -138,7 +147,7 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
     return () => {
       vivo = false;
     };
-  }, [solicitacao?.id, pessoaDestino, limparLeituras]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [solicitacao?.id, pessoaDestino, origemSel, limparLeituras]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     fetch(`${API_BASE_URL}/api/totvs/pdv/sellers?branch=${EMPRESA}`)
@@ -380,7 +389,8 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
 
   const semPreco = temPedido ? conf.linhas.some((l) => l.unidades.slice(0, l.conferido).some((u) => !(u.preco > 0))) : conf.fora.some((l) => !(l.preco > 0));
   const pendencias = [];
-  if (prep?.jaEmitida) pendencias.push(`Esta solicitação já tem a NF-e ${prep.jaEmitida.numero}/${prep.jaEmitida.serie}.`);
+  const semNota = !!prep?.semNota; // Brejinho ↔ Matriz: mesmo estoque, sem nota fiscal
+  if (prep?.jaEmitida) pendencias.push(prep.jaEmitida.semNota ? `Esta solicitação já foi registrada (transação nº ${prep.jaEmitida.vendaId}).` : `Esta solicitação já tem a NF-e ${prep.jaEmitida.numero}/${prep.jaEmitida.serie}.`);
   for (const p of prep?.pendencias || []) pendencias.push(p);
   if (!seller) pendencias.push('Escolha o vendedor.');
   if (conf.conferidas === 0) pendencias.push('Ligue o portal e passe as peças.');
@@ -394,6 +404,7 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
       const vend = sellers.find((s) => String(s.code) === String(seller));
       const body = {
         solicitacaoId: prep.solicitacao?.id || null,
+        origem: prep.origem?.code || origemCode,
         destinoClienteCode: prep.destino.personCode,
         vendedorCode: Number(seller),
         vendedorNome: vend?.name || null,
@@ -449,7 +460,7 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
       {/* cabeçalho */}
       <div className="mb-2 flex flex-wrap items-center gap-2 rounded-xl bg-white px-3 py-2 text-xs shadow-sm ring-1 ring-gray-200">
         <span className="inline-flex items-center gap-1.5 font-bold text-[#000638]">
-          <ArrowsLeftRight size={15} weight="bold" /> Transferência da empresa {EMPRESA} · nota pelo HeadCoach
+          <ArrowsLeftRight size={15} weight="bold" /> Transferência da empresa {origemCode} · {semNota ? 'sem nota fiscal' : 'nota pelo HeadCoach'}
         </span>
         {prep?.solicitacao && (
           <span className="rounded-full bg-sky-50 px-2 py-0.5 font-bold text-sky-700 ring-1 ring-sky-200">
@@ -460,14 +471,20 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
         {prep && (
           <>
             <span className="rounded-full bg-indigo-50 px-2 py-0.5 font-semibold text-[#000638] ring-1 ring-indigo-200">
-              {prep.naturezaNome} · CFOP {prep.cenario.cfops.join(' / ') || '—'} · {prep.cenario.texto}
+              {semNota ? prep.naturezaNome : `${prep.naturezaNome} · CFOP ${prep.cenario.cfops.join(' / ') || '—'} · ${prep.cenario.texto}`}
             </span>
             <span className="rounded-full bg-gray-100 px-2 py-0.5 font-semibold text-gray-600 ring-1 ring-gray-200">
               Registrada só no HeadCoach · sem transação no TOTVS
             </span>
-            <span className={`rounded-full px-2 py-0.5 font-semibold ring-1 ${Number(prep.numeracao.ambiente) === 1 ? 'bg-rose-50 text-rose-700 ring-rose-200' : 'bg-amber-50 text-amber-700 ring-amber-200'}`}>
-              NF-e série {prep.numeracao.serie} · {Number(prep.numeracao.ambiente) === 1 ? 'PRODUÇÃO' : 'homologação'}
-            </span>
+            {semNota ? (
+              <span className="rounded-full bg-sky-50 px-2 py-0.5 font-bold text-sky-800 ring-1 ring-sky-200" data-sem-nota>
+                SEM NOTA FISCAL · mesmo estoque
+              </span>
+            ) : (
+              <span className={`rounded-full px-2 py-0.5 font-semibold ring-1 ${Number(prep.numeracao?.ambiente) === 1 ? 'bg-rose-50 text-rose-700 ring-rose-200' : 'bg-amber-50 text-amber-700 ring-amber-200'}`}>
+                NF-e série {prep.numeracao?.serie} · {Number(prep.numeracao?.ambiente) === 1 ? 'PRODUÇÃO' : 'homologação'}
+              </span>
+            )}
           </>
         )}
         <span className="flex-1" />
@@ -480,8 +497,31 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
 
       {!solicitacao && (
         <div className="mb-2 rounded-xl bg-white p-3 shadow-sm ring-1 ring-gray-200">
-          <label className={labelCls}>Loja de destino (transferência avulsa da {EMPRESA})</label>
-          <select value={destino} onChange={(e) => setDestino(e.target.value)} className={`${inputCls} max-w-xl`}>
+          <label className={labelCls}>De onde sai a mercadoria</label>
+          <div className="mb-2 inline-flex rounded-lg bg-gray-100 p-0.5" data-origem>
+            {[
+              [EMPRESA, `${EMPRESA} — Brejinho`],
+              [MATRIZ, `${MATRIZ} — Matriz`],
+            ].map(([cod, rot]) => (
+              <button
+                key={cod}
+                type="button"
+                onClick={() => setOrigemSel(cod)}
+                disabled={!!resultado || posting}
+                className={`h-8 rounded-md px-3 text-xs font-bold ${origemSel === cod ? 'bg-[#000638] text-white' : 'text-[#000638] hover:bg-white'}`}
+              >
+                {rot}
+              </button>
+            ))}
+          </div>
+          {origemSel === MATRIZ ? (
+            <p className="rounded-lg bg-sky-50 px-2 py-1.5 text-[11px] text-sky-900 ring-1 ring-sky-200">
+              Saindo da <b>Matriz</b> a mercadoria vai para o <b>Brejinho (99)</b>: é o mesmo estoque, então fica só a transação e a movimentação das peças, <b>sem nota fiscal</b>.
+            </p>
+          ) : (
+            <>
+              <label className={labelCls}>Loja de destino (transferência avulsa da {EMPRESA})</label>
+              <select value={destino} onChange={(e) => setDestino(e.target.value)} className={`${inputCls} max-w-xl`}>
             <option value="">Selecione a loja…</option>
             {filiais.map((f) => (
               <option key={f.code} value={f.personCode}>
@@ -489,6 +529,8 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
               </option>
             ))}
           </select>
+            </>
+          )}
         </div>
       )}
       {erro && <p className="mb-2 rounded-xl bg-rose-50 px-3 py-2 text-xs text-rose-700 ring-1 ring-rose-200">{erro}</p>}
@@ -500,17 +542,29 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
 
       {prep && (
         <>
+          {semNota && !resultado && (
+            <p className="mb-2 rounded-xl bg-sky-50 px-3 py-2 text-xs text-sky-900 ring-1 ring-sky-200" data-aviso-sem-nota>
+              <b>
+                {prep.origem.code} — {prep.origem.nome} → {prep.destino.code ?? ''} — {prep.destino.nome}
+              </b>
+              : é o mesmo estoque em dois CNPJs. Esta transferência <b>não emite nota fiscal</b> — fica só o registro da transação e a movimentação das peças.
+            </p>
+          )}
           {prep.jaEmitida && !resultado && (
             <div className="mb-2 flex flex-wrap items-center gap-3 rounded-xl bg-rose-50 px-3 py-2.5 text-xs text-rose-800 ring-1 ring-rose-300">
               <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-rose-600 text-white">
                 <LockKey size={18} weight="bold" />
               </span>
               <div>
-                <p className="text-sm font-bold">TRANSFERÊNCIA JÁ EMITIDA</p>
-                <p>
-                  NF-e {prep.jaEmitida.numero}/{prep.jaEmitida.serie}
-                  . Para emitir de novo, cancele a nota (aba Transações).
-                </p>
+                <p className="text-sm font-bold">{prep.jaEmitida.semNota ? 'TRANSFERÊNCIA JÁ REGISTRADA' : 'TRANSFERÊNCIA JÁ EMITIDA'}</p>
+                {prep.jaEmitida.semNota ? (
+                  <p>Transação nº {prep.jaEmitida.vendaId} (sem nota fiscal). Para refazer, cancele a transação.</p>
+                ) : (
+                  <p>
+                    NF-e {prep.jaEmitida.numero}/{prep.jaEmitida.serie}
+                    . Para emitir de novo, cancele a nota (aba Transações).
+                  </p>
+                )}
               </div>
             </div>
           )}
@@ -763,7 +817,7 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
                     </div>
                   )}
                   <div className="flex justify-between text-emerald-700">
-                    <span>Conferidas (vão na nota)</span>
+                    <span>{semNota ? 'Conferidas (vão na movimentação)' : 'Conferidas (vão na nota)'}</span>
                     <span className="font-bold tabular-nums">{conf.conferidas}</span>
                   </div>
                   {conf.faltando > 0 && (
@@ -773,7 +827,7 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
                     </div>
                   )}
                   <div className="flex items-baseline justify-between border-t border-gray-100 pt-1">
-                    <span className="font-semibold text-[#000638]">Total da NF-e</span>
+                    <span className="font-semibold text-[#000638]">{semNota ? 'Total da movimentação' : 'Total da NF-e'}</span>
                     <span className="text-xl font-bold tabular-nums text-[#000638]">{fmtBRL(conf.total)}</span>
                   </div>
                 </div>
@@ -783,7 +837,11 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
                     <div className={`rounded-lg p-2 ring-1 ${resultado.fiscal?.ok ? 'bg-emerald-50 ring-emerald-200' : 'bg-rose-50 ring-rose-200'}`}>
                       <p className={`inline-flex items-center gap-1 font-bold ${resultado.fiscal?.ok ? 'text-emerald-800' : 'text-rose-700'}`}>
                         {resultado.fiscal?.ok ? <CheckCircle size={14} weight="fill" /> : <Warning size={14} weight="fill" />}
-                        {resultado.fiscal?.ok ? `NF-e ${notaRes?.numero}/${notaRes?.serie} autorizada` : 'NF-e não autorizada'}
+                        {resultado.fiscal?.semNota
+                          ? `Movimentação registrada · transação nº ${resultado.vendaId} · sem nota fiscal`
+                          : resultado.fiscal?.ok
+                            ? `NF-e ${notaRes?.numero}/${notaRes?.serie} autorizada`
+                            : 'NF-e não autorizada'}
                       </p>
                       {!resultado.fiscal?.ok && <p className="text-[11px] text-rose-700">{resultado.fiscal?.mensagem}</p>}
                       {notaRes?.chave && <p className="mt-0.5 break-all font-mono text-[10px] text-gray-500">{notaRes.chave}</p>}
@@ -827,7 +885,7 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
                 ) : (
                   <>
                     <button onClick={() => setConfirmar(true)} disabled={!podeEmitir} className="mt-2 inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-40">
-                      <Receipt size={16} weight="bold" /> EMITIR NOTA E TRANSFERIR ({conf.conferidas} pç)
+                      <Receipt size={16} weight="bold" /> {semNota ? 'REGISTRAR MOVIMENTAÇÃO' : 'EMITIR NOTA E TRANSFERIR'} ({conf.conferidas} pç)
                     </button>
                     {pendencias.length > 0 && (
                       <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[10.5px] text-amber-700">
@@ -853,17 +911,23 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
                 <ArrowsLeftRight size={20} weight="bold" />
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-base font-bold">{posting ? 'Emitindo…' : 'Confirmar transferência'}</p>
+                <p className="text-base font-bold">{posting ? (semNota ? 'Registrando…' : 'Emitindo…') : 'Confirmar transferência'}</p>
                 <p className="truncate text-xs text-white/70">
-                  {prep.solicitacao?.ref || (prep.solicitacao ? `TRF-${prep.solicitacao.id}` : 'avulsa')} · {EMPRESA} → {prep.destino.code ?? ''} {prep.destino.nome}
+                  {prep.solicitacao?.ref || (prep.solicitacao ? `TRF-${prep.solicitacao.id}` : 'avulsa')} · {prep.origem?.code ?? origemCode} → {prep.destino.code ?? ''} {prep.destino.nome}
                 </p>
               </div>
               {Number(prep.numeracao?.ambiente) === 1 && <span className="rounded-full bg-rose-500 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide">produção</span>}
             </div>
             <div className="space-y-1.5 px-5 py-4 text-xs">
-              <p>
-                <b>NF-e:</b> empresa {EMPRESA}, série {prep.numeracao.serie} · {prep.naturezaNome} · CFOP {prep.cenario.cfops.join(' / ')} · sem pagamento
-              </p>
+              {semNota ? (
+                <p>
+                  <b>Sem nota fiscal:</b> {prep.origem.nome} e {prep.destino.nome} são o mesmo estoque — fica só a transação e a movimentação das peças.
+                </p>
+              ) : (
+                <p>
+                  <b>NF-e:</b> empresa {prep.origem?.code ?? EMPRESA}, série {prep.numeracao?.serie} · {prep.naturezaNome} · CFOP {prep.cenario.cfops.join(' / ')} · sem pagamento
+                </p>
+              )}
               <p>
                 <b>Destino:</b> {prep.destino.razao} · CNPJ {prep.destino.cnpj}
               </p>
@@ -881,13 +945,13 @@ const TransferenciaNota99 = ({ solicitacao = null, onConcluida, onSair }) => {
                   </p>
                 )}
               </div>
-              <p className="text-[11px] text-gray-500">A nota é real (SEFAZ). A transferência fica registrada no HeadCoach (aba Transações).</p>
+              <p className="text-[11px] text-gray-500">{semNota ? 'Nenhuma nota é emitida. A transferência fica registrada no HeadCoach (aba Transações).' : 'A nota é real (SEFAZ). A transferência fica registrada no HeadCoach (aba Transações).'}</p>
               <div className="flex gap-2 pt-2">
                 <button onClick={() => setConfirmar(false)} disabled={posting} className="h-11 flex-1 rounded-xl text-sm font-bold text-gray-600 ring-1 ring-gray-300 disabled:opacity-50">
                   Cancelar
                 </button>
                 <button onClick={emitir} disabled={!podeEmitir} className="inline-flex h-11 flex-[2] items-center justify-center gap-2 rounded-xl bg-emerald-600 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50">
-                  {posting ? <Spinner size={16} className="animate-spin" /> : <Receipt size={16} weight="bold" />} Emitir NF-e e transferir
+                  {posting ? <Spinner size={16} className="animate-spin" /> : <Receipt size={16} weight="bold" />} {semNota ? 'Registrar sem nota' : 'Emitir NF-e e transferir'}
                 </button>
               </div>
             </div>

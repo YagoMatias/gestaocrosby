@@ -878,7 +878,13 @@ function DetalheTransacao({ id, onFechar, onAlterada }) {
                     <p className="text-xs text-gray-400">Devolução sem nota do cliente.</p>
                   )
                 ) : d.notas.length === 0 ? (
-                  <p className="text-xs text-gray-400">A nota não chegou a ser emitida.</p>
+                  d.pedido?.transferencia?.semNota ? (
+                    <p className="rounded-lg bg-sky-50 px-2 py-1.5 text-xs text-sky-900 ring-1 ring-sky-200">
+                      <b>Sem nota fiscal.</b> Movimentação entre Brejinho e Matriz: é o mesmo estoque em dois CNPJs, então fica só a transação e a movimentação das peças.
+                    </p>
+                  ) : (
+                    <p className="text-xs text-gray-400">A nota não chegou a ser emitida.</p>
+                  )
                 ) : (
                   <ul className="space-y-2">
                     {d.notas.map((n) => (
