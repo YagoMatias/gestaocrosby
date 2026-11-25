@@ -178,8 +178,17 @@ export default function VendaInadimplenciaVendedor({ onVerClientes }) {
                   <th className="px-3 py-2 text-center font-semibold">Clientes</th>
                 </tr>
               </thead>
-              <tbody>
-                {linhas.map((v) => {
+              {[
+                { id: 'ativos', titulo: 'Principais', lista: linhas.filter((v) => v.ativo), total: totais?.ativos },
+                { id: 'outros', titulo: 'Outros (desligados — carteira continua)', lista: linhas.filter((v) => !v.ativo), total: totais?.outros },
+              ].map((g) => (
+              <tbody key={g.id}>
+                <tr className="bg-[#000638]/5">
+                  <td colSpan={7} className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-[#000638]">
+                    {g.titulo}
+                  </td>
+                </tr>
+                {g.lista.map((v) => {
                   const a = v.atual;
                   if (!a) return null;
                   const ajF = Number(a.ajuste_faturado) || 0;
@@ -228,9 +237,10 @@ export default function VendaInadimplenciaVendedor({ onVerClientes }) {
                     </tr>
                   );
                 })}
+                <LinhaTotal rotulo={`TOTAL ${g.id === 'ativos' ? 'PRINCIPAIS' : 'OUTROS'} (${g.total?.rotulo || ''})`} t={g.total} />
               </tbody>
+              ))}
               <tfoot>
-                <LinhaTotal rotulo={`TOTAL ATIVOS (${totais?.ativos?.rotulo || ''})`} t={totais?.ativos} />
                 <LinhaTotal rotulo="TOTAL GERAL" t={totais?.geral} destaque />
               </tfoot>
             </table>
