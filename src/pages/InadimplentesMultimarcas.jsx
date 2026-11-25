@@ -13,6 +13,7 @@ import { useAuth } from '../components/AuthContext';
 import useClassificacoesInadimplentes from '../hooks/useClassificacoesInadimplentes';
 import { supabase, supabaseAdmin } from '../lib/supabase';
 import PageTitle from '../components/ui/PageTitle';
+import VendaInadimplenciaVendedor from '../components/inadimplencia/VendaInadimplenciaVendedor';
 import { TotvsURL } from '../config/constants';
 import Notification from '../components/ui/Notification';
 import {
@@ -208,9 +209,6 @@ const InadimplentesMultimarcas = () => {
   const [clienteProtestos, setClienteProtestos] = useState(null);
 
   // Faturamento por vendedor (rota com cache mensal no banco)
-  const [faturamentoVendedor, setFaturamentoVendedor] = useState({});
-  const [loadingFaturamento, setLoadingFaturamento] = useState(false);
-  const [erroFaturamento, setErroFaturamento] = useState(null);
 
   // Estados para timeline (evolução)
   const [timeline, setTimeline] = useState([]);
@@ -417,52 +415,8 @@ const InadimplentesMultimarcas = () => {
     [carregarTimeline],
   );
 
-  // ======================== FATURAMENTO POR VENDEDOR ========================
-  // Cada um na janela dele (campo `desde`), porque entraram em datas
-  // diferentes. Meses fechados vêm do banco (faturamento_vendedor_mensal);
-  // só o mês aberto e as pontas parciais vão ao TOTVS.
-  const carregarFaturamento = useCallback(async () => {
-    setLoadingFaturamento(true);
-    setErroFaturamento(null);
-    try {
-      const resp = await fetch(
-        `${TotvsURL}sale-panel/faturamento-vendedor-janelas`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            vendedores: VENDEDORES_MTM.map((v) => ({
-              seller_code: v.code,
-              datemin: v.desde,
-            })),
-            datemax: hojeStr,
-          }),
-        },
-      );
-      const json = await resp.json().catch(() => ({}));
-      if (!resp.ok) throw new Error(json?.message || `HTTP ${resp.status}`);
-      const mapa = {};
-      (json?.data?.vendedores || []).forEach((v) => {
-        mapa[Number(v.seller_code)] = {
-          valor: Number(v.valor) || 0,
-          qtd: Number(v.qtd) || 0,
-          nome: v.seller_name || '',
-          datemin: v.datemin,
-        };
-      });
-      setFaturamentoVendedor(mapa);
-    } catch (err) {
-      console.error('Erro ao carregar faturamento por vendedor:', err);
-      setErroFaturamento(err.message);
-      setFaturamentoVendedor({});
-    } finally {
-      setLoadingFaturamento(false);
-    }
-  }, [hojeStr]);
-
-  useEffect(() => {
-    carregarFaturamento();
-  }, [carregarFaturamento]);
+  // FATURAMENTO POR VENDEDOR: agora vem da foto semanal gravada pela API
+  // (components/inadimplencia/VendaInadimplenciaVendedor.jsx).
 
 
   // Carregar timeline ao montar
@@ -1290,9 +1244,9 @@ Crosby`;
       .sort((a, b) => b.valorTotal - a.valorTotal);
   }, [clientesAgrupados]);
 
-  // Tabela do dashboard: venda x inadimplência (>60 dias) x percentual.
-  // Os cinco aparecem sempre, mesmo zerados — Walter e Renato foram
-  // desligados e não faturam desde julho, mas a carteira deles continua.
+  // Clientes acima de 60 dias de cada vendedor, calculados ao vivo nesta tela
+  // (usados no modal do painel Venda x Inadimplência; os números do painel
+  // vêm da foto semanal gravada pela API).
   const desempenhoVendedores = useMemo(() => {
     const porRep = {};
     resumoPorRepresentante.forEach((r) => {
@@ -1300,36 +1254,31 @@ Crosby`;
     });
     return VENDEDORES_MTM.map((v) => {
       const r = porRep[v.chave] || {};
-      const venda = faturamentoVendedor[v.code]?.valor || 0;
-      const inadimplencia = r.valorInadimplente || 0;
       return {
         ...v,
-        venda,
-        inadimplencia,
-        carteiraVencida: r.valorTotal || 0,
-        qtdClientes: r.qtdClientes || 0,
+        inadimplencia: r.valorInadimplente || 0,
         clientesInadimplentes: r.clientesInadimplentes || [],
-        percentual: venda > 0 ? (inadimplencia / venda) * 100 : null,
       };
-    }).sort((a, b) => b.venda - a.venda);
-  }, [resumoPorRepresentante, faturamentoVendedor]);
+    });
+  }, [resumoPorRepresentante]);
 
-  // Rodape da tabela. O percentual do total NAO e a media dos percentuais:
-  // e a soma das inadimplencias sobre a soma das vendas, senao um vendedor
-  // pequeno com percentual alto distorceria o numero.
-  const totaisVendedores = useMemo(() => {
-    const soma = (campo) =>
-      desempenhoVendedores.reduce((a, v) => a + (v[campo] || 0), 0);
-    const venda = soma('venda');
-    const inadimplencia = soma('inadimplencia');
-    return {
-      venda,
-      inadimplencia,
-      carteiraVencida: soma('carteiraVencida'),
-      qtdClientes: soma('qtdClientes'),
-      percentual: venda > 0 ? (inadimplencia / venda) * 100 : null,
-    };
-  }, [desempenhoVendedores]);
+  // Clique no valor da inadimplência do painel: abre a lista ao vivo da tela
+  // (com telefone, faturas etc.); se ela ainda não carregou, usa a lista da foto.
+  const verClientesInadimplentesVendedor = (v, listaDaFoto) => {
+    const vivo = desempenhoVendedores.find((x) => x.chave === v.chave);
+    if (vivo?.clientesInadimplentes?.length) return abrirInadimplenciaVendedor(vivo);
+    const lista = (listaDaFoto || []).map((c) => ({
+      cd_cliente: c.cd_cliente,
+      nm_cliente: c.nome,
+      valor_total: c.valor,
+      diasAtrasoMax: c.dias,
+      situacao: 'INADIMPLENTE',
+      faturas: [],
+      _rateado: c.rateado,
+    }));
+    abrirModalLista(`${v.chave} — ${lista.length} cliente(s) acima de 60 dias (foto da semana)`, lista);
+  };
+
 
   // Auto-salvar timeline quando dados carregam (apenas se há dados e não há filtros aplicados)
   useEffect(() => {
@@ -3204,172 +3153,9 @@ Crosby`;
                 </CardContent>
               </Card>
 
-              {/* Tabela: venda x inadimplencia por vendedor */}
-              <Card className="shadow-lg rounded-xl bg-white">
-                <CardHeader className="pb-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <Users size={18} className="text-[#000638]" />
-                      <CardTitle className="text-sm font-bold text-[#000638]">
-                        Venda x Inadimplencia por Vendedor
-                      </CardTitle>
-                    </div>
-                    <button
-                      onClick={carregarFaturamento}
-                      disabled={loadingFaturamento}
-                      className="flex items-center gap-1 text-xs font-bold text-[#000638] bg-gray-100 hover:bg-gray-200 disabled:opacity-50 px-2.5 py-1 rounded-lg transition-colors"
-                      title="Recarregar faturamento"
-                    >
-                      {loadingFaturamento ? (
-                        <CircleNotch size={14} className="animate-spin" />
-                      ) : (
-                        <ArrowClockwise size={14} weight="bold" />
-                      )}
-                      Atualizar
-                    </button>
-                  </div>
-                  <CardDescription className="text-xs text-gray-500">
-                    Faturado de cada vendedor desde a data de entrada dele,
-                    contra a carteira inadimplente (clientes com mais de 60
-                    dias de atraso). Percentual = inadimplencia / faturado * 100.
-                    Clique no valor da inadimplencia para ver os clientes.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="pt-0 px-4 pb-4">
-                  {erroFaturamento && (
-                    <div className="mb-3 text-xs font-semibold text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">
-                      Nao foi possivel carregar o faturamento: {erroFaturamento}
-                    </div>
-                  )}
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="bg-[#000638] text-white">
-                          <th className="px-3 py-2 text-left font-semibold">
-                            Vendedor
-                          </th>
-                          <th className="px-3 py-2 text-right font-semibold">
-                            Faturado
-                          </th>
-                          <th className="px-3 py-2 text-right font-semibold">
-                            Inadimplencia (+60d)
-                          </th>
-                          <th className="px-3 py-2 text-right font-semibold">
-                            % Inadimplencia
-                          </th>
-                          <th className="px-3 py-2 text-right font-semibold">
-                            Carteira vencida
-                          </th>
-                          <th className="px-3 py-2 text-center font-semibold">
-                            Clientes
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {desempenhoVendedores.map((v) => (
-                          <tr
-                            key={v.code}
-                            className="border-b border-gray-100 hover:bg-gray-50"
-                          >
-                            <td className="px-3 py-2">
-                              <div className="font-bold text-[#000638]">
-                                {v.chave}
-                              </div>
-                              <div className="text-[10px] text-gray-500">
-                                {v.nome} - cod. {v.code}
-                              </div>
-                              <div className="text-[10px] text-gray-400">
-                                desde {formatarData(v.desde)}
-                              </div>
-                            </td>
-                            <td className="px-3 py-2 text-right">
-                              {loadingFaturamento ? (
-                                <CircleNotch
-                                  size={12}
-                                  className="animate-spin inline"
-                                />
-                              ) : (
-                                formatarMoeda(v.venda)
-                              )}
-                            </td>
-                            <td className="px-3 py-2 text-right">
-                              {v.clientesInadimplentes.length > 0 ? (
-                                <button
-                                  onClick={() => abrirInadimplenciaVendedor(v)}
-                                  className="font-semibold text-red-600 underline decoration-dotted underline-offset-2 hover:text-red-700"
-                                  title={`Ver os ${v.clientesInadimplentes.length} cliente(s) acima de 60 dias`}
-                                >
-                                  {formatarMoeda(v.inadimplencia)}
-                                </button>
-                              ) : (
-                                <span className="font-semibold text-gray-400">
-                                  {formatarMoeda(v.inadimplencia)}
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-3 py-2 text-right">
-                              {v.percentual === null ? (
-                                <span
-                                  className="text-gray-400"
-                                  title="Sem faturamento no periodo - vendedor desligado"
-                                >
-                                  --
-                                </span>
-                              ) : (
-                                <span
-                                  className={`font-bold ${
-                                    v.percentual >= 10
-                                      ? 'text-red-600'
-                                      : v.percentual >= 5
-                                        ? 'text-amber-600'
-                                        : 'text-green-700'
-                                  }`}
-                                >
-                                  {v.percentual.toLocaleString('pt-BR', {
-                                    maximumFractionDigits: 1,
-                                  })}
-                                  %
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-3 py-2 text-right text-gray-600">
-                              {formatarMoeda(v.carteiraVencida)}
-                            </td>
-                            <td className="px-3 py-2 text-center text-gray-600">
-                              {v.qtdClientes}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
-                        <tr className="bg-gray-50 font-bold text-[#000638]">
-                          <td className="px-3 py-2">TOTAL</td>
-                          <td className="px-3 py-2 text-right">
-                            {formatarMoeda(totaisVendedores.venda)}
-                          </td>
-                          <td className="px-3 py-2 text-right text-red-600">
-                            {formatarMoeda(totaisVendedores.inadimplencia)}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            {totaisVendedores.percentual === null
-                              ? '--'
-                              : `${totaisVendedores.percentual.toLocaleString(
-                                  'pt-BR',
-                                  { maximumFractionDigits: 1 },
-                                )}%`}
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            {formatarMoeda(totaisVendedores.carteiraVencida)}
-                          </td>
-                          <td className="px-3 py-2 text-center">
-                            {totaisVendedores.qtdClientes}
-                          </td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                </CardContent>
-              </Card>
+              {/* Tabela: venda x inadimplencia por vendedor — lê a foto semanal gravada pela API
+                  (/api/inadimplencia-mtm); não busca mais o faturamento no TOTVS (João/BRUCE, 25/11/2026) */}
+              <VendaInadimplenciaVendedor onVerClientes={verClientesInadimplentesVendedor} />
 
               {/* Tabela: historico mensal de inadimplencia por vendedor */}
               <Card className="shadow-lg rounded-xl bg-white">
