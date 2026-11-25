@@ -10,8 +10,8 @@
 // uso por cliente; o vencido não é apagado e pode ser REATIVADO (owner/admin).
 // API: /api/hc/saldos-clientes/cashback — services/cashbackHc.js
 // ============================================================================
-import React, { useCallback, useEffect, useState } from 'react';
-import { Wallet, MagnifyingGlass, Spinner, X, ArrowsClockwise, Plus, CheckCircle, Gift, ClockCounterClockwise } from '@phosphor-icons/react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Wallet, MagnifyingGlass, Spinner, X, ArrowsClockwise, Plus, CheckCircle, Gift, ClockCounterClockwise, CaretUp, CaretDown, CaretUpDown } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import { useAuth } from '../components/AuthContext';
 import { apiJson } from '../utils/apiAuth';
@@ -49,6 +49,19 @@ const MOVIMENTOS_CB = {
   cancelamento: { label: 'Cancelado (venda cancelada)', cls: 'text-gray-500' },
   reativacao: { label: 'Reativado', cls: 'text-indigo-700' },
 };
+
+// Colunas da tabela de saldos (João, 19/11/2026): clicar no título ordena (A→Z / menor→maior), clicar de novo inverte
+const COLUNAS_SALDOS = [
+  { id: 'nome', rotulo: 'Cliente', valor: (c) => c.nome || '', texto: true },
+  { id: 'empresa', rotulo: 'Empresa', valor: (c) => Number(c.empresa) || 0 },
+  { id: 'credevInicial', rotulo: 'Credev (carga)', valor: (c) => Number(c.credevInicial) || 0, direita: true },
+  { id: 'credev', rotulo: 'Credev (saldo)', valor: (c) => Number(c.credev) || 0, direita: true },
+  { id: 'adiantamentoInicial', rotulo: 'Adiant. (carga)', valor: (c) => Number(c.adiantamentoInicial) || 0, direita: true },
+  { id: 'adiantamento', rotulo: 'Adiant. (saldo)', valor: (c) => Number(c.adiantamento) || 0, direita: true },
+  { id: 'cashback', rotulo: 'Cashback', valor: (c) => Number(c.cashback) || 0, direita: true },
+  { id: 'total', rotulo: 'Total', valor: (c) => Number(c.total) || 0, direita: true },
+  { id: 'atualizadoEm', rotulo: 'Atualizado', valor: (c) => (c.atualizadoEm ? new Date(c.atualizadoEm).getTime() : 0) },
+];
 
 function Card({ rotulo, valor, cls = 'text-[#000638]' }) {
   return (
@@ -103,6 +116,19 @@ export default function HcSaldosClientes() {
   };
 
   const tot = dados?.totais || {};
+  const [ordem, setOrdem] = useState({ col: null, asc: true });
+  const ordenarPor = (col) => setOrdem((o) => (o.col === col ? { col, asc: !o.asc } : { col, asc: true }));
+  const listaOrdenada = useMemo(() => {
+    const lista = dados?.lista || [];
+    const c = COLUNAS_SALDOS.find((x) => x.id === ordem.col);
+    if (!c) return lista;
+    const sinal = ordem.asc ? 1 : -1;
+    return [...lista].sort((a, b) => {
+      const va = c.valor(a);
+      const vb = c.valor(b);
+      return sinal * (c.texto ? String(va).localeCompare(String(vb), 'pt-BR', { sensitivity: 'base' }) : va - vb);
+    });
+  }, [dados, ordem]);
   return (
     <div className="flex-1 overflow-y-auto bg-gray-100 p-3 lg:p-4">
       <div className="mx-auto max-w-6xl">
@@ -175,15 +201,23 @@ export default function HcSaldosClientes() {
               <table className="w-full min-w-[860px] text-xs">
                 <thead className="bg-gray-50 text-left text-[10px] uppercase tracking-wide text-gray-500">
                   <tr>
-                    <th className="px-2 py-2">Cliente</th>
-                    <th className="px-2 py-2">Empresa</th>
-                    <th className="px-2 py-2 text-right">Credev (carga)</th>
-                    <th className="px-2 py-2 text-right">Credev (saldo)</th>
-                    <th className="px-2 py-2 text-right">Adiant. (carga)</th>
-                    <th className="px-2 py-2 text-right">Adiant. (saldo)</th>
-                    <th className="px-2 py-2 text-right">Cashback</th>
-                    <th className="px-2 py-2 text-right">Total</th>
-                    <th className="px-2 py-2">Atualizado</th>
+                    {COLUNAS_SALDOS.map((col) => {
+                      const ativa = ordem.col === col.id;
+                      const Icone = ativa ? (ordem.asc ? CaretUp : CaretDown) : CaretUpDown;
+                      return (
+                        <th key={col.id} className={`px-2 py-2 ${col.direita ? 'text-right' : ''}`}>
+                          <button
+                            type="button"
+                            onClick={() => ordenarPor(col.id)}
+                            title="Clique para ordenar; clique de novo para inverter"
+                            className={`inline-flex items-center gap-0.5 uppercase tracking-wide hover:text-[#000638] ${ativa ? 'font-bold text-[#000638]' : ''}`}
+                          >
+                            {col.rotulo}
+                            <Icone size={11} weight="bold" className={ativa ? '' : 'opacity-40'} />
+                          </button>
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -194,7 +228,7 @@ export default function HcSaldosClientes() {
                       </td>
                     </tr>
                   )}
-                  {dados.lista.map((c) => (
+                  {listaOrdenada.map((c) => (
                     <tr key={`${c.empresa}-${c.clienteCode}`} onClick={() => setAberto(c)} className="cursor-pointer hover:bg-indigo-50/50">
                       <td className="max-w-[300px] truncate px-2 py-1.5">
                         <b className="tabular-nums text-[#000638]">{c.clienteCode}</b> · {c.nome || '—'}

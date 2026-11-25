@@ -604,7 +604,8 @@ export default function RemessaBoletos() {
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 mb-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 items-end">
-          <div className="lg:col-span-2">
+          {/* h-8 no botão do FiltroEmpresa: mesma altura dos campos de data e do Buscar */}
+          <div className="lg:col-span-2 [&>div>button]:h-8">
             <FiltroEmpresa
               empresasSelecionadas={empresasSelecionadas}
               onSelectEmpresas={setEmpresasSelecionadas}
@@ -624,7 +625,7 @@ export default function RemessaBoletos() {
               value={dataInicio}
               min={isoHoje()}
               onChange={(e) => setDataInicio(e.target.value)}
-              className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full text-xs"
+              className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full text-xs h-8"
             />
           </div>
           <div>
@@ -636,13 +637,13 @@ export default function RemessaBoletos() {
               value={dataFim}
               min={dataInicio}
               onChange={(e) => setDataFim(e.target.value)}
-              className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full text-xs"
+              className="border border-[#000638]/30 rounded-lg px-2 py-1.5 w-full text-xs h-8"
             />
           </div>
           <button
             onClick={buscar}
             disabled={loading}
-            className="flex items-center justify-center gap-1.5 bg-[#000638] text-white text-xs font-semibold rounded-lg px-3 py-2 hover:bg-[#fe0000] transition-colors disabled:opacity-60"
+            className="flex items-center justify-center gap-1.5 bg-[#000638] text-white text-xs font-semibold rounded-lg px-3 h-8 hover:bg-[#fe0000] transition-colors disabled:opacity-60"
           >
             {loading ? (
               <Spinner size={14} className="animate-spin" />
