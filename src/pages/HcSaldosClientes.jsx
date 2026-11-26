@@ -4,6 +4,8 @@
 // 99, clientes com CREDEV/adiantamento em 2026); o Faturamento e o Faturamento
 // Brejinho consomem daqui; devolução atendida soma ao CREDEV do cliente.
 // Clicando no cliente: o extrato (carga, usos, estornos, devoluções).
+// Owner e admin (26/11/2026): TRANSFERIR o saldo do cliente para outra loja e ZERAR o saldo
+// (CREDEV e adiantamento), com senha e motivo — botões na linha e no extrato.
 // API: /api/hc/saldos-clientes (exige login) — services/hcSaldosClientes.js
 // Aba CASHBACK DO HEADCOACH (18/11/2026): o cashback gerado nas vendas do PDV
 // Crosby (20%, carência de 3 dias, vale até o dia 93). Histórico de geração e
@@ -11,7 +13,7 @@
 // API: /api/hc/saldos-clientes/cashback — services/cashbackHc.js
 // ============================================================================
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Wallet, MagnifyingGlass, Spinner, X, ArrowsClockwise, Plus, CheckCircle, Gift, ClockCounterClockwise, CaretUp, CaretDown, CaretUpDown } from '@phosphor-icons/react';
+import { Wallet, MagnifyingGlass, Spinner, X, ArrowsClockwise, Plus, CheckCircle, Gift, ClockCounterClockwise, CaretUp, CaretDown, CaretUpDown, ArrowsLeftRight, Eraser } from '@phosphor-icons/react';
 import PageTitle from '../components/ui/PageTitle';
 import { useAuth } from '../components/AuthContext';
 import { apiJson } from '../utils/apiAuth';
@@ -33,6 +35,12 @@ const MOVIMENTOS = {
   ajuste: { label: 'Gerado manualmente', cls: 'text-indigo-700' },
   // cashback: acerto diário pelo saldo bônus do TOTVS
   sinc_totvs: { label: 'Acerto pelo TOTVS', cls: 'text-amber-700' },
+};
+// o ajuste manual pode ser crédito gerado, transferência entre lojas ou saldo zerado (a referência diz qual)
+const movimentoDe = (m) => {
+  if (m.movimento === 'ajuste' && /^transferência entre lojas/i.test(m.referencia || '')) return { label: Number(m.valor) < 0 ? 'Transferido para outra loja' : 'Recebido de outra loja', cls: 'text-sky-700' };
+  if (m.movimento === 'ajuste' && /^saldo zerado/i.test(m.referencia || '')) return { label: 'Saldo zerado', cls: 'text-rose-700' };
+  return MOVIMENTOS[m.movimento] || { label: m.movimento, cls: '' };
 };
 // cashback do HeadCoach
 const SITUACOES_CB = {
@@ -81,6 +89,7 @@ export default function HcSaldosClientes() {
   const [carregando, setCarregando] = useState(false);
   const [aberto, setAberto] = useState(null); // { clienteCode, empresa, nome }
   const [gerando, setGerando] = useState(false);
+  const [ajuste, setAjuste] = useState(null); // { modo: 'transferir' | 'zerar', cliente: linha da tabela }
   const [aba, setAba] = useState('saldos'); // saldos | cashback
   const podeGerar = ['owner', 'admin'].includes(user?.role);
 
@@ -218,12 +227,13 @@ export default function HcSaldosClientes() {
                         </th>
                       );
                     })}
+                    {podeGerar && <th className="px-2 py-2 text-right">Ações</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {dados.lista.length === 0 && (
                     <tr>
-                      <td colSpan={9} className="px-2 py-10 text-center text-gray-400">
+                      <td colSpan={10} className="px-2 py-10 text-center text-gray-400">
                         Nenhum cliente com saldo.
                       </td>
                     </tr>
@@ -241,6 +251,20 @@ export default function HcSaldosClientes() {
                       <td className="px-2 py-1.5 text-right font-semibold tabular-nums text-amber-700">{c.cashback ? fmtBRL(c.cashback) : '—'}</td>
                       <td className="px-2 py-1.5 text-right font-bold tabular-nums">{fmtBRL(c.total)}</td>
                       <td className="px-2 py-1.5 tabular-nums text-gray-500">{fmtDataHora(c.atualizadoEm)}</td>
+                      {podeGerar && (
+                        <td className="whitespace-nowrap px-2 py-1 text-right" onClick={(e) => e.stopPropagation()}>
+                          {(c.credev > 0 || c.adiantamento > 0) && (
+                            <>
+                              <button onClick={() => setAjuste({ modo: 'transferir', cliente: c })} title="Transferir o saldo para outra loja" className="mr-1 inline-flex h-7 items-center gap-1 rounded-lg px-2 text-[10.5px] font-bold text-sky-700 ring-1 ring-sky-200 hover:bg-sky-50" data-transferir>
+                                <ArrowsLeftRight size={12} weight="bold" /> Transferir
+                              </button>
+                              <button onClick={() => setAjuste({ modo: 'zerar', cliente: c })} title="Zerar o saldo do cliente nesta loja" className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-[10.5px] font-bold text-rose-700 ring-1 ring-rose-200 hover:bg-rose-50" data-zerar>
+                                <Eraser size={12} weight="bold" /> Zerar
+                              </button>
+                            </>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -257,7 +281,29 @@ export default function HcSaldosClientes() {
         )}
         </>
         )}
-        {aberto && <Extrato cliente={aberto} onFechar={() => setAberto(null)} />}
+        {aberto && (
+          <Extrato
+            cliente={aberto}
+            onFechar={() => setAberto(null)}
+            podeAjustar={podeGerar}
+            onAjustar={(modo, saldo) => {
+              setAjuste({ modo, cliente: { ...aberto, credev: saldo.credev, adiantamento: saldo.adiantamento } });
+              setAberto(null);
+            }}
+          />
+        )}
+        {ajuste && (
+          <AjusteSaldo
+            modo={ajuste.modo}
+            cliente={ajuste.cliente}
+            onFechar={() => setAjuste(null)}
+            onFeito={(msg) => {
+              setAjuste(null);
+              setAviso(msg);
+              buscar(f);
+            }}
+          />
+        )}
         {gerando && (
           <GerarCredito
             empresaPadrao={f.empresa || '99'}
@@ -380,7 +426,163 @@ function GerarCredito({ empresaPadrao, onFechar, onGerado }) {
   );
 }
 
-function Extrato({ cliente, onFechar }) {
+// Transferir o saldo do cliente para outra loja, ou zerar o saldo dele na loja (só owner/admin, com senha e motivo).
+// `cliente` é a linha da tabela: { clienteCode, nome, empresa, credev, adiantamento }.
+function AjusteSaldo({ modo, cliente, onFechar, onFeito }) {
+  const transferir = modo === 'transferir';
+  const comSaldo = ['credev', 'adiantamento'].filter((t) => Number(cliente[t]) > 0);
+  const [tipo, setTipo] = useState(comSaldo[0] || 'credev');
+  const [tipos, setTipos] = useState(comSaldo); // zerar: quais saldos
+  const [destino, setDestino] = useState('');
+  const [valor, setValor] = useState(String((Number(cliente[comSaldo[0] || 'credev']) || 0).toFixed(2)).replace('.', ','));
+  const [motivo, setMotivo] = useState('');
+  const [senha, setSenha] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [erro, setErro] = useState('');
+  const [noDestino, setNoDestino] = useState(null);
+  const num = (v) => {
+    const t = String(v || '').trim();
+    return Number(t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t) || 0;
+  };
+  const disponivel = Number(cliente[tipo]) || 0;
+  // saldo que o cliente já tem na loja de destino
+  useEffect(() => {
+    setNoDestino(null);
+    if (!transferir || !(Number(destino) > 0) || Number(destino) === Number(cliente.empresa)) return undefined;
+    let vivo = true;
+    const espera = setTimeout(() => {
+      apiJson(`${API}/cliente/${cliente.clienteCode}?empresa=${destino}`)
+        .then((j) => vivo && setNoDestino(j.data.saldo))
+        .catch(() => vivo && setNoDestino(null));
+    }, 350);
+    return () => {
+      vivo = false;
+      clearTimeout(espera);
+    };
+  }, [transferir, destino, cliente.clienteCode, cliente.empresa]);
+  const totalZerar = tipos.reduce((s, t) => s + (Number(cliente[t]) || 0), 0);
+  const mesmaLoja = Number(destino) === Number(cliente.empresa);
+  const acima = transferir && num(valor) > disponivel + 0.005;
+  const pronto = motivo.trim().length >= 5 && senha && (transferir ? Number(destino) > 0 && !mesmaLoja && num(valor) > 0 && !acima : tipos.length > 0 && totalZerar > 0);
+  const enviar = async () => {
+    setBusy(true);
+    setErro('');
+    try {
+      const j = transferir
+        ? await apiJson(`${API}/transferir`, { method: 'POST', body: { clienteCode: cliente.clienteCode, tipo, empresaOrigem: Number(cliente.empresa), empresaDestino: Number(destino), valor: String(valor), motivo: motivo.trim(), senha } })
+        : await apiJson(`${API}/zerar`, { method: 'POST', body: { clienteCode: cliente.clienteCode, empresa: Number(cliente.empresa), tipos, motivo: motivo.trim(), senha } });
+      onFeito(j.message);
+    } catch (e) {
+      setErro(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/40 p-4" data-ajuste-saldo={modo}>
+      <div className="my-10 w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+        <div className="mb-3 flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            <h3 className="text-lg font-bold text-[#000638]">{transferir ? 'Transferir saldo para outra loja' : 'Zerar saldo do cliente'}</h3>
+            <p className="truncate text-xs text-gray-500">
+              <b>{cliente.clienteCode}</b> · {cliente.nome || 'Cliente'} · empresa <b>{cliente.empresa}</b>
+            </p>
+          </div>
+          <button onClick={onFechar} disabled={busy} className="rounded-lg p-1 text-gray-500 hover:bg-gray-100">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="space-y-3">
+          <p className="rounded-lg bg-gray-50 px-2.5 py-1.5 text-xs text-gray-600 ring-1 ring-gray-200">
+            Saldo na empresa {cliente.empresa}: Credev <b>{fmtBRL(cliente.credev)}</b> · Adiantamento <b>{fmtBRL(cliente.adiantamento)}</b>
+          </p>
+          {transferir ? (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className={labelCls}>Saldo</label>
+                  <select
+                    value={tipo}
+                    onChange={(e) => {
+                      setTipo(e.target.value);
+                      setValor(String((Number(cliente[e.target.value]) || 0).toFixed(2)).replace('.', ','));
+                    }}
+                    className={inputCls}
+                  >
+                    <option value="credev">Credev</option>
+                    <option value="adiantamento">Adiantamento</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={labelCls}>Loja de destino (código)</label>
+                  <input value={destino} onChange={(e) => setDestino(e.target.value.replace(/\D/g, ''))} inputMode="numeric" placeholder="ex.: 99" className={inputCls} data-destino />
+                </div>
+              </div>
+              {mesmaLoja && <p className="text-[11px] font-semibold text-rose-600">A loja de destino tem de ser diferente da de origem.</p>}
+              {noDestino && !mesmaLoja && (
+                <p className="rounded-lg bg-sky-50 px-2.5 py-1.5 text-xs text-sky-900 ring-1 ring-sky-200">
+                  Na empresa {destino} o cliente tem hoje: Credev <b>{fmtBRL(noDestino.credev)}</b> · Adiantamento <b>{fmtBRL(noDestino.adiantamento)}</b>
+                </p>
+              )}
+              <div>
+                <label className={labelCls}>Valor a transferir (até {fmtBRL(disponivel)})</label>
+                <input
+                  value={valor}
+                  onChange={(e) => setValor(e.target.value)}
+                  inputMode="decimal"
+                  placeholder="0,00"
+                  className="mb-0 h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-lg font-bold tabular-nums text-[#000638] focus:outline-none focus:ring-2 focus:ring-[#000638]/30"
+                  data-valor
+                />
+                {acima && <p className="mt-1 text-[11px] font-semibold text-rose-600">O cliente só tem {fmtBRL(disponivel)} de {TIPOS[tipo]} nesta loja.</p>}
+              </div>
+            </>
+          ) : (
+            <div>
+              <label className={labelCls}>O que zerar</label>
+              <div className="space-y-1">
+                {['credev', 'adiantamento'].map((t) => (
+                  <label key={t} className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm ring-1 ${Number(cliente[t]) > 0 ? 'cursor-pointer ring-gray-200 hover:bg-gray-50' : 'text-gray-400 ring-gray-100'}`}>
+                    <input
+                      type="checkbox"
+                      disabled={!(Number(cliente[t]) > 0)}
+                      checked={tipos.includes(t)}
+                      onChange={(e) => setTipos((x) => (e.target.checked ? [...x, t] : x.filter((y) => y !== t)))}
+                      className="mb-0 !h-4 !w-4"
+                    />
+                    <span className="flex-1">{TIPOS[t]}</span>
+                    <b className="tabular-nums">{fmtBRL(cliente[t])}</b>
+                  </label>
+                ))}
+              </div>
+              <p className="mt-1.5 text-[11px] text-gray-500">O valor sai do saldo e fica no extrato como "Saldo zerado", com o seu nome e o motivo. O cashback não entra aqui.</p>
+            </div>
+          )}
+          <div>
+            <label className={labelCls}>Motivo</label>
+            <input value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder={transferir ? 'ex.: cliente passou a comprar na outra loja' : 'ex.: saldo lançado errado'} className={inputCls} data-motivo />
+          </div>
+          <div>
+            <label className={labelCls}>Sua senha do HeadCoach</label>
+            <input type="password" autoComplete="off" value={senha} onChange={(e) => setSenha(e.target.value)} className={inputCls} data-senha />
+          </div>
+          {erro && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 ring-1 ring-rose-200">{erro}</p>}
+          <button
+            onClick={enviar}
+            disabled={busy || !pronto}
+            className={`inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-lg text-sm font-bold text-white disabled:opacity-40 ${transferir ? 'bg-sky-700 hover:bg-sky-800' : 'bg-rose-600 hover:bg-rose-700'}`}
+            data-confirmar
+          >
+            {busy ? <Spinner size={16} className="animate-spin" /> : transferir ? <ArrowsLeftRight size={16} weight="bold" /> : <Eraser size={16} weight="bold" />}
+            {transferir ? `TRANSFERIR${num(valor) > 0 ? ` ${fmtBRL(num(valor))}` : ''}${Number(destino) > 0 && !mesmaLoja ? ` PARA A EMPRESA ${destino}` : ''}` : `ZERAR ${fmtBRL(totalZerar)}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Extrato({ cliente, onFechar, podeAjustar = false, onAjustar = null }) {
   const [d, setD] = useState(null);
   const [erro, setErro] = useState('');
   useEffect(() => {
@@ -417,6 +619,16 @@ function Extrato({ cliente, onFechar }) {
               <Card rotulo="Cashback" valor={fmtBRL(d.saldo.cashback)} cls="text-amber-700" />
               <Card rotulo="Credev + adiant." valor={fmtBRL(d.saldo.total)} />
             </div>
+            {podeAjustar && onAjustar && d.saldo.total > 0 && (
+              <div className="mb-3 flex flex-wrap gap-2">
+                <button onClick={() => onAjustar('transferir', d.saldo)} className="inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11px] font-bold text-sky-700 ring-1 ring-sky-200 hover:bg-sky-50">
+                  <ArrowsLeftRight size={13} weight="bold" /> Transferir saldo para outra loja
+                </button>
+                <button onClick={() => onAjustar('zerar', d.saldo)} className="inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11px] font-bold text-rose-700 ring-1 ring-rose-200 hover:bg-rose-50">
+                  <Eraser size={13} weight="bold" /> Zerar saldo
+                </button>
+              </div>
+            )}
             <p className="mb-1 text-[10.5px] font-bold uppercase tracking-wide text-gray-500">Extrato</p>
             {d.extrato.length === 0 ? (
               <p className="py-6 text-center text-xs text-gray-400">Sem movimentos.</p>
@@ -437,7 +649,7 @@ function Extrato({ cliente, onFechar }) {
                       <td className="py-1.5 tabular-nums text-gray-500">{fmtDataHora(m.em)}</td>
                       <td className="py-1.5">{TIPOS[m.tipo] || m.tipo}</td>
                       <td className="py-1.5">
-                        <span className={`font-semibold ${MOVIMENTOS[m.movimento]?.cls || ''}`}>{MOVIMENTOS[m.movimento]?.label || m.movimento}</span>
+                        <span className={`font-semibold ${movimentoDe(m).cls}`}>{movimentoDe(m).label}</span>
                         <span className="block text-[10.5px] text-gray-500">{[m.observacao, m.referencia, m.por].filter(Boolean).join(' · ')}</span>
                       </td>
                       <td className={`py-1.5 text-right font-semibold tabular-nums ${Number(m.valor) < 0 ? 'text-rose-700' : 'text-emerald-700'}`}>{fmtBRL(m.valor)}</td>
