@@ -6,8 +6,12 @@
 // devolvido vira CREDEV do cliente nesta loja.
 // Credev e Adiantamento: formas distintas, limitadas ao saldo do cliente na loja
 // (prop `saldos` = { credev, adiantamento }); o servidor confere de novo.
-import React, { useMemo, useState } from 'react';
-import { X, Plus, Trash, Spinner, CreditCard, Money, QrCode, Receipt } from '@phosphor-icons/react';
+// BLUECARD (25/11/2026): o PDV pede a compra ao BlueCard, o cliente aprova no app (10 minutos) e
+// só então a venda fecha. Prop `bluecard` = { cpf, empresa, empresaNome, vendedorCode, vendedorNome, itens }.
+// As parcelas e os vencimentos são os do BlueCard; o servidor confere a aprovação de novo.
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { X, Plus, Trash, Spinner, CreditCard, Money, QrCode, Receipt, CheckCircle, Warning, DeviceMobile } from '@phosphor-icons/react';
+import { API_BASE_URL } from '../../config/constants';
 
 const fmtBRL = (v) =>
   Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -25,22 +29,7 @@ export const FORMAS = [
   { id: 'bluecard', label: 'BlueCard', icon: Receipt },
 ];
 const BLUECARD_MAX_PARCELAS = 4;
-// valores das parcelas como saem no contas a receber (igual ao TOTVS): reais inteiros,
-// a diferença na 1ª — 148,00 em 3x = 50,00 + 49,00 + 49,00
-const parcelasBluecard = (valor, n) => {
-  if (n <= 1) return `1x de ${fmtBRL(valor)}`;
-  const vn = Math.floor(valor / n) >= 1 ? Math.floor(valor / n) : Math.floor((valor / n) * 100) / 100;
-  const primeira = round2(valor - vn * (n - 1));
-  return Math.abs(primeira - vn) < 0.005 ? `${n}x de ${fmtBRL(vn)}` : `${n}x: 1ª de ${fmtBRL(primeira)} + ${n - 1} de ${fmtBRL(vn)}`;
-};
-// vencimentos das parcelas do BlueCard: mesmo dia do mês, a 1ª um mês depois da compra
-const vencimentoBluecard = (n) => {
-  const h = new Date();
-  const alvo = new Date(h.getFullYear(), h.getMonth() + n, 1);
-  const ultimo = new Date(alvo.getFullYear(), alvo.getMonth() + 1, 0).getDate();
-  alvo.setDate(Math.min(h.getDate(), ultimo));
-  return alvo.toLocaleDateString('pt-BR');
-};
+// (as parcelas e os vencimentos do BlueCard vêm do app, na aprovação do cliente)
 // forma → saldo do cliente que ela consome
 const SALDO_DA_FORMA = { credito_loja: 'credev', adiantamento: 'adiantamento' };
 const NOME_SALDO = { credev: 'Credev', adiantamento: 'Adiantamento' };
@@ -63,7 +52,7 @@ const fmtData = (d) => (d ? String(d).slice(0, 10).split('-').reverse().join('/'
 
 // VENDA | TROCA: `inicial` traz os pagamentos já preenchidos (Credev gerado pela
 // troca + a diferença) e `trocaFeita` a troca registrada neste atendimento.
-export default function PagamentoModal({ total, tipoVenda, notasTroca = [], saldos = null, temCliente = false, inicial = null, trocaFeita = null, busy, onConfirm, onClose }) {
+export default function PagamentoModal({ total, tipoVenda, notasTroca = [], saldos = null, temCliente = false, inicial = null, trocaFeita = null, bluecard = null, busy, onConfirm, onClose }) {
   const troca = tipoVenda === 'troca';
   const [pags, setPags] = useState(() =>
     troca
@@ -73,6 +62,80 @@ export default function PagamentoModal({ total, tipoVenda, notasTroca = [], sald
         : [{ forma: 'pix', valor: round2(total), parcelas: 1, bandeira: '', nsu: '', autorizacao: '' }],
   );
   const [erro, setErro] = useState('');
+
+  // ─── BlueCard: limite, pedido de aprovação e acompanhamento ───────────────
+  // bc = { limite, pedindo, compraId, status: pendente|aprovada|recusada|cancelada|expirada, expiraEm, valor, parcelas, vencimentos, erro }
+  const [bc, setBc] = useState({ limite: null });
+  const [agora, setAgora] = useState(Date.now());
+  const pagBluecard = pags.find((p) => p.forma === 'bluecard') || null;
+  const valorBluecard = round2(pagBluecard?.valor || 0);
+  const cpfBluecard = String(bluecard?.cpf || '').replace(/\D/g, '');
+  const bcAprovada = bc.status === 'aprovada';
+  const bcPendente = bc.status === 'pendente';
+  const bcTravado = bcAprovada || bcPendente || !!bc.pedindo; // valor e parcelas não mudam com pedido em aberto
+  // limite do cliente (e as parcelas possíveis para o valor) — consulta ao escolher BlueCard ou mudar o valor
+  useEffect(() => {
+    if (!pagBluecard || cpfBluecard.length !== 11 || bcTravado) return undefined;
+    let vivo = true;
+    const espera = setTimeout(() => {
+      fetch(`${API_BASE_URL}/api/pdv-crosby/bluecard/limite?cpf=${cpfBluecard}${valorBluecard > 0 ? `&valor=${valorBluecard}` : ''}`)
+        .then((r) => r.json())
+        .then((j) => vivo && setBc((x) => ({ ...x, limite: j?.success ? j.data : { erro: j?.message || 'Não consegui consultar o BlueCard' } })))
+        .catch(() => vivo && setBc((x) => ({ ...x, limite: { erro: 'Não consegui consultar o BlueCard' } })));
+    }, 400);
+    return () => {
+      vivo = false;
+      clearTimeout(espera);
+    };
+  }, [!!pagBluecard, cpfBluecard, valorBluecard, bcTravado]); // eslint-disable-line react-hooks/exhaustive-deps
+  // acompanha a compra pedida até o cliente aprovar (ou recusar / expirar)
+  const compraRef = useRef(null);
+  compraRef.current = bc.compraId;
+  useEffect(() => {
+    if (!bc.compraId || bc.status !== 'pendente') return undefined;
+    const consultar = () =>
+      fetch(`${API_BASE_URL}/api/pdv-crosby/bluecard/compras/${encodeURIComponent(bc.compraId)}`)
+        .then((r) => r.json())
+        .then((j) => {
+          if (!j?.success || compraRef.current !== bc.compraId) return;
+          if (j.data.status !== 'pendente') {
+            setBc((x) => ({ ...x, status: j.data.status, vencimentos: j.data.vencimentos || [] }));
+            setErro(''); // some o aviso de "aguardando" de um clique anterior
+          }
+        })
+        .catch(() => {});
+    const laco = setInterval(consultar, 3000);
+    const relogio = setInterval(() => setAgora(Date.now()), 1000);
+    return () => {
+      clearInterval(laco);
+      clearInterval(relogio);
+    };
+  }, [bc.compraId, bc.status]);
+  const pedirAprovacao = async () => {
+    if (!pagBluecard || bc.pedindo) return;
+    setErro('');
+    setBc((x) => ({ ...x, pedindo: true, erro: null, semResposta: false, status: null, compraId: null }));
+    try {
+      const r = await fetch(`${API_BASE_URL}/api/pdv-crosby/bluecard/solicitar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ empresa: bluecard?.empresa, empresaNome: bluecard?.empresaNome || null, cpf: cpfBluecard, valor: valorBluecard, parcelas: Number(pagBluecard.parcelas) || 1, vendedorCode: bluecard?.vendedorCode || null, vendedorNome: bluecard?.vendedorNome || null, itens: bluecard?.itens || [] }),
+      });
+      const j = await r.json();
+      if (!r.ok || !j.success) throw Object.assign(new Error(j?.message || 'O BlueCard não aceitou o pedido'), { codigo: j?.error || null, http: r.status });
+      setAgora(Date.now()); // o relógio do prazo começa agora
+      setBc((x) => ({ ...x, pedindo: false, compraId: j.data.compraId, status: 'pendente', expiraEm: j.data.expiraEm, valor: valorBluecard, parcelas: Number(pagBluecard.parcelas) || 1, vencimentos: [] }));
+    } catch (e) {
+      // o BlueCard não respondeu (fora do ar, sem acesso, rede): não é recusa — o caixa não pode ficar travado por isso
+      const semResposta = !e.codigo || ['BLUECARD_FORA', 'BLUECARD_NAO_AUTORIZADO', 'BLUECARD_ERROR'].includes(e.codigo) || e.http >= 500;
+      setBc((x) => ({ ...x, pedindo: false, erro: e.message, semResposta }));
+    }
+  };
+  const desistirBluecard = () => {
+    setErro('');
+    setBc((x) => ({ limite: x.limite }));
+  };
+  const restaSeg = bc.expiraEm ? Math.max(0, Math.round((new Date(bc.expiraEm).getTime() - agora) / 1000)) : null;
 
   const soma = useMemo(() => round2(pags.reduce((s, p) => s + (Number(p.valor) || 0), 0)), [pags]);
   const restante = round2(total - soma);
@@ -116,6 +179,12 @@ export default function PagamentoModal({ total, tipoVenda, notasTroca = [], sald
       if (usado > saldoDe(tipo) + 0.005) return setErro(`${NOME_SALDO[tipo]}: o cliente tem ${fmtBRL(saldoDe(tipo))} nesta loja e você lançou ${fmtBRL(usado)}`);
     }
     if (pags.some((p) => p.forma === 'bluecard' && Number(p.valor) > 0) && !temCliente) return setErro('BlueCard exige o cliente identificado na venda');
+    if (pags.filter((p) => p.forma === 'bluecard').length > 1) return setErro('Só um pagamento em BlueCard por venda');
+    if (pagBluecard && Number(pagBluecard.valor) > 0) {
+      // sem resposta do BlueCard ao pedido: a venda fecha como antes (o cliente aprova no aplicativo dele)
+      if (!bcAprovada && !bc.semResposta) return setErro(bcPendente ? 'BlueCard: aguardando o cliente aprovar no app' : 'BlueCard: peça a aprovação do cliente no app antes de fechar a venda');
+      if (bcAprovada && (Math.abs(Number(bc.valor) - valorBluecard) > 0.005 || Number(bc.parcelas) !== (Number(pagBluecard.parcelas) || 1))) return setErro('BlueCard: o valor ou as parcelas mudaram depois da aprovação — peça de novo');
+    }
     for (const p of pags) {
       if (!(Number(p.valor) > 0)) return setErro('Informe o valor de cada pagamento');
       if ((p.forma === 'credito' || p.forma === 'debito') && !p.nsu.trim() && !p.autorizacao.trim())
@@ -123,7 +192,7 @@ export default function PagamentoModal({ total, tipoVenda, notasTroca = [], sald
     }
     if (!fecha) return setErro(`Falta ${fmtBRL(restante)} para fechar o total`);
     // troco: abate do pagamento em dinheiro
-    const lista = pags.map((p) => ({ ...p, valor: round2(p.valor), troco: 0 }));
+    const lista = pags.map((p) => ({ ...p, valor: round2(p.valor), troco: 0, ...(p.forma === 'bluecard' && bcAprovada && bc.compraId ? { bluecardCompraId: bc.compraId } : {}) }));
     if (troco > 0) {
       const i = lista.findIndex((p) => p.forma === 'dinheiro');
       lista[i].troco = troco;
@@ -196,7 +265,7 @@ export default function PagamentoModal({ total, tipoVenda, notasTroca = [], sald
               return (
                 <div key={i} className="rounded-xl ring-1 ring-gray-200 p-2.5 space-y-2">
                   <div className="flex gap-2">
-                    <select value={p.forma} onChange={(e) => upd(i, { forma: e.target.value })} className={`${inputCls} flex-1`}>
+                    <select value={p.forma} onChange={(e) => upd(i, { forma: e.target.value })} disabled={p.forma === 'bluecard' && bcTravado} className={`${inputCls} flex-1 disabled:bg-gray-100`}>
                       {FORMAS.map((f) => (
                         <option key={f.id} value={f.id}>
                           {f.label}
@@ -209,9 +278,10 @@ export default function PagamentoModal({ total, tipoVenda, notasTroca = [], sald
                       min="0"
                       value={p.valor}
                       onChange={(e) => upd(i, { valor: e.target.value })}
-                      className={`${inputCls} w-28 text-right tabular-nums`}
+                      disabled={p.forma === 'bluecard' && bcTravado}
+                      className={`${inputCls} w-28 text-right tabular-nums disabled:bg-gray-100`}
                     />
-                    <button onClick={() => del(i)} disabled={pags.length === 1} className="text-gray-300 hover:text-rose-500 disabled:opacity-30" title="Remover">
+                    <button onClick={() => del(i)} disabled={pags.length === 1 || (p.forma === 'bluecard' && bcTravado)} className="text-gray-300 hover:text-rose-500 disabled:opacity-30" title="Remover">
                       <Trash size={16} />
                     </button>
                   </div>
@@ -222,17 +292,78 @@ export default function PagamentoModal({ total, tipoVenda, notasTroca = [], sald
                     </p>
                   )}
                   {p.forma === 'bluecard' && (
-                    <div className="space-y-1">
-                      <select value={p.parcelas} onChange={(e) => upd(i, { parcelas: parseInt(e.target.value, 10) })} className={`${inputCls} w-full`}>
-                        {Array.from({ length: BLUECARD_MAX_PARCELAS }, (_, n) => n + 1).map((n) => (
-                          <option key={n} value={n}>
-                            {parcelasBluecard(Number(p.valor || 0), n)} · {n > 1 ? `1ª em ${vencimentoBluecard(1)}, última em ${vencimentoBluecard(n)}` : `vence em ${vencimentoBluecard(1)}`}
-                          </option>
-                        ))}
-                      </select>
-                      <p className={`text-[11px] font-semibold ${temCliente ? 'text-blue-800' : 'text-rose-600'}`}>
-                        {temCliente ? 'Crediário BlueCard: entra no contas a receber como boleto / fatura em aberto.' : 'BlueCard exige o cliente identificado na venda.'}
-                      </p>
+                    <div className="space-y-1.5" data-bluecard>
+                      {!temCliente || cpfBluecard.length !== 11 ? (
+                        <p className="text-[11px] font-semibold text-rose-600">BlueCard exige o cliente identificado na venda, com CPF.</p>
+                      ) : (
+                        <>
+                          {/* limite do cliente no BlueCard */}
+                          {bc.limite?.erro ? (
+                            <p className="text-[11px] font-semibold text-amber-700">{bc.limite.erro}</p>
+                          ) : bc.limite ? (
+                            <p className={`text-[11px] font-semibold ${bc.limite.pode ? 'text-blue-800' : 'text-rose-600'}`} data-bluecard-limite>
+                              Limite disponível no BlueCard: {fmtBRL(bc.limite.disponivel)}
+                              {!bc.limite.pode && bc.limite.motivo ? ` — ${bc.limite.motivo}` : ''}
+                            </p>
+                          ) : (
+                            <p className="text-[11px] text-gray-400">Consultando o limite no BlueCard…</p>
+                          )}
+                          <select value={p.parcelas} onChange={(e) => upd(i, { parcelas: parseInt(e.target.value, 10) })} disabled={bcTravado} className={`${inputCls} w-full disabled:bg-gray-100`}>
+                            {(bc.limite?.parcelasPossiveis?.length ? bc.limite.parcelasPossiveis : Array.from({ length: BLUECARD_MAX_PARCELAS }, (_, n) => n + 1)).map((n) => (
+                              <option key={n} value={n}>
+                                {n}x de {fmtBRL(Number(p.valor || 0) / n)}
+                              </option>
+                            ))}
+                          </select>
+                          {bcAprovada ? (
+                            <div className="rounded-lg bg-emerald-50 px-2.5 py-2 text-[11px] text-emerald-900 ring-1 ring-emerald-200" data-bluecard-aprovada>
+                              <p className="flex items-center gap-1 font-bold">
+                                <CheckCircle size={14} weight="fill" /> Aprovada pelo cliente no app · {fmtBRL(bc.valor)} em {bc.parcelas}x
+                              </p>
+                              {bc.vencimentos?.length > 0 && <p className="mt-0.5">Vencimentos: {bc.vencimentos.map((v) => `${fmtData(v.vencimento)} ${fmtBRL(v.valor_cents / 100)}`).join(' · ')}</p>}
+                              <button type="button" onClick={desistirBluecard} disabled={busy} className="mt-1 font-semibold text-emerald-800 underline disabled:opacity-50">
+                                Trocar o valor ou as parcelas (pede nova aprovação)
+                              </button>
+                            </div>
+                          ) : bcPendente ? (
+                            <div className="rounded-lg bg-amber-50 px-2.5 py-2 text-[11px] text-amber-900 ring-1 ring-amber-200" data-bluecard-pendente>
+                              <p className="flex items-center gap-1 font-bold">
+                                <DeviceMobile size={14} weight="bold" /> Aguardando o cliente aprovar no app do BlueCard…
+                                {restaSeg != null && <span className="ml-auto tabular-nums">{Math.floor(restaSeg / 60)}:{String(restaSeg % 60).padStart(2, '0')}</span>}
+                              </p>
+                              <p className="mt-0.5">Pedido de {fmtBRL(bc.valor)} em {bc.parcelas}x enviado. A venda destrava sozinha quando ele aprovar.</p>
+                              <button type="button" onClick={desistirBluecard} className="mt-1 font-semibold text-amber-800 underline">
+                                Desistir deste pedido
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              {['recusada', 'cancelada', 'expirada'].includes(bc.status) && (
+                                <p className="flex items-center gap-1 rounded-lg bg-rose-50 px-2.5 py-1.5 text-[11px] font-semibold text-rose-700 ring-1 ring-rose-200" data-bluecard-negada>
+                                  <Warning size={13} weight="fill" /> {bc.status === 'recusada' ? 'O cliente recusou no app.' : bc.status === 'expirada' ? 'O prazo de 10 minutos acabou sem aprovação.' : 'A compra foi cancelada no BlueCard.'} Peça de novo ou use outra forma.
+                                </p>
+                              )}
+                              {bc.erro && !bc.semResposta && <p className="rounded-lg bg-rose-50 px-2.5 py-1.5 text-[11px] font-semibold text-rose-700 ring-1 ring-rose-200">{bc.erro}</p>}
+                              {bc.semResposta && (
+                                <p className="rounded-lg bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-900 ring-1 ring-amber-200" data-bluecard-sem-resposta>
+                                  <b>O BlueCard não respondeu ao pedido.</b> Tente de novo. Se continuar, a venda pode ser fechada como antes: o cliente faz e aprova a compra no aplicativo dele, e você registra a venda aqui.
+                                  <span className="mt-0.5 block text-[10.5px] text-amber-700">{bc.erro}</span>
+                                </p>
+                              )}
+                              <button
+                                type="button"
+                                onClick={pedirAprovacao}
+                                disabled={bc.pedindo || !(valorBluecard > 0) || bc.limite?.pode === false}
+                                className="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-blue-700 text-xs font-bold text-white hover:bg-blue-800 disabled:opacity-40"
+                                data-bluecard-pedir
+                              >
+                                {bc.pedindo ? <Spinner size={14} className="animate-spin" /> : <DeviceMobile size={14} weight="bold" />} Pedir aprovação do cliente no app
+                              </button>
+                              <p className="text-[10.5px] text-gray-500">O cliente recebe o pedido no app do BlueCard e tem 10 minutos para aprovar. Sem a aprovação a venda não fecha no BlueCard.</p>
+                            </>
+                          )}
+                        </>
+                      )}
                     </div>
                   )}
                   {cartao && (

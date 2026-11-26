@@ -538,6 +538,8 @@ const PDVCrosby = () => {
   // Painel do cliente: cadastro (documento, telefone) e saldos (credev, adiantamento)
   const [clienteInfo, setClienteInfo] = useState(null);
   const [saldos, setSaldos] = useState(null);
+  // limite do cliente no BlueCard (crediário): aparece junto dos saldos quando o cliente tem CPF
+  const [limiteBluecard, setLimiteBluecard] = useState(null); // null = sem consulta · { carregando } · { pode, disponivel, motivo } · { erro }
   // Ranking de vendedores da empresa no dia (painel de vendas do TOTVS)
   const [ranking, setRanking] = useState(null);
   const [rankingLoading, setRankingLoading] = useState(false);
@@ -743,6 +745,22 @@ const PDVCrosby = () => {
       }
     })();
   }, [customer, branch]);
+
+  // Limite do cliente no BlueCard: consulta quando o cliente (com CPF) é identificado
+  useEffect(() => {
+    setLimiteBluecard(null);
+    const cpf = String(cashback?.cpf || '').replace(/\D/g, '');
+    if (!customer || cpf.length !== 11) return undefined;
+    let vivo = true;
+    setLimiteBluecard({ carregando: true });
+    fetch(`${API_BASE_URL}/api/pdv-crosby/bluecard/limite?cpf=${cpf}`)
+      .then((r) => r.json())
+      .then((j) => vivo && setLimiteBluecard(j?.success ? j.data : { erro: j?.message || true }))
+      .catch(() => vivo && setLimiteBluecard({ erro: true }));
+    return () => {
+      vivo = false;
+    };
+  }, [customer, cashback?.cpf]);
 
   // Saldos do cliente NESTA loja: CREDEV e adiantamento do HeadCoach (a troca gera
   // CREDEV; os dois são formas de pagamento). Relê depois de cada venda ou troca.
@@ -1756,17 +1774,22 @@ const PDVCrosby = () => {
                     </span>
                   )}
                 </p>
-                <div className="mt-2 grid grid-cols-3 gap-1.5">
+                <div className={`mt-2 grid gap-1.5 ${limiteBluecard ? 'grid-cols-2' : 'grid-cols-3'}`} data-saldos-cliente>
                   {[
                     { label: 'Cashback', valor: cashback?.balance, carregando: !cashback, cor: 'text-emerald-700' },
                     { label: 'Credev', valor: saldos?.credev, carregando: !saldos, cor: 'text-blue-700' },
                     { label: 'Adiantamento', valor: saldos?.adiantamento, carregando: !saldos, cor: 'text-purple-700' },
+                    // crediário BlueCard: quanto o cliente ainda pode comprar (não aparece para quem não tem CPF)
+                    ...(limiteBluecard
+                      ? [{ label: 'Limite BlueCard', valor: limiteBluecard.disponivel, carregando: !!limiteBluecard.carregando, cor: 'text-sky-700', nota: limiteBluecard.erro ? 'indisponível' : limiteBluecard.pode === false && limiteBluecard.motivo ? limiteBluecard.motivo : null }]
+                      : []),
                   ].map((c) => (
                     <div key={c.label} className="rounded-lg bg-white ring-1 ring-gray-200 px-2 py-1.5">
                       <p className="text-[9px] font-semibold uppercase tracking-wide text-gray-500">{c.label}</p>
                       <p className={`text-sm font-bold tabular-nums ${Number(c.valor) > 0 ? c.cor : 'text-gray-400'}`}>
-                        {c.carregando ? '…' : fmtBRL(c.valor)}
+                        {c.carregando ? '…' : c.nota === 'indisponível' ? '—' : fmtBRL(c.valor)}
                       </p>
+                      {c.nota && <p className="truncate text-[9px] leading-tight text-gray-500" title={c.nota}>{c.nota}</p>}
                     </div>
                   ))}
                 </div>
@@ -2513,6 +2536,14 @@ const PDVCrosby = () => {
             notasTroca={notasDaTroca}
             saldos={saldos}
             temCliente={!!customer}
+            bluecard={{
+              cpf: cashback?.cpf || null,
+              empresa: parseInt(branch, 10) || null,
+              empresaNome: branches.find((b) => String(b.cd_empresa) === String(branch))?.nm_grupoempresa || null,
+              vendedorCode: parseInt(seller, 10) || null,
+              vendedorNome: sellers.find((x) => String(x.code) === String(seller))?.name || null,
+              itens: itensVenda.map((i) => ({ productCode: i.productCode, nome: i.name, quantidade: qtyOf(i), valorUnit: Number((precoDe(i).unit - precoDe(i).discount).toFixed(2)) })),
+            }}
             inicial={temVenda ? pagInicial : null}
             trocaFeita={temVenda ? trocaFeita : null}
             busy={hcBusy}
