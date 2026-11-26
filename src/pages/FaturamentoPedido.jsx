@@ -3351,7 +3351,9 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                   <LockKey size={18} weight="bold" />
                 </span>
                 <div className="min-w-[220px] flex-1">
-                  <p className="text-sm font-bold">{bloqueio.motivo === 'transacao_aberta' ? 'TRANSAÇÃO DO TOTVS AINDA ABERTA' : 'PEDIDO FATURADO'}</p>
+                  <p className="text-sm font-bold">
+                    {bloqueio.motivo === 'transacao_aberta' ? 'TRANSAÇÃO DO TOTVS AINDA ABERTA' : bloqueio.motivo === 'aguardando_pronto' ? 'AGUARDANDO O VENDEDOR MARCAR PRONTO PRA FATURAR' : 'PEDIDO FATURADO'}
+                  </p>
                   <p>{bloqueio.texto}</p>
                 </div>
                 <button onClick={() => irAba('transacoes')} className="inline-flex h-8 items-center gap-1 rounded-lg bg-white px-2.5 text-[11px] font-bold text-rose-700 ring-1 ring-rose-300 hover:bg-rose-100">

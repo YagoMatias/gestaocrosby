@@ -119,7 +119,8 @@ function Bloco({ titulo, icone: Icone, children }) {
 }
 
 // Cartão do pedido (celular e Kanban)
-const podeFaturar = (p) => p?.separacao?.status === 'separado';
+// só depois que o vendedor marca "Pronto pra faturar" no Dryland (pronto.aguardando = ainda não marcou)
+const podeFaturar = (p) => p?.separacao?.status === 'separado' && !p?.pronto?.aguardando;
 
 // Selo da transação gerada na tela Faturamento
 const SeloFaturado = ({ f }) =>
