@@ -289,7 +289,7 @@ export default function HcContasPagar() {
   const podeFinanceiro = PERFIS_FINANCEIRO.includes(user?.role);
   const [op, setOp] = useState(null);
   const [aviso, setAviso] = useState(null);
-  const [f, setF] = useState({ empresa: '', campoData: 'vencimento', de: inicioMes(), ate: fimMes(), situacao: '', fornecedor: '', duplicata: '', documentoFiscal: '', despesa: '', centroCusto: '', portador: '', forma: '', origem: '', escrituracao: '' });
+  const [f, setF] = useState({ empresa: '', campoData: 'vencimento', de: inicioMes(), ate: fimMes(), situacao: '', fornecedor: '', duplicata: '', documentoFiscal: '', despesa: '', centroCusto: '', portador: '', forma: '', origem: '', escrituracao: '', valor: '' });
   const [dados, setDados] = useState(null);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState('');
@@ -509,7 +509,11 @@ export default function HcContasPagar() {
                 <option value="totvs">TOTVS</option>
               </select>
             </div>
-            <div className="col-span-2 flex items-end gap-2 lg:col-span-7 lg:justify-end">
+            <div className="col-span-2 lg:col-span-1">
+              <label className={labelCls}>Valor (R$)</label>
+              <input value={f.valor} onChange={set('valor')} placeholder="ex.: 1.234,56" inputMode="decimal" className={inputCls} />
+            </div>
+            <div className="col-span-2 flex items-end gap-2 lg:col-span-6 lg:justify-end">
               <button type="submit" disabled={carregando} className={`${btnPri} flex-1 lg:w-48 lg:flex-none`}>
                 {carregando ? <Spinner size={15} className="animate-spin" /> : <MagnifyingGlass size={15} weight="bold" />} BUSCAR
               </button>
