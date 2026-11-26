@@ -33,6 +33,14 @@
 // depois de RESPONDER (0x21 ou inventário). Sem resposta, o hook tenta as outras
 // velocidades do aparelho e as outras portas já liberadas neste computador, e
 // avisa o que conferir (porta errada, cabo, chavinha DIP).
+//
+// LEITOR QUE TRAVA AO LER (26/11/2026): numa loja o .bat respondia, lia uma vez
+// em 30 dBm e travava até religar o USB (a porta USB não aguenta o pico da
+// potência máxima; em 15 dBm lê sem parar — conferido no aparelho). O leitor
+// sempre responde ao inventário, mesmo sem etiqueta; se ficar calado no meio da
+// consulta o hook encerra a sessão, avisa para religar o USB e, quando travou
+// logo nas primeiras leituras em potência alta, guarda 15 dBm para ser gravado
+// na volta, ANTES da primeira leitura.
 import { useAbaAtiva } from '../components/AppTabs/TabContext';
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 
@@ -40,6 +48,10 @@ const SERIAL_BAUD = 57600;
 // velocidades que o leitor .bat aceita (a de fábrica primeiro)
 const SERIAL_BAUDS = [57600, 115200, 38400, 19200, 9600];
 const PREF_BAUD = 'rfid_leitor_baud';
+// leitor calado no meio da consulta por mais que isto (ms) = travou
+const BAT_SILENCIO_MS = 6000;
+// potência segura quando o leitor trava ao ler em potência alta
+const POTENCIA_SEGURA = 15;
 // chip USB→serial do leitor .bat (Silicon Labs CP210x)
 const USB_CP210X = 0x10c4;
 function baudPreferido() {
@@ -551,6 +563,11 @@ export default function useRfidReader(onRead) {
       portRef.current = port;
       // respondeu: null = ainda sondando, true = leitor falando, false = mudo nesta porta/velocidade
       let respondeu = null;
+      let congelou = null; // aviso quando o leitor travou no meio da consulta
+      let ultimaResposta = Date.now();
+      let respostasDaConsulta = 0; // frames válidos desde que a consulta começou
+      let potenciaAtual = null; // do último 0x21
+      let varredura = 10; // ×100 ms, do último 0x21
 
       try {
         const writer = port.writable.getWriter();
@@ -598,6 +615,7 @@ export default function useRfidReader(onRead) {
               throw new Error('o leitor não respondeu ao comando de potência');
             } finally {
               pausado = false;
+              ultimaResposta = Date.now();
             }
           });
           fila = vez.catch(() => {});
@@ -645,8 +663,23 @@ export default function useRfidReader(onRead) {
             }
             setStatus('conectado');
             setError('');
+            ultimaResposta = Date.now();
             pollTimerRef.current = setInterval(() => {
               if (pausado) return;
+              // o leitor responde a todo inventário (mesmo sem etiqueta): calado = travou
+              if (Date.now() - ultimaResposta > Math.max(BAT_SILENCIO_MS, varredura * 200 + 3000)) {
+                clearInterval(pollTimerRef.current);
+                pollTimerRef.current = null;
+                const alta = potenciaAtual != null && potenciaAtual > 20;
+                if (respostasDaConsulta < 3 && alta) {
+                  guardarPreferencia(POTENCIA_SEGURA);
+                  congelou = `O leitor travou ao começar a ler em ${potenciaAtual} dBm: nesta porta USB ele não aguenta a potência alta. Tire o cabo USB do leitor e recoloque — ele volta em ${POTENCIA_SEGURA} dBm (dá para subir aos poucos na régua, ou trocar de porta USB/cabo).`;
+                } else {
+                  congelou = 'O leitor parou de responder. Tire o cabo USB do leitor e recoloque — ele volta sozinho.';
+                }
+                readerRef.current?.cancel().catch(() => {});
+                return;
+              }
               writer.write(INVENTORY_CMD).catch(() => {
                 /* porta caiu — o loop de leitura encerra a sessão */
               });
@@ -671,12 +704,19 @@ export default function useRfidReader(onRead) {
               junto.set(value, pendente.length);
               const { epcs, outros, rest, validos } = parseFrames(junto);
               pendente = rest;
-              if (validos > 0 && !respondeu) {
-                respondeu = true;
-                aoResponder?.();
+              if (validos > 0) {
+                ultimaResposta = Date.now();
+                if (pollTimerRef.current) respostasDaConsulta += validos;
+                if (!respondeu) {
+                  respondeu = true;
+                  aoResponder?.();
+                }
               }
               epcs.forEach(emitEpc);
               for (const f of outros) {
+                if (f.reCmd === 0x21 && f.status === 0x00 && f.data.length >= 8) {
+                  [potenciaAtual, varredura] = [f.data[6], f.data[7] || 10];
+                }
                 const k = esperas.findIndex((e) => e.reCmd === f.reCmd);
                 if (k >= 0) esperas.splice(k, 1)[0].resolve(f);
               }
@@ -707,7 +747,7 @@ export default function useRfidReader(onRead) {
         }
         portRef.current = null;
       }
-      return { respondeu };
+      return { respondeu, congelou };
     },
     [emitEpc, iniciarPotencia],
   );
@@ -768,6 +808,7 @@ export default function useRfidReader(onRead) {
     let iBaud = 0;
     let mudas = 0; // tentativas seguidas sem resposta nesta porta
     const portasMudas = new Set();
+    let travou = null; // aviso do travamento: fica na tela até o leitor voltar
     setStatus('reconectando'); // só vira ATIVO quando o leitor responder
     while (keepReadingRef.current) {
       let fim = null;
@@ -782,6 +823,12 @@ export default function useRfidReader(onRead) {
       if (!keepReadingRef.current) break;
 
       setStatus('reconectando');
+      if (fim?.congelou) {
+        travou = fim.congelou;
+        setError(travou);
+      } else if (fim?.respondeu) {
+        travou = null;
+      }
       // Porta abriu mas o leitor não respondeu: repete uma vez (pode estar ligando),
       // tenta as outras velocidades e depois as outras portas já liberadas.
       if (fim && fim.respondeu === false) {
@@ -819,7 +866,8 @@ export default function useRfidReader(onRead) {
           } else {
             portasMudas.clear();
             setError(
-              `O leitor não responde: ${nomeDaPorta(port)}. Confira se a porta escolhida é a do leitor (Silicon Labs CP210x), o cabo USB e a chavinha (DIP) embaixo do aparelho, que deve estar igual à dos leitores que funcionam. Clique no botão para desligar e escolher a porta de novo — sigo tentando.`,
+              travou ||
+                `O leitor não responde: ${nomeDaPorta(port)}. Confira se a porta escolhida é a do leitor (Silicon Labs CP210x), o cabo USB e a chavinha (DIP) embaixo do aparelho, que deve estar igual à dos leitores que funcionam. Clique no botão para desligar e escolher a porta de novo — sigo tentando.`,
             );
           }
         }
