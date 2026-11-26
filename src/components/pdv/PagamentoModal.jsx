@@ -12,6 +12,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { X, Plus, Trash, Spinner, CreditCard, Money, QrCode, Receipt, CheckCircle, Warning, DeviceMobile } from '@phosphor-icons/react';
 import { API_BASE_URL } from '../../config/constants';
+import { BLUECARD_APROVACAO_PELO_APP } from '../../config/bluecard';
 
 const fmtBRL = (v) =>
   Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -29,7 +30,25 @@ export const FORMAS = [
   { id: 'bluecard', label: 'BlueCard', icon: Receipt },
 ];
 const BLUECARD_MAX_PARCELAS = 4;
-// (as parcelas e os vencimentos do BlueCard vêm do app, na aprovação do cliente)
+// Modelo novo (BLUECARD_APROVACAO_PELO_APP = true): as parcelas e os vencimentos vêm do app,
+// na aprovação do cliente. Modelo de antes (false): o vendedor escolhe as parcelas e a venda
+// fecha na hora, sem consultar limite nem pedir aprovação.
+// valores das parcelas como saem no contas a receber (igual ao TOTVS): reais inteiros,
+// a diferença na 1ª — 148,00 em 3x = 50,00 + 49,00 + 49,00
+const parcelasBluecard = (valor, n) => {
+  if (n <= 1) return `1x de ${fmtBRL(valor)}`;
+  const vn = Math.floor(valor / n) >= 1 ? Math.floor(valor / n) : Math.floor((valor / n) * 100) / 100;
+  const primeira = round2(valor - vn * (n - 1));
+  return Math.abs(primeira - vn) < 0.005 ? `${n}x de ${fmtBRL(vn)}` : `${n}x: 1ª de ${fmtBRL(primeira)} + ${n - 1} de ${fmtBRL(vn)}`;
+};
+// vencimentos das parcelas do BlueCard: mesmo dia do mês, a 1ª um mês depois da compra
+const vencimentoBluecard = (n) => {
+  const h = new Date();
+  const alvo = new Date(h.getFullYear(), h.getMonth() + n, 1);
+  const ultimo = new Date(alvo.getFullYear(), alvo.getMonth() + 1, 0).getDate();
+  alvo.setDate(Math.min(h.getDate(), ultimo));
+  return alvo.toLocaleDateString('pt-BR');
+};
 // forma → saldo do cliente que ela consome
 const SALDO_DA_FORMA = { credito_loja: 'credev', adiantamento: 'adiantamento' };
 const NOME_SALDO = { credev: 'Credev', adiantamento: 'Adiantamento' };
@@ -75,7 +94,7 @@ export default function PagamentoModal({ total, tipoVenda, notasTroca = [], sald
   const bcTravado = bcAprovada || bcPendente || !!bc.pedindo; // valor e parcelas não mudam com pedido em aberto
   // limite do cliente (e as parcelas possíveis para o valor) — consulta ao escolher BlueCard ou mudar o valor
   useEffect(() => {
-    if (!pagBluecard || cpfBluecard.length !== 11 || bcTravado) return undefined;
+    if (!BLUECARD_APROVACAO_PELO_APP || !pagBluecard || cpfBluecard.length !== 11 || bcTravado) return undefined;
     let vivo = true;
     const espera = setTimeout(() => {
       fetch(`${API_BASE_URL}/api/pdv-crosby/bluecard/limite?cpf=${cpfBluecard}${valorBluecard > 0 ? `&valor=${valorBluecard}` : ''}`)
@@ -180,7 +199,7 @@ export default function PagamentoModal({ total, tipoVenda, notasTroca = [], sald
     }
     if (pags.some((p) => p.forma === 'bluecard' && Number(p.valor) > 0) && !temCliente) return setErro('BlueCard exige o cliente identificado na venda');
     if (pags.filter((p) => p.forma === 'bluecard').length > 1) return setErro('Só um pagamento em BlueCard por venda');
-    if (pagBluecard && Number(pagBluecard.valor) > 0) {
+    if (BLUECARD_APROVACAO_PELO_APP && pagBluecard && Number(pagBluecard.valor) > 0) {
       // sem resposta do BlueCard ao pedido: a venda fecha como antes (o cliente aprova no aplicativo dele)
       if (!bcAprovada && !bc.semResposta) return setErro(bcPendente ? 'BlueCard: aguardando o cliente aprovar no app' : 'BlueCard: peça a aprovação do cliente no app antes de fechar a venda');
       if (bcAprovada && (Math.abs(Number(bc.valor) - valorBluecard) > 0.005 || Number(bc.parcelas) !== (Number(pagBluecard.parcelas) || 1))) return setErro('BlueCard: o valor ou as parcelas mudaram depois da aprovação — peça de novo');
@@ -291,7 +310,21 @@ export default function PagamentoModal({ total, tipoVenda, notasTroca = [], sald
                       {usoSaldo(tipoSaldo) > saldoDe(tipoSaldo) + 0.005 ? ' — valor maior que o saldo' : ''}
                     </p>
                   )}
-                  {p.forma === 'bluecard' && (
+                  {p.forma === 'bluecard' && !BLUECARD_APROVACAO_PELO_APP && (
+                    <div className="space-y-1" data-bluecard>
+                      <select value={p.parcelas} onChange={(e) => upd(i, { parcelas: parseInt(e.target.value, 10) })} className={`${inputCls} w-full`}>
+                        {Array.from({ length: BLUECARD_MAX_PARCELAS }, (_, n) => n + 1).map((n) => (
+                          <option key={n} value={n}>
+                            {parcelasBluecard(Number(p.valor || 0), n)} · {n > 1 ? `1ª em ${vencimentoBluecard(1)}, última em ${vencimentoBluecard(n)}` : `vence em ${vencimentoBluecard(1)}`}
+                          </option>
+                        ))}
+                      </select>
+                      <p className={`text-[11px] font-semibold ${temCliente ? 'text-blue-800' : 'text-rose-600'}`}>
+                        {temCliente ? 'Crediário BlueCard: entra no contas a receber como boleto / fatura em aberto.' : 'BlueCard exige o cliente identificado na venda.'}
+                      </p>
+                    </div>
+                  )}
+                  {p.forma === 'bluecard' && BLUECARD_APROVACAO_PELO_APP && (
                     <div className="space-y-1.5" data-bluecard>
                       {!temCliente || cpfBluecard.length !== 11 ? (
                         <p className="text-[11px] font-semibold text-rose-600">BlueCard exige o cliente identificado na venda, com CPF.</p>

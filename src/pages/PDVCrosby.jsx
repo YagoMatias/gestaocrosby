@@ -76,6 +76,7 @@ import CadastroClienteModal from '../components/pdv/CadastroClienteModal';
 import MovimentoDiaModal from '../components/pdv/MovimentoDiaModal';
 import { getUserCompanies } from '../services/userCompaniesService';
 import { apiJson } from '../utils/apiAuth';
+import { BLUECARD_APROVACAO_PELO_APP } from '../config/bluecard';
 
 // ─── Config do PDV Varejo (ajustável) ────────────────────────────────────────
 const PDV_VAREJO_CONFIG = {
@@ -747,10 +748,11 @@ const PDVCrosby = () => {
   }, [customer, branch]);
 
   // Limite do cliente no BlueCard: consulta quando o cliente (com CPF) é identificado
+  // (desligado enquanto o modelo novo do BlueCard espera o app — config/bluecard.js)
   useEffect(() => {
     setLimiteBluecard(null);
     const cpf = String(cashback?.cpf || '').replace(/\D/g, '');
-    if (!customer || cpf.length !== 11) return undefined;
+    if (!BLUECARD_APROVACAO_PELO_APP || !customer || cpf.length !== 11) return undefined;
     let vivo = true;
     setLimiteBluecard({ carregando: true });
     fetch(`${API_BASE_URL}/api/pdv-crosby/bluecard/limite?cpf=${cpf}`)
