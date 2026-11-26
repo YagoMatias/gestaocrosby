@@ -238,6 +238,29 @@ const situacaoValor = (sol, info, hoje) => {
  * - `totvs`   situação da duplicata no TOTVS ({ pago, parcial, pagoEm, ... })
  * Prioridade da informação de pagamento: TOTVS > fila > marcação manual.
  */
+// Comprovante: comprovante_url guarda tanto o arquivo que a pessoa anexou no pedido
+// quanto (nas antigas) o recibo da Stone; o recibo do pagamento fica em
+// comprovante_pagamento_url. Aqui cada um vai para o seu lugar.
+const ehReciboDaStone = (url) =>
+  /\/stone-\d{4}-\d{2}-\d{2}-\d+\.pdf(\?|$)/i.test(String(url || ''));
+const comprovantesDaSolicitacao = (sol) => {
+  const antigo = sol?.comprovante_url || null;
+  const pagamento =
+    sol?.comprovante_pagamento_url || (ehReciboDaStone(antigo) ? antigo : null);
+  const pedido =
+    antigo && antigo !== pagamento && !ehReciboDaStone(antigo) ? antigo : null;
+  return { pagamento, pedido };
+};
+
+// De onde veio o "pago" gravado na própria solicitação (pago_em): o Contas a
+// Pagar / Liberação do HeadCoach, a conciliação do extrato, ou alguém marcou à mão.
+const origemDoPagoGravado = (sol) => {
+  const por = String(sol?.pago_por_nome || '');
+  if (/Contas a Pagar HeadCoach/i.test(por)) return 'Contas a Pagar HeadCoach';
+  if (/concilia/i.test(por)) return 'Conciliação do extrato';
+  return 'manual';
+};
+
 const derivarEtapa = (sol, pg, filaDup = [], totvs = null) => {
   const pagoManual = !!sol.pago_em;
   const pagoFilaId = pg?.status === 'PAGO';
@@ -268,7 +291,7 @@ const derivarEtapa = (sol, pg, filaDup = [], totvs = null) => {
         .sort()
         .pop() || null;
   } else if (pagoManual) {
-    origemPago = 'manual';
+    origemPago = origemDoPagoGravado(sol);
     pagoEm = sol.pago_em;
   }
 
@@ -980,6 +1003,19 @@ const MinhasSolicitacoes = () => {
               via {info.origemPago}
             </span>
           )}
+          {comprovantesDaSolicitacao(sol).pagamento && (
+            <a
+              href={comprovantesDaSolicitacao(sol).pagamento}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center gap-0.5 text-[10px] font-bold text-indigo-700 underline"
+              title="Abrir o comprovante de pagamento"
+            >
+              <LinkIcon size={10} weight="bold" />
+              comprovante
+            </a>
+          )}
         </span>
       );
     }
@@ -1574,7 +1610,11 @@ const MinhasSolicitacoes = () => {
                           ? `liquidado no TOTVS${modalDetalhe.info.totvs?.vlPago ? ` · ${formatarMoeda(modalDetalhe.info.totvs.vlPago)}` : ''}`
                           : modalDetalhe.info.origemPago === 'manual'
                             ? `${modalDetalhe.sol.pago_por_nome || ''} (manual)`
-                            : modalDetalhe.pg?.pago_por ||
+                            : modalDetalhe.info.pagoManual &&
+                                modalDetalhe.info.origemPago !==
+                                  'Liberação de Pagamento'
+                              ? modalDetalhe.sol.pago_por_nome || null
+                              : modalDetalhe.pg?.pago_por ||
                               modalDetalhe.filaDup?.find((r) => r.pago_por)
                                 ?.pago_por ||
                               null,
@@ -1710,12 +1750,20 @@ const MinhasSolicitacoes = () => {
               {(modalDetalhe.sol.comprovante_gestor_url ||
                 modalDetalhe.sol.comprovante_fabio_url ||
                 modalDetalhe.sol.comprovante_url ||
+                modalDetalhe.sol.comprovante_pagamento_url ||
                 modalDetalhe.sol.nota_fiscal_url) && (
                 <div className="flex flex-wrap gap-2">
                   {[
                     ['Aprovação do gestor', modalDetalhe.sol.comprovante_gestor_url],
                     ['Aprovação do Fábio', modalDetalhe.sol.comprovante_fabio_url],
-                    ['Comprovante', modalDetalhe.sol.comprovante_url],
+                    [
+                      'Comprovante de pagamento',
+                      comprovantesDaSolicitacao(modalDetalhe.sol).pagamento,
+                    ],
+                    [
+                      'Anexo do pedido',
+                      comprovantesDaSolicitacao(modalDetalhe.sol).pedido,
+                    ],
                     ['Nota fiscal', modalDetalhe.sol.nota_fiscal_url],
                   ]
                     .filter(([, url]) => !!url)
