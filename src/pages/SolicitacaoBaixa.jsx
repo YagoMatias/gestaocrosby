@@ -1626,6 +1626,14 @@ const SolicitacaoBaixa = () => {
                           />
                         )}
                         {sol.user_nome || '--'}
+                        {Number(sol.nr_fat) >= 9000000000 && (
+                          <span
+                            className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-800"
+                            title="Fatura do HeadCoach (não existe no TOTVS): ao processar, a baixa é feita no Contas a Receber do HeadCoach"
+                          >
+                            HeadCoach
+                          </span>
+                        )}
                         {Number(sol.nr_fat) === 0 && (
                           <span
                             className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800"

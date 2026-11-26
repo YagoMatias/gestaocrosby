@@ -460,6 +460,7 @@ const ContasPagarFranquias = () => {
             expand: 'invoice,calculateValue',
             order: '-expiredDate',
             maxPages: 20,
+            incluirHeadcoach: true, // junta os títulos do HeadCoach do cliente (João/BRUCE, 26/11/2026)
           }),
         },
       );
