@@ -1064,7 +1064,12 @@ function Detalhe({ id: idInicial, op, onFechar, onMudou }) {
     setErro('');
     try {
       let j;
-      if (modo === 'editar') j = await apiJson(`${API}/titulos/${t.id}`, { method: 'PUT', body: { ...form, valor: num(form.valor), rateio: form.rateio.map((l) => ({ despesaCode: l.despesaCode, centroCustoCode: l.centroCustoCode, percentual: num(l.percentual) })) } });
+      if (modo === 'editar') {
+        const rateio = form.rateio.map((l) => ({ despesaCode: l.despesaCode, centroCustoCode: l.centroCustoCode, percentual: num(l.percentual) }));
+        // paga: só despesa / centro de custo e observação (a API ignora o resto)
+        const body = t.situacao === 'pago' ? { rateio, observacao: form.observacao } : { ...form, valor: num(form.valor), rateio };
+        j = await apiJson(`${API}/titulos/${t.id}`, { method: 'PUT', body });
+      }
       if (modo === 'baixar') j = await apiJson(`${API}/titulos/${t.id}/baixar`, { method: 'POST', body: { dataPagamento: form.data, valorPago: String(form.valorPago || '').trim() ? num(form.valorPago) : null, juros: num(form.juros), multa: num(form.multa), desconto: num(form.desconto), formaPagamento: form.forma, conta: form.conta, observacao: form.obs, senha: form.senha } });
       if (modo === 'cancelar') j = await apiJson(`${API}/titulos/${t.id}/cancelar`, { method: 'POST', body: { motivo: form.motivo, senha: form.senha } });
       setModo(null);
@@ -1292,7 +1297,35 @@ function Detalhe({ id: idInicial, op, onFechar, onMudou }) {
               </div>
             )}
 
-            {modo === 'editar' && (
+            {t.situacao === 'pago' && !modo && (
+              <div className="flex flex-wrap justify-end gap-2">
+                <button onClick={() => abrir('editar')} className={`${btnSec} h-10`}>
+                  <PencilSimple size={14} weight="bold" /> Editar despesa / centro de custo
+                </button>
+              </div>
+            )}
+
+            {modo === 'editar' && t.situacao === 'pago' && (
+              <div className="rounded-xl bg-indigo-50/50 p-3 ring-1 ring-indigo-200">
+                <p className="mb-1 text-sm font-bold text-[#000638]">Editar despesa / centro de custo</p>
+                <p className="mb-2 text-[11px] text-gray-500">Duplicata paga: o valor, as datas e a forma ficam como foram pagos.</p>
+                <EditorRateio linhas={form.rateio} onChange={(r) => setForm((x) => ({ ...x, rateio: r }))} op={op} valorBase={num(form.valor)} />
+                <div className="mt-2">
+                  <label className={labelCls}>Observação</label>
+                  <input value={form.observacao} onChange={setCampo('observacao')} className={inputCls} />
+                </div>
+                <div className="mt-2 flex justify-end gap-2">
+                  <button onClick={() => setModo(null)} disabled={busy} className={`${btnSec} h-10`}>
+                    Voltar
+                  </button>
+                  <button onClick={enviar} disabled={busy || !rateioOk(form.rateio)} className={btnPri}>
+                    {busy ? <Spinner size={15} className="animate-spin" /> : <CheckCircle size={15} weight="bold" />} SALVAR
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {modo === 'editar' && t.situacao !== 'pago' && (
               <div className="rounded-xl bg-indigo-50/50 p-3 ring-1 ring-indigo-200">
                 <p className="mb-2 text-sm font-bold text-[#000638]">Alterar duplicata</p>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
