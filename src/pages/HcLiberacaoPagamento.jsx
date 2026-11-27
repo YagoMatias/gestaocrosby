@@ -648,7 +648,7 @@ export default function HcLiberacaoPagamento() {
     try {
       const j = await apiJson(`${API}/baixa-automatica`, { method: 'POST', body: {} });
       const r = j.data || {};
-      setModal({ tipo: 'baixaAuto', r, ids: (r.casadas || []).flatMap((c) => c.liberacoes.map((l) => l.id)), senha: '' });
+      setModal({ tipo: 'baixaAuto', r, ids: (r.casadas || []).flatMap((c) => c.liberacoes.map((l) => l.id)), escolhas: {}, senha: '' });
     } catch (e) {
       avisar('erro', e.message);
     } finally {
@@ -1139,6 +1139,19 @@ export default function HcLiberacaoPagamento() {
           const r = modal.r || {};
           const casadas = r.casadas || [];
           const semSaida = r.semSaida || [];
+          // sugestões: valor igual no extrato, mas o nome não bateu — só baixa a que o usuário marcar
+          const sugestoes = r.sugestoes || [];
+          const escolhas = modal.escolhas || {}; // id da liberação → lançamento do extrato escolhido
+          const saidaEmUso = (lancamentoId, idDaLib) => Object.entries(escolhas).some(([id, lanc]) => Number(id) !== idDaLib && String(lanc) === String(lancamentoId));
+          const escolher = (idDaLib, lancamentoId) =>
+            setModal((m) => {
+              const novo = { ...(m.escolhas || {}) };
+              if (lancamentoId == null) delete novo[idDaLib];
+              else novo[idDaLib] = lancamentoId;
+              return { ...m, escolhas: novo };
+            });
+          const aprovadas = sugestoes.filter((x) => escolhas[x.id] != null);
+          const totalSugestoes = aprovadas.reduce((t, x) => t + Number(x.valor), 0);
           const marcada = (c) => c.liberacoes.every((l) => modal.ids.includes(l.id));
           const alternar = (c) =>
             setModal((m) => {
@@ -1147,8 +1160,8 @@ export default function HcLiberacaoPagamento() {
               return { ...m, ids: tem ? m.ids.filter((id) => !dela.includes(id)) : [...new Set([...m.ids, ...dela])] };
             });
           const escolhidas = casadas.filter(marcada);
-          const total = escolhidas.reduce((t, c) => t + c.liberacoes.reduce((x, l) => x + Number(l.valor), 0), 0);
-          const qtd = escolhidas.reduce((n, c) => n + c.liberacoes.length, 0);
+          const total = escolhidas.reduce((t, c) => t + c.liberacoes.reduce((x, l) => x + Number(l.valor), 0), 0) + totalSugestoes;
+          const qtd = escolhidas.reduce((n, c) => n + c.liberacoes.length, 0) + aprovadas.length;
           return (
             <Modal titulo="Baixa automática pelos extratos" onFechar={() => setModal(null)} largura="max-w-4xl">
               <p className="mb-3 text-xs text-gray-600">
@@ -1198,6 +1211,67 @@ export default function HcLiberacaoPagamento() {
                 <p className="mb-3 rounded-lg bg-gray-50 p-3 text-xs text-gray-600 ring-1 ring-gray-200">Nenhuma das duplicatas incluídas apareceu como paga nos extratos desse período.</p>
               )}
 
+              {sugestoes.length > 0 && (
+                <>
+                  <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-amber-700">
+                    Sugestões para você conferir ({sugestoes.length}){aprovadas.length ? ` · ${aprovadas.length} marcada(s)` : ''}
+                  </p>
+                  <p className="mb-1 text-[11px] text-gray-600">Há saída de valor igual no extrato, mas o nome de quem recebeu é diferente do fornecedor. Marque só o que for mesmo o pagamento da duplicata; o que ficar desmarcado continua em Incluídos.</p>
+                  <div className="mb-3 max-h-72 overflow-auto rounded-lg ring-1 ring-amber-200">
+                    <table className="w-full text-left text-xs">
+                      <thead className="sticky top-0 bg-amber-50 text-[10px] uppercase tracking-wide text-amber-800">
+                        <tr>
+                          <th className="px-2 py-1.5" />
+                          <th className="px-2 py-1.5">Duplicata</th>
+                          <th className="px-2 py-1.5 text-right">Valor</th>
+                          <th className="px-2 py-1.5">Saída de mesmo valor no extrato</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sugestoes.map((x) => {
+                          const escolhida = escolhas[x.id];
+                          const unica = x.saidas.length === 1 ? x.saidas[0] : null;
+                          const livres = x.saidas.filter((sd) => !saidaEmUso(sd.lancamentoId, x.id));
+                          return (
+                            <tr key={x.id} className={`border-t border-amber-100 align-top ${escolhida != null ? 'bg-amber-50/60' : ''}`}>
+                              <td className="px-2 py-1.5">
+                                <input
+                                  type="checkbox"
+                                  checked={escolhida != null}
+                                  disabled={escolhida == null && (!livres.length || !unica)}
+                                  title={unica ? 'Confirmo que esta saída é o pagamento desta duplicata' : 'Escolha ao lado qual saída é o pagamento'}
+                                  onChange={(e) => escolher(x.id, e.target.checked && unica && livres.length ? unica.lancamentoId : null)}
+                                  className="h-4 w-4 accent-amber-600"
+                                />
+                              </td>
+                              <td className="px-2 py-1.5">
+                                <b>{x.fornecedor}</b> · {x.rotulo} · emp. {x.empresa} · vence {fmtData(x.vencimento)}
+                              </td>
+                              <td className="px-2 py-1.5 text-right font-bold tabular-nums">{fmtBRL(x.valor)}</td>
+                              <td className="px-2 py-1.5">
+                                {x.saidas.map((sd) => {
+                                  const emUso = saidaEmUso(sd.lancamentoId, x.id);
+                                  return (
+                                    <label key={sd.lancamentoId} className={`flex items-start gap-1.5 py-0.5 ${emUso ? 'text-gray-400' : 'text-gray-700'}`}>
+                                      {!unica && <input type="radio" name={`sug-${x.id}`} disabled={emUso} checked={String(escolhida) === String(sd.lancamentoId)} onChange={() => escolher(x.id, sd.lancamentoId)} className="mt-0.5 accent-amber-600" />}
+                                      <span>
+                                        <b className="whitespace-nowrap">{fmtData(sd.data)}</b> · {sd.banco} · para <b>{sd.contraparte}</b>
+                                        {sd.nomeParecido && <span className="ml-1 rounded bg-green-100 px-1 py-0.5 text-[10px] font-bold text-green-800">NOME BATE</span>}
+                                        {emUso && <span className="ml-1 text-[10px]">(já marcada para outra duplicata)</span>}
+                                      </span>
+                                    </label>
+                                  );
+                                })}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+
               {semSaida.length > 0 && (
                 <>
                   <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-gray-500">Continuam em Incluídos ({semSaida.length})</p>
@@ -1211,7 +1285,7 @@ export default function HcLiberacaoPagamento() {
                 </>
               )}
 
-              {casadas.length > 0 && (
+              {(casadas.length > 0 || sugestoes.length > 0) && (
                 <div className="grid grid-cols-1 items-end gap-2 sm:grid-cols-[1fr_auto]">
                   <div>
                     <label className={labelCls}>Sua senha do HeadCoach</label>
@@ -1225,10 +1299,14 @@ export default function HcLiberacaoPagamento() {
               <p className="mt-2 text-[11px] text-gray-500">A baixa usa a data e o banco do extrato, grava o pagamento na duplicata do contas a pagar e não tem estorno. Desmarque o que não quiser baixar agora.</p>
               <div className="mt-3 flex justify-end gap-2">
                 <button onClick={() => setModal(null)} className="h-9 rounded-lg px-3 text-xs font-bold text-gray-600 ring-1 ring-gray-200 hover:bg-gray-50">
-                  {casadas.length ? 'Voltar' : 'Fechar'}
+                  {casadas.length || sugestoes.length ? 'Voltar' : 'Fechar'}
                 </button>
-                {casadas.length > 0 && (
-                  <button disabled={ocupado || !modal.senha || !qtd} onClick={() => executar('/baixa-automatica', { confirmar: true, ids: modal.ids, senha: modal.senha })} className={`${btnAcao} bg-green-600 hover:bg-green-700`}>
+                {(casadas.length > 0 || sugestoes.length > 0) && (
+                  <button
+                    disabled={ocupado || !modal.senha || !qtd}
+                    onClick={() => executar('/baixa-automatica', { confirmar: true, ids: escolhidas.flatMap((c) => c.liberacoes.map((l) => l.id)), escolhidas: aprovadas.map((x) => ({ id: x.id, lancamentoId: escolhas[x.id] })), senha: modal.senha })}
+                    className={`${btnAcao} bg-green-600 hover:bg-green-700`}
+                  >
                     {ocupado ? <Spinner size={14} className="animate-spin" /> : <Lightning size={14} weight="bold" />} BAIXAR {qtd} DUPLICATA(S)
                   </button>
                 )}
