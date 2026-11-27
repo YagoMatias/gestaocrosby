@@ -23,6 +23,7 @@ import { apiJson } from '../utils/apiAuth';
 import { useAoAtivarAba } from '../components/AppTabs/TabContext';
 import StoneEntreContasModal from '../components/StoneEntreContasModal';
 import HcSaidasSemBaixa from '../components/HcSaidasSemBaixa';
+import HcDuplicataDetalhes from '../components/HcDuplicataDetalhes';
 
 const API = '/api/hc/contas-pagar/liberacoes';
 const PERFIS_FINANCEIRO = ['owner', 'admin', 'user'];
@@ -302,7 +303,7 @@ function colunasDoKanban(liberacoes, hoje) {
   return cols.map((c) => ({ ...c, total: c.itens.reduce((t, l) => t + Number(l.valor || 0), 0) }));
 }
 
-function KanbanPrevisao({ liberacoes, hoje, selecionadas, marcar, onMoverDia, onAvancar, nomeEmpresa, formas, ocupado }) {
+function KanbanPrevisao({ liberacoes, hoje, selecionadas, marcar, onMoverDia, onAvancar, onDetalhe, nomeEmpresa, formas, ocupado }) {
   const colunas = useMemo(() => colunasDoKanban(liberacoes, hoje), [liberacoes, hoje]);
   const [arrastando, setArrastando] = useState(null); // id da liberação
   const [sobre, setSobre] = useState(null); // coluna debaixo do cartão arrastado
@@ -386,9 +387,14 @@ function KanbanPrevisao({ liberacoes, hoje, selecionadas, marcar, onMoverDia, on
                       <div className="whitespace-nowrap text-right font-extrabold tabular-nums text-gray-900">{fmtBRL(l.valor)}</div>
                     </div>
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-gray-600">
-                      <span className="tabular-nums" title="Duplicata">
-                        <b>{t.rotulo}</b>
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onDetalhe?.(l)}
+                        title="Abrir os detalhes da duplicata"
+                        className="rounded font-bold tabular-nums text-[#000638] underline decoration-dotted underline-offset-2 hover:bg-indigo-50 hover:decoration-solid"
+                      >
+                        {t.rotulo}
+                      </button>
                       <span title={nomeEmpresa[t.empresa] || ''}>emp. {t.empresa}</span>
                       <span className={venc && venc < hoje ? 'font-bold text-rose-700' : ''}>
                         vence {diaMes(venc)}
@@ -491,6 +497,7 @@ export default function HcLiberacaoPagamento() {
   const [pagina, setPagina] = useState(1);
   const [ocupado, setOcupado] = useState(false);
   const [modal, setModal] = useState(null); // { tipo: 'pagar' | 'devolver' | 'editar' | 'baixaAuto' | 'entreContas', ... }
+  const [detalhe, setDetalhe] = useState(null); // liberação cuja duplicata está aberta nos detalhes (só leitura)
   const [copiado, setCopiado] = useState(null);
   // Previsão: lista (tabela) ou kanban por dia — a escolha fica guardada neste navegador
   const [visaoPrevisao, setVisaoPrevisao] = useState(() => {
@@ -900,6 +907,7 @@ export default function HcLiberacaoPagamento() {
           onAvancar={(l) => mover([l.id], 'aprovado')}
           nomeEmpresa={nomeEmpresa}
           formas={formas}
+          onDetalhe={setDetalhe}
           ocupado={ocupado}
         />
       )}
@@ -983,9 +991,17 @@ export default function HcLiberacaoPagamento() {
                       <td className="max-w-[170px] truncate px-2 py-1.5" title={`${t.despesa_nome || ''}${t.centro_custo_nome ? ` · ${t.centro_custo_nome}` : ''}`}>
                         {t.despesa_code ? `${t.despesa_code} · ${t.despesa_nome}` : '—'}
                       </td>
-                      <td className="whitespace-nowrap px-2 py-1.5 tabular-nums" title={t.observacao || ''}>
-                        <b>{t.rotulo}</b>
+                      <td className="whitespace-nowrap px-2 py-1.5 tabular-nums">
+                        <button
+                          type="button"
+                          onClick={() => setDetalhe(l)}
+                          title={`Abrir os detalhes da duplicata${t.observacao ? ` · ${t.observacao}` : ''}`}
+                          className="rounded font-bold text-[#000638] underline decoration-dotted underline-offset-2 hover:bg-indigo-50 hover:decoration-solid"
+                        >
+                          {t.rotulo}
+                        </button>
                         {t.documento_fiscal ? <span className="text-gray-500"> · {t.documento_fiscal}</span> : ''}
+                        {t.origem === 'solicitacao-crosby' && <div className="text-[10px] font-semibold text-indigo-700">Solicitação Crosby</div>}
                       </td>
                       <td className="px-2 py-1.5" title={nomeEmpresa[t.empresa]}>
                         {t.empresa}
@@ -1288,6 +1304,8 @@ export default function HcLiberacaoPagamento() {
       )}
 
       {/* ALTERAR valor (parcial), observação, chave Pix e boleto */}
+      {detalhe && <HcDuplicataDetalhes tituloId={detalhe.titulo?.id ?? detalhe.titulo_id} liberacao={detalhe} formas={formas} nomeEmpresa={nomeEmpresa} onFechar={() => setDetalhe(null)} />}
+
       {modal?.tipo === 'editar' && (
         <Modal titulo={`${modal.l.titulo?.fornecedor_nome} · ${modal.l.titulo?.rotulo}`} onFechar={() => setModal(null)} largura="max-w-lg">
           <p className="mb-2 text-xs text-gray-600">
