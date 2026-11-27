@@ -648,7 +648,7 @@ export default function HcLiberacaoPagamento() {
     try {
       const j = await apiJson(`${API}/baixa-automatica`, { method: 'POST', body: {} });
       const r = j.data || {};
-      setModal({ tipo: 'baixaAuto', r, ids: (r.casadas || []).flatMap((c) => c.liberacoes.map((l) => l.id)), escolhas: {}, senha: '' });
+      setModal({ tipo: 'baixaAuto', r, ids: (r.casadas || []).flatMap((c) => c.liberacoes.map((l) => l.id)), escolhas: { ...(r.marcadas || {}) }, senha: '' });
     } catch (e) {
       avisar('erro', e.message);
     } finally {
@@ -1151,7 +1151,10 @@ export default function HcLiberacaoPagamento() {
               return { ...m, escolhas: novo };
             });
           const aprovadas = sugestoes.filter((x) => escolhas[x.id] != null);
-          const totalSugestoes = aprovadas.reduce((t, x) => t + Number(x.valor), 0);
+          // o que vai ser pago na sugestão é o valor que saiu no extrato (a duplicata + juros e multa, quando houve)
+          const saidaEscolhida = (x) => x.saidas.find((sd) => String(sd.lancamentoId) === String(escolhas[x.id])) || null;
+          const totalSugestoes = aprovadas.reduce((t, x) => t + Number(saidaEscolhida(x)?.valor ?? x.valor), 0);
+          const totalAcrescimo = aprovadas.reduce((t, x) => t + Number(saidaEscolhida(x)?.acrescimo || 0), 0);
           const marcada = (c) => c.liberacoes.every((l) => modal.ids.includes(l.id));
           const alternar = (c) =>
             setModal((m) => {
@@ -1216,7 +1219,9 @@ export default function HcLiberacaoPagamento() {
                   <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-amber-700">
                     Sugestões para você conferir ({sugestoes.length}){aprovadas.length ? ` · ${aprovadas.length} marcada(s)` : ''}
                   </p>
-                  <p className="mb-1 text-[11px] text-gray-600">Há saída de valor igual no extrato, mas o nome de quem recebeu é diferente do fornecedor. Marque só o que for mesmo o pagamento da duplicata; o que ficar desmarcado continua em Incluídos.</p>
+                  <p className="mb-1 text-[11px] text-gray-600">
+                    Há saída no extrato que parece ser o pagamento: de valor igual, mas com outro nome; ou do mesmo fornecedor com valor um pouco maior (conta paga com juros e multa). Marque só o que for mesmo o pagamento da duplicata; o que ficar desmarcado continua em Incluídos. Diferença de centavos já vem marcada.
+                  </p>
                   <div className="mb-3 max-h-72 overflow-auto rounded-lg ring-1 ring-amber-200">
                     <table className="w-full text-left text-xs">
                       <thead className="sticky top-0 bg-amber-50 text-[10px] uppercase tracking-wide text-amber-800">
@@ -1238,9 +1243,9 @@ export default function HcLiberacaoPagamento() {
                                 <input
                                   type="checkbox"
                                   checked={escolhida != null}
-                                  disabled={escolhida == null && (!livres.length || !unica)}
-                                  title={unica ? 'Confirmo que esta saída é o pagamento desta duplicata' : 'Escolha ao lado qual saída é o pagamento'}
-                                  onChange={(e) => escolher(x.id, e.target.checked && unica && livres.length ? unica.lancamentoId : null)}
+                                  disabled={escolhida == null && !livres.length}
+                                  title={unica ? 'Confirmo que esta saída é o pagamento desta duplicata' : 'Marca a primeira saída livre; troque ao lado se for outra'}
+                                  onChange={(e) => escolher(x.id, e.target.checked && livres.length ? livres[0].lancamentoId : null)}
                                   className="h-4 w-4 accent-amber-600"
                                 />
                               </td>
@@ -1256,6 +1261,11 @@ export default function HcLiberacaoPagamento() {
                                       {!unica && <input type="radio" name={`sug-${x.id}`} disabled={emUso} checked={String(escolhida) === String(sd.lancamentoId)} onChange={() => escolher(x.id, sd.lancamentoId)} className="mt-0.5 accent-amber-600" />}
                                       <span>
                                         <b className="whitespace-nowrap">{fmtData(sd.data)}</b> · {sd.banco} · para <b>{sd.contraparte}</b>
+                                        {sd.acrescimo > 0 && (
+                                          <span className="ml-1 whitespace-nowrap rounded bg-amber-100 px-1 py-0.5 text-[10px] font-bold text-amber-900" title="O valor que saiu no extrato é maior que o da duplicata: a diferença entra na baixa como juros e multa">
+                                            SAIU {fmtBRL(sd.valor)} · + {fmtBRL(sd.acrescimo)} DE JUROS E MULTA
+                                          </span>
+                                        )}
                                         {sd.nomeParecido && <span className="ml-1 rounded bg-green-100 px-1 py-0.5 text-[10px] font-bold text-green-800">NOME BATE</span>}
                                         {emUso && <span className="ml-1 text-[10px]">(já marcada para outra duplicata)</span>}
                                       </span>
@@ -1293,10 +1303,11 @@ export default function HcLiberacaoPagamento() {
                   </div>
                   <p className="text-sm sm:text-right">
                     {qtd} duplicata(s) · <b className="text-green-700">{fmtBRL(total)}</b>
+                    {totalAcrescimo > 0 && <span className="block text-[11px] text-amber-800">inclui {fmtBRL(totalAcrescimo)} de juros e multa</span>}
                   </p>
                 </div>
               )}
-              <p className="mt-2 text-[11px] text-gray-500">A baixa usa a data e o banco do extrato, grava o pagamento na duplicata do contas a pagar e não tem estorno. Desmarque o que não quiser baixar agora.</p>
+              <p className="mt-2 text-[11px] text-gray-500">A baixa usa a data e o banco do extrato, grava o pagamento na duplicata do contas a pagar e não tem estorno. Quando a saída é maior que a duplicata, a baixa grava o valor que saiu e a diferença fica na duplicata como juros e multa. Desmarque o que não quiser baixar agora.</p>
               <div className="mt-3 flex justify-end gap-2">
                 <button onClick={() => setModal(null)} className="h-9 rounded-lg px-3 text-xs font-bold text-gray-600 ring-1 ring-gray-200 hover:bg-gray-50">
                   {casadas.length || sugestoes.length ? 'Voltar' : 'Fechar'}
