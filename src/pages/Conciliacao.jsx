@@ -74,6 +74,7 @@ const ORIGENS = {
   STONE: { label: 'Vendas Stone', cor: 'bg-green-100 text-green-800 border-green-300' },
   REDE_DEPOSITO: { label: 'Depósito Rede', cor: 'bg-orange-100 text-orange-800 border-orange-300' },
   TOTVS_CR: { label: 'Contas a Receber (TOTVS)', cor: 'bg-cyan-100 text-cyan-800 border-cyan-300' },
+  HC_CR: { label: 'Venda Pix · PDV Crosby (HeadCoach)', cor: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
   MANUAL: { label: 'Justificado', cor: 'bg-gray-100 text-gray-700 border-gray-300' },
   MULTIPLO: { label: 'Várias duplicatas', cor: 'bg-violet-100 text-violet-800 border-violet-300' },
   TECHFIN: { label: 'Pix Techfin', cor: 'bg-teal-100 text-teal-800 border-teal-300' },
@@ -89,7 +90,7 @@ const PESSOAS_PRO_LABORE = [
   { id: 'fabio', pessoa: 'FABIO FERREIRA DE LIMA AZEVEDO', cpf: '06704197451', curto: 'Fabio' },
   { id: 'felipe', pessoa: 'FELIPE FERREIRA DE LIMA AZEVEDO', cpf: '06451367435', curto: 'Felipe' },
 ];
-const refDe = (c) => ({ id: c.id, nome: c.nome, doc: c.doc, valor: c.valor, valorDuplicata: c.valorDuplicata ?? c.valor, parcial: !!c.parcial, restanteDepois: c.restanteDepois ?? null, data: c.data, vencimento: c.vencimento, empresa: c.empresa, detalhe: c.detalhe, duplicata: c.duplicata, motivos: c.motivos, ...(c.folha ? { folha: c.folha } : {}) });
+const refDe = (c) => ({ id: c.id, nome: c.nome, doc: c.doc, valor: c.valor, valorDuplicata: c.valorDuplicata ?? c.valor, parcial: !!c.parcial, restanteDepois: c.restanteDepois ?? null, data: c.data, vencimento: c.vencimento, empresa: c.empresa, detalhe: c.detalhe, duplicata: c.duplicata, motivos: c.motivos, ...(c.folha ? { folha: c.folha } : {}), ...(c.hcCr ? { hcCr: c.hcCr } : {}) });
 const justDe = (c) => [c.parcial ? 'PARCIAL' : null, c.nome, c.detalhe].filter(Boolean).join(' · ');
 const STORAGE_BUCKET = 'solicitacoes-crosby';
 const uploadAnexo = async (file, prefix) => {
