@@ -1795,9 +1795,10 @@ export default function Forecast({ modoCorte = false }) {
       cmvPct[col] !== undefined
     ) {
       // CMV = % editado × Receita Operacional Líquida (calculada ou da planilha)
-      const rol =
-        totaisCalculados[col]?.['RECEITA OPERACIONAL LÍQUIDA'] ??
-        estatico('RECEITA OPERACIONAL LÍQUIDA', col);
+      const rol = colsCadeia.has(col)
+        ? cadeiaDre(col)['RECEITA OPERACIONAL LÍQUIDA']
+        : totaisCalculados[col]?.['RECEITA OPERACIONAL LÍQUIDA'] ??
+          estatico('RECEITA OPERACIONAL LÍQUIDA', col);
       pfLine = Math.round(cmvPct[col] * rol * 100) / 100;
     } else if (label === 'TAXA DE CARTÃO' && impCartao[col] !== undefined) {
       pfLine = -Math.round((impCartao[col].total || 0) * 100) / 100;
@@ -1878,7 +1879,15 @@ export default function Forecast({ modoCorte = false }) {
   const cadeiaDre = (col, cmvProprio) => {
     const r2 = (x) => Math.round(x * 100) / 100;
     const rl = totaisCalculados[col]?.['RECEITA LÍQUIDA'] ?? estatico('RECEITA LÍQUIDA', col);
-    const rol = rl + estatico('IMPOSTOS DIRETOS', col);
+    // Impostos diretos = TAX % (da planilha, −13,7%) × Receita Bruta calculada
+    // (Niziany 27/11/2026): antes ficava o valor fixo da planilha. Mês travado
+    // mantém o valor que já estava.
+    const colObj = colunas.find((x) => x.key === col);
+    const rb = totaisCalculados[col]?.['RECEITA BRUTA'] ?? estatico('RECEITA BRUTA', col);
+    const taxa = estatico('TAX %', col);
+    const impostos =
+      colObj && !mesTravado(colObj) && taxa && rb ? taxa * rb : estatico('IMPOSTOS DIRETOS', col);
+    const rol = rl + impostos;
     const pctCmv = cmvProprio !== undefined ? cmvProprio : cmvPct[col];
     const cmv = pctCmv !== undefined ? pctCmv * rol : estatico('CUSTO DAS MERCADORIAS VENDIDAS', col);
     const lb = rol + cmv;
@@ -1888,6 +1897,8 @@ export default function Forecast({ modoCorte = false }) {
     const ll = lair + estatico('IMPOSTO DE RENDA E CONTRIBUIÇÃO SOCIAL', col);
     const pct = (x) => (rol ? x / rol : 0);
     return {
+      'IMPOSTOS DIRETOS': r2(impostos),
+      'TAX %': rl ? impostos / rl : taxa,
       'RECEITA OPERACIONAL LÍQUIDA': r2(rol),
       'CUSTO DAS MERCADORIAS VENDIDAS': r2(cmv),
       'LUCRO BRUTO': r2(lb),
