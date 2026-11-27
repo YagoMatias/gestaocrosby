@@ -966,17 +966,26 @@ export default function Forecast({ modoCorte = false }) {
     const anual = ano && !soma2026; // projeção × 12
     const mes2027 = c.grupo === 'mes2027';
     if (!fonte && (ano || !modoCorte)) return (cachePrevisao[c.key] = null);
-    // Corte de custo, mês realizado (Niziany 27/11/2026): o faturamento vem do
-    // Forecast; receitas digitadas no Corte ficam salvas, mas não valem nesse mês.
-    const edCorte = { ...(modoCorte ? edicoesCorte[c.key] || {} : {}) };
-    if (modoCorte && c.grupo === 'mensal' && c.tipo === 'realizado') {
-      for (const lab of [...LINHAS_CANAIS_DRE, 'CREDEV', 'RECEITA BRUTA', 'RECEITA LÍQUIDA']) delete edCorte[lab];
+    // Corte de custo, mês realizado (Niziany 27/11/2026): segue o Forecast por
+    // inteiro (faturamento e despesas); só as facas valem. Valores digitados no
+    // Corte (ou na previsão) ficam salvos, mas não entram no mês realizado.
+    const realizadoNoCorte = modoCorte && c.grupo === 'mensal' && c.tipo === 'realizado';
+    const ed = realizadoNoCorte
+      ? {}
+      : {
+          ...(edicoesPrev[c.key] || {}),
+          ...(modoCorte ? edicoesCorte[c.key] || {} : {}),
+        };
+    // Facas (27/11/2026): no mês realizado ficam marcadas, mas não mexem nele;
+    // valem nos meses em previsão que repetem esse realizado (ex.: faca em out
+    // reduz nov). Faca do próprio mês em previsão também vale.
+    let listaFacas = [];
+    if (modoCorte) {
+      const proprias = realizadoNoCorte ? [] : facas[c.key] || [];
+      const herdadas = fonte && fonte.tipo === 'realizado' ? facas[fonte.key] || [] : [];
+      const vistas = new Set(proprias.map((f) => f.linha + '|' + f.chave));
+      listaFacas = [...proprias, ...herdadas.filter((f) => !vistas.has(f.linha + '|' + f.chave))];
     }
-    const ed = {
-      ...(edicoesPrev[c.key] || {}),
-      ...edCorte,
-    };
-    const listaFacas = modoCorte ? facas[c.key] || [] : [];
     const ajustes = modoCorte ? ajustesCorte(c) : [];
     if (
       !ano &&
@@ -2671,7 +2680,8 @@ export default function Forecast({ modoCorte = false }) {
                       const cmvEditando = cmvEditavel && editandoCmv === c.key;
                       // Mês de previsão: qualquer valor editável (exceto % calculados)
                       const prevEditavel =
-                        (!!espelho[c.key] || (modoCorte && c.grupo !== 'total2027')) &&
+                        (!!espelho[c.key] ||
+                          (modoCorte && c.grupo !== 'total2027' && !(c.grupo === 'mensal' && c.tipo === 'realizado'))) &&
                         !cmvEditavel &&
                         !PCT_DERIVADOS.has(l.label);
                       const corteLinha =
