@@ -4704,8 +4704,9 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
       )}
       {modalFat && pedido && prep && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-[#000638]/50 backdrop-blur-[2px] sm:items-center sm:p-4" onClick={() => !posting && setModalFat(false)}>
-          <div className="w-full overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:max-w-lg sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center gap-3 bg-gradient-to-r from-[#000638] to-[#1b2a6b] px-5 py-4 text-white">
+          {/* nunca passa da altura da tela: o cabeçalho fica fixo, o miolo rola e os botões ficam sempre à vista */}
+          <div className="flex max-h-[94vh] w-full flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:max-h-[calc(100vh-2rem)] sm:max-w-lg sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex shrink-0 items-center gap-3 bg-gradient-to-r from-[#000638] to-[#1b2a6b] px-5 py-4 text-white">
               <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/15">
                 <Receipt size={20} weight="bold" />
               </span>
@@ -4724,7 +4725,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
             </div>
 
             {resultado ? (
-              <div className="space-y-3 p-5">
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-5">
                 <div className={`rounded-xl p-3 ring-1 ${resultado.fiscal?.ok ? 'bg-emerald-50 ring-emerald-200' : 'bg-rose-50 ring-rose-200'}`}>
                   <p className={`flex items-center gap-1.5 text-sm font-bold ${resultado.fiscal?.ok ? 'text-emerald-800' : 'text-rose-700'}`}>
                     {resultado.fiscal?.ok ? <CheckCircle size={18} weight="fill" /> : <Warning size={18} weight="fill" />}
@@ -4821,7 +4822,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                 <p className="mt-1 text-xs text-gray-500">Pode levar até 1 minuto. Não feche esta janela.</p>
               </div>
             ) : (
-              <div className="p-5">
+              <div className="min-h-0 flex-1 overflow-y-auto px-5 pt-5">
                 <dl className="divide-y divide-gray-100 text-sm">
                   {[
                     ['NF-e', `série ${prep.numeracao?.serie ?? 3} · próximo nº ${prep.numeracao?.proximo ?? '—'} (conferido com o TOTVS na hora)`],
@@ -4885,7 +4886,8 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                   </div>
                 )}
                 <p className="mt-2 text-[11px] text-gray-500">A nota é real (SEFAZ, produção). Depois dela, a transação e o contas a receber ficam no HeadCoach (HeadCoach › Contas a Receber), sem passar pelo TOTVS.</p>
-                <div className="mt-4 flex gap-2">
+                {/* botões presos no rodapé do modal: o que rola é só o resumo acima */}
+                <div className="sticky bottom-0 -mx-5 mt-4 flex gap-2 border-t border-gray-100 bg-white px-5 py-3">
                   <button onClick={() => setModalFat(false)} className="h-11 flex-1 rounded-xl text-sm font-bold text-gray-600 ring-1 ring-gray-300 hover:bg-gray-50">
                     Cancelar
                   </button>
@@ -4915,8 +4917,8 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
           };
           return (
             <div className="fixed inset-0 z-[65] flex items-center justify-center bg-[#000638]/60 p-4 backdrop-blur-[2px]">
-              <div className="w-full max-w-lg overflow-hidden rounded-2xl bg-white shadow-2xl">
-                <div className="flex items-center gap-3 bg-rose-600 px-5 py-4 text-white">
+              <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+                <div className="flex shrink-0 items-center gap-3 bg-rose-600 px-5 py-4 text-white">
                   <Warning size={30} weight="fill" className="shrink-0" />
                   <div className="min-w-0">
                     <p className="text-[11px] font-bold uppercase tracking-wide text-rose-100">Peça em falta no pedido</p>
@@ -4925,7 +4927,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                     </h3>
                   </div>
                 </div>
-                <div className="space-y-3 px-5 py-4 text-sm text-gray-700">
+                <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4 text-sm text-gray-700">
                   <ul className="divide-y divide-gray-100 rounded-xl bg-rose-50/60 ring-1 ring-rose-200">
                     {naoSeparadas.map((x) => (
                       <li key={x.sku} className="flex items-center gap-3 px-3 py-2">
@@ -4958,7 +4960,7 @@ const FaturamentoPedido = ({ origem = 'pedidos' }) => {
                   )}
                   <p className="text-xs text-gray-500">Se a peça estiver na caixa, é só bipar: ela entra na nota e nenhum crédito é gerado.</p>
                 </div>
-                <div className="flex justify-end border-t border-gray-100 bg-gray-50 px-5 py-3">
+                <div className="flex shrink-0 justify-end border-t border-gray-100 bg-gray-50 px-5 py-3">
                   <button onClick={fechar} autoFocus className="inline-flex h-10 items-center rounded-lg bg-[#000638] px-5 text-sm font-bold text-white hover:bg-[#000638]/90">
                     Entendi
                   </button>
