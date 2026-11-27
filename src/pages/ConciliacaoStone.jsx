@@ -1,8 +1,10 @@
-// Página: Financeiro → Conciliação Stone × TOTVS
+// Página: Financeiro → Conciliação Stone × sistema (TOTVS e HeadCoach)
 // Puxa o extrato diário da API de Conciliação da Stone (via backend, com
-// cache) e bate cada venda de cartão com o título correspondente no TOTVS
-// (portador "STONE - <bandeira> (C|D)"). Mostra o que casou, o que só existe
-// na Stone e o que só existe no TOTVS, e permite vincular manualmente.
+// cache) e bate cada venda de cartão com o lançamento correspondente no
+// sistema: o título do TOTVS (portador "STONE - <bandeira> (C|D)") ou a venda
+// em cartão do PDV Crosby no HeadCoach (origem 'headcoach', desde 27/11/2026).
+// Mostra o que casou, o que só existe na Stone e o que só existe no sistema,
+// e permite vincular manualmente.
 // Backend: /api/conciliacao-stone (routes/conciliacaoStone.routes.js).
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import PageTitle from '../components/ui/PageTitle';
@@ -81,6 +83,21 @@ const diasAtrasISO = (n) => {
 const Badge = ({ className = '', children }) => (
   <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-medium border whitespace-nowrap ${className}`}>
     {children}
+  </span>
+);
+
+// Lado do sistema: título do TOTVS ou venda em cartão do PDV Crosby (HeadCoach)
+const ehHc = (t) => t?.origem === 'headcoach';
+const sistemaDe = (t) => (ehHc(t) ? 'HeadCoach' : 'TOTVS');
+const idSistema = (t) => (ehHc(t) ? `Venda ${t.transacao}` : `Tít. ${t.filial}/${t.titulo}`);
+const SeloOrigem = ({ t }) => (
+  <span
+    className={`ml-1 inline-flex items-center rounded border px-1 py-px font-sans text-[10px] font-semibold ${
+      ehHc(t) ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-gray-200 bg-gray-50 text-gray-500'
+    }`}
+    title={ehHc(t) ? 'Venda do PDV Crosby (HeadCoach)' : 'Título do contas a receber do TOTVS'}
+  >
+    {sistemaDe(t)}
   </span>
 );
 
@@ -389,15 +406,17 @@ const ConciliacaoStone = () => {
       'Stone bruto': l.resumo.stone.bruto,
       'Stone líquido': l.resumo.stone.liquido,
       'Stone taxas': l.resumo.stone.taxa,
-      'TOTVS qtd': l.resumo.totvs.qtd,
-      'TOTVS valor': l.resumo.totvs.valor,
+      'Sistema qtd': l.resumo.totvs.qtd,
+      'Sistema valor': l.resumo.totvs.valor,
+      'HeadCoach qtd': l.resumo.headcoach?.qtd ?? 0,
+      'HeadCoach valor': l.resumo.headcoach?.valor ?? 0,
       Conciliadas: l.resumo.conciliadas.qtd,
       '% conciliado': l.resumo.percentualConciliado,
       'Só Stone qtd': l.resumo.stoneSemTotvs.qtd,
       'Só Stone valor': l.resumo.stoneSemTotvs.valor,
-      'Só TOTVS qtd': l.resumo.totvsSemStone.qtd,
-      'Só TOTVS valor': l.resumo.totvsSemStone.valor,
-      'Diferença (Stone − TOTVS)': l.resumo.diferenca,
+      'Só sistema qtd': l.resumo.totvsSemStone.qtd,
+      'Só sistema valor': l.resumo.totvsSemStone.valor,
+      'Diferença (Stone − sistema)': l.resumo.diferenca,
       'Depósitos Stone': l.resumo.pagamentos.valor,
       'Dias c/ erro': l.resumo.diasComErro,
     }));
@@ -417,16 +436,17 @@ const ConciliacaoStone = () => {
         'Líquido Stone': p.stone.valorLiquido,
         'Taxa Stone': p.stone.taxa,
         Cartão: p.stone.cartao,
-        'Filial TOTVS': p.totvs.filial,
-        'Título TOTVS': p.totvs.titulo,
-        'Data TOTVS': p.totvs.dataEmissao,
-        'Portador TOTVS': p.totvs.portador,
-        'Parc. TOTVS': p.totvs.parcelas,
-        'Valor TOTVS': p.totvs.valor,
-        'NF TOTVS': p.totvs.nf,
-        'Transação TOTVS': p.totvs.transacao,
-        'Cliente TOTVS': p.totvs.cliente,
-        'Nome cliente TOTVS': p.totvs.nomeCliente,
+        Sistema: sistemaDe(p.totvs),
+        'Filial sistema': p.totvs.filial,
+        'Título TOTVS': ehHc(p.totvs) ? null : p.totvs.titulo,
+        'Data sistema': p.totvs.dataEmissao,
+        'Portador sistema': p.totvs.portador,
+        'Parc. sistema': p.totvs.parcelas,
+        'Valor sistema': p.totvs.valor,
+        'NF sistema': p.totvs.nf,
+        'Transação sistema': p.totvs.transacao,
+        'Cliente sistema': p.totvs.cliente,
+        'Nome cliente sistema': p.totvs.nomeCliente,
         Divergências: p.divergencias.join('; '),
       })),
     );
@@ -455,8 +475,9 @@ const ConciliacaoStone = () => {
     const soTotvs = lojasResultado.flatMap((l) =>
       l.totvsSemStone.map((t) => ({
         Loja: l.loja.nome,
+        Sistema: sistemaDe(t),
         Filial: t.filial,
-        Título: t.titulo,
+        Título: ehHc(t) ? null : t.titulo,
         Emissão: t.dataEmissao,
         Portador: t.portador,
         Bandeira: t.bandeira,
@@ -472,7 +493,7 @@ const ConciliacaoStone = () => {
         Status: t.status,
       })),
     );
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(soTotvs), 'Só no TOTVS');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(soTotvs), 'Só no sistema');
 
     const pag = lojasResultado.flatMap((l) =>
       l.pagamentos.map((p) => ({
@@ -590,7 +611,7 @@ const ConciliacaoStone = () => {
     { id: 'conciliadas', label: 'Conciliadas', icon: CheckCircle, n: contagem.conciliadas },
     { id: 'divergencias', label: 'Com divergência', icon: Warning, n: contagem.divergencias },
     { id: 'stone', label: 'Só na Stone', icon: CreditCard, n: contagem.stone },
-    { id: 'totvs', label: 'Só no TOTVS', icon: XCircle, n: contagem.totvs },
+    { id: 'totvs', label: 'Só no sistema', icon: XCircle, n: contagem.totvs },
     { id: 'pagamentos', label: 'Depósitos Stone', icon: Bank, n: contagem.pagamentos },
     { id: 'erros', label: 'Dias com erro', icon: Warning, n: contagem.erros },
   ];
@@ -598,8 +619,8 @@ const ConciliacaoStone = () => {
   return (
     <div className="min-h-screen bg-gray-50 px-3 py-4 md:p-6 pb-24 md:pb-6">
       <PageTitle
-        title="Conciliação Stone × TOTVS"
-        subtitle="Vendas de cartão capturadas na Stone batidas com os títulos de portador STONE no TOTVS"
+        title="Conciliação Stone"
+        subtitle="Vendas de cartão capturadas na Stone batidas com os títulos do TOTVS e com as vendas do PDV Crosby (HeadCoach)"
         icon={CreditCard}
       />
 
@@ -681,7 +702,8 @@ const ConciliacaoStone = () => {
         <span>
           O arquivo da Stone é <strong>diário</strong>, sai a partir das 5h do dia seguinte e traz só{' '}
           <strong>vendas de maquininha</strong> (PIX e link de pagamento ficam fora). Cada venda é batida com o
-          título do TOTVS por <strong>filial + data + valor + parcelas + bandeira</strong>. Os arquivos ficam em cache
+          título do TOTVS ou com a venda do <strong>PDV Crosby (HeadCoach)</strong> pelo{' '}
+          <strong>NSU, autorização e valor</strong>. Os arquivos ficam em cache
           — a Stone permite só 7 downloads por hora para cada loja/dia.
         </span>
       </div>
@@ -711,21 +733,35 @@ const ConciliacaoStone = () => {
         <div className="px-4 py-2 mb-4 bg-purple-50 border border-purple-200 rounded-lg text-xs text-purple-700">{aviso}</div>
       )}
 
+      {geral?.headcoachErro && (
+        <div className="flex items-start gap-2 px-3.5 py-2.5 mb-4 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+          <Warning size={16} className="shrink-0 mt-0.5" />
+          <span>
+            Não consegui ler as vendas do PDV Crosby (HeadCoach) agora — este batimento está só com o TOTVS. Consulte de
+            novo. ({geral.headcoachErro})
+          </span>
+        </div>
+      )}
+
       {/* KPIs */}
       {geral && (
         <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 lg:grid-cols-6 md:gap-3 mb-4">
           <Kpi label="Stone (bruto)" value={fmt(geral.stoneBruto)} sub={`${geral.stoneQtd} transações · líq. ${fmt(geral.stoneLiquido)}`} />
-          <Kpi label="TOTVS (títulos Stone)" value={fmt(geral.totvsValor)} sub={`${geral.totvsQtd} títulos`} />
+          <Kpi
+            label="Sistema (TOTVS + HeadCoach)"
+            value={fmt(geral.totvsValor)}
+            sub={`${geral.totvsQtd} lançamentos · HeadCoach ${fmt(geral.headcoachValor || 0)} (${geral.headcoachQtd || 0})`}
+          />
           <Kpi
             label="Conciliadas"
             value={geral.percentualConciliado != null ? `${geral.percentualConciliado}%` : '—'}
             sub={`${geral.conciliadasQtd} de ${geral.stoneQtd} · ${fmt(geral.conciliadasValor)}`}
             tone="text-green-600"
           />
-          <Kpi label="Só na Stone" value={fmt(geral.stoneSemTotvsValor)} sub={`${geral.stoneSemTotvsQtd} sem título no TOTVS`} tone={geral.stoneSemTotvsQtd ? 'text-red-600' : 'text-gray-900'} />
-          <Kpi label="Só no TOTVS" value={fmt(geral.totvsSemStoneValor)} sub={`${geral.totvsSemStoneQtd} sem venda na Stone`} tone={geral.totvsSemStoneQtd ? 'text-orange-600' : 'text-gray-900'} />
+          <Kpi label="Só na Stone" value={fmt(geral.stoneSemTotvsValor)} sub={`${geral.stoneSemTotvsQtd} sem lançamento no sistema`} tone={geral.stoneSemTotvsQtd ? 'text-red-600' : 'text-gray-900'} />
+          <Kpi label="Só no sistema" value={fmt(geral.totvsSemStoneValor)} sub={`${geral.totvsSemStoneQtd} sem venda na Stone${geral.headcoachSemStoneQtd ? ` · ${geral.headcoachSemStoneQtd} do HeadCoach` : ''}`} tone={geral.totvsSemStoneQtd ? 'text-orange-600' : 'text-gray-900'} />
           <Kpi
-            label="Diferença Stone − TOTVS"
+            label="Diferença Stone − sistema"
             value={fmt(geral.diferenca)}
             sub={`taxas Stone ${fmt(geral.stoneTaxa)} · depósitos ${fmt(geral.pagamentosValor)}`}
             tone={Math.abs(geral.diferenca || 0) < 0.01 ? 'text-green-600' : 'text-red-600'}
@@ -750,10 +786,10 @@ const ConciliacaoStone = () => {
                 <tr className="bg-gray-50 border-b border-gray-200 text-gray-600">
                   <th className="px-3 py-2 text-left font-semibold">Loja</th>
                   <th className="px-3 py-2 text-right font-semibold">Stone</th>
-                  <th className="px-3 py-2 text-right font-semibold">TOTVS</th>
+                  <th className="px-3 py-2 text-right font-semibold">Sistema</th>
                   <th className="px-3 py-2 text-right font-semibold">Conciliado</th>
                   <th className="px-3 py-2 text-right font-semibold">Só Stone</th>
-                  <th className="px-3 py-2 text-right font-semibold">Só TOTVS</th>
+                  <th className="px-3 py-2 text-right font-semibold">Só sistema</th>
                   <th className="px-3 py-2 text-right font-semibold">Diferença</th>
                   <th className="px-3 py-2 text-right font-semibold">Depósitos</th>
                   <th className="px-3 py-2 text-center font-semibold">Dias</th>
@@ -897,7 +933,7 @@ const ConciliacaoStone = () => {
                         : [
                             { key: 'bandeira', label: 'Bandeira' },
                             { key: 'stoneInfo', label: 'Stone', sortable: false },
-                            { key: 'totvsInfo', label: 'TOTVS', sortable: false },
+                            { key: 'totvsInfo', label: 'Sistema', sortable: false },
                             { key: 'valor', label: 'Valor' },
                             {
                               key: 'status',
@@ -948,8 +984,8 @@ const ConciliacaoStone = () => {
                 {linhas.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="text-center py-12 text-gray-400">
-                      {aba === 'stone' && 'Toda venda da Stone tem título no TOTVS neste período.'}
-                      {aba === 'totvs' && 'Todo título Stone do TOTVS tem venda na Stone neste período.'}
+                      {aba === 'stone' && 'Toda venda da Stone tem lançamento no sistema (TOTVS ou HeadCoach) neste período.'}
+                      {aba === 'totvs' && 'Todo lançamento de cartão Stone do sistema tem venda na Stone neste período.'}
                       {aba === 'divergencias' && 'Nenhuma conciliação com divergência.'}
                       {aba === 'conciliadas' && 'Nenhuma transação conciliada.'}
                       {aba === 'pagamentos' && 'Nenhum depósito da Stone no período.'}
@@ -1001,7 +1037,7 @@ const ConciliacaoStone = () => {
             <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-bold text-gray-800 flex items-center gap-1.5">
-                  <LinkSimple size={16} /> Vincular venda Stone a um título do TOTVS
+                  <LinkSimple size={16} /> Vincular venda Stone a um lançamento do sistema
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">
                   {vinculando.loja.nome} · {fmtDataHora(vinculando.stone.dataCaptura)} · {vinculando.stone.bandeira} {vinculando.stone.tipoConta} ·{' '}
@@ -1016,7 +1052,7 @@ const ConciliacaoStone = () => {
             <div className="overflow-y-auto flex-1">
               <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between gap-2 flex-wrap">
                 <div className="text-xs font-semibold text-gray-700">
-                  Vendas do dia no TOTVS
+                  Vendas do dia no sistema (TOTVS e PDV Crosby)
                   {diaDrill && <span className="font-normal text-gray-500"> · {fmtData(diaDrill)}</span>}
                   {!loadingDia && !erroDia && (
                     <span className="font-normal text-gray-400"> · {transacoesDia.length} venda(s)</span>
@@ -1032,7 +1068,7 @@ const ConciliacaoStone = () => {
                 </div>
               </div>
               {loadingDia ? (
-                <p className="p-6 text-center text-sm text-gray-400">Buscando as vendas do dia no TOTVS…</p>
+                <p className="p-6 text-center text-sm text-gray-400">Buscando as vendas do dia no TOTVS e no PDV Crosby…</p>
               ) : erroDia ? (
                 <p className="p-6 text-center text-sm text-red-500">{erroDia}</p>
               ) : (
@@ -1069,12 +1105,13 @@ const ConciliacaoStone = () => {
                           const delta = +(alvo - p.valor).toFixed(2);
                           const destaque = bateNsu || bateAut ? 'bg-green-50' : bateValor ? 'bg-emerald-50/50' : '';
                           return (
-                            <tr key={`${tx.filial}-${tx.nf}-${i}`} className={`border-b border-gray-100 hover:bg-gray-50 ${destaque}`}>
+                            <tr key={`${tx.origem || 'totvs'}-${tx.filial}-${tx.transacao}-${tx.nf}-${i}`} className={`border-b border-gray-100 hover:bg-gray-50 ${destaque}`}>
                               <td className="px-3 py-2 whitespace-nowrap font-mono">{tx.hora ? tx.hora.slice(0, 5) : '—'}</td>
                               <td className="px-3 py-2 whitespace-nowrap font-mono">
-                                {tx.transacao ? `T.${tx.transacao}` : '—'}
+                                {tx.transacao ? `${ehHc(tx) ? 'Venda ' : 'T.'}${tx.transacao}` : '—'}
                                 {tx.nf ? <span className="text-gray-400"> · NF {tx.nf}</span> : null}
-                                <div className="text-gray-400 font-sans">filial {tx.filial} · total {fmt(tx.valorTotal)}</div>
+                                <SeloOrigem t={tx} />
+                                <div className="text-gray-400 font-sans">{ehHc(tx) ? 'empresa' : 'filial'} {tx.filial} · total {fmt(tx.valorTotal)}</div>
                               </td>
                               <td className="px-3 py-2 max-w-[160px] truncate" title={tx.nomeCliente || ''}>{tx.nomeCliente || (tx.cliente ? `cód. ${tx.cliente}` : '—')}</td>
                               <td className="px-3 py-2">
@@ -1082,7 +1119,7 @@ const ConciliacaoStone = () => {
                                   {p.forma} {p.parcelas > 1 ? `${p.parcelas}x` : ''}{p.bandeira ? ` · ${p.bandeira}` : ''}
                                 </div>
                                 <div className="text-gray-400 font-mono">
-                                  {p.titulo ? `tít. ${p.titulo}` : 'sem título'}
+                                  {ehHc(tx) ? (p.titulo ? 'cartão do PDV Crosby' : 'não é cartão') : p.titulo ? `tít. ${p.titulo}` : 'sem título'}
                                   {p.nsu ? <span className={bateNsu ? 'text-green-700 font-semibold' : ''}> · NSU {p.nsu}</span> : null}
                                   {p.autorizacao ? <span className={bateAut ? 'text-green-700 font-semibold' : ''}> · AUT {p.autorizacao}</span> : null}
                                 </div>
@@ -1093,7 +1130,7 @@ const ConciliacaoStone = () => {
                               <td className="px-3 py-2 text-right">
                                 <button
                                   disabled={salvandoVinculo || !p.titulo}
-                                  title={p.titulo ? 'Vincular a venda da Stone a este título' : 'Pagamento sem título no contas a receber'}
+                                  title={p.titulo ? 'Vincular a venda da Stone a este lançamento' : ehHc(tx) ? 'Só o pagamento em cartão pode ser vinculado' : 'Pagamento sem título no contas a receber'}
                                   onClick={() => salvarVinculo({ filial: tx.filial, titulo: p.titulo })}
                                   className="px-2.5 py-1 rounded-md bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-40"
                                 >
@@ -1110,17 +1147,17 @@ const ConciliacaoStone = () => {
               )}
 
               <div className="px-4 py-2 mt-2 bg-gray-50 border-y border-gray-200 text-xs font-semibold text-gray-700">
-                Títulos Stone sem par no período
+                Lançamentos de cartão Stone sem par no período
                 <span className="font-normal text-gray-400"> · {candidatosVinculo.length}</span>
               </div>
               {candidatosVinculo.length === 0 ? (
-                <p className="p-4 text-center text-xs text-gray-400">Nenhum título de portador Stone sem vínculo no período.</p>
+                <p className="p-4 text-center text-xs text-gray-400">Nenhum lançamento de cartão Stone sem vínculo no período.</p>
               ) : (
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="bg-gray-50 border-b text-gray-600">
                       <th className="px-3 py-2 text-left">Emissão</th>
-                      <th className="px-3 py-2 text-left">Título</th>
+                      <th className="px-3 py-2 text-left">Lançamento</th>
                       <th className="px-3 py-2 text-left">Portador</th>
                       <th className="px-3 py-2 text-center">Parc.</th>
                       <th className="px-3 py-2 text-right">Valor</th>
@@ -1135,9 +1172,10 @@ const ConciliacaoStone = () => {
                         <tr key={t.chave} className="border-b border-gray-100 hover:bg-gray-50">
                           <td className="px-3 py-2 whitespace-nowrap">{fmtData(t.dataEmissao)}</td>
                           <td className="px-3 py-2 whitespace-nowrap font-mono">
-                            {t.filial}/{t.titulo}
+                            {ehHc(t) ? `Venda ${t.transacao}` : `${t.filial}/${t.titulo}`}
                             {t.nf ? <span className="text-gray-400"> NF {t.nf}</span> : null}
-                            {t.transacao ? <span className="text-gray-500"> T.{t.transacao}</span> : null}
+                            {!ehHc(t) && t.transacao ? <span className="text-gray-500"> T.{t.transacao}</span> : null}
+                            <SeloOrigem t={t} />
                             {t.nomeCliente && <div className="font-sans text-gray-600 text-[11px]">{t.nomeCliente}</div>}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">{t.portador}</td>
@@ -1294,13 +1332,14 @@ const LinhaTabela = ({ ln, onVincular, onDesfazer, podeVincular, lanc }) => {
         </td>
         <td className={tdc}>
           <div className="font-mono">
-            Tít. {t.filial}/{t.titulo}
+            {idSistema(t)}
             {t.nf ? <span className="text-gray-400"> · NF {t.nf}</span> : null}
-            {t.transacao ? <span className="text-gray-600"> · Trans. {t.transacao}</span> : null}
+            {!ehHc(t) && t.transacao ? <span className="text-gray-600"> · Trans. {t.transacao}</span> : null}
+            <SeloOrigem t={t} />
           </div>
           {(ln.par.totvsExtras || []).map((x) => (
             <div key={x.chave} className="font-mono text-green-700">
-              + Tít. {x.filial}/{x.titulo} · {fmt(x.valor)}
+              + {idSistema(x)} · {fmt(x.valor)}
             </div>
           ))}
           {t.nomeCliente && <div className="text-gray-700 truncate max-w-[260px]" title={t.nomeCliente}>{t.nomeCliente}</div>}
@@ -1347,13 +1386,13 @@ const LinhaTabela = ({ ln, onVincular, onDesfazer, podeVincular, lanc }) => {
           </div>
           <DepositoVenda s={s} />
         </td>
-        <td className={`${tdc} text-gray-400`}>sem título</td>
+        <td className={`${tdc} text-gray-400`}>sem lançamento</td>
         <td className={`${tdc} text-right font-semibold`}>{fmt(s.valorBruto)}</td>
         <td className={tdc}>
           {s.cancelada ? (
             <Badge className="bg-red-100 text-red-700 border-red-300">Cancelada na Stone</Badge>
           ) : (
-            <Badge className="bg-red-50 text-red-700 border-red-200">Não lançada no TOTVS</Badge>
+            <Badge className="bg-red-50 text-red-700 border-red-200">Não lançada no sistema</Badge>
           )}
           <LancarTotvsCampos ln={ln} lanc={lanc} />
         </td>
@@ -1382,19 +1421,21 @@ const LinhaTabela = ({ ln, onVincular, onDesfazer, podeVincular, lanc }) => {
       <td className={`${tdc} text-gray-400`}>sem venda na Stone</td>
       <td className={tdc}>
         <div className="font-mono">
-          Tít. {t.filial}/{t.titulo}
+          {idSistema(t)}
           {t.nf ? <span className="text-gray-400"> · NF {t.nf}</span> : null}
+          <SeloOrigem t={t} />
         </div>
         <div className="text-gray-400">
-          {t.transacao ? <>Trans. {t.transacao} · </> : null}
-          {t.portador} · {t.parcelas}x · {t.nomeCliente || `cliente ${t.cliente}`}
+          {!ehHc(t) && t.transacao ? <>Trans. {t.transacao} · </> : null}
+          {ehHc(t) && (t.nsu || t.autorizacao) ? <>NSU {t.nsu || '—'} · AUT {t.autorizacao || '—'} · </> : null}
+          {t.portador} · {t.parcelas}x · {t.nomeCliente || (t.cliente ? `cliente ${t.cliente}` : 'sem cliente')}
           {t.dataPagamento ? ` · pago ${fmtData(t.dataPagamento)}` : ''}
         </div>
       </td>
       <td className={`${tdc} text-right font-semibold`}>{fmt(t.valor)}</td>
       <td className={tdc}>
         {t.cancelado ? (
-          <Badge className="bg-gray-200 text-gray-700 border-gray-300">Cancelado no TOTVS</Badge>
+          <Badge className="bg-gray-200 text-gray-700 border-gray-300">Cancelado no {sistemaDe(t)}</Badge>
         ) : t.origemProvavel === 'pagarme' ? (
           <>
             <Badge className="bg-orange-50 text-orange-700 border-orange-200">Sem captura na Stone</Badge>
@@ -1442,7 +1483,7 @@ const CardMobile = ({ ln, onVincular, onDesfazer, podeVincular, lanc }) => {
       )}
       {t && (
         <p className="text-[11px] text-gray-600 mt-1">
-          TOTVS tít. {t.filial}/{t.titulo} · {t.portador} · {t.parcelas}x {t.nf ? `· NF ${t.nf}` : ''}{t.transacao ? ` · Trans. ${t.transacao}` : ''}{t.nomeCliente ? ` · ${t.nomeCliente}` : ''}
+          {sistemaDe(t)} · {idSistema(t)} · {t.portador} · {t.parcelas}x {t.nf ? `· NF ${t.nf}` : ''}{!ehHc(t) && t.transacao ? ` · Trans. ${t.transacao}` : ''}{t.nomeCliente ? ` · ${t.nomeCliente}` : ''}
         </p>
       )}
       {ln.kind === 'par' && ln.par.divergencias.length > 0 && (
