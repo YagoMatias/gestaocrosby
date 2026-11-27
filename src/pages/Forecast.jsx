@@ -299,14 +299,44 @@ export default function Forecast({ modoCorte = false }) {
     }).catch(() => {});
   const estaCortado = (col, linha, chave) =>
     (facas[col] || []).some((f) => f.linha === linha && f.chave === chave);
+  // Funcionário (Niziany 27/11/2026): cortar ou descortar uma pessoa vale para
+  // todas as rubricas da folha em que ela aparece no mês (salário base, verba de
+  // representação, etc.), no Pessoal fixo e no variável.
+  const mesmaPessoaEmOutrasRubricas = (col, linha, chave) => {
+    if (linha !== 'PESSOAL FIXO' && linha !== 'PESSOAL VARIÁVEL') return [];
+    const partes = String(chave).split('»');
+    if (partes.length !== 3) return [];
+    const [, loja, id] = partes;
+    const out = [];
+    for (const ru of rubricasUnidas) {
+      const f = (ru.funcPorCol[col] || []).find(
+        (x) => (x.loja || '— sem seção —') === loja && String(x.chapa || x.nome) === id,
+      );
+      if (!f) continue;
+      const k = `${ru.key}»${loja}»${id}`;
+      if (k === chave) continue;
+      const sinal = ru.tipo === 'provento' ? -1 : 1;
+      out.push({
+        linha: ru.grupo === 'variavel' ? 'PESSOAL VARIÁVEL' : 'PESSOAL FIXO',
+        chave: k,
+        nome: f.nome,
+        valor: sinal * Math.abs(Number(f.valor) || 0),
+      });
+    }
+    return out;
+  };
   const alternarFaca = (col, linha, chave, nome, valor) => {
     const ativo = !estaCortado(col, linha, chave);
+    const itens = [{ linha, chave, nome, valor }, ...mesmaPessoaEmOutrasRubricas(col, linha, chave)];
     setFacas((p) => {
-      const lista = (p[col] || []).filter((f) => !(f.linha === linha && f.chave === chave));
-      if (ativo) lista.push({ linha, chave, nome, valor });
+      let lista = p[col] || [];
+      for (const it of itens) {
+        lista = lista.filter((f) => !(f.linha === it.linha && f.chave === it.chave));
+        if (ativo) lista.push(it);
+      }
       return { ...p, [col]: lista };
     });
-    enviarCorte({ tipo: 'faca', mes: mesDaCol(col), linha, chave, nome, valor, ativo });
+    for (const it of itens) enviarCorte({ tipo: 'faca', mes: mesDaCol(col), ...it, ativo });
   };
   const mesDaCol = (col) => colParaMes(colunasTela.find((c) => c.key === col) || {});
   const salvarAjuste = (col, linha, chave, nome, valor) => {
