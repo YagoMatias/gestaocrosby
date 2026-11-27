@@ -966,9 +966,15 @@ export default function Forecast({ modoCorte = false }) {
     const anual = ano && !soma2026; // projeção × 12
     const mes2027 = c.grupo === 'mes2027';
     if (!fonte && (ano || !modoCorte)) return (cachePrevisao[c.key] = null);
+    // Corte de custo, mês realizado (Niziany 27/11/2026): o faturamento vem do
+    // Forecast; receitas digitadas no Corte ficam salvas, mas não valem nesse mês.
+    const edCorte = { ...(modoCorte ? edicoesCorte[c.key] || {} : {}) };
+    if (modoCorte && c.grupo === 'mensal' && c.tipo === 'realizado') {
+      for (const lab of [...LINHAS_CANAIS_DRE, 'CREDEV', 'RECEITA BRUTA', 'RECEITA LÍQUIDA']) delete edCorte[lab];
+    }
     const ed = {
       ...(edicoesPrev[c.key] || {}),
-      ...(modoCorte ? edicoesCorte[c.key] || {} : {}),
+      ...edCorte,
     };
     const listaFacas = modoCorte ? facas[c.key] || [] : [];
     const ajustes = modoCorte ? ajustesCorte(c) : [];
@@ -1909,9 +1915,9 @@ export default function Forecast({ modoCorte = false }) {
   const cadeiaDre = (col, cmvProprio) => {
     const r2 = (x) => Math.round(x * 100) / 100;
     const rl = totaisCalculados[col]?.['RECEITA LÍQUIDA'] ?? estatico('RECEITA LÍQUIDA', col);
-    // Impostos diretos = TAX % (da planilha, −13,7%) × Receita Bruta calculada
-    // (Niziany 27/11/2026): antes ficava o valor fixo da planilha. Vale também no
-    // mês travado: a receita dele já vem congelada, então a conta fica estável.
+    // Impostos diretos = TAX % fixo (13,70%) × Receita Bruta calculada
+    // (27/11/2026): antes ficava o valor fixo da planilha. Vale também no mês
+    // travado (receita já congelada).
     const rb = totaisCalculados[col]?.['RECEITA BRUTA'] ?? estatico('RECEITA BRUTA', col);
     const taxa = estatico('TAX %', col);
     const impostos = taxa && rb ? taxa * rb : estatico('IMPOSTOS DIRETOS', col);
