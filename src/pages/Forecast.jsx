@@ -1926,7 +1926,7 @@ export default function Forecast({ modoCorte = false }) {
     const pct = (x) => (rol ? x / rol : 0);
     return {
       'IMPOSTOS DIRETOS': r2(impostos),
-      'TAX %': rl ? impostos / rl : taxa,
+      'TAX %': taxa || (rl ? impostos / rl : 0), // fixo 13,70% (Niziany 27/11): o % não muda, só o imposto
       'RECEITA OPERACIONAL LÍQUIDA': r2(rol),
       'CUSTO DAS MERCADORIAS VENDIDAS': r2(cmv),
       'LUCRO BRUTO': r2(lb),
