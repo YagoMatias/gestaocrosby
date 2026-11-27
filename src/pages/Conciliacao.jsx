@@ -1361,7 +1361,9 @@ const Conciliacao = () => {
     try {
       const j = await apiConc(`${API}/conciliacao/automatica`, { method: 'POST', body: JSON.stringify({ contaId: contaId || null, de, ate }) });
       const r = j.data;
-      setAviso(`${r.conciliadas.length} saída(s) conciliada(s) automaticamente · ${r.ambiguas.length} com mais de um candidato (resolva na linha) · ${r.semCandidato} sem candidato${r.avisos?.length ? ` · ${r.avisos.join('; ')}` : ''}`);
+      const nSaidas = r.conciliadas.filter((x) => Number(x.valor) < 0).length;
+      const nEntradas = r.conciliadas.length - nSaidas;
+      setAviso(`${nSaidas} saída(s) e ${nEntradas} entrada(s) conciliada(s) automaticamente · ${r.ambiguas.length} com candidato para conferir na linha · ${r.semCandidato} sem candidato${r.aguardandoArquivo ? ` · ${r.aguardandoArquivo} entrada(s) de cartão esperando o arquivo da Stone (sai às 5h do dia seguinte)` : ''}${r.avisos?.length ? ` · ${r.avisos.join('; ')}` : ''}`);
       await carregar();
     } catch (e) {
       setErro(e.message);
@@ -1602,6 +1604,22 @@ const Conciliacao = () => {
         </div>
       )}
 
+      {/* Conciliar automático de todas as contas: saídas e entradas (Stone e Pix de cliente) */}
+      <div className="flex flex-wrap items-center justify-end gap-2 mb-3">
+        <span className="text-[11px] text-gray-500">
+          {totais.pendSaidas} saída(s) e {totais.pendEntradas} entrada(s) pendentes no período
+        </span>
+        <button
+          onClick={() => conciliarAutomatico(null)}
+          disabled={conciliando || !(totais.pendSaidas + totais.pendEntradas)}
+          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-[#000638] text-white hover:bg-blue-900 disabled:opacity-40 text-xs font-semibold"
+          title="Saídas: procura em Liberação de Pagamento e Contas a Pagar. Entradas: antecipação e vendas da Stone (pelo arquivo da Stone) e Pix de cliente. Grava só o que bate com segurança"
+        >
+          {conciliando ? <ArrowsClockwise size={14} className="animate-spin" /> : <Lightning size={14} weight="fill" />}
+          {conciliando ? 'Conciliando…' : 'Conciliar automático (todas as contas)'}
+        </button>
+      </div>
+
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 md:gap-3 mb-4">
         <Kpi label="Período" value={`${fmtData(de)} a ${fmtData(ate)}`} sub={carregando ? 'carregando…' : `${totais.qtd} lançamentos`} />
@@ -1773,11 +1791,11 @@ const Conciliacao = () => {
           </button>
           <button
             onClick={() => conciliarAutomatico(null)}
-            disabled={conciliando || !totais.pendSaidas}
+            disabled={conciliando || !(totais.pendSaidas + totais.pendEntradas)}
             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-[#000638] text-white hover:bg-blue-900 disabled:opacity-40 text-[11px] font-medium"
-            title="Procura cada saída pendente de todas as contas em Liberação de Pagamento, Solicitações Crosby e Contas a Pagar; grava só as que batem com segurança"
+            title="Saídas: procura em Liberação de Pagamento e Contas a Pagar. Entradas: antecipação e vendas da Stone e Pix de cliente. Grava só o que bate com segurança"
           >
-            {conciliando ? <ArrowsClockwise size={12} className="animate-spin" /> : <Lightning size={12} weight="fill" />} Conciliar saídas pendentes (todas as contas)
+            {conciliando ? <ArrowsClockwise size={12} className="animate-spin" /> : <Lightning size={12} weight="fill" />} Conciliar automático (todas as contas)
           </button>
         </div>
       </div>
@@ -2433,11 +2451,11 @@ const ModalExtrato = ({ linha: c, resumo, de, ate, onClose, onConciliarConta, on
           </div>
           <button
             onClick={onConciliarConta}
-            disabled={conciliando || !r.pendSaidas}
+            disabled={conciliando || !((r.pendSaidas || 0) + (r.pendEntradas || 0))}
             className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-[#000638] text-white hover:bg-blue-900 disabled:opacity-40 text-[11px] font-medium"
-            title="Procura todas as saídas pendentes desta conta nas três fontes e grava as que batem com segurança"
+            title="Saídas desta conta: procura em Liberação de Pagamento e Contas a Pagar. Entradas: antecipação e vendas da Stone e Pix de cliente. Grava só o que bate com segurança"
           >
-            {conciliando ? <ArrowsClockwise size={12} className="animate-spin" /> : <Lightning size={12} weight="fill" />} Conciliar saídas pendentes ({r.pendSaidas || 0})
+            {conciliando ? <ArrowsClockwise size={12} className="animate-spin" /> : <Lightning size={12} weight="fill" />} Conciliar automático ({r.pendSaidas || 0} saídas · {r.pendEntradas || 0} entradas)
           </button>
           {['STONE', 'SICREDI'].includes(String(c?.fluxo?.banco || '').toUpperCase()) && (
             <>
