@@ -52,6 +52,9 @@ export const MODELOS_ACESSO = [
       // HeadCoach › Varejo
       '/tecnologia/pdv-crosby',
       '/ranking-faturamento',
+      // HeadCoach › Financeiro › Cancelamento de Transação (Yago, 26/11/2026): a loja cancela a própria
+      // transação; venda atendida acima de R$ 1.000 continua pedindo a senha do financeiro
+      '/headcoach/cancelamento-transacao',
     ],
   },
   {

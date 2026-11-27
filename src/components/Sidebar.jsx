@@ -1193,8 +1193,18 @@ const headcoach = [
     color: 'text-indigo-600',
     children: [
       { name: 'Contas a Receber HeadCoach', href: '/headcoach/contas-receber', icon: HandCoins, color: 'text-indigo-600' },
-      { name: 'Contas a Pagar HeadCoach', href: '/headcoach/contas-pagar', icon: Receipt, color: 'text-indigo-600' },
-      { name: 'Liberação de Pagamento HeadCoach', href: '/headcoach/liberacao-pagamento', icon: CurrencyDollar, color: 'text-indigo-600' },
+      // Contas a Pagar do HeadCoach num grupo só (Yago, 26/11/2026): liberação, consulta e as contas fixas das lojas
+      {
+        name: 'Contas a Pagar',
+        href: '#',
+        icon: Receipt,
+        color: 'text-indigo-600',
+        children: [
+          { name: 'Liberação', href: '/headcoach/liberacao-pagamento', icon: CurrencyDollar, color: 'text-indigo-600' },
+          { name: 'Consulta', href: '/headcoach/contas-pagar', icon: Receipt, color: 'text-indigo-600' },
+          { name: 'Contas Fixas das Lojas', href: '/headcoach/contas-fixas-lojas', icon: Storefront, color: 'text-indigo-600' },
+        ],
+      },
       { name: 'Saldo Cliente', href: '/headcoach/saldos-clientes', icon: Wallet, color: 'text-indigo-600' },
       { name: 'Cancelamento de Transação', href: '/headcoach/cancelamento-transacao', icon: Prohibit, color: 'text-rose-600' },
       { name: 'Liberação de Desconto', href: '/headcoach/liberacao-desconto', icon: Percent, color: 'text-indigo-600' },

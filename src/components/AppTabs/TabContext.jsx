@@ -28,6 +28,7 @@ const TABBED_PAGES = {
   '/headcoach/contas-receber': { label: 'Contas a Receber HC', ...HC },
   '/headcoach/contas-pagar': { label: 'Contas a Pagar HC', ...HC },
   '/headcoach/liberacao-pagamento': { label: 'Liberação de Pagamento HC', ...HC },
+  '/headcoach/contas-fixas-lojas': { label: 'Contas Fixas das Lojas', ...HC },
   '/headcoach/saldos-clientes': { label: 'Saldo Cliente', ...HC },
   '/headcoach/cancelamento-transacao': { label: 'Cancelamento de Transação', ...HC },
   '/headcoach/liberacao-desconto': { label: 'Liberação de Desconto', ...HC },

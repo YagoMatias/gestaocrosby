@@ -283,7 +283,8 @@ const ModalFaturas = ({ info, onClose }) => {
 };
 
 // ─── Componente Principal ─────────────────────────────────────────────────────
-const CTO = () => {
+// `embutido`: a tela aparece como aba da página Contas Fixas das Lojas (sem título nem margens próprias)
+const CTO = ({ embutido = false }) => {
   const apiClient = useApiClient();
 
   // ─── Filtros ───
@@ -579,14 +580,16 @@ const CTO = () => {
 
   // ─── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gray-50 pb-10">
-      <div className="max-w-screen-2xl mx-auto px-6 pt-6">
-        <PageTitle
-          title="CTO"
-          subtitle="Custo Total de Ocupação — aluguéis e acordos das lojas"
-          icon={Storefront}
-          iconColor="text-indigo-600"
-        />
+    <div className={embutido ? '' : 'min-h-screen bg-gray-50 pb-10'}>
+      <div className={embutido ? '' : 'max-w-screen-2xl mx-auto px-6 pt-6'}>
+        {!embutido && (
+          <PageTitle
+            title="CTO"
+            subtitle="Custo Total de Ocupação — aluguéis e acordos das lojas"
+            icon={Storefront}
+            iconColor="text-indigo-600"
+          />
+        )}
 
         {/* ─── Filtros ─────────────────────────────────────────────────── */}
         <form

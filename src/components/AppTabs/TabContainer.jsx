@@ -22,6 +22,7 @@ const PAGE_COMPONENTS = {
   '/headcoach/contas-receber': lazy(() => import('../../pages/HcContasReceber')),
   '/headcoach/contas-pagar': lazy(() => import('../../pages/HcContasPagar')),
   '/headcoach/liberacao-pagamento': lazy(() => import('../../pages/HcLiberacaoPagamento')),
+  '/headcoach/contas-fixas-lojas': lazy(() => import('../../pages/ContasFixasLojas')),
   '/headcoach/saldos-clientes': lazy(() => import('../../pages/HcSaldosClientes')),
   '/headcoach/cancelamento-transacao': lazy(() => import('../../pages/CancelamentoTransacao')),
   '/headcoach/liberacao-desconto': lazy(() => import('../../pages/LiberacaoDesconto')),
