@@ -5,7 +5,9 @@
 // marca as duplicatas e clica em LIBERAR PARA PAGAMENTO; aqui elas seguem
 //     PENDENTE → PREVISÃO → APROVADO → INCLUÍDO → PAGO
 //   • entre as quatro primeiras etapas vai e volta à vontade;
-//   • PAGAR grava a baixa na duplicata (sem estorno) — pede a senha;
+//   • a baixa só sai LIGADA A UMA LINHA DO EXTRATO (Yago, 27/11/2026 — o PAGAR manual foi tirado):
+//     pela BAIXA AUTOMÁTICA da aba Incluídos, ou casando uma SAÍDA DO BANCO SEM BAIXA com a
+//     duplicata (components/HcSaidasSemBaixa.jsx), que também gera a duplicata que falta;
 //   • DEVOLVER tira da liberação (a duplicata continua em aberto no contas a pagar);
 //   • o valor da liberação pode ser menor que o que falta (pagamento parcial).
 // API: /api/hc/contas-pagar/liberacoes (services/hcCpLiberacao.js).
@@ -20,6 +22,7 @@ import { useAuth } from '../components/AuthContext';
 import { apiJson } from '../utils/apiAuth';
 import { useAoAtivarAba } from '../components/AppTabs/TabContext';
 import StoneEntreContasModal from '../components/StoneEntreContasModal';
+import HcSaidasSemBaixa from '../components/HcSaidasSemBaixa';
 
 const API = '/api/hc/contas-pagar/liberacoes';
 const PERFIS_FINANCEIRO = ['owner', 'admin', 'user'];
@@ -860,9 +863,6 @@ export default function HcLiberacaoPagamento() {
                 <Robot size={14} weight="bold" /> ENVIAR AO BOT
               </button>
             )}
-            <button type="button" disabled={ocupado || !marcadas.length} onClick={() => setModal({ tipo: 'pagar', ids: idsMarcados, data: hojeIso(), banco: '', senha: '' })} className={`${btnAcao} bg-green-600 hover:bg-green-700`}>
-              <CurrencyDollar size={14} weight="bold" /> PAGAR SELECIONADAS
-            </button>
             <button type="button" disabled={ocupado || !marcadas.length} onClick={() => setModal({ tipo: 'devolver', ids: idsMarcados, motivo: '' })} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-white px-3 text-xs font-bold text-rose-700 ring-1 ring-rose-200 hover:bg-rose-50 disabled:opacity-40">
               <ArrowsClockwise size={14} weight="bold" /> DEVOLVER AO CONTAS A PAGAR
             </button>
@@ -1049,9 +1049,6 @@ export default function HcLiberacaoPagamento() {
                               {proxima.acao}
                             </button>
                           )}
-                          <button type="button" disabled={ocupado} onClick={() => setModal({ tipo: 'pagar', ids: [l.id], data: hojeIso(), banco: '', senha: '' })} className="mr-1 rounded bg-green-600 px-2 py-1 text-[10px] font-bold text-white hover:bg-green-700 disabled:opacity-40">
-                            PAGAR
-                          </button>
                           <button type="button" disabled={ocupado} onClick={() => abrirEdicao(l)} className="rounded p-1 text-gray-600 hover:bg-gray-100" title="Alterar valor (pagamento parcial), observação, chave Pix e boleto">
                             <PencilSimple size={13} weight="bold" />
                           </button>
@@ -1067,6 +1064,9 @@ export default function HcLiberacaoPagamento() {
       </div>
       {!(etapa === 'previsao' && visaoPrevisao === 'kanban') && <Paginacao pagina={paginaAtual} total={totalPaginas} qtd={filtradas.length} onIr={(n) => setPagina(Math.min(Math.max(1, n), totalPaginas))} />}
 
+      {/* SAÍDAS DO BANCO SEM BAIXA (só em Incluídos): casar com a duplicata ou gerar a duplicata */}
+      {etapa === 'incluido' && <HcSaidasSemBaixa avisar={avisar} onMudou={() => carregar(f)} />}
+
       {/* ENTRE CONTAS: transferência entre as contas da Stone (fila do bot) */}
       {modal?.tipo === 'entreContas' && (
         <StoneEntreContasModal
@@ -1076,62 +1076,6 @@ export default function HcLiberacaoPagamento() {
           }}
         />
       )}
-
-      {/* PAGAR: grava a baixa (sem estorno) */}
-      {modal?.tipo === 'pagar' &&
-        (() => {
-          const alvo = todas.filter((l) => modal.ids.includes(l.id));
-          const total = alvo.reduce((s, l) => s + Number(l.valor), 0);
-          const semBanco = alvo.filter((l) => !l.banco).length;
-          return (
-            <Modal titulo={`Pagar ${alvo.length} duplicata(s)`} onFechar={() => setModal(null)}>
-              <div className="mb-3 max-h-48 overflow-y-auto rounded-lg bg-gray-50 p-2 text-xs ring-1 ring-gray-200">
-                {alvo.map((l) => (
-                  <div key={l.id} className="flex justify-between gap-2 py-0.5">
-                    <span className="truncate">
-                      {l.titulo?.fornecedor_nome} · {l.titulo?.rotulo}
-                      {l.banco ? ` · ${l.banco}` : ''}
-                    </span>
-                    <b className="tabular-nums">{fmtBRL(l.valor)}</b>
-                  </div>
-                ))}
-              </div>
-              <p className="mb-3 text-sm">
-                Total: <b className="text-green-700">{fmtBRL(total)}</b>
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className={labelCls}>Data do pagamento</label>
-                  <input type="date" max={hojeIso()} value={modal.data} onChange={(e) => setModal((m) => ({ ...m, data: e.target.value }))} className={inputCls} />
-                </div>
-                <div>
-                  <label className={labelCls}>Banco {semBanco ? `(para as ${semBanco} sem banco)` : '(todas já têm)'}</label>
-                  <select value={modal.banco} onChange={(e) => setModal((m) => ({ ...m, banco: e.target.value }))} className={inputCls}>
-                    <option value="">—</option>
-                    {bancos.map((b) => (
-                      <option key={b} value={b}>
-                        {b}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="col-span-2">
-                  <label className={labelCls}>Sua senha do HeadCoach</label>
-                  <input type="password" autoComplete="off" value={modal.senha} onChange={(e) => setModal((m) => ({ ...m, senha: e.target.value }))} className={inputCls} />
-                </div>
-              </div>
-              <p className="mt-2 text-[11px] text-gray-500">O pagamento grava a baixa na duplicata do contas a pagar e não tem estorno.</p>
-              <div className="mt-3 flex justify-end gap-2">
-                <button onClick={() => setModal(null)} className="h-9 rounded-lg px-3 text-xs font-bold text-gray-600 ring-1 ring-gray-200 hover:bg-gray-50">
-                  Voltar
-                </button>
-                <button disabled={ocupado || !modal.senha || !modal.data || (semBanco > 0 && !modal.banco)} onClick={() => executar('/pagar', { ids: modal.ids, dataPagamento: modal.data, banco: modal.banco, senha: modal.senha })} className={`${btnAcao} bg-green-600 hover:bg-green-700`}>
-                  {ocupado ? <Spinner size={14} className="animate-spin" /> : <CurrencyDollar size={14} weight="bold" />} CONFIRMAR PAGAMENTO
-                </button>
-              </div>
-            </Modal>
-          );
-        })()}
 
       {/* BAIXA AUTOMÁTICA: o que o extrato confirma como pago; grava só depois da senha */}
       {modal?.tipo === 'baixaAuto' &&
@@ -1258,7 +1202,7 @@ export default function HcLiberacaoPagamento() {
                                   const emUso = saidaEmUso(sd.lancamentoId, x.id);
                                   return (
                                     <label key={sd.lancamentoId} className={`flex items-start gap-1.5 py-0.5 ${emUso ? 'text-gray-400' : 'text-gray-700'}`}>
-                                      {!unica && <input type="radio" name={`sug-${x.id}`} disabled={emUso} checked={String(escolhida) === String(sd.lancamentoId)} onChange={() => escolher(x.id, sd.lancamentoId)} className="mt-0.5 accent-amber-600" />}
+                                      {!unica && <input type="radio" name={`sug-${x.id}`} disabled={emUso} checked={String(escolhida) === String(sd.lancamentoId)} onChange={() => escolher(x.id, sd.lancamentoId)} className="mt-0.5 h-4 w-4 shrink-0 accent-amber-600" />}
                                       <span>
                                         <b className="whitespace-nowrap">{fmtData(sd.data)}</b> · {sd.banco} · para <b>{sd.contraparte}</b>
                                         {sd.acrescimo > 0 && (

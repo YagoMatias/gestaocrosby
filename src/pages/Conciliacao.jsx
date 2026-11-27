@@ -2966,6 +2966,12 @@ const CelulaConciliacao = ({ l, podeConciliar = l.valor < 0, ocupado, onConcilia
             <Badge cfg={cfg}>{cfg.label}</Badge>
             {c.referencia?.parcial && <span className="px-1 rounded bg-orange-100 text-orange-800 text-[10px]">parcial</span>}
             {temAnexo && <Paperclip size={11} className="text-gray-400" />}
+            {/* baixada pela Liberação de Pagamento do HeadCoach (baixa automática, sugestão aprovada ou saída casada lá): a duplicata já está paga e ligada a esta linha */}
+            {(c.referencia?.destino === 'contas-pagar-headcoach' || c.referencia?.casadaPor) && (
+              <span className="px-1 rounded bg-indigo-100 text-indigo-800 text-[10px] font-semibold" title="Baixada pela Liberação de Pagamento do HeadCoach: a duplicata já está paga e ligada a esta linha do extrato">
+                LIBERAÇÃO{(c.referencia?.liberacoes || []).length ? ` · dup ${c.referencia.liberacoes.map((x) => x.duplicata).join(', ')}` : ''}
+              </span>
+            )}
             <BotaoComprovanteBot comp={l.comprovante} />
             {c.automatico && c.id && <span className="text-[10px] text-gray-400">auto {c.pontuacao != null ? `· ${c.pontuacao} pts` : ''}</span>}
             {c.situacao && (c.situacao.pago ? (
